@@ -1,0 +1,67 @@
+[project]
+name = "adet"
+version = "0.0.1"
+description = "Autodiff DEsigner for Turbomachinery"
+readme = "README.md"
+authors = [
+    { name = "fvaccari", email = "f.vaccari@tudelft.nl" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "bezier>=2024.6.20",
+    "casadi>=3.7.2",
+    "coolprop>=7.1.0",
+    "matplotlib>=3.10.7",
+    "optimistix>=0.0.11",
+    "pint>=0.25",
+    "scipy>=1.16.2",
+    "sympy>=1.14.0",
+]
+
+[project.scripts]
+adet = "adet:main"
+
+[build-system]
+requires = ["uv_build>=0.9.4,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ipython>=9.6.0",
+    "pdbpp>=0.11.7",
+    "pytest>=8.4.2",
+    "scipy-stubs>=1.16.2.4",
+]
+docs = [
+    "myst-parser>=4.0.1",
+    "pydata-sphinx-theme>=0.16.1",
+    "sphinx>=8.2.3",
+    "sphinx-inline-tabs>=2023.4.21",
+]
+
+[tool.pyright]
+typeCheckingMode = "basic"
+exclude = ["\\Interactive**", "**\\.venv"]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+# Enable pycodestyle errors and warnings (E, W) and pyflakes (F)
+select = ["E", "W", "F"]
+
+# Avoid enforcing line-length violations (`E501`)
+# ignore = ["E501"]
+
+# Avoid trying to fix flake8-bugbear (`B`) violations.
+unfixable = ["B"]
+
+# Ignore `E402` (import violations) in selected files and directories
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["E402"]
+"**/{tests,docs,tools}/*" = ["E402"]
+"main.py" = ["E402"]
+
+[tool.ruff.format]
+quote-style = "single"
+docstring-code-format = true
