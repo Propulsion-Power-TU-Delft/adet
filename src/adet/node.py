@@ -190,42 +190,37 @@ class FlowNode(GasPropertiesMixin):
     def __str__(self):
         """
         Generate a string representation of the FlowNode.
-
         Returns
         -------
         str
             A formatted string showing all states and variables
         """
-        print_str = []
-        print_str.append(f'FlowNode `{self.identifier}`: (ID {id(self)})')
-        print_str.append('')
-        print_str.append('╭──────────────╮')
-        print_str.append('│ STATIC STATE │')
-        print_str.append('╰──────────────╯')
-        print_str.append(str(self.stc))
-        print_str.append('')
-        print_str.append('╭─────────────╮')
-        print_str.append('│ TOTAL STATE │')
-        print_str.append('╰─────────────╯')
-        print_str.append(str(self.tot))
-        print_str.append('')
-        print_str.append('╭──────────────────╮')
-        print_str.append('│ REL. TOTAL STATE │')
-        print_str.append('╰──────────────────╯')
-        print_str.append(str(self.rlt))
-        print_str.append('')
-        print_str.append('╭────────────╮')
-        print_str.append('│ KINEMATICS │')
-        print_str.append('╰────────────╯')
-        print_str.append(str(self.kin))
-        print_str.append('')
-        print_str.append('')
-        print_str.append('╭────────────╮')
-        print_str.append('│ OTHER VARS │')
-        print_str.append('╰────────────╯')
-        print_str.append(VariableContainer.__str__(self.oth))
+        return f"""FlowNode `{self.identifier}`: (ID {id(self)})
 
-        return '\n'.join(print_str)
+╭──────────────╮
+│ STATIC STATE │
+╰──────────────╯
+{self.stc}
+
+╭─────────────╮
+│ TOTAL STATE │
+╰─────────────╯
+{self.tot}
+
+╭──────────────────╮
+│ REL. TOTAL STATE │
+╰──────────────────╯
+{self.rlt}
+
+╭────────────╮
+│ KINEMATICS │
+╰────────────╯
+{self.kin}
+
+╭────────────╮
+│ OTHER VARS │
+╰────────────╯
+{self.oth}"""
 
 
 if __name__ == '__main__':

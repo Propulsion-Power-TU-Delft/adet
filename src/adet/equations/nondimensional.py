@@ -17,14 +17,14 @@ class TotalTotalPressureRatio(EquationBase):
         return oth_TTratio1 - tot_p1 / tot_p0
 
 
-class TotalStaticPressureRatio(EquationBase):
+class StaticTotalPressRatio(EquationBase):
     """
     .. math::
         \\beta_{tt} = \\frac{p_{t1}}{p_{t,0}}
     """
 
-    def _compute_residual(self, tot_p0, stc_p1, oth_TSratio1):
-        return tot_p0 * oth_TSratio1 - stc_p1
+    def _compute_residual(self, tot_p0, stc_p1, oth_STratio1):
+        return tot_p0 * oth_STratio1 - stc_p1
 
 
 class DensityRatio(EquationBase):

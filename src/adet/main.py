@@ -1,43 +1,49 @@
 # === IMPORTS
-from dataclasses import dataclass
-from typing import Iterable
 import logging
+from itertools import accumulate
+from typing import Literal
 
 import matplotlib.pyplot as plt
 import optimistix as optx
 import jax
 import numpy as np
+from pint import Quantity
 import casadi as cs
-from pint.facets.plain import PlainQuantity
 
 from adet.assembly import CasadiSystem
-from adet.fluid.settings import FluidSettings, IdealGasModel
-from adet.registries import DefaultUnitsRegistry
-from adet.tools.loggers import setup_logger
-from pint import Quantity
-
-# Equations
-from adet.equations.fundamental import (
-    EulerEquation,
-    MassConservation,
-    Kinematics,
-    MassAreaRelation,
-    MeridionalUniform,
-    TotalStaticMatching,
-)
-
-from adet.equations.linkers import SpeedLinker, ComponentLinker
-from adet.equations.simplelosses import PercentageEntropyLoss
-from adet.equations.ideal_gas import IdealStcEos, IdealTotEos, IdealRltEos
+from adet.components.network import ComponentNetwork
+from adet.diagnostics import SystemDiagnostics
+from adet.registries import DefaultUnitsRegistry, GuessRegistry, ScalingRegistry
+from adet.tools.context import suppress_output
+from adet.tools.coolprop_utils import CountingAbstractState
 from adet.tools.iter import grouper
 
+from adet.fluid.settings import AbstractStateModel, FluidSettings, IdealGasModel
+
+from adet.losses.basic import PercentageEntropyLoss
+
+from adet.tools.loggers import setup_logger
+
+from adet.components.connections import Inlet, Shaft
+from adet.components.blade_row import BladeRow, plot_from_nodes
+
+from adet.equations.nondimensional import (
+    StaticTotalPressRatio,
+    WorkCoefficient,
+    FlowCoefficient,
+    SizeParameter,
+    SpecificSpeed,
+)
+from adet.equations.definitions import AngleDeflection
+
+# Equations
 logger = logging.getLogger(__name__)
 jax.config.update('jax_enable_x64', True)
 
 setup_logger(
     logger,
-    logging.DEBUG,
-    logging.DEBUG,
+    logging.INFO,
+    logging.INFO,
     suppress_modules=['matplotlib', 'jax'],
     banned_keywords=['STREAM', 'findfont', 'sBIT'],
 )
@@ -47,245 +53,352 @@ setup_logger(
 logging.getLogger('jax').setLevel(logging.WARNING)
 
 
-@dataclass
-class Shaft:
-    omega: float | PlainQuantity
-    rows: Iterable[int]
-
-    def __post_init__(self):
-        if isinstance(self.omega, float):
-            self.omega = Quantity(self.omega, 'rad/s')
-
-
 # === SETTINGS
-NUM_SPAN = 1
-NUM_ROWS = 4
-SHAFTS = [
-    Shaft(
-        omega=0.0,
-        rows=range(0, NUM_ROWS, 2),
-    ),
-    Shaft(
-        omega=200.0,
-        rows=range(1, NUM_ROWS, 2),
-    ),
-]
+NUM_SPAN = 5
+
+# Thermodynamic model
+MODEL: Literal['ideal', 'abstate'] = 'abstate'
 
 SCALED = True
-SORT_BY_LINEARITY = False
-
-SOLVER_NLP = 'ipopt'
 SOLVER_LSTSQ = optx.BestSoFarLeastSquares(
     optx.LevenbergMarquardt(1e-2, 1e-3),
 )
 SOLVER_NEWTON = optx.Newton(1e-8, 1e-10)
 
 # === SYSTEM DEFINITION
-system_cas = CasadiSystem()
-model = IdealGasModel(287.0, 1.4)
-fluid_settings = FluidSettings(model)
-system_cas.settings = fluid_settings
+match MODEL:
+    case 'ideal':
+        model = IdealGasModel(287.0, 1.4)
+    case 'abstate':
+        # This counts the number of updates in an attribute
+        abs_state = CountingAbstractState('HEOS', 'Air')
+        model = AbstractStateModel(abs_state)
 
-# === Define custom units
-units_reg = DefaultUnitsRegistry()
-units_reg['cpmassid'] = 'J/(kg*K)'
-units_reg['cvmassid'] = 'J/(kg*K)'
-
-
-# Nomenclature
-# ~~~~~~~~~~~~
-#        _________________________________
-#          |         |        _________
-#          |         |       |         |
-#   V      |         |       |         |
-#  -->   0 |  ROW 0  | 1   2 |  ROW 1  | 3
-#          |         |       |         |
-#        __|_________|_______|_________|__
-#        /////////////////////////////////
-#        \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
-#        /////////////////////////////////
-#       _ . _ . _ . _ . _ . _ . _ . _ . _ . _
-#
-# * row couples : (0, 1), (2, 3), ...
-# * link couples : (1, 2), ...
-# * shafts: {shaft number: iterator[row(s) connected to shaft]}
-
-row_couples = list(
-    grouper(range(2 * NUM_ROWS), 2, incomplete='strict'),
+settings = FluidSettings(
+    model=model,
+    update_variables=('p', 'T', 'hmass', 'smass', 'rhomass'),
+    update_length=2,
 )
 
-link_couples = list(
-    grouper(range(1, 2 * NUM_ROWS), 2, incomplete='ignore'),
+
+# Set custom units and defaults
+_dfu_reg = DefaultUnitsRegistry()
+_scl_reg = ScalingRegistry()
+_gss_reg = GuessRegistry()
+
+_dfu_reg.from_dict(
+    {
+        'delta_smass_pct': 'J/(kg*K)',
+        'deflection': 'rad',
+        'percentage_loss': 'dimensionless',
+        'workCoeff': 'dimensionless',
+        'flowCoeff': 'dimensionless',
+        'specificSpeed': 'dimensionless',
+        'STratio': 'dimensionless',
+        'sizeParameter': 'meters',
+    }
 )
 
-# === EQUATIONS ===
+# Set default values for scales and guesses to 1.0
+_scl_reg.set_fallback_value(1.0)
+_gss_reg.set_fallback_value(1.0)
 
-# Fundamental equations
-for nodes in row_couples:
-    system_cas.add_equation(EulerEquation(), nodes)
-    system_cas.add_equation(MassConservation(), nodes)
-    system_cas.add_equation(PercentageEntropyLoss(0.0), nodes)
+# *** Shafts
+static_shaft = Shaft(0.0)
+rotating_shaft = Shaft(Quantity(800, 'rpm'))
 
-# Compatibility between rows
-if link_couples:
-    for nodes in link_couples:
-        system_cas.add_equation(ComponentLinker(), nodes)
-
-# Single node relations
-for node in range(2 * NUM_ROWS):
-    system_cas.add_equation(MassAreaRelation(), node)
-    system_cas.add_equation(Kinematics(), node)
-    system_cas.add_equation(MeridionalUniform(), node)
-    system_cas.add_equation(TotalStaticMatching(), node)
-
-    system_cas.add_equation(IdealStcEos(), node)
-    system_cas.add_equation(IdealTotEos(), node)
-    system_cas.add_equation(IdealRltEos(), node)
-
-# Speed links
-for nodes in row_couples:
-    system_cas.add_equation(SpeedLinker(), (nodes[0], nodes[0]))
-    system_cas.add_equation(SpeedLinker(), (nodes[0], nodes[1]))
-
-# Add rotating speed boundary conditions
-for shaft in SHAFTS:
-    for row in shaft.rows:
-        node_number = 2 * row
-        system_cas.boundary_conditions[node_number]['kin']['omega'] = shaft.omega
-
-# === BOUNDARY CONDITIONS ===
-# INLET
+# *** Constraints
 CONSTR0 = {
     'kin': {
-        'meridional_angle': 0.0,
-        'V': 30.0,
-        'rmid': 0.3,
-        'alpha': Quantity(0, 'deg'),
-        'height': 0.05,
+        'meridional_angle': Quantity(0, 'deg'),
+        'alpha': Quantity(25, 'deg'),
+        'rmid': 0.5,
+        'height': 0.2,
     },
     'tot': {
-        'p': 1.5e5,
-        'T': 476,
+        'p': 3e5,
+        'T': 500,
+    },
+    'oth': {
+        'flowCoeff': 1.5,
+        # 'cum_massflow': 100,
     },
 }
 
-# ROW OUTLETS
-OUTLET_CONSTRAINTS = {
-    1: {
-        'kin': {
-            'meridional_angle': 0.0,
-            'alpha': Quantity(65, 'deg'),
-            'rmid': 0.3,
-            'height': 0.05,
-        },
+CONSTR1 = {
+    'kin': {
+        'meridional_angle': 0.0,
+        # 'alpha': Quantity(0, 'deg'),
+        'rmid': 0.55,
+        'height': 0.15,
     },
-    3: {
-        'kin': {
-            'meridional_angle': 0.0,
-            'alpha': Quantity(0, 'deg'),
-            'rmid': 0.3,
-            'height': 0.05,
-        },
+    'stc': {
+        'p': 2e5,
     },
-    5: {
-        'kin': {
-            'meridional_angle': 0.0,
-            'alpha': Quantity(65, 'deg'),
-            'rmid': 0.3,
-            'height': 0.05,
-        },
-    },
-    7: {
-        'kin': {
-            'meridional_angle': 0.0,
-            'alpha': Quantity(-10, 'deg'),
-            'rmid': 0.3,
-            'height': 0.05,
-        },
+    'oth': {
+        # 'STratio': 0.8,
+        # 'workCoeff': 1.0,
+        # These two don't converge
+        # 'specificSpeed': 0.4,
+        # 'sizeParameter': 0.1,
     },
 }
-system_cas.add_boundary_conditions(CONSTR0, 0)
-for node in range(1, 2 * NUM_ROWS, 2):
-    system_cas.add_boundary_conditions(OUTLET_CONSTRAINTS[node], node)
+
+# *** Inlet
+inlet = Inlet(CONSTR0)
 
 
-# *** Compare speed to casadi formulation
-system_cas.build(SCALED)
-
-y0_midspan = system_cas.get_initial_guess()
-knowns_stack = system_cas.get_scaled_constraints()
-
-res_func_casadi = system_cas.make_residual_function()
-
-free_args_symbols = system_cas.free_args_sym
-
-res_func_partial = res_func_casadi(
-    free_args_symbols,
-    np.array(knowns_stack).flatten(),
+# *** Blade rows
+# STATOR
+row1 = BladeRow(
+    CONSTR1,
+    rotating_shaft,
+    loss_models=[
+        PercentageEntropyLoss(0.0),
+    ],
+    extra_equations={
+        FlowCoefficient(): 0,
+        WorkCoefficient(): (0, 1),
+        SpecificSpeed(): (0, 1),
+        SizeParameter(): (0, 1),
+        StaticTotalPressRatio(): (0, 1),
+    },
 )
 
-rootfind_problem = {
-    'x': free_args_symbols,
-    'g': res_func_partial,
-}
 
-G_newt = cs.rootfinder(
-    'newton_roots',
-    'newton',
-    rootfind_problem,
-    {'print_iteration': True},
-)
-G_nlp = cs.rootfinder(
-    'nlpsol_roots',
-    'nlpsol',
-    rootfind_problem,
-    {'nlpsol': SOLVER_NLP},
+# Create network
+ntw = ComponentNetwork(
+    settings,
+    inlet,
+    CasadiSystem(spanwise_stations=1),  # Backend
+    *[
+        row1,
+        # row2,
+        # row3,
+        # row4,
+    ],
 )
 
-logger.info('Trying solution with Newton method...')
-sol_newt = G_newt(y0_midspan.flatten(), 0.0)
+ntw.build_network()
 
-if np.isnan(sol_newt).any():
-    logger.info('Newton method failed, trying {SOLVER_NLP}')
-    sol_newt = G_newt(G_nlp(y0_midspan.flatten(), 0.0), 0.0)
-
-system_cas.write_solution_to_nodes(np.array(sol_newt).reshape(system_cas.num_args, -1))
-
-system_cas_spanwise = system_cas.copy()
+x0 = ntw.system.get_initial_guess()
 
 
-RUN_JAX = False
-if RUN_JAX:
-    system_jax = system_cas.to_jax()
-    system_jax.build(SCALED)
+# === CASADI VERSION - Function Extraction + Solution
+USE_CASADI = True
+if USE_CASADI:
 
-    res_func_midspan = system_jax.make_residual_function()
+    def solve_casadi_sys(
+        system: CasadiSystem,
+        method: Literal['newton', 'nlpsol'],
+        manual_guess={},
+    ):
+        x0 = system.get_initial_guess(manual_guess)
+        knowns_stack = system.get_scaled_constraints()
+        res_func_casadi = system.make_residual_function()
+        free_args_symbols = cs.vertcat(*system.free_args_sym)
 
-    def res_partial(x, aux):
-        return res_func_midspan(x, knowns_stack)
+        res_expr_partial = res_func_casadi(
+            free_args_symbols,  # Unknowns -> Symbols
+            knowns_stack.flatten(),  # Knowns -> Numerical values
+        )
 
-    logger.info('Solving system in least square sense...')
-    sol_lstsq = optx.root_find(
-        res_partial,
-        SOLVER_LSTSQ,
-        y0_midspan,
-    )
+        # diagn = SystemDiagnostics(system, knowns_stack)
 
-    logger.info('Solving system with Newton-Raphson...')
-    sol_newton = optx.root_find(
-        res_partial, SOLVER_NEWTON, sol_lstsq.value, max_steps=20
-    )
+        rootfind_problem = {
+            'x': free_args_symbols,
+            'g': res_expr_partial,
+        }
 
-    system_jax.write_solution_to_nodes(sol_newton.value)
+        # Newton-Raphson solver
+        G_newt = cs.rootfinder(
+            'newton_roots',
+            'newton',
+            rootfind_problem,
+            {
+                'print_iteration': False,
+                'error_on_fail': True,
+            },
+        )
+
+        # IPOPT solver
+        G_nlp = cs.rootfinder(
+            'nlpsol_roots',
+            'nlpsol',
+            rootfind_problem,
+            {
+                'nlpsol': 'ipopt',
+                'nlpsol_options': {
+                    'ipopt.print_level': 0,
+                    'ipopt.hessian_approximation': 'limited-memory',  #! Need this
+                },
+            },
+        )
+
+        with suppress_output():
+            logger.info('Solving the system...')
+            match method:
+                case 'newton':
+                    sol = G_newt(x0.flatten(), 0.0)
+                case 'nlpsol':
+                    sol = G_nlp(x0.flatten(), 0.0)
+
+        return sol
+
+    sol = solve_casadi_sys(ntw.system, 'nlpsol')
+
+    sol_dict = ntw.system.solution_to_dict(sol.toarray())
+
+    # Use midspan as precursor
+    sys_multi = ntw.system.copy()
+    sys_multi.spanwise_stations = NUM_SPAN
+    sys_multi.build(SCALED)
+
+    sol_multi = solve_casadi_sys(sys_multi, 'nlpsol', sol_dict)
+
+    # Overwrite
+    sol = sol_multi
+    ntw.system = sys_multi
 
 
-system_cas.to_symbolic()
+# === JAX VERSION
+USE_JAX = not USE_CASADI
+if USE_JAX:
+    sys_jax = ntw.system.to_jax()
+    sys_jax.build(SCALED)
+
+    x0 = ntw.system.get_initial_guess()
+    knowns_stack = ntw.system.get_scaled_constraints()
+    res_func_jax = sys_jax.make_residual_function()
+
+    @jax.jit
+    def partial_res(args, aux):
+        return res_func_jax(args, knowns_stack)
+
+    flat_func = jax.jit(sys_jax._make_flat_resfunc(knowns_stack))
+
+    sol_lsq = optx.root_find(partial_res, SOLVER_LSTSQ, x0)
+    sol_newt = optx.root_find(partial_res, SOLVER_NEWTON, sol_lsq.value)
+    sol = sol_newt.value
+
+ntw.system.write_solution_to_nodes(np.array(sol).reshape(ntw.system.num_args, -1))
+
 
 PLOTS = True
 if PLOTS:
-    for idx, n in enumerate(system_cas.nodes):
+    # plt.rcParams.update(
+    #     {
+    #         'text.usetex': False,
+    #         'font.family': 'serif',
+    #     }
+    # )
+    FONTSIZE = 26
+    FONTDICT = {'fontsize': FONTSIZE}
+
+    for idx, n in enumerate(ntw.system.nodes):
         n.kin.plot()
         plt.title(f'Node number {idx}')
+
+    plt.tick_params(labelsize=FONTSIZE / 1.5 // 1)
+
+    num_nodes = range(len(ntw.system.nodes))
+
+    fig, ax = plt.subplots()
+
+    ax.axis('equal')
+    # ax.set_ylim(0.0, 1.2)
+    ax.set_ylabel('radius [m]', {'fontsize': 18})
+    ax.set_xlabel('axial  [m]', {'fontsize': 18})
+    ax.tick_params('both', labelsize=18)
+    ax.grid()
+    ax.set_title('Meridional profile', {'fontsize': 18})
+
+    chords = [0.2, 0.4, 0.4, 0.6]
+    offset = list(
+        accumulate([0.0, 0.4, 0.4, 0.35]),
+    )
+    for n0_idx, n1_idx in grouper(num_nodes, 2, incomplete='ignore'):
+        n0 = ntw.system.nodes[n0_idx]
+        n1 = ntw.system.nodes[n1_idx]
+        lines = plot_from_nodes(
+            n0,
+            n1,
+            chords[n0_idx // 2],
+            False,
+            offset[n0_idx // 2],
+        )
+
     plt.show()
 else:
     plt.close('all')
+
+
+#  #  #  #  #  #  #  #  #  #  #  #  #  #  #  #  #  #  #  #
+#                                                        #
+#                   PRISTINE UNUSED ROWS                 #
+#                                                        #
+#  #  #  #  #  #  #  #  #  #  #  #  #  #  #  #  #  #  #  #
+row2 = BladeRow(
+    {
+        'kin': {
+            'meridional_angle': Quantity(0.0, 'deg'),
+            'rmid': 1.0,
+            'height': 0.3,
+        },
+        'oth': {
+            'workCoeff': 1.1,
+            # 'deflection': Quantity(65, 'deg'),
+        },
+    },
+    rotating_shaft,
+    loss_models=[
+        PercentageEntropyLoss(0.0),
+    ],
+    extra_equations={
+        WorkCoefficient(): (0, 1),
+        # AngleDeflection(): (0, 1),
+    },
+)
+
+row3 = BladeRow(
+    {
+        'kin': {
+            'meridional_angle': Quantity(-70.0, 'deg'),
+            # 'alpha': Quantity(65.0, 'deg'),
+            'rmid': 0.8,
+            'height': 0.35,
+        },
+        'oth': {
+            # 'workCoeff': 1.0,
+            'deflection': Quantity(100.0, 'deg'),
+        },
+    },
+    static_shaft,
+    loss_models=[
+        PercentageEntropyLoss(0.0),
+    ],
+    extra_equations={
+        # WorkCoefficient(): (0, 1),
+        AngleDeflection(): (0, 1),
+    },
+)
+
+row4 = BladeRow(
+    {
+        'kin': {
+            'meridional_angle': Quantity(0.0, 'deg'),
+            'rmid': 0.4,
+            'height': 0.5,
+        },
+        'oth': {
+            'workCoeff': 1.0,
+        },
+    },
+    rotating_shaft,
+    loss_models=[
+        PercentageEntropyLoss(0.0),
+    ],
+    extra_equations={
+        WorkCoefficient(): (0, 1),
+    },
+)

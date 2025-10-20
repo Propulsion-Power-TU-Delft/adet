@@ -7,6 +7,9 @@ from typing import Callable
 from types import ModuleType
 from contextlib import contextmanager
 
+import os
+import sys
+
 
 @contextmanager
 def override_function_globals(func, **overrides):
@@ -52,3 +55,17 @@ def override_operators(
             return func(*args, **kwargs)
 
     return overridden_func
+
+
+@contextmanager
+def suppress_output():
+    with open(os.devnull, 'w') as devnull:
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
+        sys.stdout = devnull
+        sys.stderr = devnull
+        try:
+            yield
+        finally:
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr

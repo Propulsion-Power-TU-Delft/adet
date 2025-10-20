@@ -1,4 +1,5 @@
 from typing import Generic, Sequence, TypeVar
+from art import tprint
 
 from adet.assembly import SystemAssembler
 from adet.components import BaseComponent
@@ -15,6 +16,7 @@ from adet.equations.fundamental import (
 
 from adet.equations.linkers import ComponentLinker
 from adet.tools.iter import grouper
+from adet.tools.printing import print_header
 
 
 T = TypeVar('T', bound=SystemAssembler)
@@ -34,6 +36,8 @@ class ComponentNetwork(Generic[T]):
         """
         Network of turbomachinery components
         """
+        print_header()
+
         self.system = backend
         self.system.settings = fluid_settings
 
