@@ -1,7 +1,7 @@
 from typing import Callable, Protocol, runtime_checkable, cast
 from numpy.typing import NDArray
 
-from adet.variables import KinematicContainer
+from adet.variables import KinematicContainer, VariableContainer
 from adet.variables import ThermostateContainer
 
 
@@ -21,6 +21,8 @@ class HasThermodynamicProperties(Protocol):
     def rlt(self) -> ThermostateContainer: ...
     @property
     def kin(self) -> KinematicContainer: ...
+    @property
+    def oth(self) -> VariableContainer: ...
 
 
 def thermo_property(func: Callable) -> property:

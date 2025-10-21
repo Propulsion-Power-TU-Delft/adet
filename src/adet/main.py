@@ -54,7 +54,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 
 # === SETTINGS
-NUM_SPAN = 5
+NUM_SPAN = 15
 
 # Thermodynamic model
 MODEL: Literal['ideal', 'abstate'] = 'abstate'

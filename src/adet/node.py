@@ -18,13 +18,8 @@ from pint import Quantity
 
 # Internal imports
 from adet.tools.strings import get_arg_state, get_arg_type
-from adet.constants import NodeStatesNames
-from adet.variables import (
-    VariableContainer,
-    KinematicContainer,
-    ThermostateContainer,
-    ArrayLike,
-)
+from adet.constants import NodeStatesNames, ArrayLike
+from adet.variables import VariableContainer, KinematicContainer, ThermostateContainer
 
 from adet.fluid.settings import AbstractStateModel, FluidSettings, IdealGasModel
 from adet.fluid.properties import GasPropertiesMixin

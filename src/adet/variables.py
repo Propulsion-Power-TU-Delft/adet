@@ -4,7 +4,7 @@ In general we will call 'constraints' all the quantities that are fixed by desig
 parameter, while 'variables' are all the quantities that are not fixed.
 """
 
-from typing import ClassVar, Union, Optional, Literal, get_args, Iterator
+from typing import ClassVar, Optional, Literal, get_args, Iterator
 from itertools import combinations
 import logging
 
@@ -16,20 +16,11 @@ from pint.registry import Quantity
 
 from adet.fluid.settings import AnalyticalFluidModel, FluidSettings
 from adet.registries import DefaultUnitsRegistry
+from adet.constants import ArrayLike
 from adet.tools.plotting import plot_velocity_triangles
 
 
 logger = logging.getLogger(__name__)
-
-ArrayLike = Union[
-    NDArray,
-    list[float],
-    list[int],
-    tuple[float, ...],
-    tuple[int, ...],
-    float,
-    int,
-]
 
 
 class VariableContainer:

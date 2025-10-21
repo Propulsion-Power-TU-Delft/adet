@@ -40,8 +40,7 @@ from adet.tools.coolprop_utils import (
 from adet.tools.strings import get_arg_state, rm_digits, get_index, get_arg_type
 from adet.equations import EquationBase
 from adet.node import FlowNode
-from adet.constants import NodeStatesNames
-from adet.variables import ArrayLike
+from adet.constants import NodeStatesNames, ArrayLike
 from adet.tools.context import override_operators
 
 
