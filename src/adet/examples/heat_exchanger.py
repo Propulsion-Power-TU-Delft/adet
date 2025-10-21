@@ -2,7 +2,7 @@ import jax
 import casadi as cs
 import numpy as np
 
-from adet.assembly import CasadiSystem, EquationBase, JaxSystem
+from adet.assembly import CasadiSystem, EquationBase
 from adet.diagnostics import SystemDiagnostics
 from adet.registries import DefaultUnitsRegistry
 
@@ -10,7 +10,7 @@ jax.config.update('jax_enable_x64', True)
 
 
 class HeatExchangerProblem(EquationBase):
-    def _compute_residual(
+    def residual(
         self, f, Q, kp, ps, pi, po, kh, kv, pd, c, To, Ts, gamma, A, Ta, gammaz, fz, nu
     ):
         r0 = f - kp * (ps - pi) ** 0.5

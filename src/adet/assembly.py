@@ -477,7 +477,7 @@ class SystemAssembler(ABC):
 
         for eq in self.equations:
             dummy_args = np.full((eq.num_args, 1), np.nan)
-            dummy_residuals.append(eq._compute_residual(*dummy_args))
+            dummy_residuals.append(eq.residual(*dummy_args))
 
         self._residual_structure = jax.tree.structure(dummy_residuals)
         self.num_equations = self._residual_structure.num_leaves
@@ -536,7 +536,7 @@ class SystemAssembler(ABC):
                 args.append(dummy_value)
 
             try:
-                residuals.append(eq._compute_residual(*args))
+                residuals.append(eq.residual(*args))
             except DimensionalityError:
                 raise
 
@@ -837,7 +837,7 @@ class JaxSystem(SystemAssembler):
 
         return [
             make_return_array(
-                override_operators(eq._compute_residual, 'numpy', jnp),
+                override_operators(eq.residual, 'numpy', jnp),
             )
             for eq in self.equations
         ]
@@ -1129,7 +1129,7 @@ class CasadiSystem(SystemAssembler):
             kwmap = self._kwarg_maps[eq]  # Convert to abs args
             args = [self._all_symbols[kwmap[k]] for k in eq.arguments]
 
-            overridden_eq = override_operators(eq._compute_residual, 'numpy', cs)
+            overridden_eq = override_operators(eq.residual, 'numpy', cs)
             residuals.append(overridden_eq(*args))
 
         self._res_expr_scaled = list(

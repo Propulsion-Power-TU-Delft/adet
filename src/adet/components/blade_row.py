@@ -62,7 +62,7 @@ class BladeRow(BaseComponent):
 
         code_gen = f"""
 class {CLASS_NAME}(EquationBase):
-    def _compute_residual(self, stc_smass1, stc_smass0, {', '.join(model_variables)}):
+    def residual(self, stc_smass1, stc_smass0, {', '.join(model_variables)}):
         return stc_smass1 - stc_smass0 - {'- '.join(model_variables)}
         """
 

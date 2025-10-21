@@ -17,7 +17,7 @@ class FixedPressureLoss(EquationBase):
         super().__init__()
         self.loss_coeff = loss_coefficient
 
-    def _compute_residual(self, rlt_p0, stc_p0, rlt_p1):
+    def residual(self, rlt_p0, stc_p0, rlt_p1):
         return (rlt_p1 - rlt_p0) - (rlt_p0 - stc_p0) * self.loss_coeff
 
 
@@ -38,10 +38,10 @@ class PercentageEntropyLoss(EquationBase):
         super().__init__()
         self.entropy_gen = entropy_generation
 
-    def _compute_residual(self, stc_smass0, stc_smass1):
+    def residual(self, stc_smass0, stc_smass1):
         return stc_smass1 - stc_smass0 * (1 + self.entropy_gen)
 
 
 class FixedEnthalpyLoss(EquationBase):
-    def _compute_residual(self, tot_hmass0, oth_htis0, oth_ent_loss0):
+    def residual(self, tot_hmass0, oth_htis0, oth_ent_loss0):
         return tot_hmass0 - (oth_htis0 + oth_ent_loss0)

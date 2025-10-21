@@ -25,7 +25,7 @@ def ideal_gas_residual(
 
 
 class IdealStcEos(EquationBase):
-    def _compute_residual(
+    def residual(
         self,
         stc_p0,
         stc_T0,
@@ -55,7 +55,7 @@ class IdealStcEos(EquationBase):
 
 
 class IdealTotEos(EquationBase):
-    def _compute_residual(
+    def residual(
         self,
         tot_p0,
         tot_T0,
@@ -85,7 +85,7 @@ class IdealTotEos(EquationBase):
 
 
 class IdealRltEos(EquationBase):
-    def _compute_residual(
+    def residual(
         self,
         rlt_p0,
         rlt_T0,

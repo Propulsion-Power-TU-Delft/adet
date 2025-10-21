@@ -7,14 +7,12 @@ import numpy as np
 
 
 class MassConservation(EquationBase):
-    def _compute_residual(self, oth_massflow0, oth_massflow1):
+    def residual(self, oth_massflow0, oth_massflow1):
         return oth_massflow0 - oth_massflow1
 
 
 class EulerEquation(EquationBase):
-    def _compute_residual(
-        self, tot_hmass0, kin_U0, kin_Vt0, tot_hmass1, kin_U1, kin_Vt1
-    ):
+    def residual(self, tot_hmass0, kin_U0, kin_Vt0, tot_hmass1, kin_U1, kin_Vt1):
         return (tot_hmass1 - tot_hmass0) - (kin_U1 * kin_Vt1 - kin_U0 * kin_Vt0)
 
 
@@ -23,7 +21,7 @@ class CumMassFlow(EquationBase):
     Cumulative massflow
     """
 
-    def _compute_residual(self, oth_cum_massflow0, oth_massflow0):
+    def residual(self, oth_cum_massflow0, oth_massflow0):
         return oth_cum_massflow0 - np.sum(oth_massflow0)
 
 
@@ -33,7 +31,7 @@ class MassAreaRelation(EquationBase):
         \\dot_{m} = \\rho_0 V_{m0} A_0
     """
 
-    def _compute_residual(self, kin_Vm0, kin_area0, stc_rhomass0, oth_massflow0):
+    def residual(self, kin_Vm0, kin_area0, stc_rhomass0, oth_massflow0):
         return oth_massflow0 - stc_rhomass0 * kin_Vm0 * kin_area0
 
 
@@ -63,7 +61,7 @@ class TotalStaticMatching(EquationBase):
     satisfied after the first N-R Iteration
     """
 
-    def _compute_residual(
+    def residual(
         self,
         tot_hmass0,
         stc_hmass0,
@@ -83,22 +81,22 @@ class TotalStaticMatching(EquationBase):
 
 
 class FreeVortexDistribution(EquationBase):
-    def _compute_residual(self, kin_rr0, kin_Vt0, kin_rmid0, oth_Vtmid0):
+    def residual(self, kin_rr0, kin_Vt0, kin_rmid0, oth_Vtmid0):
         return kin_rr0 * kin_Vt0 - kin_rmid0 * oth_Vtmid0
 
 
 class ForcedVortexDistribution(EquationBase):
-    def _compute_residual(self, kin_rr0, kin_Vt0, kin_rmid0, oth_Vtmid0):
+    def residual(self, kin_rr0, kin_Vt0, kin_rmid0, oth_Vtmid0):
         return kin_Vt0 / kin_rr0 - oth_Vtmid0 / kin_rmid0
 
 
 class GeneralWhirl(EquationBase):
-    def _compute_residual(self, kin_rr0, kin_Vt0, gwa, gwb, gwn):
+    def residual(self, kin_rr0, kin_Vt0, gwa, gwb, gwn):
         return kin_Vt0 - gwa * kin_rr0**gwn + gwb / kin_rr0
 
 
 class Kinematics(EquationBase):
-    def _compute_residual(
+    def residual(
         self,
         kin_V0,
         kin_Vm0,
@@ -123,7 +121,7 @@ class Kinematics(EquationBase):
 class MeridionalUniform(EquationBase):
     # TODO: Add differential equation for streamline curvature
     # instead of uniform distribution
-    def _compute_residual(
+    def residual(
         self,
         kin_rr0,
         kin_rmid0,

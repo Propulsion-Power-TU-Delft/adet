@@ -6,7 +6,7 @@ class SpeedLinker(EquationBase):
     Linker between inlet and outlet node of a blade row
     """
 
-    def _compute_residual(self, kin_omega0, kin_U1, kin_rr1):
+    def residual(self, kin_omega0, kin_U1, kin_rr1):
         return kin_U1 - kin_omega0 * kin_rr1
 
 
@@ -16,7 +16,7 @@ class ComponentLinker(EquationBase):
     needed to change the relative frame reference
     """
 
-    def _compute_residual(
+    def residual(
         self,
         tot_hmass0,
         tot_hmass1,

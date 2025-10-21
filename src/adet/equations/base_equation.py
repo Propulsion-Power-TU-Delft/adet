@@ -26,15 +26,15 @@ class EquationBase(ABC):
 
     def __init__(self, scaling_factor: ScalingFactor = None):
         self._arguments: tuple[str, ...] = self.read_and_validate_arguments(
-            getfullargspec(self._compute_residual).args[1:],
+            getfullargspec(self.residual).args[1:],
         )
         self.scaling_factor = scaling_factor
 
     def __call__(self, *args):
-        return self._compute_residual(*args)
+        return self.residual(*args)
 
     @abstractmethod
-    def _compute_residual(self, *args):
+    def residual(self, *args):
         """
         Expected format for argument is <node_state>_<var_type><index>
         where the index corresponds to the FlowNode in the order
@@ -63,7 +63,7 @@ class EquationBase(ABC):
         """
         num_args = len(self.arguments)
         dummy_args = np.full((num_args, 1), np.nan)
-        dummy_res = self._compute_residual(*dummy_args)
+        dummy_res = self.residual(*dummy_args)
 
         if hasattr(dummy_res, '__len__'):
             num_equations = len(dummy_res)
@@ -152,7 +152,7 @@ class EquationBase(ABC):
         # Recast it as an instance of Self
         dummy_self = cast(Self, dummy_self)
 
-        res_func = self._compute_residual
+        res_func = self.residual
 
         # Build the residual function arguments as symbols
         symbolic_args = []

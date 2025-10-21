@@ -47,12 +47,12 @@ class LossModel(EquationBase, ABC):
         def generated_res_function(self, *args):
             return args[0] - self.value(*args[1:])
 
-        setattr(cls, '_compute_residual', generated_res_function)
+        setattr(cls, 'residual', generated_res_function)
 
     @abstractmethod
     def value(self, *args, **kwargs):
         raise NotImplementedError
 
-    def _compute_residual(self, *args, **kwargs):
+    def residual(self, *args, **kwargs):
         """This is generated dynamically"""
         pass

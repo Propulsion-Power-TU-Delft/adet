@@ -15,7 +15,7 @@ from adet.registries import DefaultUnitsRegistry, GuessRegistry
 # Given the total state (pt,Tt) and Mach number
 # get the static state and velocity magnitude
 class MachProblem(EquationBase):
-    def _compute_residual(self, oth_Ma, kin_V, stc_speed_sound):
+    def residual(self, oth_Ma, kin_V, stc_speed_sound):
         return stc_speed_sound * oth_Ma - kin_V
 
 
