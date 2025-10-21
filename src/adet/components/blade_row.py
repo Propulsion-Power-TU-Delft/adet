@@ -47,16 +47,23 @@ class BladeRow(BaseComponent):
         self.boundary_conditions['kin']['omega'] = shaft.omega
 
         self._loss_models = loss_models
-        self._add_loss_parameters()
-        self._build_loss_matcher()
+
+        # self._add_loss_parameters()
+        # self._build_loss_matcher()
+
+    # TODO: Fix this for multiple formulations interacting
+    # Total pressure, enthalpy, entropy, etc.
+    # This below is unused for now, loss models are just added as equations
 
     def _add_loss_parameters(self):
+        raise NotImplementedError
         for model in self._loss_models:
             self.boundary_conditions['oth'].update(model.parameters)
             local_indices = {get_index(arg) for arg in model.arguments}
             self._equations[model] = tuple(local_indices)
 
     def _build_loss_matcher(self):
+        raise NotImplementedError
         model_variables = [f'{model.VALUE_VARIABLE}' for model in self._loss_models]
         CLASS_NAME = 'EntropyProduction'
 
@@ -291,7 +298,7 @@ def geometry_main(geo_inputs, color):
     geo1 = RowGeometry(*geo_inputs, semi_cone_angle=True)
     geo2 = RowGeometry(*geo_inputs, semi_cone_angle=False)
 
-    # geo1.plot_meridional_profile('b', debug=False)
+    geo1.plot_meridional_profile('b', debug=False)
     lines = geo2.plot_meridional_profile(color, debug=False)
 
     [ln.set_linewidth(2.5) for ln in lines]

@@ -2,7 +2,7 @@ from inspect import getfullargspec
 from abc import ABC, abstractmethod
 import logging
 import re
-from typing import ClassVar, get_args, cast, Self, TypeAlias
+from typing import ClassVar, get_args, cast, Self
 
 import sympy as sp
 import numpy as np
@@ -13,8 +13,6 @@ from adet.constants import NodeStatesNames
 
 logger = logging.getLogger(__name__)
 
-ScalingFactor: TypeAlias = float | tuple[float, ...] | None
-
 
 class EquationBase(ABC):
     """
@@ -24,7 +22,7 @@ class EquationBase(ABC):
 
     variable_units = ClassVar[dict[str, str]]
 
-    def __init__(self, scaling_factor: ScalingFactor = None):
+    def __init__(self, scaling_factor: float | tuple[float] | None = None):
         self._arguments: tuple[str, ...] = self.read_and_validate_arguments(
             getfullargspec(self.residual).args[1:],
         )

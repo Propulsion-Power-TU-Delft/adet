@@ -1,8 +1,39 @@
+from typing import Any
 from adet.equations import EquationBase
 import numpy as np
 
+from adet.fluid.eos import CasadiEoS
+import CoolProp as cp
+
 
 class DentonProfileLoss(EquationBase):
+    # SKETCH
+    # ======
+    #  ^              Suction
+    #  | Velocity     side
+    #  |            ___________ _ 2 k kin_W1 + delta_W
+    #  |           /           \
+    #  |          /             \ _ kin_W1
+    #  |       kin_W0           /
+    #  |            ___________/ _ k kin_W0 - delta_W
+    #  |           /  Pressure
+    #  |       0  /   side
+    #  |____________________________> Distance along blade
+    #               |          |
+    #            x_by_cs1   x_by_cs2
+
+    def __init__(
+        self,
+        eos: Any,
+        scaling_factor: float | tuple[float] | None = None,
+    ):
+        """
+        This requires intermediate state updates, meaning ad eos object has to be
+        provided manually
+        """
+        self.eos = eos
+        super().__init__(scaling_factor)
+
     @staticmethod
     def _get_velocity_profile(x_by_cs1, x_by_cs2, k_prof, kin_W0, kin_W1):
         # Positions
@@ -41,51 +72,38 @@ class DentonProfileLoss(EquationBase):
                 kin_W1,
             ]
         ).T
-
         return x_by_cs, W_distr_ss, W_distr_ps
 
-    def residual(
-        self,
-        kin_W0,
-        kin_W1,
-        oth_Cd_profile1,
-        oth_bld_len1,
-        oth_bld_space1,
-        tot_p0,
-        tot_p1,
-        stc_rho1,
-    ):
-        delta_W = kin_W1 - kin_W0
-        W_mean = (kin_W1 + kin_W0) / 2
+    def residual(self, kin_W0, kin_W1, oth_x_by_cs1, oth_x_by_cs2, oth_k_prof):
+        num_span = max(kin_W0.shape)
 
-        loss_coeff = (
-            2
-            * oth_Cd_profile1
-            * (oth_bld_len1 / oth_bld_space1)
-            * (
-                2 * (W_mean / kin_W0) ** 3
-                + 6 * (W_mean / kin_W1) * (delta_W / kin_W1) ** 2
-            )
+        _eos_callback = CasadiEoS(
+            f'Denton_HS_{id(self)}',
+            self.eos,
+            cp.HmassSmass_INPUTS,
+            ['p'],
+            num_span,
         )
-
-        return (tot_p1 - tot_p0) - loss_coeff * (0.5 * stc_rho1 * kin_W1**2)
 
 
 class RectVelProfile(EquationBase):
     """
-    See Section 5.4.3 of Greitzer's Internal Flows
+    References
+    ----------
+    - Section 5.4.3 of Greitzer's `Internal Flows`
+    - Section 7.1 of Denton's 1993 hit paper `Loss Mechanisms in Turbomachines`
     """
 
     # Sketch
     #                               Trailing edge
     #  ^                  +---------------+--------  kin_W1
     #  | Velocity         |               |
-    #                     | - - - - - - - |- W_mean
-    #                     |               |
-    #       kin_W0  ------+---------------+
-    #                Leading edge
+    #  |                  | - - - - - - - |- W_mean
+    #  |                  |               |
+    #  |    kin_W0  ------+---------------+
+    #  |             Leading edge
+    #  |___________________________> Distance along blade
     #
-    #                            - > Distance along blade
 
     def residual(
         self,
@@ -96,7 +114,7 @@ class RectVelProfile(EquationBase):
         oth_bld_spacing1,
         tot_p0,
         tot_p1,
-        stc_rho1,
+        stc_rhomass1,
     ):
         delta_W = kin_W1 - kin_W0
         W_mean = (kin_W1 + kin_W0) / 2
@@ -111,7 +129,7 @@ class RectVelProfile(EquationBase):
             )
         )
 
-        return (tot_p1 - tot_p0) - loss_coeff * 0.5 * stc_rho1 * kin_W1**2
+        return (tot_p0 - tot_p1) - loss_coeff * 0.5 * stc_rhomass1 * kin_W1**2
 
 
 if __name__ == '__main__':
@@ -119,7 +137,7 @@ if __name__ == '__main__':
     import casadi as cs
 
     N_SPAN = 5
-    dl = DentonProfileLoss()
+    dl = DentonProfileLoss(None)
     x, V_ss, V_ps = dl._get_velocity_profile(
         np.linspace(0.3, 0.4, N_SPAN),
         np.linspace(0.6, 0.7, N_SPAN),

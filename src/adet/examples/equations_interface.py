@@ -1,3 +1,8 @@
+"""
+This is an example of interfacing directly to the system of equations interface
+instead of building a network of components with pre-made blocks
+"""
+
 # === IMPORTS
 from dataclasses import dataclass
 from typing import Iterable

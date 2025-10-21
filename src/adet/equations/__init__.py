@@ -1,1 +1,1 @@
-from .base_equation import EquationBase, ScalingFactor
+from .base_equation import EquationBase

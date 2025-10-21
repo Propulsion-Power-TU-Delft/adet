@@ -235,15 +235,16 @@ if __name__ == '__main__':
     # Setup a CoolProp EOS
     eos = AbstractState('HEOS', 'CO2')
     NUM_SPAN = 10
-    PROPERTIES = ['T', 'p', 'hmass', 'smass', 'speed_sound']
+    PROPERTIES = ['hmass', 'smass', 'speed_sound']
 
     # Example
     callback = CasadiEoS(
-        name='PT_eos',
-        eos=eos,
-        input_pair=cp.PT_INPUTS,
-        output_props=PROPERTIES,
-        num_span=NUM_SPAN,
+        'PT_eos',
+        eos,
+        cp.PT_INPUTS,
+        PROPERTIES,
+        NUM_SPAN,
+        {'enable_fd': True},
     )
 
     # Type annotation
@@ -255,8 +256,8 @@ if __name__ == '__main__':
         callback,
     )
 
-    v0_val = cs.linspace(100e5, 600e5, NUM_SPAN)
-    v1_val = cs.linspace(400, 600, NUM_SPAN)
+    v0_val = cs.linspace(100e5, 600e5, NUM_SPAN)  # Pressure [Pa]
+    v1_val = cs.linspace(400, 600, NUM_SPAN)  # Temperature [K]
 
     value_str = '\n\t'.join(
         list(

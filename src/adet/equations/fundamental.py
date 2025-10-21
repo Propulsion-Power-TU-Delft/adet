@@ -91,8 +91,8 @@ class ForcedVortexDistribution(EquationBase):
 
 
 class GeneralWhirl(EquationBase):
-    def residual(self, kin_rr0, kin_Vt0, gwa, gwb, gwn):
-        return kin_Vt0 - gwa * kin_rr0**gwn + gwb / kin_rr0
+    def residual(self, kin_rr0, kin_Vt0, gen_whirl_a, gen_whirl_b, gen_whirl_n):
+        return kin_Vt0 - gen_whirl_a * kin_rr0**gen_whirl_n + gen_whirl_b / kin_rr0
 
 
 class Kinematics(EquationBase):
@@ -119,8 +119,12 @@ class Kinematics(EquationBase):
 
 
 class MeridionalUniform(EquationBase):
-    # TODO: Add differential equation for streamline curvature
-    # instead of uniform distribution
+    # = * = * = * = * = * = * = * = * = * = * = * = * = * = *
+    # * BOUNTY (One or multiple beers):                                   =
+    # = Add differential equation for streamline curvature  *
+    # * instead of uniform distribution                     =
+    # = * = * = * = * = * = * = * = * = * = * = * = * = * = *
+
     def residual(
         self,
         kin_rr0,
@@ -135,7 +139,6 @@ class MeridionalUniform(EquationBase):
             r1 = kin_rr0 - kin_rmid0
             r2 = kin_hh0 - kin_height0
         else:
-            # TODO: I do not like this linspace formulation
             unit_space = np.linspace(0, 1, spanwise_stations)
 
             r1 = kin_rr0 - (

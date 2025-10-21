@@ -91,26 +91,16 @@ class SpecificSpeed(EquationBase):
 
 class SizeParameter(EquationBase):
     def residual(
-        self, oth_sizeParameter1, oth_massflow1, stc_rhomass1, tot_hmass0, stc_hmass1
+        self,
+        oth_sizeParameter1,
+        oth_massflow1,
+        stc_rhomass1,
+        tot_hmass0,
+        stc_hmass1,
     ):
         return oth_sizeParameter1 * ((tot_hmass0 - stc_hmass1) ** (1 / 4)) - np.sqrt(
             oth_massflow1 / stc_rhomass1
         )
-
-
-class RadiusRatio(EquationBase):
-    def residual(self, kin_rmid0, kin_rmid1, oth_radiusRatio1):
-        return oth_radiusRatio1 - kin_rmid1 / kin_rmid0
-
-
-class HeightRatio(EquationBase):
-    def residual(self, kin_height0, kin_height1, oth_heightRatio1):
-        return oth_heightRatio1 - kin_height1 / kin_height0
-
-
-class MeridionalVelocityRatio(EquationBase):
-    def residual(self, kin_Vm0, kin_Vm1, oth_VmRatio1):
-        return oth_VmRatio1 - kin_Vm1 / kin_Vm0
 
 
 class AbsoluteMachNumber(EquationBase):

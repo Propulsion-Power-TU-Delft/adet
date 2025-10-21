@@ -13,6 +13,7 @@ import casadi as cs
 from adet.assembly import CasadiSystem
 from adet.components.network import ComponentNetwork
 from adet.diagnostics import SystemDiagnostics
+from adet.losses.profile import RectVelProfile
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, ScalingRegistry
 from adet.tools.context import suppress_output
 from adet.tools.coolprop_utils import CountingAbstractState
@@ -95,7 +96,10 @@ _dfu_reg.from_dict(
         'flowCoeff': 'dimensionless',
         'specificSpeed': 'dimensionless',
         'STratio': 'dimensionless',
+        'Cd_profile': 'dimensionless',
         'sizeParameter': 'meters',
+        'bld_len': 'meters',
+        'bld_spacing': 'meters',
     }
 )
 
@@ -105,7 +109,7 @@ _gss_reg.set_fallback_value(1.0)
 
 # *** Shafts
 static_shaft = Shaft(0.0)
-rotating_shaft = Shaft(Quantity(800, 'rpm'))
+rotating_shaft = Shaft(Quantity(1000, 'rpm'))
 
 # *** Constraints
 CONSTR0 = {
@@ -120,7 +124,7 @@ CONSTR0 = {
         'T': 500,
     },
     'oth': {
-        'flowCoeff': 1.5,
+        'flowCoeff': 1.3,
         # 'cum_massflow': 100,
     },
 }
@@ -133,16 +137,24 @@ CONSTR1 = {
         'height': 0.15,
     },
     'stc': {
-        'p': 2e5,
+        # 'p': 2e5,
     },
     'oth': {
-        # 'STratio': 0.8,
-        # 'workCoeff': 1.0,
+        # PROFILE LOSSES
+        'Cd_profile': 0.002,
+        'bld_len': 0.2,
+        'bld_spacing': 0.2,
+        # NONDIMENSIONAL
+        # 'STratio': 0.98,
+        'workCoeff': 1.2,
         # These two don't converge
         # 'specificSpeed': 0.4,
         # 'sizeParameter': 0.1,
     },
 }
+
+# TODO: Registry for multiple repeating constraints,
+# e.g. loss parameters
 
 # *** Inlet
 inlet = Inlet(CONSTR0)
@@ -154,7 +166,7 @@ row1 = BladeRow(
     CONSTR1,
     rotating_shaft,
     loss_models=[
-        PercentageEntropyLoss(0.0),
+        # PercentageEntropyLoss(0.0),
     ],
     extra_equations={
         FlowCoefficient(): 0,
@@ -162,6 +174,7 @@ row1 = BladeRow(
         SpecificSpeed(): (0, 1),
         SizeParameter(): (0, 1),
         StaticTotalPressRatio(): (0, 1),
+        RectVelProfile(): (0, 1),
     },
 )
 
