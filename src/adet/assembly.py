@@ -526,6 +526,12 @@ class SystemAssembler(ABC):
 
         residuals = []
         for eq, kwmap in self._kwarg_maps.items():
+            if eq.skip_unit_check:
+                if not eq.manual_units:
+                    raise AttributeError('Missing manual units')
+                residuals.append([Quantity(np.nan, unit) for unit in eq.manual_units])
+                continue
+
             args = []
             for arg in eq.arguments:
                 absolute_argument = kwmap[arg]

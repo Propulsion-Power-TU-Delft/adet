@@ -20,7 +20,8 @@ class EquationBase(ABC):
     node variable creation and simple storage of the last arguments.
     """
 
-    variable_units = ClassVar[dict[str, str]]
+    skip_unit_check: bool = False
+    manual_units: str | tuple[str, ...] = ()
 
     def __init__(self, scaling_factor: float | tuple[float, ...] | None = None):
         self._arguments: tuple[str, ...] = self.read_and_validate_arguments(

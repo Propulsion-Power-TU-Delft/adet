@@ -4,6 +4,7 @@ Module that gathers fundamental equations for internal flows
 
 from adet.equations import EquationBase
 import numpy as np
+import casadi as cs
 
 
 class MassConservation(EquationBase):
@@ -157,68 +158,55 @@ class MeridionalUniform(EquationBase):
 
 
 class ParabolicCamberline(EquationBase):
-    @staticmethod
-    def _compute_parabola(geo_beta0, geo_beta1):
-        a = 4 * (0.5 * (np.tan(geo_beta0) - np.tan(geo_beta1))) ** 2
-        b = 4 * (0.5 * (np.tan(geo_beta0) - np.tan(geo_beta1))) * (-np.tan(geo_beta0))
-        c = 1 + (np.tan(geo_beta0)) ** 2
-        return a, b, c
+    skip_unit_check = True
+    manual_units = ('m', 'm')
 
     @staticmethod
-    def _parabolic_arc_len(a, b, c):
-        d1 = ((b + 2 * a) * np.sqrt(a + b + c) - b * np.sqrt(c)) / (4 * a)
-        d2 = (
-            (4 * a * c - b**2)
-            / (8 * a**1.5)
-            * np.log(
-                (2 * a + b + 2 * np.sqrt(a**2 + a * b + a * c))
-                / (b + 2 * np.sqrt(a * c))
-            )
-        )
+    def _compute_parabola(geo_beta0, geo_beta1, chord):
+        """
+        Compute a, b for y = ax^2 + bx such that:
+        dy/dx at x=0 = tan(beta0), at x=L = tan(beta1)
+        """
+        delta_angle = geo_beta1 - geo_beta0
+        tan0 = np.tan(delta_angle / 2)
+        tan1 = np.tan(-delta_angle / 2)
 
-        return d1 + d2
+        a = (tan1 - tan0) / (2 * chord)
+        b = tan0
+
+        a = cs.fmax(cs.fabs(a), 0.001 * chord)
+
+        return a, b
+
+    @staticmethod
+    def _parabolic_arc_len(a, b, chord):
+        """
+        Exact arc length of y = ax² + bx from x = 0 to x = chord_ax
+        """
+        term1 = 2 * a * chord + b
+        term0 = b
+
+        sqrt1 = np.sqrt(1 + term1**2)
+        sqrt0 = np.sqrt(1 + term0**2)
+
+        asinh1 = np.arcsinh(term1)
+        asinh0 = np.arcsinh(term0)
+
+        length = (1 / (4 * a)) * (term1 * sqrt1 + asinh1 - term0 * sqrt0 - asinh0)
+
+        return length
 
     def residual(
         self,
         geo_beta0,
         geo_beta1,
-        geo_pitch1,
         geo_chord1,
         geo_stagger1,
         geo_chord_ax1,
         geo_camb_len1,
     ):
-        a, b, c = self._compute_parabola(0.0, geo_beta0 - geo_beta1)
-        d = self._parabolic_arc_len(a, b, c)
-
+        a, b = self._compute_parabola(geo_beta0, geo_beta1, geo_chord1)
+        arc_len = self._parabolic_arc_len(a, b, geo_chord1)
         r1 = geo_chord_ax1 - geo_chord1 * np.cos(geo_stagger1)
-        r2 = geo_camb_len1 - d * geo_chord1
-
+        r2 = geo_camb_len1 - arc_len
         return r1, r2
-
-
-if __name__ == '__main__':
-    import matplotlib.pyplot as plt
-
-    pc = ParabolicCamberline()
-    angle = np.pi / 1.4
-    chord = 1 / np.cos(angle)
-
-    a, b, c = pc._compute_parabola(0.0, angle)
-    length = pc._parabolic_arc_len(a, b, c) * chord
-    print(f'Length is {length}')
-
-    def parabola(x):
-        return a * x**2 + b * 2 + c
-
-    def line(x):
-        return 2 * a * x + b
-
-    fig, ax = plt.subplots()
-
-    x = np.linspace(0, 1, 100)
-    ax.plot(x, parabola(x))
-    ax.plot(x, line(x))
-    ax.set_aspect('equal')
-    ax.grid()
-    fig.show()
