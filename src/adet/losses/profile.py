@@ -63,6 +63,8 @@ class DentonProfileLoss(EquationBase):
     This function is ONLY compatible with CasADi
     """
 
+    skip_unit_check = False
+
     def __init__(
         self,
         eos: Any,
@@ -138,7 +140,7 @@ class DentonProfileLoss(EquationBase):
                 _eos_callback,
             )
 
-        stc_hmass_dst = [rlt_hmass0 - W_distr[:, i] for i in range(NUM_STREAM)]
+        stc_hmass_dst = [rlt_hmass0 - W_distr[:, i] ** 2 / 2 for i in range(NUM_STREAM)]
 
         # Extract p, T, and density distributions from abstract state
         p_dst, T_dst, rho_dst = [cs.DM(num_span, NUM_STREAM) for _ in range(3)]

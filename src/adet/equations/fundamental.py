@@ -5,6 +5,8 @@ Module that gathers fundamental equations for internal flows
 from adet.equations import EquationBase
 import numpy as np
 import casadi as cs
+import sympy as sp
+from pint.facets.plain import PlainQuantity
 
 
 class MassConservation(EquationBase):
@@ -157,6 +159,28 @@ class MeridionalUniform(EquationBase):
         return r1, r2, r3
 
 
+def is_casady_type(x):
+    return isinstance(x, (cs.DM, cs.MX, cs.SX))
+
+
+def safe_min_clip(x, min_value):
+    """
+    Lower clipping of the absolute vaue of x
+    with respect to a minimum value.
+    Type safe for casadi, numpy and pint
+    """
+    if is_casady_type(x):
+        x = cs.fmax(cs.fabs(x), min_value)
+    elif isinstance(x, PlainQuantity):
+        x = np.clip(np.abs(x.magnitude), min_value * x.units, None)
+    elif isinstance(x, sp.Symbol):
+        pass
+    else:
+        x = np.clip(np.abs(x), min_value, None)
+
+    return x
+
+
 class ParabolicCamberline(EquationBase):
     skip_unit_check = True
     manual_units = ('m', 'm')
@@ -174,7 +198,7 @@ class ParabolicCamberline(EquationBase):
         a = (tan1 - tan0) / (2 * chord)
         b = tan0
 
-        a = cs.fmax(cs.fabs(a), 0.001 * chord)
+        a = safe_min_clip(a, 0.001)
 
         return a, b
 

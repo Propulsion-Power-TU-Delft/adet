@@ -21,13 +21,19 @@ class EquationBase(ABC):
     """
 
     skip_unit_check: bool = False
-    manual_units: str | tuple[str, ...] = ()
+    manual_units: tuple[str, ...] = ()
 
     def __init__(self, scaling_factor: float | tuple[float, ...] | None = None):
         self._arguments: tuple[str, ...] = self.read_and_validate_arguments(
             getfullargspec(self.residual).args[1:],
         )
         self.scaling_factor = scaling_factor
+
+        # If the unit are not checked, make sure the user added units
+        if self.skip_unit_check and not self.manual_units:
+            raise AttributeError(
+                f'Missing manual units for unchecked equation {self.__class__.__name__}'
+            )
 
     def __call__(self, *args):
         return self.residual(*args)
