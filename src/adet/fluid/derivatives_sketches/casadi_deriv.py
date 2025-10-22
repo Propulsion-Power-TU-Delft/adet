@@ -139,7 +139,7 @@ all_arguments = [p, T, pt, Tt, V]
 def enthalpy_conversion(p, T, pt, Tt, V):
     h = eos_func(cs.vertcat(p, T))
     ht = eos_func(cs.vertcat(pt, Tt))
-    return ht - h - V**2 / 2  # type:ignore
+    return ht - h - V**2 / 2  # pyright:ignore
 
 
 # Make residual close to 0

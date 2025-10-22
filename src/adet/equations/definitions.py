@@ -12,13 +12,13 @@ class AngleDeflection(EquationBase):
 
 
 class RadiusRatio(EquationBase):
-    def residual(self, kin_rmid0, kin_rmid1, oth_radiusRatio1):
-        return oth_radiusRatio1 - kin_rmid1 / kin_rmid0
+    def residual(self, geo_rmid0, geo_rmid1, oth_radiusRatio1):
+        return oth_radiusRatio1 - geo_rmid1 / geo_rmid0
 
 
 class HeightRatio(EquationBase):
-    def residual(self, kin_height0, kin_height1, oth_heightRatio1):
-        return oth_heightRatio1 - kin_height1 / kin_height0
+    def residual(self, geo_height0, geo_height1, oth_heightRatio1):
+        return oth_heightRatio1 - geo_height1 / geo_height0
 
 
 class MeridionalVelocityRatio(EquationBase):

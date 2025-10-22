@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import NDArray
@@ -178,7 +179,7 @@ class Line:
         return self(u)
 
 
-class MeridionalCurve(ABC):
+class GenericCurve(ABC):
     """Abstract base class for meridional curves in turbomachinery flow paths.
 
     This class defines the interface for creating different types of meridional curves
@@ -231,53 +232,21 @@ class MeridionalCurve(ABC):
         self.angle_in: float = angle_in
         self.angle_out: float = angle_out
 
-        self.z_coords: NDArray
-        self.r_coords: NDArray
+        self.z_coords: NDArray = np.array([])
+        self.r_coords: NDArray = np.array([])
 
         self.create_curve()
-        self.integrate_area()
+        self.area = self.get_area()
 
     @abstractmethod
     def create_curve(self):
-        """Creates the curve profile in the meridional plane.
-
-        This method must be implemented by subclasses to define how the curve
-        is generated between the specified endpoints with the given tangent angles.
-        The implementation should set the z_coords and R_coords attributes.
-        Returns
-        -------
-        None
-        """
         raise NotImplementedError
 
     @abstractmethod
-    def integrate_area(self):
-        """Calculates the area under the meridional curve.
-
-        This method must be implemented by subclasses to compute the area
-        bounded by the curve, the z-axis, and vertical lines at z_in and z_out.
-        The implementation should set the area attribute.
-
-        Returns
-        -------
-        None
-        """
+    def get_area(self):
         raise NotImplementedError
 
     def plot_curve(self, color: str | None = None) -> Line2D:
-        """Plots the meridional curve.
-
-        Parameters
-        ----------
-        ax : matplotlib.axes.Axes
-            The axes object on which to plot the curve
-        filename : str, optional
-            If provided, saves the plot to a file with this name
-
-        Returns
-        -------
-        Line2D
-        """
         line = plt.plot(self.z_coords, self.r_coords)[0]
 
         if color:
@@ -286,32 +255,24 @@ class MeridionalCurve(ABC):
         return line
 
 
-class BezierCurve(MeridionalCurve):
+class BezierCurve(GenericCurve):
     """
     Creates a cubic Bezier curve between two points with specified tangent angles.
+    The curve is defined by four control points:
+
+    1. Start point
+    2. Point along inlet tangent line at 1/3 chord distance
+    3. Point along outlet tangent line at 1/3 chord distance
+    4. End point
+
+    .. image:: ../svg/bezier_curve.svg
+        :width: 400
+        :alt: Bezier curve control points
+
+    Uses the bezier library to create and evaluate the curve.
     """
 
     def create_curve(self):
-        """Creates the cubic Bezier curve profile using four control points.
-
-        The curve is defined by four control points:
-
-        1. Start point
-        2. Point along inlet tangent line at 1/3 chord distance
-        3. Point along outlet tangent line at 1/3 chord distance
-        4. End point
-
-        .. image:: ../svg/bezier_curve.svg
-            :width: 400
-            :alt: Bezier curve control points
-
-        Uses the bezier library to create and evaluate the curve.
-
-        Returns
-        -------
-        None
-            Sets ``z_coords`` and ``R_coords`` class attributes.
-        """
         start_point = Point(self.z_in, self.r_in)
         end_point = Point(self.z_out, self.r_out)
 
@@ -336,43 +297,11 @@ class BezierCurve(MeridionalCurve):
             np.linspace(0, 1, self.n_points)
         )
 
-    def integrate_area(self):
-        """Calculates the area under the Bezier curve using numerical integration.
-
-        Uses numpy's trapezoid rule integration to compute the area under the curve.
-
-        Returns
-        -------
-        float
-            The computed area under the curve.
-        """
-        self.area = np.trapezoid(self.r_coords, self.z_coords)
-
-        return self.area
-
-    def plot_control_polygon(self, ax):
-        """Plots the control polygon of the Bezier curve."""
-        ax.plot(self.z_coords, self.r_coords, 'k-', label='Bezier Curve', linewidth=2)
-        # Plot control polygon
-        ax.plot(
-            self._z_cont_points,
-            self._r_cont_points,
-            'r--',
-            label='Control Polygon',
-            alpha=0.5,
-        )
-
-        # Plot control points
-        ax.scatter(
-            self._z_cont_points,
-            self._r_cont_points,
-            c='r',
-            s=100,
-            label='Control Points',
-        )
+    def get_area(self):
+        return np.trapezoid(self.r_coords, self.z_coords)
 
 
-class CSplineCurve(MeridionalCurve):
+class CSplineCurve(GenericCurve):
     """
     Creates a cubic spline curve between two points with specified tangent angles.
 
@@ -402,7 +331,7 @@ class CSplineCurve(MeridionalCurve):
         self.z_coords = np.linspace(self.z_in, self.z_out, self.n_points)
         self.r_coords = self.curve_instance(self.z_coords)
 
-    def integrate_area(self):
+    def get_area(self):
         """Calculates the exact area under the cubic spline using the antiderivative.
 
         Computes the area by evaluating the antiderivative of the cubic spline
@@ -418,10 +347,10 @@ class CSplineCurve(MeridionalCurve):
         def primitive(z):
             return a * z**4 / 4 + b * z**3 / 3 + c * z**2 / 2 + d * z
 
-        self.area = primitive(self.z_out) - primitive(self.z_in)
+        return primitive(self.z_out) - primitive(self.z_in)
 
 
-class StraightLine(MeridionalCurve):
+class StraightLine(GenericCurve):
     def __init__(
         self,
         z_in: float,
@@ -457,7 +386,7 @@ class StraightLine(MeridionalCurve):
             self.z_coords = np.linspace(self.z_in, self.z_out, self.n_points)
             self.r_coords = self.curve_instance(self.z_coords)
 
-    def integrate_area(self):
+    def get_area(self):
         """Calculates the area under the straight line using exact integration.
 
         For non-vertical lines, uses the antiderivative of the line equation.
@@ -473,9 +402,11 @@ class StraightLine(MeridionalCurve):
             return self.slope * z**2 / 2 + self.r_in * z
 
         if hasattr(self, 'curve_instance'):
-            self.area = primitive(self.z_out) - primitive(self.z_in)
+            area = primitive(self.z_out) - primitive(self.z_in)
         else:
-            self.area = 0
+            area = 0
+
+        return area
 
 
 if __name__ == '__main__':

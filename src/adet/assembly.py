@@ -1014,8 +1014,8 @@ class CasadiSystem(SystemAssembler):
     @staticmethod
     def _create_symbols(names: Sequence[str], num_span: int, scale_suffix: str):
         """Helper to create symbols and their scaled versions."""
-        symbols = [cs.MX.sym(name, num_span) for name in names]  # type:ignore
-        scales = [cs.MX.sym(name + scale_suffix, num_span) for name in names]  # type:ignore
+        symbols = [cs.MX.sym(name, num_span) for name in names]  # pyright:ignore
+        scales = [cs.MX.sym(name + scale_suffix, num_span) for name in names]  # pyright:ignore
         return symbols, scales
 
     def _build_base_symbols(self):
@@ -1117,7 +1117,7 @@ class CasadiSystem(SystemAssembler):
 
         # Build scaling symbols for all equations
         self._eq_scales_sym = [
-            cs.MX.sym(f'eq{idx}{self.scale_suffix}', num_span)  # type:ignore
+            cs.MX.sym(f'eq{idx}{self.scale_suffix}', num_span)  # pyright:ignore
             for idx in range(self.num_equations)
         ]
 

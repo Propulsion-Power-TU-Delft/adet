@@ -3,9 +3,9 @@ Basic tools for string manipulation
 """
 
 import re
-from typing import get_args, cast, Literal
+from typing import get_args, cast
+from adet.constants import NodeStatesNames
 
-NodeStatesNames = Literal['oth', 'kin', 'stc', 'tot', 'rlt']
 STATE_NAMES = get_args(NodeStatesNames)
 
 

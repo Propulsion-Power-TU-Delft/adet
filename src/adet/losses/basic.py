@@ -1,5 +1,4 @@
 from adet.losses import LossModel
-from adet.equations import ScalingFactor
 
 
 # TODO: improve parameters detection
@@ -7,7 +6,7 @@ class PercentageEntropyLoss(LossModel):
     definition = 'delta_smass'
     identifier = 'pct'
 
-    def __init__(self, percentage_loss: float, scaling_factor: ScalingFactor = None):
+    def __init__(self, percentage_loss: float, scaling_factor=None):
         parameters = {
             'percentage_loss': percentage_loss,
         }

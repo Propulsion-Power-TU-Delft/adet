@@ -1,92 +1,14 @@
-from typing import Any
+from typing import Any, Callable, cast
 from adet.equations import EquationBase
-import numpy as np
 
 from adet.fluid.eos import CasadiEoS
 import CoolProp as cp
+import casadi as cs
+
+from adet.tools.coolprop_utils import CountingAbstractState
 
 
-class DentonProfileLoss(EquationBase):
-    # SKETCH
-    # ======
-    #  ^              Suction
-    #  | Velocity     side
-    #  |            ___________ _ 2 k kin_W1 + delta_W
-    #  |           /           \
-    #  |          /             \ _ kin_W1
-    #  |       kin_W0           /
-    #  |            ___________/ _ k kin_W0 - delta_W
-    #  |           /  Pressure
-    #  |       0  /   side
-    #  |____________________________> Distance along blade
-    #               |          |
-    #            x_by_cs1   x_by_cs2
-
-    def __init__(
-        self,
-        eos: Any,
-        scaling_factor: float | tuple[float] | None = None,
-    ):
-        """
-        This requires intermediate state updates, meaning ad eos object has to be
-        provided manually
-        """
-        self.eos = eos
-        super().__init__(scaling_factor)
-
-    @staticmethod
-    def _get_velocity_profile(x_by_cs1, x_by_cs2, k_prof, kin_W0, kin_W1):
-        # Positions
-        x_by_cs = np.array(
-            [
-                0.0 * x_by_cs1,
-                x_by_cs1,
-                x_by_cs2,
-                x_by_cs1 / x_by_cs1,  # = 1 (with the correct shape)
-            ]
-        ).T
-
-        # Velocity difference (out - in)
-        delta_W = kin_W1 - kin_W0
-
-        # Pressure values, suction and pressure side
-        W_mid_ss = 2 * k_prof * kin_W1 + delta_W
-        W_mid_ps = k_prof * kin_W0 - delta_W
-
-        # Full velocity distribution
-        # -> Suction Side
-        W_distr_ss = np.array(
-            [
-                kin_W0,
-                W_mid_ss,
-                W_mid_ss,
-                kin_W1,
-            ]
-        ).T
-        # -> Pressure Side
-        W_distr_ps = np.array(
-            [
-                0.0 * kin_W0,
-                W_mid_ps,
-                W_mid_ps,
-                kin_W1,
-            ]
-        ).T
-        return x_by_cs, W_distr_ss, W_distr_ps
-
-    def residual(self, kin_W0, kin_W1, oth_x_by_cs1, oth_x_by_cs2, oth_k_prof):
-        num_span = max(kin_W0.shape)
-
-        _eos_callback = CasadiEoS(
-            f'Denton_HS_{id(self)}',
-            self.eos,
-            cp.HmassSmass_INPUTS,
-            ['p'],
-            num_span,
-        )
-
-
-class RectVelProfile(EquationBase):
+class IncRectVelocity(EquationBase):
     """
     References
     ----------
@@ -132,43 +54,219 @@ class RectVelProfile(EquationBase):
         return (tot_p0 - tot_p1) - loss_coeff * 0.5 * stc_rhomass1 * kin_W1**2
 
 
+class DentonProfileLoss(EquationBase):
+    """
+    Axial blade profile losses based on simplified pressure distribution
+
+    Warning
+    -------
+    This function is ONLY compatible with CasADi
+    """
+
+    def __init__(
+        self,
+        eos: Any,
+        scaling_factor: float | tuple[float] | None = None,
+    ):
+        """
+        This requires intermediate state updates, meaning ad eos object has to be
+        provided manually
+        """
+        self.eos = eos
+        self._eos_callback = None
+        super().__init__(scaling_factor)
+
+    @staticmethod
+    def _build_velocity_profile(
+        x_by_cs1, x_by_cs2, k_prof, kin_W0, kin_W1
+    ) -> tuple[cs.DM, cs.DM, cs.DM]:
+        """Build the velocity proile"""
+        # SKETCH
+        # ======
+        #  ^              Suction
+        #  | Velocity     side
+        #  |            ___________ _ 2 k kin_W1 + delta_W
+        #  |           /           \
+        #  |          /             \ _ kin_W1
+        #  |       kin_W0           /
+        #  |            ___________/ _ k kin_W0 - delta_W
+        #  |           /  Pressure
+        #  |       0  /   side
+        #  |____________________________> Distance along blade
+        #               |          |
+        #            x_by_cs1   x_by_cs2
+        # Positions
+        x_by_cs = cs.horzcat(0.0 * x_by_cs1, x_by_cs1, x_by_cs2, x_by_cs1 / x_by_cs1)
+
+        # Velocity values
+        CLIP_RATIO = 5  # Clip pressure side to inlet W / ratio
+        delta_W = kin_W1 - kin_W0
+        W_mid_ps = cs.fmax(k_prof * kin_W0 - delta_W, kin_W0 / CLIP_RATIO)
+        W_mid_ss = 2 * k_prof * kin_W1 + delta_W
+
+        # Full velocity distribution
+        W_distr_ss = cs.horzcat(1.0 * kin_W0, W_mid_ss, W_mid_ss, kin_W1)  # Suction
+        W_distr_ps = cs.horzcat(0.0 * kin_W0, W_mid_ps, W_mid_ps, kin_W1)  # Pressure
+
+        return x_by_cs, W_distr_ss, W_distr_ps
+
+    def _compute_thermo_distributions(self, rlt_hmass0, rlt_smass0, W_distr):
+        """
+        Compute the pressure distribution from total enthalpy and entorpy
+        at the inlet
+
+        Note
+        ----
+        This approximates the flow as isentropic along the blade itself
+        and is valid only for axial machines where total relative enthalpy
+        is conserved
+        """
+        num_span = max(rlt_hmass0.shape)
+        NUM_STREAM = 4
+
+        if self._eos_callback is None:
+            _eos_callback = CasadiEoS(
+                f'Denton_HS_{id(self)}',
+                self.eos,
+                cp.HmassSmass_INPUTS,
+                ['p', 'rhomass', 'T'],
+                num_span,
+            )
+            # ! Manual typing annotation !
+            self._eos_callback = cast(
+                Callable[..., tuple[cs.DM, cs.DM, cs.DM]],
+                _eos_callback,
+            )
+
+        stc_hmass_dst = [rlt_hmass0 - W_distr[:, i] for i in range(NUM_STREAM)]
+
+        # Extract p, T, and density distributions from abstract state
+        p_dst, T_dst, rho_dst = [cs.DM(num_span, NUM_STREAM) for _ in range(3)]
+        for i, h in enumerate(stc_hmass_dst):
+            p_dst[:, i], rho_dst[:, i], T_dst[:, i] = self._eos_callback(h, rlt_smass0)
+
+        return p_dst, rho_dst, T_dst
+
+    @staticmethod
+    def _trapezoid(y, x):
+        """Trapezoidal rule"""
+        dx = x[:, 1:] - x[:, :-1]
+        integrand = (y[:, :-1] + y[:, 1:]) * dx / 2
+        return cs.sum2(integrand)
+
+    def residual(
+        self,
+        rlt_hmass0,
+        rlt_smass0,
+        kin_W0,
+        kin_Wm0,
+        kin_W1,
+        kin_Wm1,
+        kin_Vt0,
+        kin_Vt1,
+        stc_rhomass0,
+        stc_rhomass1,
+        oth_x_by_cs1,
+        oth_x_by_cs2,
+        oth_ax_chord,
+        oth_k_prof,
+    ):
+        x_by_cs, W_distr_ss, W_distr_ps = self._build_velocity_profile(
+            oth_x_by_cs1, oth_x_by_cs2, oth_k_prof, kin_W0, kin_W1
+        )
+
+        p_ss, rho_ss, T_ss = self._compute_thermo_distributions(
+            rlt_hmass0, rlt_smass0, W_distr_ss
+        )
+        p_ps, rho_ps, T_ps = self._compute_thermo_distributions(
+            rlt_hmass0, rlt_smass0, W_distr_ps
+        )
+
+        # Trapezoidal integration (can't use np.trapezoidal for differentiability)
+        # (trapezoidal rule is exact because everything is linear)
+        pressure_integral = self._trapezoid(p_ps - p_ss, x_by_cs)
+
+        # TODO: Check these definitions
+        delta_Vt = cs.fabs(kin_Vt0 - kin_Vt0)
+        W_mean = (kin_W0 + kin_W1) / 2
+        rhomass_mean = (kin_W0 + kin_W1) / 2
+
+        r1 = rhomass_mean * W_mean * delta_Vt - pressure_integral * oth_ax_chord
+
+        return p_ss, p_ps
+
+
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     import casadi as cs
+    import numpy as np
 
-    N_SPAN = 5
-    dl = DentonProfileLoss(None)
-    x, V_ss, V_ps = dl._get_velocity_profile(
-        np.linspace(0.3, 0.4, N_SPAN),
-        np.linspace(0.6, 0.7, N_SPAN),
-        np.ones(N_SPAN) * 0.6,
-        np.linspace(100, 200, N_SPAN),
-        np.linspace(150, 225, N_SPAN),
-    )
+    # NOTE: You can mix and match cs.DM and
+    # numpy array, but remember casadi is consistent
+    # with shape manipulation and extraction, and every
+    # array is AT LEAST 2D
+    N_SPAN = 45
+    eos = CountingAbstractState('HEOS', 'Air')
 
-    x1 = cs.MX.sym('x1')  # type:ignore
-    x2 = cs.MX.sym('x2')  # type:ignore
-    k = cs.MX.sym('k')  # type:ignore
-    W0 = cs.MX.sym('W0')  # type:ignore
-    W1 = cs.MX.sym('W1')  # type:ignore
+    # Define example values
+    W0 = np.linspace(100, 300, N_SPAN)
+    W1 = np.linspace(175, 400, N_SPAN)
+    x_by_cs1 = cs.linspace(0.3, 0.3, N_SPAN)
+    x_by_cs2 = np.linspace(0.6, 0.6, N_SPAN)
+    dummy_ht = cs.DM.ones(N_SPAN) * 5e5  # pyright:ignore
+    dummy_st = np.ones(N_SPAN) * 4000
+    Cd = 0.002 * np.ones(N_SPAN)
+    bld_spc = 0.2 * np.ones(N_SPAN)
+    bld_len = 0.2 * np.ones(N_SPAN)
+    k_prof = np.ones(N_SPAN) * 0.6
 
-    dl._get_velocity_profile(x1, x2, k, W0, W1)
+    # Test
+    dl = DentonProfileLoss(eos)
+    x_by_cs, V_ss, V_ps = dl._build_velocity_profile(x_by_cs1, x_by_cs2, k_prof, W0, W1)
+    p_ss, rho_ss, T_ss = dl._compute_thermo_distributions(dummy_ht, dummy_st, V_ss)
+    p_ps, rho_ps, T_ps = dl._compute_thermo_distributions(dummy_ht, dummy_st, V_ps)
+
+    # TODO: Test with symbolics
+    # x1_sym = cs.MX.sym('x1')  # pyright:ignore
+    # x2_sym = cs.MX.sym('x2')  # pyright:ignore
+    # k_sym = cs.MX.sym('k')  # pyright:ignore
+    # W0_sym = cs.MX.sym('W0')  # pyright:ignore
+    # W1_sym = cs.MX.sym('W1')  # pyright:ignore
 
     # Plots
-    fig, ax = plt.subplots()
-    cmap = plt.get_cmap('Dark2')
+    # => First station should clip to W_1 / 5
+    fig, ax = plt.subplots(1, 2, figsize=(15, 8))
+    cmap = plt.get_cmap('viridis')
     for i in range(N_SPAN):
-        color = cmap(i / (N_SPAN - 1))
-        ax.plot(x[i], V_ss[i], color=color)
-        ax.plot(x[i], V_ps[i], color=color)
+        color = cmap(i / (N_SPAN))
+        ax[0].plot(np.array(x_by_cs)[i], np.array(V_ss)[i], color=color)
+        ax[0].plot(np.array(x_by_cs)[i], np.array(V_ps)[i], color=color)
 
-    ax.grid(True)
+        ax[1].plot(np.array(x_by_cs)[i], np.array(p_ss)[i], color=color)
+        ax[1].plot(np.array(x_by_cs)[i], np.array(p_ps)[i], color=color)
+
+        ax[0].grid(True)
+        ax[1].grid(True)
 
     fig.show()
     # plt.close('all')
 
 
-# This is being ported
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+#   ____   _     _     __  __          _       _        #
+#  / __ \ | |   | |   |  \/  |        | |     | |       #
+# | |  | || | __| |   | \  / | ___  __| | ___ | | ___   #
+# | |  | || |/ _  |   | |\/| |/ _ \/ _  |/ _ \| |/ __|  #
+# | |__| || ||(_| |   | |  | ||(_)||(_| || __/| |\__ \  #
+#  \____/ |_|\____|   |_|  |_|\___/\____|\___||_||___/  #
+#                                                       #
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+# NOTE: These below are model of previous implementations
+# available in turbosim, they are not in a working state and only
+# act as reference for the implementations
+
+
 # class OLD_DentonProfileLosses(EquationBase):
 #     def BBL_loop(self, p, *data):
 #         """

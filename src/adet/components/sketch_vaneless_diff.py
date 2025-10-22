@@ -24,16 +24,16 @@ def solve_diffuser_problem(r2, r3, p2, T2, Vm2, Vt2, eos, entropy_gen_pct, num_p
     r_dist = np.linspace(r2, r3, num_points)
 
     # State: [Vm, Vt, p, theta]
-    r = cs.SX.sym('r')  # type:ignore
+    r = cs.SX.sym('r')  # pyright:ignore
 
-    Vm = cs.SX.sym('Vm')  # type:ignore
-    Vt = cs.SX.sym('Vt')  # type:ignore
+    Vm = cs.SX.sym('Vm')  # pyright:ignore
+    Vt = cs.SX.sym('Vt')  # pyright:ignore
 
-    p = cs.SX.sym('p')  # type:ignore
-    s = cs.SX.sym('s')  # type:ignore
-    rho = cs.SX.sym('rho')  # type:ignore
+    p = cs.SX.sym('p')  # pyright:ignore
+    s = cs.SX.sym('s')  # pyright:ignore
+    rho = cs.SX.sym('rho')  # pyright:ignore
 
-    theta = cs.SX.sym('theta')  # type:ignore
+    theta = cs.SX.sym('theta')  # pyright:ignore
 
     ode_variables = cs.vertcat(r, Vm, Vt, p, theta)
 

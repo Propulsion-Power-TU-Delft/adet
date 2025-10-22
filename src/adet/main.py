@@ -13,7 +13,8 @@ import casadi as cs
 from adet.assembly import CasadiSystem
 from adet.components.network import ComponentNetwork
 from adet.diagnostics import SystemDiagnostics
-from adet.losses.profile import RectVelProfile
+from adet.equations.simplelosses import ZeroDeviation
+from adet.losses.profile import IncRectVelocity
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, ScalingRegistry
 from adet.tools.context import suppress_output
 from adet.tools.coolprop_utils import CountingAbstractState
@@ -114,8 +115,10 @@ rotating_shaft = Shaft(Quantity(1000, 'rpm'))
 # *** Constraints
 CONSTR0 = {
     'kin': {
-        'meridional_angle': Quantity(0, 'deg'),
         'alpha': Quantity(25, 'deg'),
+    },
+    'geo': {
+        'meridional_angle': Quantity(0, 'deg'),
         'rmid': 0.5,
         'height': 0.2,
     },
@@ -131,8 +134,10 @@ CONSTR0 = {
 
 CONSTR1 = {
     'kin': {
-        'meridional_angle': 0.0,
         # 'alpha': Quantity(0, 'deg'),
+    },
+    'geo': {
+        'meridional_angle': 0.0,
         'rmid': 0.55,
         'height': 0.15,
     },
@@ -169,12 +174,13 @@ row1 = BladeRow(
         # PercentageEntropyLoss(0.0),
     ],
     extra_equations={
+        ZeroDeviation(): 1,  # No deviation
+        IncRectVelocity(): (0, 1),  # Profile loss
         FlowCoefficient(): 0,
         WorkCoefficient(): (0, 1),
         SpecificSpeed(): (0, 1),
         SizeParameter(): (0, 1),
         StaticTotalPressRatio(): (0, 1),
-        RectVelProfile(): (0, 1),
     },
 )
 

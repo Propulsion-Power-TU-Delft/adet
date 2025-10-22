@@ -75,7 +75,7 @@ inlet_conditions = {}
 # Tweak initial guess
 for vals in ss.boundary_conditions[0].values():
     _g_reg = GuessRegistry()
-    _g_reg.from_dict(vals)  # type:ignore
+    _g_reg.from_dict(vals)  # pyright:ignore
 
     p_guess = _g_reg.get('p')
     T_guess = _g_reg.get('T')

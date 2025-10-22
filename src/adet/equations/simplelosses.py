@@ -45,3 +45,10 @@ class PercentageEntropyLoss(EquationBase):
 class FixedEnthalpyLoss(EquationBase):
     def residual(self, tot_hmass0, oth_htis0, oth_ent_loss0):
         return tot_hmass0 - (oth_htis0 + oth_ent_loss0)
+
+
+class ZeroDeviation(EquationBase):
+    def residual(self, kin_alpha0, geo_alpha0, geo_beta0, kin_beta0):
+        r1 = kin_alpha0 - geo_alpha0
+        r2 = kin_beta0 - geo_beta0
+        return r1, r2

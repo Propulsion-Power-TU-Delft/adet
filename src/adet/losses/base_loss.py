@@ -5,7 +5,7 @@ Library of basics loss models
 from inspect import getfullargspec
 from abc import ABC, abstractmethod
 from typing import Literal, TypeAlias
-from adet.equations import EquationBase, ScalingFactor
+from adet.equations import EquationBase
 
 
 LossType: TypeAlias = Literal['delta_smass', 'delta_tot_p', 'delta_tot_hmass']
@@ -20,7 +20,11 @@ class LossModel(EquationBase, ABC):
     identifier: str
     """Unique identifier for that model"""
 
-    def __init__(self, scaling_factor: ScalingFactor = None, **parameters):
+    def __init__(
+        self,
+        scaling_factor: float | tuple[float, ...] | None = None,
+        **parameters,
+    ):
         self._generate_residual_method()
         self.parameters = parameters
         super().__init__(scaling_factor)

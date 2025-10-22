@@ -265,22 +265,16 @@ class VariableContainer:
 
 
 KinematicVariable = Literal[
-    'rr',
-    'rmid',
     'V',
-    'omega',
     'Vm',
-    'W',
-    'Wm',
     'Vt',
+    'W',
+    'Wt',
+    'Wm',
     'U',
     'beta',
     'alpha',
-    'Wt',
-    'height',
-    'hh',
-    'area',
-    'meridional_angle',
+    'omega',
 ]
 
 

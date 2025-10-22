@@ -273,7 +273,7 @@ def plot_from_nodes(
     args = []
     for var in TO_READ:
         for node in [n0, n1]:
-            args.append(node.kin.get(var).to_base_units().magnitude[0])
+            args.append(node.geo.get(var).to_base_units().magnitude[0])
 
     geom = RowGeometry(
         *args,

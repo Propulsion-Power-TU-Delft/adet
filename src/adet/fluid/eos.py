@@ -235,17 +235,15 @@ if __name__ == '__main__':
     # Setup a CoolProp EOS
     eos = AbstractState('HEOS', 'CO2')
     NUM_SPAN = 10
-    PROPERTIES = ['hmass', 'smass', 'speed_sound']
+    PROPERTIES = [
+        'hmass',
+        'smass',
+        'speed_sound',
+    ]
+    OPTS = {'enable_fd': True}
 
     # Example
-    callback = CasadiEoS(
-        'PT_eos',
-        eos,
-        cp.PT_INPUTS,
-        PROPERTIES,
-        NUM_SPAN,
-        {'enable_fd': True},
-    )
+    callback = CasadiEoS('PT_eos', eos, cp.PT_INPUTS, PROPERTIES, NUM_SPAN)
 
     # Type annotation
     callback = cast(

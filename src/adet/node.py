@@ -63,24 +63,8 @@ class FlowNode(GasPropertiesMixin):
         self.tot = ThermostateContainer(spanwise_stations, settings)
         self.rlt = ThermostateContainer(spanwise_stations, settings)
 
+        self.geo = VariableContainer(spanwise_stations)
         self.oth = VariableContainer(spanwise_stations)
-
-        # Sync the entropy between the states
-        self._sync_entropy()
-
-    def _sync_entropy(self) -> None:
-        """
-        Make all smass variables in the static, total and relative total
-        point to the same Quantity instance, so that updating one
-        causes all the others to also get updated.
-        The set_value method preserves this syncronization because it
-        varies the value of the Quantity in place
-        """
-        # Create the variable
-        smass_var = self.stc.get('smass')
-
-        for state_obj in (self.tot, self.rlt):
-            state_obj._variables['smass'] = smass_var
 
     def write_to_node(self, args_to_write: dict[str, ArrayLike], fixed: bool) -> None:
         for arg, value in args_to_write.items():
@@ -211,6 +195,11 @@ class FlowNode(GasPropertiesMixin):
 │ KINEMATICS │
 ╰────────────╯
 {self.kin}
+
+╭──────────╮
+│ GEOMETRY │
+╰──────────╯
+{self.geo}
 
 ╭────────────╮
 │ OTHER VARS │

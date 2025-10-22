@@ -3,7 +3,7 @@ from numpy.typing import NDArray
 
 import CoolProp as cp
 
-NodeStatesNames = Literal['stc', 'tot', 'rlt', 'kin', 'oth']
+NodeStatesNames = Literal['stc', 'tot', 'rlt', 'kin', 'geo', 'oth']
 
 COOLPROP_NAMES_MAP = {
     'p': 'P',

@@ -31,8 +31,8 @@ class MassAreaRelation(EquationBase):
         \\dot_{m} = \\rho_0 V_{m0} A_0
     """
 
-    def residual(self, kin_Vm0, kin_area0, stc_rhomass0, oth_massflow0):
-        return oth_massflow0 - stc_rhomass0 * kin_Vm0 * kin_area0
+    def residual(self, kin_Vm0, geo_area0, stc_rhomass0, oth_massflow0):
+        return oth_massflow0 - stc_rhomass0 * kin_Vm0 * geo_area0
 
 
 class TotalStaticMatching(EquationBase):
@@ -81,18 +81,18 @@ class TotalStaticMatching(EquationBase):
 
 
 class FreeVortexDistribution(EquationBase):
-    def residual(self, kin_rr0, kin_Vt0, kin_rmid0, oth_Vtmid0):
-        return kin_rr0 * kin_Vt0 - kin_rmid0 * oth_Vtmid0
+    def residual(self, geo_rr0, kin_Vt0, geo_rmid0, oth_Vtmid0):
+        return geo_rr0 * kin_Vt0 - geo_rmid0 * oth_Vtmid0
 
 
 class ForcedVortexDistribution(EquationBase):
-    def residual(self, kin_rr0, kin_Vt0, kin_rmid0, oth_Vtmid0):
-        return kin_Vt0 / kin_rr0 - oth_Vtmid0 / kin_rmid0
+    def residual(self, geo_rr0, kin_Vt0, geo_rmid0, oth_Vtmid0):
+        return kin_Vt0 / geo_rr0 - oth_Vtmid0 / geo_rmid0
 
 
 class GeneralWhirl(EquationBase):
-    def residual(self, kin_rr0, kin_Vt0, gen_whirl_a, gen_whirl_b, gen_whirl_n):
-        return kin_Vt0 - gen_whirl_a * kin_rr0**gen_whirl_n + gen_whirl_b / kin_rr0
+    def residual(self, geo_rr0, kin_Vt0, gen_whirl_a, gen_whirl_b, gen_whirl_n):
+        return kin_Vt0 - gen_whirl_a * geo_rr0**gen_whirl_n + gen_whirl_b / geo_rr0
 
 
 class Kinematics(EquationBase):
@@ -127,30 +127,34 @@ class MeridionalUniform(EquationBase):
 
     def residual(
         self,
-        kin_rr0,
-        kin_rmid0,
-        kin_height0,
-        kin_hh0,
-        kin_meridional_angle0,
-        kin_area0,
+        geo_rr0,
+        geo_rmid0,
+        geo_height0,
+        geo_hh0,
+        geo_meridional_angle0,
+        geo_area0,
     ):
-        spanwise_stations = max(kin_rr0.shape)
+        spanwise_stations = max(geo_rr0.shape)
         if spanwise_stations == 1:
-            r1 = kin_rr0 - kin_rmid0
-            r2 = kin_hh0 - kin_height0
+            r1 = geo_rr0 - geo_rmid0
+            r2 = geo_hh0 - geo_height0
         else:
             unit_space = np.linspace(0, 1, spanwise_stations)
 
-            r1 = kin_rr0 - (
-                kin_rmid0[0]
-                - kin_height0[0] / 2 * np.cos(kin_meridional_angle0[0])
-                + unit_space * (kin_height0[0] * np.cos(kin_meridional_angle0[0]))
+            r1 = geo_rr0 - (
+                geo_rmid0[0]
+                - geo_height0[0] / 2 * np.cos(geo_meridional_angle0[0])
+                + unit_space * (geo_height0[0] * np.cos(geo_meridional_angle0[0]))
             )
 
-            r2 = kin_hh0 - kin_height0 / spanwise_stations
+            r2 = geo_hh0 - geo_height0 / spanwise_stations
 
-        r3 = kin_area0 - np.pi * (
-            (kin_rr0 + kin_hh0 / 2) ** 2 - (kin_rr0 - kin_hh0 / 2) ** 2
+        r3 = geo_area0 - np.pi * (
+            (geo_rr0 + geo_hh0 / 2) ** 2 - (geo_rr0 - geo_hh0 / 2) ** 2
         )
 
         return r1, r2, r3
+
+
+class ParabolicCamberline(EquationBase):
+    def residual(self, *args): ...

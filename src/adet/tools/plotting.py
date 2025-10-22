@@ -95,7 +95,7 @@ def plot_velocity_triangles(kine):
             ticks=np.linspace(rr[0], rr[-1], 5),
             format=FuncFormatter(fmt),
         )
-        cbar_w.set_label('Radius [m]', **fontsett)  # type:ignore
+        cbar_w.set_label('Radius [m]', **fontsett)  # pyright:ignore
 
     # ax.legend(['W', 'U', 'V'], loc='lower right', **fontsett)
 
