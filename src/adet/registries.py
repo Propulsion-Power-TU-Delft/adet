@@ -118,6 +118,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
     """
 
     DEFAULTS = {
+        # Thermodynamics
         'p': 'Pa',
         'p_ref': 'Pa',
         'T': 'K',
@@ -130,8 +131,12 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'cpmassid': 'J / (kg * K)',
         'cvmass': 'J / (kg * K)',
         'cvmassid': 'J / (kg * K)',
+        'speed_sound': 'm/s',
+        'Ma': 'dimensionless',
+        # Others
         'massflow': 'kg / s',
         'cum_massflow': 'kg / s',
+        # Kinematics
         'V': 'm/s',
         'Vt': 'm/s',
         'Vm': 'm/s',
@@ -142,14 +147,17 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'omega': 'rad/s',
         'beta': 'rad',
         'alpha': 'rad',
+        # Geometry
         'meridional_angle': 'rad',
         'height': 'm',
         'hh': 'm',
         'rr': 'm',
         'rmid': 'm',
         'area': 'm**2',
-        'Ma': 'dimensionless',
-        'speed_sound': 'm/s',
+        'chord': 'm',
+        'chord_ax': 'm',
+        'pitch': 'm',
+        'stagger': 'rad',
     }
 
 
@@ -179,12 +187,17 @@ class GuessRegistry(BaseRegistry[str, float]):
         'beta': 0.3,
         # OTHERS
         'massflow': 20.0,
-        'area': 0.05,
-        'meridional_angle': 0.3,
+        # GEOMETRY
+        'area': 0.1,
+        'meridional_angle': 0.1,
         'hh': 0.1,
         'height': 0.1,
         'rr': 0.1,
         'rmid': 0.1,
+        'chord': 0.1,
+        'chord_ax': 0.1,
+        'pitch': 0.1,
+        'stagger': 0.1,
     }
 
 

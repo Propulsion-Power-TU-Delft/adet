@@ -13,6 +13,7 @@ import casadi as cs
 from adet.assembly import CasadiSystem
 from adet.components.network import ComponentNetwork
 from adet.diagnostics import SystemDiagnostics
+from adet.equations.fundamental import ParabolicCamberline
 from adet.equations.simplelosses import ZeroDeviation
 from adet.losses.profile import IncRectVelocity
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, ScalingRegistry
@@ -88,6 +89,7 @@ _dfu_reg = DefaultUnitsRegistry()
 _scl_reg = ScalingRegistry()
 _gss_reg = GuessRegistry()
 
+# Add units for some variables
 _dfu_reg.from_dict(
     {
         'delta_smass_pct': 'J/(kg*K)',
@@ -99,8 +101,7 @@ _dfu_reg.from_dict(
         'STratio': 'dimensionless',
         'Cd_profile': 'dimensionless',
         'sizeParameter': 'meters',
-        'bld_len': 'meters',
-        'bld_spacing': 'meters',
+        'camb_len': 'meters',
     }
 )
 
@@ -140,6 +141,10 @@ CONSTR1 = {
         'meridional_angle': 0.0,
         'rmid': 0.55,
         'height': 0.15,
+        # 'camb_len': 0.2,
+        'chord': 0.2,
+        'stagger': 0.6,
+        'pitch': 0.2,
     },
     'stc': {
         # 'p': 2e5,
@@ -147,12 +152,11 @@ CONSTR1 = {
     'oth': {
         # PROFILE LOSSES
         'Cd_profile': 0.002,
-        'bld_len': 0.2,
-        'bld_spacing': 0.2,
         # NONDIMENSIONAL
         # 'STratio': 0.98,
         'workCoeff': 1.2,
-        # These two don't converge
+        # These two are not tested
+        # You can check plausible values
         # 'specificSpeed': 0.4,
         # 'sizeParameter': 0.1,
     },
@@ -174,8 +178,10 @@ row1 = BladeRow(
         # PercentageEntropyLoss(0.0),
     ],
     extra_equations={
-        ZeroDeviation(): 1,  # No deviation
+        ZeroDeviation(): 1,  # No outlet deviation
         IncRectVelocity(): (0, 1),  # Profile loss
+        ParabolicCamberline(): (0, 1),
+        # -| Compute nondimensional coefficients |-
         FlowCoefficient(): 0,
         WorkCoefficient(): (0, 1),
         SpecificSpeed(): (0, 1),

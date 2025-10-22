@@ -32,8 +32,8 @@ class IncRectVelocity(EquationBase):
         kin_W0,
         kin_W1,
         oth_Cd_profile1,
-        oth_bld_len1,
-        oth_bld_spacing1,
+        geo_camb_len1,
+        geo_pitch1,
         tot_p0,
         tot_p1,
         stc_rhomass1,
@@ -44,7 +44,7 @@ class IncRectVelocity(EquationBase):
         loss_coeff = (
             2
             * oth_Cd_profile1
-            * (oth_bld_len1 / oth_bld_spacing1)
+            * (geo_camb_len1 / geo_pitch1)
             * (
                 2 * (W_mean / kin_W0) ** 3
                 + 6 * (W_mean / kin_W1) * (delta_W / kin_W1) ** 2

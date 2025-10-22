@@ -4,6 +4,7 @@ from art import tprint
 from adet.assembly import SystemAssembler
 from adet.components import BaseComponent
 from adet.components.connections import Inlet
+from adet.equations.simplelosses import ZeroDeviation
 from adet.fluid.settings import AnalyticalFluidModel, FluidSettings
 
 from adet.equations.fundamental import (
@@ -76,6 +77,7 @@ class ComponentNetwork(Generic[T]):
 
     def _add_single_node_eqs(self, comp_stack_length: int):
         self.system.add_equation(CumMassFlow(), 0)
+        self.system.add_equation(ZeroDeviation(), 0)
 
         for node in range(2 * comp_stack_length):
             # Single node relationships
