@@ -6,3 +6,4 @@ from .base_component import (
 )
 from .connections import Shaft, Inlet
 from .blade_row import BladeRow
+from .network import ComponentNetwork

@@ -25,7 +25,7 @@ class EquationBase(ABC):
     skip_unit_check: bool = False
     manual_units: tuple[str, ...] = ()
 
-    def __init__(self, scaling_factor: float | tuple[float, ...] | None = None):
+    def __init__(self, scaling_factor: list[float, ...] | None = None):
         self._arguments: tuple[str, ...] = self._read_and_validate_arguments(
             getfullargspec(self.residual).args[1:],
         )

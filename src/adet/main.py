@@ -7,39 +7,22 @@ import matplotlib.pyplot as plt
 import optimistix as optx
 import jax
 import numpy as np
-from pint import Quantity
 import casadi as cs
 
 from adet.assembly import CasadiSystem
-from adet.components.network import ComponentNetwork
+from adet.components import ComponentNetwork
 from adet.diagnostics import SystemDiagnostics
-from adet.equations.fundamental import ParabolicCamberline
-from adet.equations.simplelosses import ZeroDeviation
-from adet.losses.profile import IncRectVelocity
-from adet.registries import DefaultUnitsRegistry, GuessRegistry, ScalingRegistry
+from adet.components.blade_row import plot_from_nodes
+from adet.fluid.settings import FluidSettings, AbstractStateModel, IdealGasModel
+from adet.config_main import fluid_model, inlet, row1  # row2, row3, row4
+
+# Tooling
+from adet.tools.iter import grouper
+from adet.tools.loggers import setup_logger
 from adet.tools.context import suppress_output
 from adet.tools.coolprop_utils import CountingAbstractState
-from adet.tools.iter import grouper
 
-from adet.fluid.settings import AbstractStateModel, FluidSettings, IdealGasModel
 
-from adet.losses.basic import PercentageEntropyLoss
-
-from adet.tools.loggers import setup_logger
-
-from adet.components.connections import Inlet, Shaft
-from adet.components.blade_row import BladeRow, plot_from_nodes
-
-from adet.equations.nondimensional import (
-    StaticTotalPressRatio,
-    WorkCoefficient,
-    FlowCoefficient,
-    SizeParameter,
-    SpecificSpeed,
-)
-from adet.equations.definitions import AngleDeflection
-
-# Equations
 logger = logging.getLogger(__name__)
 jax.config.update('jax_enable_x64', True)
 
@@ -60,7 +43,6 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 NUM_SPAN = 15
 
 # Thermodynamic model
-MODEL: Literal['ideal', 'abstate'] = 'ideal'
 
 SCALED = True
 SOLVER_LSTSQ = optx.BestSoFarLeastSquares(
@@ -69,125 +51,11 @@ SOLVER_LSTSQ = optx.BestSoFarLeastSquares(
 SOLVER_NEWTON = optx.Newton(1e-8, 1e-10)
 
 # === SYSTEM DEFINITION
-match MODEL:
-    case 'ideal':
-        model = IdealGasModel(287.0, 1.4)
-    case 'abstate':
-        # This counts the number of updates in an attribute
-        abs_state = CountingAbstractState('HEOS', 'Air')
-        model = AbstractStateModel(abs_state)
 
 settings = FluidSettings(
-    model=model,
+    model=fluid_model,
     update_variables=('p', 'T', 'hmass', 'smass', 'rhomass'),
     update_length=2,
-)
-
-
-# Set custom units and defaults
-_dfu_reg = DefaultUnitsRegistry()
-_scl_reg = ScalingRegistry()
-_gss_reg = GuessRegistry()
-
-# Add units for some variables
-_dfu_reg.from_dict(
-    {
-        'delta_smass_pct': 'J/(kg*K)',
-        'deflection': 'rad',
-        'percentage_loss': 'dimensionless',
-        'workCoeff': 'dimensionless',
-        'flowCoeff': 'dimensionless',
-        'specificSpeed': 'dimensionless',
-        'STratio': 'dimensionless',
-        'Cd_profile': 'dimensionless',
-        'sizeParameter': 'meters',
-    }
-)
-
-# Set default values for scales and guesses to 1.0
-_scl_reg.set_fallback_value(1.0)
-_gss_reg.set_fallback_value(1.0)
-
-# *** Shafts
-static_shaft = Shaft(0.0)
-rotating_shaft = Shaft(Quantity(1000, 'rpm'))
-
-# *** Constraints
-CONSTR0 = {
-    'kin': {
-        # 'alpha': Quantity(25, 'deg'),
-        'beta': Quantity(0, 'deg'),
-    },
-    'geo': {
-        'meridional_angle': Quantity(0, 'deg'),
-        'rmid': 0.5,
-        'height': 0.2,
-    },
-    'tot': {
-        'p': 3e5,
-        'T': 500,
-    },
-    'oth': {
-        'flowCoeff': 1.3,
-        # 'cum_massflow': 100,
-    },
-}
-
-CONSTR1 = {
-    'kin': {
-        # 'alpha': Quantity(0, 'deg'),
-    },
-    'geo': {
-        'meridional_angle': 0.0,
-        'rmid': 0.55,
-        'height': 0.15,
-        # 'camb_len': 0.2,
-        # 'stagger': 0.6,
-        'chord': 0.2,
-        'pitch': 0.2,
-    },
-    'stc': {
-        # 'p': 2e5,
-    },
-    'oth': {
-        # PROFILE LOSSES
-        'Cd_profile': 0.002,
-        # NONDIMENSIONAL
-        # 'STratio': 0.98,
-        'workCoeff': 1.2,
-        # These two are not tested
-        # You can check plausible values
-        # 'specificSpeed': 0.4,
-        # 'sizeParameter': 0.1,
-    },
-}
-
-# TODO: Registry for multiple repeating constraints,
-# e.g. loss parameters
-
-# *** Inlet
-inlet = Inlet(CONSTR0)
-
-
-# *** Blade rows
-# STATOR
-row1 = BladeRow(
-    CONSTR1,
-    rotating_shaft,
-    loss_models=[
-        # PercentageEntropyLoss(0.0),
-    ],
-    extra_equations={
-        ZeroDeviation(): 1,  # No outlet deviation
-        IncRectVelocity(): (0, 1),  # Profile loss
-        ParabolicCamberline(): (0, 1),
-        # -| Compute nondimensional coefficients |-
-        FlowCoefficient(): 0,
-        WorkCoefficient(): (0, 1),
-        SpecificSpeed(): (0, 1),
-        SizeParameter(): (0, 1),
-        StaticTotalPressRatio(): (0, 1),
-    },
 )
 
 
@@ -284,7 +152,7 @@ sol = sol_multi
 ntw.system = sys_multi
 
 
-# === JAX VERSION
+# === JAX VERSION - broken
 # sys_jax = ntw.system.to_jax()
 # sys_jax.build(SCALED)
 #
@@ -301,8 +169,8 @@ ntw.system = sys_multi
 # sol_lsq = optx.root_find(partial_res, SOLVER_LSTSQ, x0)
 # sol_newt = optx.root_find(partial_res, SOLVER_NEWTON, sol_lsq.value)
 # sol = sol_newt.value
-
-ntw.system.write_solution_to_nodes(np.array(sol).reshape(ntw.system.num_args, -1))
+num_args = len(ntw.system.free_args)
+ntw.system.write_solution_to_nodes(np.array(sol).reshape(num_args, -1))
 
 
 PLOTS = True
@@ -346,74 +214,3 @@ if PLOTS:
     plt.show()
 else:
     plt.close('all')
-
-
-#  #  #  #  #  #  #  #  #  #  #  #  #  #  #  #  #  #  #  #
-#                                                        #
-#                   PRISTINE UNUSED ROWS                 #
-#                                                        #
-#  #  #  #  #  #  #  #  #  #  #  #  #  #  #  #  #  #  #  #
-row2 = BladeRow(
-    {
-        'kin': {
-            'meridional_angle': Quantity(0.0, 'deg'),
-            'rmid': 1.0,
-            'height': 0.3,
-        },
-        'oth': {
-            'workCoeff': 1.1,
-            # 'deflection': Quantity(65, 'deg'),
-        },
-    },
-    rotating_shaft,
-    loss_models=[
-        PercentageEntropyLoss(0.0),
-    ],
-    extra_equations={
-        WorkCoefficient(): (0, 1),
-        # AngleDeflection(): (0, 1),
-    },
-)
-
-row3 = BladeRow(
-    {
-        'kin': {
-            'meridional_angle': Quantity(-70.0, 'deg'),
-            # 'alpha': Quantity(65.0, 'deg'),
-            'rmid': 0.8,
-            'height': 0.35,
-        },
-        'oth': {
-            # 'workCoeff': 1.0,
-            'deflection': Quantity(100.0, 'deg'),
-        },
-    },
-    static_shaft,
-    loss_models=[
-        PercentageEntropyLoss(0.0),
-    ],
-    extra_equations={
-        # WorkCoefficient(): (0, 1),
-        AngleDeflection(): (0, 1),
-    },
-)
-
-row4 = BladeRow(
-    {
-        'kin': {
-            'meridional_angle': Quantity(0.0, 'deg'),
-            'rmid': 0.4,
-            'height': 0.5,
-        },
-        'oth': {
-            'workCoeff': 1.0,
-        },
-    },
-    rotating_shaft,
-    loss_models=[
-        PercentageEntropyLoss(0.0),
-    ],
-    extra_equations={
-        WorkCoefficient(): (0, 1),
-    },
-)

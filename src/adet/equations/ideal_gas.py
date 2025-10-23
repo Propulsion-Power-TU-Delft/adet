@@ -39,7 +39,7 @@ class IdealStcEos(EquationBase):
         oth_T_ref0,
         oth_p_ref0,
     ):
-        return ideal_gas_residual(
+        r1, r2, r3, r4, r5 = ideal_gas_residual(
             stc_p0,
             stc_T0,
             stc_rhomass0,
@@ -52,6 +52,7 @@ class IdealStcEos(EquationBase):
             oth_T_ref0,
             oth_p_ref0,
         )
+        return r1, r2, r3, r4, r5
 
 
 class IdealTotEos(EquationBase):
@@ -69,7 +70,7 @@ class IdealTotEos(EquationBase):
         oth_T_ref0,
         oth_p_ref0,
     ):
-        return ideal_gas_residual(
+        r1, r2, r3, r4, r5 = ideal_gas_residual(
             tot_p0,
             tot_T0,
             tot_rhomass0,
@@ -82,6 +83,8 @@ class IdealTotEos(EquationBase):
             oth_T_ref0,
             oth_p_ref0,
         )
+
+        return r1, r2, r3, r4, r5
 
 
 class IdealRltEos(EquationBase):
@@ -99,7 +102,7 @@ class IdealRltEos(EquationBase):
         oth_T_ref0,
         oth_p_ref0,
     ):
-        return ideal_gas_residual(
+        r1, r2, r3, r4, r5 = ideal_gas_residual(
             rlt_p0,
             rlt_T0,
             rlt_rhomass0,
@@ -112,3 +115,4 @@ class IdealRltEos(EquationBase):
             oth_T_ref0,
             oth_p_ref0,
         )
+        return r1, r2, r3, r4, r5

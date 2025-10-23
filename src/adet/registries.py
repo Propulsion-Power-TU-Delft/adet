@@ -208,6 +208,7 @@ ureg = UnitRegistry()
 SCALING_FACTORS: dict[str, float] = {
     'm / s': 100.0,
     'Pa': 5e5,
+    'N': 100.0,
     'K': 500.0,
     'J / kg': 5e5,
     'J / (kg * K)': 1e3,

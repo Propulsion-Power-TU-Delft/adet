@@ -22,7 +22,7 @@ class LossModel(EquationBase, ABC):
 
     def __init__(
         self,
-        scaling_factor: float | tuple[float, ...] | None = None,
+        scaling_factor: list[float] | None = None,
         **parameters,
     ):
         self._generate_residual_method()
@@ -42,7 +42,7 @@ class LossModel(EquationBase, ABC):
 
     def read_and_validate_arguments(self, all_arguments: list[str]):
         all_arguments = [self.VALUE_VARIABLE] + getfullargspec(self.value).args[1:]
-        return super().read_and_validate_arguments(all_arguments)
+        return super()._read_and_validate_arguments(all_arguments)
 
     @classmethod
     def _generate_residual_method(cls):

@@ -182,7 +182,7 @@ def safe_min_clip(x, min_value):
 
 
 class ParabolicCamberline(EquationBase):
-    # NOTE: You can use this and skip the safe checks
+    # NOTE: You can use this and skip the units checks
     skip_unit_check = True
     manual_units = ('m', 'm', 'rad')
 
@@ -220,6 +220,10 @@ class ParabolicCamberline(EquationBase):
         length = (1 / (4 * a)) * (term1 * sqrt1 + asinh1 - term0 * sqrt0 - asinh0)
 
         return length
+
+    def plot_camber_line(self, inlet_angle, outlet_angle, chord):
+        """This is"""
+        self._compute_parabola(inlet_angle, outlet_angle, chord)
 
     def residual(
         self,

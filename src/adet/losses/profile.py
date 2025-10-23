@@ -5,9 +5,21 @@ from adet.fluid.eos import CasadiEoS
 import CoolProp as cp
 import casadi as cs
 
+from adet.fluid.settings import AbstractStateModel, FluidModel
 from adet.tools.coolprop_utils import CountingAbstractState
 
 
+# Greitzer model
+# ==============
+#                               Trailing edge
+#  ^                  +---------------+--------  kin_W1
+#  | Velocity         |               |
+#  |                  | - - - - - - - |- W_mean
+#  |                  |               |
+#  |    kin_W0  ------+---------------+
+#  |             Leading edge
+#  |___________________________> Distance along blade
+#
 class IncRectVelocity(EquationBase):
     """
     References
@@ -15,17 +27,6 @@ class IncRectVelocity(EquationBase):
     - Section 5.4.3 of Greitzer's `Internal Flows`
     - Section 7.1 of Denton's 1993 hit paper `Loss Mechanisms in Turbomachines`
     """
-
-    # Sketch
-    #                               Trailing edge
-    #  ^                  +---------------+--------  kin_W1
-    #  | Velocity         |               |
-    #  |                  | - - - - - - - |- W_mean
-    #  |                  |               |
-    #  |    kin_W0  ------+---------------+
-    #  |             Leading edge
-    #  |___________________________> Distance along blade
-    #
 
     def residual(
         self,
@@ -54,9 +55,29 @@ class IncRectVelocity(EquationBase):
         return (tot_p0 - tot_p1) - loss_coeff * 0.5 * stc_rhomass1 * kin_W1**2
 
 
+# Denton Model
+# ============
+#
+#  ^              Suction
+#  | Velocity     side
+#  |            ___________ _ 2 k kin_W1 + delta_W
+#  |           /           \
+#  |          /             \ _ kin_W1
+#  |       kin_W0           /
+#  |            ___________/ _ k kin_W0 - delta_W
+#  |           /  Pressure
+#  |       0  /   side
+#  |____________________________> Distance along blade
+#               |          |
+#            x_by_camb_len1   x_by_camb_len2
+
+
 class DentonProfileLoss(EquationBase):
     """
-    Axial blade profile losses based on simplified pressure distribution
+    Axial blade profile losses based on simplified pressure distribution.
+    It should be able to be used for axial compresstore and turbine blades,
+    so far it has been tested for turbines (check the integral signs mainly)
+
 
     Warning
     -------
@@ -64,42 +85,33 @@ class DentonProfileLoss(EquationBase):
     """
 
     skip_unit_check = True
-    manual_units = ('dimensionless',)
+    manual_units = ('N', 'J / kg / K')
 
     def __init__(
         self,
-        eos: Any,
+        fluid_model: AbstractStateModel,
         scaling_factor: float | tuple[float] | None = None,
     ):
         """
         This requires intermediate state updates, meaning ad eos object has to be
         provided manually
         """
-        self.eos = eos
+        self.eos = fluid_model.eos_object
         self._eos_callback = None
         super().__init__(scaling_factor)
 
     @staticmethod
     def _build_velocity_profile(
-        x_by_cs1, x_by_cs2, k_prof, kin_W0, kin_W1
+        x_by_camb_len1, x_by_camb_len2, k_prof, kin_W0, kin_W1
     ) -> tuple[cs.DM, cs.DM, cs.DM]:
         """Build the velocity proile"""
-        # SKETCH
-        # ======
-        #  ^              Suction
-        #  | Velocity     side
-        #  |            ___________ _ 2 k kin_W1 + delta_W
-        #  |           /           \
-        #  |          /             \ _ kin_W1
-        #  |       kin_W0           /
-        #  |            ___________/ _ k kin_W0 - delta_W
-        #  |           /  Pressure
-        #  |       0  /   side
-        #  |____________________________> Distance along blade
-        #               |          |
-        #            x_by_cs1   x_by_cs2
         # Positions
-        x_by_cs = cs.horzcat(0.0 * x_by_cs1, x_by_cs1, x_by_cs2, x_by_cs1 / x_by_cs1)
+        x_by_camb_len = cs.horzcat(
+            0.0 * x_by_camb_len1,
+            x_by_camb_len1,
+            x_by_camb_len2,
+            x_by_camb_len1 / x_by_camb_len1,
+        )
 
         # Velocity values
         CLIP_RATIO = 5  # Clip pressure side to inlet W / ratio
@@ -111,7 +123,7 @@ class DentonProfileLoss(EquationBase):
         W_distr_ss = cs.horzcat(1.0 * kin_W0, W_mid_ss, W_mid_ss, kin_W1)  # Suction
         W_distr_ps = cs.horzcat(0.0 * kin_W0, W_mid_ps, W_mid_ps, kin_W1)  # Pressure
 
-        return x_by_cs, W_distr_ss, W_distr_ps
+        return x_by_camb_len, W_distr_ss, W_distr_ps
 
     def _compute_thermo_distributions(self, rlt_hmass0, rlt_smass0, W_distr):
         """
@@ -159,44 +171,63 @@ class DentonProfileLoss(EquationBase):
 
     def residual(
         self,
+        # Thermo
         rlt_hmass0,
-        rlt_smass0,
+        stc_smass0,
+        stc_smass1,
+        # Kine
         kin_W0,
-        kin_Wm0,
         kin_W1,
-        kin_Wm1,
         kin_Vt0,
         kin_Vt1,
-        stc_rhomass0,
-        stc_rhomass1,
-        oth_x_by_cs1,
-        oth_x_by_cs2,
-        oth_ax_chord,
+        # Misc
+        oth_massflow,
+        oth_x_by_camb_len_F1,
+        oth_x_by_camb_len_S1,
         oth_k_prof,
+        # Geo
+        geo_hh1,
+        geo_chord_ax1,
+        geo_camb_len1,
     ):
-        x_by_cs, W_distr_ss, W_distr_ps = self._build_velocity_profile(
-            oth_x_by_cs1, oth_x_by_cs2, oth_k_prof, kin_W0, kin_W1
+        x_by_camb_len, W_distr_ss, W_distr_ps = self._build_velocity_profile(
+            oth_x_by_camb_len_F1, oth_x_by_camb_len_S1, oth_k_prof, kin_W0, kin_W1
         )
 
+        # TODO: Idea, make smass1 also an input and distribute s linearly
+        # between inlet and outlet
         p_ss, rho_ss, T_ss = self._compute_thermo_distributions(
-            rlt_hmass0, rlt_smass0, W_distr_ss
+            rlt_hmass0, stc_smass0, W_distr_ss
         )
         p_ps, rho_ps, T_ps = self._compute_thermo_distributions(
-            rlt_hmass0, rlt_smass0, W_distr_ps
+            rlt_hmass0, stc_smass0, W_distr_ps
         )
+
+        x_dimensional = x_by_camb_len * geo_camb_len1
 
         # Trapezoidal integration (can't use np.trapezoidal for differentiability)
         # (trapezoidal rule is exact because everything is linear)
-        pressure_integral = self._trapezoid(p_ps - p_ss, x_by_cs)
+        pressure_integral = self._trapezoid(p_ps - p_ss, x_dimensional)  # [Pa]
+
+        avg_velocity = (kin_W0 + kin_W1) / 2
+
+        entropy_primitive = (rho_ss / T_ss + rho_ps / T_ps) * avg_velocity**3
+        entropy_integral = self._trapezoid(entropy_primitive, x_dimensional)
+        # Integral = Entropy production (NOT SPECIFIC)
+        # per unit length (in height direction) per unit time
+        # To convert to specific (see residual definition below)
+        #     |> divide my massflow
+        #     |> multiply by height sector
 
         # TODO: Check these definitions
         delta_Vt = cs.fabs(kin_Vt0 - kin_Vt0)
-        W_mean = (kin_W0 + kin_W1) / 2
-        rhomass_mean = (kin_W0 + kin_W1) / 2
 
-        r1 = rhomass_mean * W_mean * delta_Vt - pressure_integral * oth_ax_chord
+        # Tangential momentum balance [N]
+        r1 = oth_massflow * delta_Vt - pressure_integral * geo_chord_ax1 * geo_hh1
+        # Specific entropy generation [J / kg / K]
+        r2 = stc_smass1 - stc_smass0 - entropy_integral * geo_hh1 / oth_massflow
 
-        return p_ss, p_ps
+        return r1, r2
 
 
 if __name__ == '__main__':
@@ -208,26 +239,49 @@ if __name__ == '__main__':
     # numpy array, but remember casadi is consistent
     # with shape manipulation and extraction, and every
     # array is AT LEAST 2D
-    N_SPAN = 45
+    N_SPAN = 11
     eos = CountingAbstractState('HEOS', 'Air')
 
     # Define example values
     W0 = np.linspace(100, 300, N_SPAN)
     W1 = np.linspace(175, 400, N_SPAN)
-    x_by_cs1 = cs.linspace(0.3, 0.3, N_SPAN)
-    x_by_cs2 = np.linspace(0.6, 0.6, N_SPAN)
+
+    Vt0 = np.linspace(40, 50, N_SPAN)
+    Vt1 = np.linspace(40, 50, N_SPAN)
+
+    x_by_camb_len1 = cs.linspace(0.3, 0.3, N_SPAN)
+    x_by_camb_len2 = np.linspace(0.6, 0.6, N_SPAN)
+
+    dummy_hh = cs.DM.ones(N_SPAN) * 0.05  # pyright:ignore
+
     dummy_ht = cs.DM.ones(N_SPAN) * 5e5  # pyright:ignore
     dummy_st = np.ones(N_SPAN) * 4000
+    dummy_mass_flow = np.ones(N_SPAN) * 10
+
     Cd = 0.002 * np.ones(N_SPAN)
-    bld_spc = 0.2 * np.ones(N_SPAN)
-    bld_len = 0.2 * np.ones(N_SPAN)
-    k_prof = np.ones(N_SPAN) * 0.6
+    chord_ax = 0.1 * np.ones(N_SPAN)
+    camb_len = 0.15 * np.ones(N_SPAN)
+    k_prof = 0.6 * np.ones(N_SPAN)
 
     # Test
     dl = DentonProfileLoss(eos)
-    x_by_cs, V_ss, V_ps = dl._build_velocity_profile(x_by_cs1, x_by_cs2, k_prof, W0, W1)
-    p_ss, rho_ss, T_ss = dl._compute_thermo_distributions(dummy_ht, dummy_st, V_ss)
-    p_ps, rho_ps, T_ps = dl._compute_thermo_distributions(dummy_ht, dummy_st, V_ps)
+
+    dummy_residual = dl.residual(
+        dummy_ht,
+        dummy_st,
+        dummy_st,
+        W0,
+        W1,
+        Vt0,
+        Vt1,
+        dummy_mass_flow,
+        x_by_camb_len1,
+        x_by_camb_len2,
+        k_prof,
+        dummy_hh,
+        chord_ax,
+        camb_len,
+    )
 
     # TODO: Test with symbolics
     # x1_sym = cs.MX.sym('x1')  # pyright:ignore
@@ -236,22 +290,27 @@ if __name__ == '__main__':
     # W0_sym = cs.MX.sym('W0')  # pyright:ignore
     # W1_sym = cs.MX.sym('W1')  # pyright:ignore
 
-    # Plots
+    # Plots to check pressure and velocity distro
     # => First station should clip to W_1 / 5
-    fig, ax = plt.subplots(1, 2, figsize=(15, 8))
-    cmap = plt.get_cmap('viridis')
-    for i in range(N_SPAN):
-        color = cmap(i / (N_SPAN))
-        ax[0].plot(np.array(x_by_cs)[i], np.array(V_ss)[i], color=color)
-        ax[0].plot(np.array(x_by_cs)[i], np.array(V_ps)[i], color=color)
-
-        ax[1].plot(np.array(x_by_cs)[i], np.array(p_ss)[i], color=color)
-        ax[1].plot(np.array(x_by_cs)[i], np.array(p_ps)[i], color=color)
-
-        ax[0].grid(True)
-        ax[1].grid(True)
-
-    fig.show()
+    # x_by_camb_len, V_ss, V_ps = dl._build_velocity_profile(
+    #     x_by_camb_len1, x_by_camb_len2, k_prof, W0, W1
+    # )
+    # p_ss, rho_ss, T_ss = dl._compute_thermo_distributions(dummy_ht, dummy_st, V_ss)
+    # p_ps, rho_ps, T_ps = dl._compute_thermo_distributions(dummy_ht, dummy_st, V_ps)
+    # fig, ax = plt.subplots(1, 2, figsize=(15, 8))
+    # cmap = plt.get_cmap('viridis')
+    # for i in range(N_SPAN):
+    #     color = cmap(i / (N_SPAN))
+    #     ax[0].plot(np.array(x_by_camb_len)[i], np.array(V_ss)[i], color=color)
+    #     ax[0].plot(np.array(x_by_camb_len)[i], np.array(V_ps)[i], color=color)
+    #
+    #     ax[1].plot(np.array(x_by_camb_len)[i], np.array(p_ss)[i], color=color)
+    #     ax[1].plot(np.array(x_by_camb_len)[i], np.array(p_ps)[i], color=color)
+    #
+    #     ax[0].grid(True)
+    #     ax[1].grid(True)
+    #
+    # fig.show()
     # plt.close('all')
 
 

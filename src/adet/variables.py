@@ -337,9 +337,7 @@ class ThermostateContainer(VariableContainer):
         return combinations(valid_variables, updt_len)
 
     def choose_pair(self) -> tuple[str, ...] | None:
-        """
-        These are not sorted!
-        """
+        """These are not sorted"""
         valid_pairs = self._identify_valid_pairs()
 
         if valid_pairs is None:

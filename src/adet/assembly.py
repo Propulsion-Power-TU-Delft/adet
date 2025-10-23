@@ -6,14 +6,13 @@ data.
 """
 
 from abc import ABC, abstractmethod
-from functools import partial
 from collections import defaultdict, OrderedDict
 from copy import deepcopy
 import logging
 from typing import Callable, Self, Sequence, Type
 
 from numpy.typing import NDArray
-from pint import DimensionalityError, Quantity
+from pint import Quantity
 
 import numpy as np
 from pint.facets.plain import PlainQuantity
@@ -47,6 +46,13 @@ from adet.tools.context import override_operators
 logger = logging.getLogger(__name__)
 
 
+def get_units_string(var):
+    return str(var.to_base_units().units)
+
+
+_scale_reg = ScalingRegistry()
+
+
 class SystemAssembler(ABC):
     """
     Class for assembling a system of equations, gathering its arguments
@@ -58,7 +64,6 @@ class SystemAssembler(ABC):
     # to break it down into more manageable components, for now
     # it is fine
 
-    _scale_reg = ScalingRegistry()
     _guess_registry = GuessRegistry()
 
     def __init__(self, spanwise_stations: int) -> None:
@@ -105,7 +110,7 @@ class SystemAssembler(ABC):
             ],
         ] = defaultdict(lambda: defaultdict(dict))
 
-        self._equations_units: list[str | tuple[str, ...]] = []
+        self._equations_units: list[list[str]] = []
         """
         Units of the equation, with the output equation structure
         """
@@ -126,6 +131,10 @@ class SystemAssembler(ABC):
     @settings.setter
     def settings(self, settings: FluidSettings) -> None:
         self._fluid_settings = settings
+
+    @property
+    def num_equations(self):
+        return sum(eq.num_equations for eq in self.equations)
 
     def reset(self) -> None:
         old_settings = self._fluid_settings
@@ -264,7 +273,7 @@ class SystemAssembler(ABC):
                 f'No equation {equation_class} found to remove in {nodal_position}'
             )
 
-    def build(self, scaled: bool, throw: bool = True):
+    def build(self, scaled: bool):
         """
         Build the system of equations:
 
@@ -290,11 +299,14 @@ class SystemAssembler(ABC):
         self.free_args = self._identify_free_arguments()
 
         # Validity checks and scaling
-        self._count_args_equations()
-        self._check_units()
+        self._get_args_units()
+        self._check_equations_units()
 
-        # TODO: Suspended for now
-        # self._check_well_posedness(throw)
+        # TODO: Well posedness check suspended for now
+        # >>> self._check_well_posedness(throw)
+        # Reasons:
+        # 1. Difficult to make consistent with dynamic argument choice of update pairs
+        # 2. Solvers throw an error for shape mismatch anyway, although more cryptic
 
         self._built = True
         logger.info('System built succesfully')
@@ -465,31 +477,14 @@ class SystemAssembler(ABC):
                 'The system is not built or failed to do so, build it `build()`'
             )
 
-    def _count_args_equations(self) -> None:
-        """
-        Check that the idendified number of arguments is equal to the
-        number of residual equations that are being returned by the
-        composition of the residuals equations
-        """
-        # TODO: This needs to account for the equations of state!
-        dummy_residuals = []
-
-        for eq in self.equations:
-            dummy_args = np.full((eq.num_args, 1), np.nan)
-            dummy_residuals.append(eq.residual(*dummy_args))
-
-        self._residual_structure = jax.tree.structure(dummy_residuals)
-        self.num_equations = self._residual_structure.num_leaves
-
-        self.num_args = len(self.free_args)
-
     def _check_well_posedness(self, throw: bool) -> None:
-        if self.num_equations != len(self.free_args):
+        num_args = len(self.free_args)
+        if self.num_equations != num_args:
             arguments_str = '\n'.join(self.free_args)
             ERR_MSG = (
                 'Badly posed system detected, the number of residual equations '
                 + f'({self.num_equations}) is not equal to the number of system '
-                f'arguments ({self.num_args}). '
+                f'arguments ({num_args}). '
                 f'The free system arguments are:\n{arguments_str}'
             )
 
@@ -501,18 +496,15 @@ class SystemAssembler(ABC):
 
         logger.info(
             f'System is well posed, with {self.num_equations} equations '
-            f'and {self.num_args} arguments'
+            f'and {num_args} arguments'
         )
 
-    def _check_units(self):
+    def _get_args_units(self):
         """
         Check that the units of the equations are consistent, if not
         a dimensionality error is raised to the user
         """
         self._arguments_units = {}
-
-        def get_units_string(var):
-            return str(var.to_base_units().units)
 
         for idx, node in enumerate(self.nodes):
             node_arguments = {
@@ -524,36 +516,37 @@ class SystemAssembler(ABC):
                 {arg: get_units_string(var) for arg, var in node_arguments.items()}
             )
 
-        residuals = []
+    def _check_equations_units(self):
         for eq, kwmap in self._kwarg_maps.items():
-            if eq.skip_unit_check:
-                if not eq.manual_units:
-                    raise AttributeError('Missing manual units')
-                residuals.append([Quantity(np.nan, unit) for unit in eq.manual_units])
-                continue
-
-            args = []
-            for arg in eq.arguments:
-                absolute_argument = kwmap[arg]
-                units = self._arguments_units[absolute_argument]
-                dummy_value = Quantity([np.nan], units)
-
-                args.append(dummy_value)
-
-            try:
-                residuals.append(eq.residual(*args))
-            except DimensionalityError:
-                raise
-
-        self._equations_units = jax.tree.map(get_units_string, residuals)
+            self._equations_units.append(self._get_eq_units(eq, kwmap))
 
         logger.debug('Units for the residual equations succesfully verified')
+
+    def _get_eq_units(self, equation: EquationBase, kwmap: dict[str, str]) -> list[str]:
+        """Get units for a single equation"""
+        if equation.skip_unit_check:
+            return list(equation.manual_units)
+
+        args = []
+        for arg in equation.arguments:
+            absolute_argument = kwmap[arg]
+            units = self._arguments_units[absolute_argument]
+            dummy_value = Quantity([np.nan], units)
+
+            args.append(dummy_value)
+
+        res = equation.residual(*args)
+
+        if not isinstance(res, (list, tuple)):
+            res = (res,)
+
+        return [get_units_string(r) for r in res]
 
     def _assign_scaling_factor(self, units: str):
         if not self._scaled:
             factor = 1.0
 
-        factor = self._scale_reg[units]
+        factor = _scale_reg[units]
 
         return factor
 
@@ -614,22 +607,11 @@ class SystemAssembler(ABC):
                         f'Custom scaling factor found for {eq.__class__.__name__}, '
                         f'{eq.scaling_factor}'
                     )
-                    eq_scales.append(eq.scaling_factor)
+                    eq_scales += eq.scaling_factor
                 else:
-                    if isinstance(units, str):
-                        eq_scales.append(
-                            self._assign_scaling_factor(units),
-                        )
-                    else:
-                        eq_scales.append(
-                            tuple(
-                                map(self._assign_scaling_factor, units),
-                            )
-                        )
+                    eq_scales += [self._assign_scaling_factor(u) for u in units]
 
-            scales = np.array(
-                jax.tree.leaves(eq_scales),
-            )
+            scales = np.array(eq_scales)
 
         return np.tile(scales, (self.spanwise_stations, 1)).T
 
@@ -942,7 +924,7 @@ def {func_name}(equations, {', '.join(self._declared_arguments)}):
         """
 
         super().make_residual_function()
-        num_args = self.num_args
+        num_args = len(self.free_args)
         num_const = len(self.constraints)
 
         argument_scaler = self.free_args_scaling
@@ -966,30 +948,6 @@ def {func_name}(equations, {', '.join(self._declared_arguments)}):
 
         return residual_function
 
-    def _make_flat_resfunc(self, knowns_stack):
-        """
-        Make a version of the residual function that takes a 0-D flat
-        input array and returns a flat 0-D residual output
-        """
-
-        def flat_residuals(
-            x_flat: jax.Array,
-            num_args: int,
-            res_func: Callable,
-            knowns_stack: jax.Array,
-        ):
-            if x_flat.ndim > 1:
-                raise ValueError('Please flatten the input array')
-            x = x_flat.reshape(num_args, -1)
-            return res_func(x, knowns_stack).flatten()
-
-        return partial(
-            flat_residuals,
-            num_args=len(self.free_args),
-            res_func=self.make_residual_function(),
-            knowns_stack=knowns_stack,
-        )
-
     def to_casadi(self):
         """
         Convert system to casadi
@@ -1012,7 +970,7 @@ class CasadiSystem(SystemAssembler):
         self.scale_suffix = scale_suffix
 
     def build(self, scaled: bool, throw: bool = True):
-        super().build(scaled, throw)
+        super().build(scaled)
         self._build_base_symbols()
         self._build_composed_symbols()
         self._build_residual_expressions()
