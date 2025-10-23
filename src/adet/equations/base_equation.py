@@ -2,7 +2,7 @@ from inspect import getfullargspec
 from abc import ABC, abstractmethod
 import logging
 import re
-from typing import ClassVar, get_args, cast, Self
+from typing import get_args, cast, Self
 
 import sympy as sp
 import numpy as np
@@ -29,11 +29,19 @@ class EquationBase(ABC):
         )
         self.scaling_factor = scaling_factor
 
-        # If the unit are not checked, make sure the user added units
-        if self.skip_unit_check and not self.manual_units:
-            raise AttributeError(
-                f'Missing manual units for unchecked equation {self.__class__.__name__}'
-            )
+        if self.skip_unit_check:
+            # If the unit are not checked, make sure the user added units correclty
+            eq_name = self.__class__.__name__
+            if not self.manual_units:
+                raise AttributeError(
+                    f'Missing manual units for unchecked equation {eq_name}'
+                )
+            if self.num_equations != len(self.manual_units):
+                raise ValueError(
+                    f'Mismatch in equation `{eq_name}` between manual '
+                    f'units length ({len(self.manual_units)}) {self.manual_units} '
+                    f'and number of equations ({self.num_equations})'
+                )
 
     def __call__(self, *args):
         return self.residual(*args)

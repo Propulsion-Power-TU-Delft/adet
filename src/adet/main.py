@@ -60,7 +60,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 NUM_SPAN = 15
 
 # Thermodynamic model
-MODEL: Literal['ideal', 'abstate'] = 'abstate'
+MODEL: Literal['ideal', 'abstate'] = 'ideal'
 
 SCALED = True
 SOLVER_LSTSQ = optx.BestSoFarLeastSquares(
@@ -116,7 +116,8 @@ rotating_shaft = Shaft(Quantity(1000, 'rpm'))
 # *** Constraints
 CONSTR0 = {
     'kin': {
-        'alpha': Quantity(25, 'deg'),
+        # 'alpha': Quantity(25, 'deg'),
+        'beta': Quantity(0, 'deg'),
     },
     'geo': {
         'meridional_angle': Quantity(0, 'deg'),
@@ -142,8 +143,8 @@ CONSTR1 = {
         'rmid': 0.55,
         'height': 0.15,
         # 'camb_len': 0.2,
+        # 'stagger': 0.6,
         'chord': 0.2,
-        'stagger': 0.6,
         'pitch': 0.2,
     },
     'stc': {
@@ -210,113 +211,103 @@ x0 = ntw.system.get_initial_guess()
 
 
 # === CASADI VERSION - Function Extraction + Solution
-USE_CASADI = True
-if USE_CASADI:
+def solve_casadi_sys(
+    system: CasadiSystem,
+    method: Literal['newton', 'nlpsol'],
+    manual_guess={},
+):
+    x0 = system.get_initial_guess(manual_guess)
+    knowns_stack = system.get_scaled_constraints()
+    res_func_casadi = system.make_residual_function()
+    free_args_symbols = cs.vertcat(*system.free_args_sym)
 
-    def solve_casadi_sys(
-        system: CasadiSystem,
-        method: Literal['newton', 'nlpsol'],
-        manual_guess={},
-    ):
-        x0 = system.get_initial_guess(manual_guess)
-        knowns_stack = system.get_scaled_constraints()
-        res_func_casadi = system.make_residual_function()
-        free_args_symbols = cs.vertcat(*system.free_args_sym)
+    res_expr_partial = res_func_casadi(
+        free_args_symbols,  # Unknowns -> Symbols
+        knowns_stack.flatten(),  # Knowns -> Numerical values
+    )
 
-        res_expr_partial = res_func_casadi(
-            free_args_symbols,  # Unknowns -> Symbols
-            knowns_stack.flatten(),  # Knowns -> Numerical values
-        )
+    # diagn = SystemDiagnostics(system, knowns_stack)
 
-        # diagn = SystemDiagnostics(system, knowns_stack)
+    rootfind_problem = {
+        'x': free_args_symbols,
+        'g': res_expr_partial,
+    }
 
-        rootfind_problem = {
-            'x': free_args_symbols,
-            'g': res_expr_partial,
-        }
+    # Newton-Raphson solver
+    G_newt = cs.rootfinder(
+        'newton_roots',
+        'newton',
+        rootfind_problem,
+        {
+            'print_iteration': False,
+            'error_on_fail': True,
+        },
+    )
 
-        # Newton-Raphson solver
-        G_newt = cs.rootfinder(
-            'newton_roots',
-            'newton',
-            rootfind_problem,
-            {
-                'print_iteration': False,
-                'error_on_fail': True,
+    # IPOPT solver
+    G_nlp = cs.rootfinder(
+        'nlpsol_roots',
+        'nlpsol',
+        rootfind_problem,
+        {
+            'nlpsol': 'ipopt',
+            'nlpsol_options': {
+                'ipopt.print_level': 0,
+                'ipopt.hessian_approximation': 'limited-memory',  #! Need this
             },
-        )
+        },
+    )
 
-        # IPOPT solver
-        G_nlp = cs.rootfinder(
-            'nlpsol_roots',
-            'nlpsol',
-            rootfind_problem,
-            {
-                'nlpsol': 'ipopt',
-                'nlpsol_options': {
-                    'ipopt.print_level': 0,
-                    'ipopt.hessian_approximation': 'limited-memory',  #! Need this
-                },
-            },
-        )
+    with suppress_output():
+        logger.info('Solving the system...')
+        match method:
+            case 'newton':
+                sol = G_newt(x0.flatten(), 0.0)
+            case 'nlpsol':
+                sol = G_nlp(x0.flatten(), 0.0)
 
-        with suppress_output():
-            logger.info('Solving the system...')
-            match method:
-                case 'newton':
-                    sol = G_newt(x0.flatten(), 0.0)
-                case 'nlpsol':
-                    sol = G_nlp(x0.flatten(), 0.0)
+    return sol
 
-        return sol
 
-    sol = solve_casadi_sys(ntw.system, 'nlpsol')
+sol = solve_casadi_sys(ntw.system, 'nlpsol')
 
-    sol_dict = ntw.system.solution_to_dict(sol.toarray())
+sol_dict = ntw.system.solution_to_dict(sol.toarray())
 
-    # Use midspan as precursor
-    sys_multi = ntw.system.copy()
-    sys_multi.spanwise_stations = NUM_SPAN
-    sys_multi.build(SCALED)
+# Use midspan as precursor
+sys_multi = ntw.system.copy()
+sys_multi.spanwise_stations = NUM_SPAN
+sys_multi.build(SCALED)
 
-    sol_multi = solve_casadi_sys(sys_multi, 'nlpsol', sol_dict)
+sol_multi = solve_casadi_sys(sys_multi, 'nlpsol', sol_dict)
 
-    # Overwrite
-    sol = sol_multi
-    ntw.system = sys_multi
+# Overwrite
+sol = sol_multi
+ntw.system = sys_multi
 
 
 # === JAX VERSION
-USE_JAX = not USE_CASADI
-if USE_JAX:
-    sys_jax = ntw.system.to_jax()
-    sys_jax.build(SCALED)
-
-    x0 = ntw.system.get_initial_guess()
-    knowns_stack = ntw.system.get_scaled_constraints()
-    res_func_jax = sys_jax.make_residual_function()
-
-    @jax.jit
-    def partial_res(args, aux):
-        return res_func_jax(args, knowns_stack)
-
-    flat_func = jax.jit(sys_jax._make_flat_resfunc(knowns_stack))
-
-    sol_lsq = optx.root_find(partial_res, SOLVER_LSTSQ, x0)
-    sol_newt = optx.root_find(partial_res, SOLVER_NEWTON, sol_lsq.value)
-    sol = sol_newt.value
+# sys_jax = ntw.system.to_jax()
+# sys_jax.build(SCALED)
+#
+# x0 = ntw.system.get_initial_guess()
+# knowns_stack = ntw.system.get_scaled_constraints()
+# res_func_jax = sys_jax.make_residual_function()
+#
+# @jax.jit
+# def partial_res(args, aux):
+#     return res_func_jax(args, knowns_stack)
+#
+# flat_func = jax.jit(sys_jax._make_flat_resfunc(knowns_stack))
+#
+# sol_lsq = optx.root_find(partial_res, SOLVER_LSTSQ, x0)
+# sol_newt = optx.root_find(partial_res, SOLVER_NEWTON, sol_lsq.value)
+# sol = sol_newt.value
 
 ntw.system.write_solution_to_nodes(np.array(sol).reshape(ntw.system.num_args, -1))
 
 
 PLOTS = True
 if PLOTS:
-    # plt.rcParams.update(
-    #     {
-    #         'text.usetex': False,
-    #         'font.family': 'serif',
-    #     }
-    # )
     FONTSIZE = 26
     FONTDICT = {'fontsize': FONTSIZE}
 

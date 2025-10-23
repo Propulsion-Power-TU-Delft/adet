@@ -70,8 +70,8 @@ class SwallowingCapacity(EquationBase):
     Taken from pg 254 Casey Turbocompressors
     """
 
-    def residual(self, oth_massflow0, tot_rhomass0, kin_area1, kin_U1, oth_swllCap1):
-        return oth_swllCap1 - oth_massflow0 / (tot_rhomass0 * kin_area1 * kin_U1)
+    def residual(self, oth_massflow0, tot_rhomass0, geo_area1, kin_U1, oth_swllCap1):
+        return oth_swllCap1 - oth_massflow0 / (tot_rhomass0 * geo_area1 * kin_U1)
 
 
 class SpecificSpeed(EquationBase):

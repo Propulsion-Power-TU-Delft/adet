@@ -9,6 +9,13 @@ import matplotlib.pyplot as plt
 
 logger = logging.getLogger(__name__)
 
+# plt.rcParams.update(
+#     {
+#         'text.usetex': False,
+#         'font.family': 'serif',
+#     }
+# )
+
 
 def plot_velocity_triangles(kine):
     plot_settings = {'angles': 'xy', 'scale_units': 'xy', 'scale': 1}

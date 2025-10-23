@@ -182,8 +182,9 @@ def safe_min_clip(x, min_value):
 
 
 class ParabolicCamberline(EquationBase):
+    # NOTE: You can use this and skip the safe checks
     skip_unit_check = True
-    manual_units = ('m', 'm')
+    manual_units = ('m', 'm', 'rad')
 
     @staticmethod
     def _compute_parabola(geo_beta0, geo_beta1, chord):
@@ -231,6 +232,10 @@ class ParabolicCamberline(EquationBase):
     ):
         a, b = self._compute_parabola(geo_beta0, geo_beta1, geo_chord1)
         arc_len = self._parabolic_arc_len(a, b, geo_chord1)
+
+        deflection = geo_beta1 - geo_beta0
+
         r1 = geo_chord_ax1 - geo_chord1 * np.cos(geo_stagger1)
         r2 = geo_camb_len1 - arc_len
-        return r1, r2
+        r3 = geo_stagger1 - (deflection / 2 - geo_beta0)
+        return r1, r2, r3
