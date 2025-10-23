@@ -63,7 +63,8 @@ class DentonProfileLoss(EquationBase):
     This function is ONLY compatible with CasADi
     """
 
-    skip_unit_check = False
+    skip_unit_check = True
+    manual_units = ('dimensionless',)
 
     def __init__(
         self,

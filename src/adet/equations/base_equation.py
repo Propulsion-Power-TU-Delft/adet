@@ -3,9 +3,11 @@ from abc import ABC, abstractmethod
 import logging
 import re
 from typing import get_args, cast, Self
+import ast
+import inspect
+import textwrap
 
 import sympy as sp
-import numpy as np
 
 from adet.tools.strings import verify_string_pattern, get_arg_state
 from adet.tools.context import override_operators
@@ -24,13 +26,17 @@ class EquationBase(ABC):
     manual_units: tuple[str, ...] = ()
 
     def __init__(self, scaling_factor: float | tuple[float, ...] | None = None):
-        self._arguments: tuple[str, ...] = self.read_and_validate_arguments(
+        self._arguments: tuple[str, ...] = self._read_and_validate_arguments(
             getfullargspec(self.residual).args[1:],
         )
+
+        # TODO: Move scaling factor
         self.scaling_factor = scaling_factor
 
+        self._num_equations: int | None = None
+
+        # If the unit are not checked, make sure the user added units correclty
         if self.skip_unit_check:
-            # If the unit are not checked, make sure the user added units correclty
             eq_name = self.__class__.__name__
             if not self.manual_units:
                 raise AttributeError(
@@ -63,29 +69,45 @@ class EquationBase(ABC):
 
     @property
     def num_equations(self):
-        return self._count_equations()
+        # Maybe add a setter for manually imposing num
+        # equations?
+        if not self._num_equations:
+            self._num_equations = self._count_equations()
+
+        return self._num_equations
 
     @property
     def num_args(self):
         return len(self._arguments)
 
     def _count_equations(self):
-        """
-        Count how many residual equations are contained
-        in this residual formulation
-        """
-        num_args = len(self.arguments)
-        dummy_args = np.full((num_args, 1), np.nan)
-        dummy_res = self.residual(*dummy_args)
+        """Return a set of possible numbers of returned values for a method."""
+        method = self.residual.__func__
 
-        if hasattr(dummy_res, '__len__'):
-            num_equations = len(dummy_res)
-        else:
-            num_equations = 1
+        try:
+            src = inspect.getsource(method)
+            # Remove class indentation
+            src = textwrap.dedent(src)
+        except (OSError, TypeError):
+            raise RuntimeError(
+                f'Could not get source code for residual function in'
+                f' {self.__class__.__name__}'
+            )
 
-        return num_equations
+        tree = ast.parse(src)
+        num_ret = 0  # number of returns
 
-    def read_and_validate_arguments(self, all_arguments: list[str]):
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Return):
+                v = node.value
+                if isinstance(v, ast.Tuple):
+                    num_ret += len(v.elts)
+                else:
+                    num_ret += 1
+
+        return num_ret
+
+    def _read_and_validate_arguments(self, all_arguments: list[str]):
         """
         Retrieve all the arguments of the residual function
         """

@@ -239,3 +239,8 @@ class ParabolicCamberline(EquationBase):
         r2 = geo_camb_len1 - arc_len
         r3 = geo_stagger1 - (deflection / 2 - geo_beta0)
         return r1, r2, r3
+
+
+if __name__ == '__main__':
+    eq = CumMassFlow()
+    eq._count_equations()

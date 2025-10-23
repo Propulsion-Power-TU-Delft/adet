@@ -147,15 +147,17 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'omega': 'rad/s',
         'beta': 'rad',
         'alpha': 'rad',
-        # Geometry
+        # Meridional Geometry
         'meridional_angle': 'rad',
         'height': 'm',
         'hh': 'm',
         'rr': 'm',
         'rmid': 'm',
         'area': 'm**2',
+        # Blade parameters
         'chord': 'm',
         'chord_ax': 'm',
+        'camb_len': 'm',
         'pitch': 'm',
         'stagger': 'rad',
     }

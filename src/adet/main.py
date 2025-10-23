@@ -101,7 +101,6 @@ _dfu_reg.from_dict(
         'STratio': 'dimensionless',
         'Cd_profile': 'dimensionless',
         'sizeParameter': 'meters',
-        'camb_len': 'meters',
     }
 )
 
