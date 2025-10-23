@@ -8,9 +8,10 @@ import inspect
 import textwrap
 
 import sympy as sp
+import numpy as np
 
 from adet.tools.strings import verify_string_pattern, get_arg_state
-from adet.tools.context import override_operators
+from adet.tools.context import override_operators, suppress_output
 from adet.constants import NodeStatesNames
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ class EquationBase(ABC):
     skip_unit_check: bool = False
     manual_units: tuple[str, ...] = ()
 
-    def __init__(self, scaling_factor: list[float, ...] | None = None):
+    def __init__(self, scaling_factor: list[float] | None = None):
         self._arguments: tuple[str, ...] = self._read_and_validate_arguments(
             getfullargspec(self.residual).args[1:],
         )
@@ -72,7 +73,13 @@ class EquationBase(ABC):
         # Maybe add a setter for manually imposing num
         # equations?
         if not self._num_equations:
-            self._num_equations = self._count_equations()
+            try:
+                # Avoid printing if fails
+                # in particular CoolProp stuff
+                with suppress_output():
+                    self._num_equations = self._count_equations_arg_inj()
+            except Exception:
+                self._num_equations = self._count_equations_ast()
 
         return self._num_equations
 
@@ -80,8 +87,11 @@ class EquationBase(ABC):
     def num_args(self):
         return len(self._arguments)
 
-    def _count_equations(self):
-        """Return a set of possible numbers of returned values for a method."""
+    def _count_equations_ast(self):
+        """
+        Count the number of residual equation using
+        abstract syntax trees
+        """
         method = self.residual.__func__
 
         try:
@@ -106,6 +116,23 @@ class EquationBase(ABC):
                     num_ret += 1
 
         return num_ret
+
+    def _count_equations_arg_inj(self):
+        """
+        Count how many residual equations are contained
+        in this residual formulation by argument
+        injection
+        """
+        num_args = len(self.arguments)
+        dummy_args = np.full((num_args, 1), np.nan)
+        dummy_res = self.residual(*dummy_args)
+
+        if hasattr(dummy_res, '__len__'):
+            num_equations = len(dummy_res)
+        else:
+            num_equations = 1
+
+        return num_equations
 
     def _read_and_validate_arguments(self, all_arguments: list[str]):
         """

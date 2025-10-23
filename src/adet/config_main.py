@@ -17,12 +17,12 @@ from adet.equations.nondimensional import (
     SpecificSpeed,
 )
 from adet.equations.definitions import AngleDeflection
-from adet.tools.coolprop_utils import CountingAbstractState
+from adet.tools.coolprop_utils import DebugAbstractState
 
 # fluid_model = IdealGasModel(287.0, 1.4)
 
 # This counts the number of updates in an attribute
-abs_state = CountingAbstractState('HEOS', 'Air')
+abs_state = DebugAbstractState('HEOS', 'Air')
 fluid_model = AbstractStateModel(abs_state)
 
 # *** Shafts
@@ -46,8 +46,8 @@ _dfu_reg.from_dict(
         'STratio': 'dimensionless',
         'Cd_profile': 'dimensionless',
         'sizeParameter': 'meters',
-        'x_by_camb_len_F': 'meters',
-        'x_by_camb_len_S': 'meters',
+        'x_by_camb_len_A': 'meters',
+        'x_by_camb_len_B': 'meters',
         'k_prof': '',
     }
 )
@@ -99,6 +99,9 @@ row1 = BladeRow(
         'oth': {
             # PROFILE LOSSES
             'Cd_profile': 0.002,
+            # Denton
+            'x_by_camb_len_A': 0.375,
+            'x_by_camb_len_B': 0.675,
             # NONDIMENSIONAL
             # 'STratio': 0.98,
             'workCoeff': 1.2,
@@ -114,8 +117,8 @@ row1 = BladeRow(
     ],
     extra_equations={
         ZeroDeviation(): 1,  # No outlet deviation
-        IncRectVelocity(): (0, 1),  # Rectangular profile
-        # DentonProfileLoss(fluid_model): (0, 1),  # Rectangular profile
+        # IncRectVelocity(): (0, 1),  # Rectangular profile
+        DentonProfileLoss(fluid_model): (0, 1),  # Rectangular profile
         ParabolicCamberline(): (0, 1),
         # -| Compute nondimensional coefficients |-
         FlowCoefficient(): 0,

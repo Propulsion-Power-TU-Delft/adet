@@ -1,12 +1,13 @@
-from typing import Any, Callable, cast
+from typing import Callable, cast
 from adet.equations import EquationBase
 
 from adet.fluid.eos import CasadiEoS
 import CoolProp as cp
 import casadi as cs
+import numpy as np
 
 from adet.fluid.settings import AbstractStateModel, FluidModel
-from adet.tools.coolprop_utils import CountingAbstractState
+from adet.tools.coolprop_utils import DebugAbstractState
 
 
 # Greitzer model
@@ -90,7 +91,7 @@ class DentonProfileLoss(EquationBase):
     def __init__(
         self,
         fluid_model: AbstractStateModel,
-        scaling_factor: float | tuple[float] | None = None,
+        scaling_factor: list[float] | None = None,
     ):
         """
         This requires intermediate state updates, meaning ad eos object has to be
@@ -125,7 +126,7 @@ class DentonProfileLoss(EquationBase):
 
         return x_by_camb_len, W_distr_ss, W_distr_ps
 
-    def _compute_thermo_distributions(self, rlt_hmass0, rlt_smass0, W_distr):
+    def _compute_thermo_distributions(self, rlt_hmass0, stc_smass0, W_distr):
         """
         Compute the pressure distribution from total enthalpy and entorpy
         at the inlet
@@ -156,11 +157,18 @@ class DentonProfileLoss(EquationBase):
         stc_hmass_dst = [rlt_hmass0 - W_distr[:, i] ** 2 / 2 for i in range(NUM_STREAM)]
 
         # Extract p, T, and density distributions from abstract state
-        p_dst, T_dst, rho_dst = [cs.DM(num_span, NUM_STREAM) for _ in range(3)]
-        for i, h in enumerate(stc_hmass_dst):
-            p_dst[:, i], rho_dst[:, i], T_dst[:, i] = self._eos_callback(h, rlt_smass0)
+        p_list, rho_list, T_list = [], [], []
+        for h in stc_hmass_dst:
+            p, rho, T = self._eos_callback(h, stc_smass0)
+            p_list.append(p)
+            rho_list.append(rho)
+            T_list.append(T)
 
-        return p_dst, rho_dst, T_dst
+        p_cat = cs.horzcat(*p_list)
+        rho_cat = cs.horzcat(*rho_list)
+        T_cat = cs.horzcat(*T_list)
+
+        return p_cat, rho_cat, T_cat
 
     @staticmethod
     def _trapezoid(y, x):
@@ -182,8 +190,8 @@ class DentonProfileLoss(EquationBase):
         kin_Vt1,
         # Misc
         oth_massflow,
-        oth_x_by_camb_len_F1,
-        oth_x_by_camb_len_S1,
+        oth_x_by_camb_len_A1,
+        oth_x_by_camb_len_B1,
         oth_k_prof,
         # Geo
         geo_hh1,
@@ -191,7 +199,7 @@ class DentonProfileLoss(EquationBase):
         geo_camb_len1,
     ):
         x_by_camb_len, W_distr_ss, W_distr_ps = self._build_velocity_profile(
-            oth_x_by_camb_len_F1, oth_x_by_camb_len_S1, oth_k_prof, kin_W0, kin_W1
+            oth_x_by_camb_len_A1, oth_x_by_camb_len_B1, oth_k_prof, kin_W0, kin_W1
         )
 
         # TODO: Idea, make smass1 also an input and distribute s linearly
@@ -240,7 +248,8 @@ if __name__ == '__main__':
     # with shape manipulation and extraction, and every
     # array is AT LEAST 2D
     N_SPAN = 11
-    eos = CountingAbstractState('HEOS', 'Air')
+    eos = DebugAbstractState('HEOS', 'Air')
+    model = AbstractStateModel(eos)
 
     # Define example values
     W0 = np.linspace(100, 300, N_SPAN)
@@ -264,7 +273,7 @@ if __name__ == '__main__':
     k_prof = 0.6 * np.ones(N_SPAN)
 
     # Test
-    dl = DentonProfileLoss(eos)
+    dl = DentonProfileLoss(model)
 
     dummy_residual = dl.residual(
         dummy_ht,

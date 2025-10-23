@@ -9,7 +9,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from adet.fluid.eos import CasadiEoS
-from adet.tools.coolprop_utils import CountingAbstractState
+from adet.tools.coolprop_utils import DebugAbstractState
 
 
 def solve_diffuser_problem(r2, r3, p2, T2, Vm2, Vt2, eos, entropy_gen_pct, num_points):
@@ -103,7 +103,7 @@ if __name__ == '__main__':
     p2 = 6e5  # Static pressure [Pa]
     T2 = 500  # Static pressure [Pa]
 
-    eos = CountingAbstractState('HEOS', 'Water')
+    eos = DebugAbstractState('HEOS', 'Water')
 
     solution = solve_diffuser_problem(r2, r3, p2, T2, Vm2, Vt2, eos, 0.05, 100)
 

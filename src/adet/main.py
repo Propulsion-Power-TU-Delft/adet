@@ -20,7 +20,7 @@ from adet.config_main import fluid_model, inlet, row1  # row2, row3, row4
 from adet.tools.iter import grouper
 from adet.tools.loggers import setup_logger
 from adet.tools.context import suppress_output
-from adet.tools.coolprop_utils import CountingAbstractState
+from adet.tools.coolprop_utils import DebugAbstractState
 
 
 logger = logging.getLogger(__name__)
@@ -119,19 +119,19 @@ def solve_casadi_sys(
         {
             'nlpsol': 'ipopt',
             'nlpsol_options': {
-                'ipopt.print_level': 0,
+                'ipopt.print_level': 6,
                 'ipopt.hessian_approximation': 'limited-memory',  #! Need this
             },
         },
     )
 
-    with suppress_output():
-        logger.info('Solving the system...')
-        match method:
-            case 'newton':
-                sol = G_newt(x0.flatten(), 0.0)
-            case 'nlpsol':
-                sol = G_nlp(x0.flatten(), 0.0)
+    # with suppress_output():
+    logger.info('Solving the system...')
+    match method:
+        case 'newton':
+            sol = G_newt(x0.flatten(), 0.0)
+        case 'nlpsol':
+            sol = G_nlp(x0.flatten(), 0.0)
 
     return sol
 

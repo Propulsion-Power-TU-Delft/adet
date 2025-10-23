@@ -95,15 +95,27 @@ def make_lookup_table(
     return luts
 
 
-class CountingAbstractState(cp.AbstractState):
+class DebugAbstractState(cp.AbstractState):
     """Light wrapper for counting the number of updates"""
 
     def __init__(self, *args, **kwargs) -> None:
         self.num_updates = 0
+        self.print = False
         super().__init__()
 
     def update(self, *args, **kwargs):
         self.num_updates += 1
+        debug_str = f"""
+========================
+|> UPDATE DEBUG
+   ------------
+|> Updating with {COOLPROP_PAIRS[args[0]]}
+|> First arg: {args[1]}
+|> Second arg: {args[2]}
+========================
+        """
+
+        print(debug_str)
         return super().update(*args, **kwargs)
 
 
