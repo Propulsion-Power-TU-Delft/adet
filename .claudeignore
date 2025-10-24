@@ -1,0 +1,19 @@
+## Files ignored by claude-code
+
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv/
+
+# Not needed miscellaneous
+uv.lock
+LICENSE
+
+# Test caches (Not currently present)
+.pytest_cache/
