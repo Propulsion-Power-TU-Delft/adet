@@ -5,9 +5,9 @@ from pint import Quantity
 from adet.registries import DefaultUnitsRegistry, ScalingRegistry, GuessRegistry
 from adet.fluid.settings import AbstractStateModel, IdealGasModel
 from adet.components import BladeRow, Shaft, Inlet
-from adet.equations.fundamental import ParabolicCamberline
+from adet.equations.fundamental import BladeCount, ParabolicCamberline
 from adet.equations.simplelosses import ZeroDeviation
-from adet.losses.profile import DentonProfileLoss, IncRectVelocity
+from adet.losses.profile import DentonProfileLoss, RectVelocityIncompressible
 from adet.losses.basic import PercentageEntropyLoss
 from adet.equations.nondimensional import (
     StaticTotalPressRatio,
@@ -23,6 +23,7 @@ from adet.tools.coolprop_utils import DebugAbstractState
 
 # This counts the number of updates in an attribute
 abs_state = DebugAbstractState('HEOS', 'Air')
+abs_state.debug_print = True
 fluid_model = AbstractStateModel(abs_state)
 
 # *** Shafts
@@ -46,6 +47,7 @@ _dfu_reg.from_dict(
         'STratio': 'dimensionless',
         'Cd_profile': 'dimensionless',
         'sizeParameter': 'meters',
+        'n_blades': 'dimensionless',
         'x_by_camb_len_A': 'meters',
         'x_by_camb_len_B': 'meters',
         'k_prof': '',
@@ -90,8 +92,9 @@ row1 = BladeRow(
             'height': 0.2,
             # 'camb_len': 0.2,
             # 'stagger': 0.6,
+            'n_blades': 10,
             'chord': 0.2,
-            'pitch': 0.2,
+            # 'pitch': 0.2,
         },
         'stc': {
             # 'p': 2e5,
@@ -117,9 +120,10 @@ row1 = BladeRow(
     ],
     extra_equations={
         ZeroDeviation(): 1,  # No outlet deviation
-        # IncRectVelocity(): (0, 1),  # Rectangular profile
-        DentonProfileLoss(fluid_model): (0, 1),  # Rectangular profile
+        RectVelocityIncompressible(): (0, 1),  # Rectangular profile
+        # DentonProfileLoss(fluid_model): (0, 1),  # Rectangular profile
         ParabolicCamberline(): (0, 1),
+        BladeCount(): 1,
         # -| Compute nondimensional coefficients |-
         FlowCoefficient(): 0,
         WorkCoefficient(): (0, 1),

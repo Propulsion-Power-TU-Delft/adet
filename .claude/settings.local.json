@@ -3,12 +3,9 @@
     "allow": [
       "Bash(tree:*)",
       "Bash(find:*)",
-      "Bash(git -C \"C:\\Users\\fvaccari\\repos\\adet\" status)",
-      "Bash(git -C \"C:\\Users\\fvaccari\\repos\\adet\" log --oneline -1)",
-      "Bash(git -C \"C:\\Users\\fvaccari\\repos\\adet\" add .claude/ .claudeignore CLAUDE.md)",
-      "Bash(git -C \"C:\\Users\\fvaccari\\repos\\adet\" commit -m \"$(cat <<''EOF''\nAdd Claude Code configuration and project documentation\n\n- Add .claudeignore to exclude build artifacts and lock files\n- Add CLAUDE.md with comprehensive project overview and guidelines\n- Add .claude/ directory for Claude Code configuration\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
+      "Bash(git:*)",
+      "Bash(okular:*)"
     ],
-    "deny": [],
-    "ask": []
+    "deny": []
   }
 }

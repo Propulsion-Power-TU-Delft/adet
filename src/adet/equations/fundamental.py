@@ -9,14 +9,14 @@ import sympy as sp
 from pint.facets.plain import PlainQuantity
 
 
-class MassConservation(EquationBase):
-    def residual(self, oth_massflow0, oth_massflow1):
-        return oth_massflow0 - oth_massflow1
-
-
 class EulerEquation(EquationBase):
     def residual(self, tot_hmass0, kin_U0, kin_Vt0, tot_hmass1, kin_U1, kin_Vt1):
         return (tot_hmass1 - tot_hmass0) - (kin_U1 * kin_Vt1 - kin_U0 * kin_Vt0)
+
+
+class MassConservation(EquationBase):
+    def residual(self, oth_massflow0, oth_massflow1):
+        return oth_massflow0 - oth_massflow1
 
 
 class CumMassFlow(EquationBase):
@@ -181,6 +181,16 @@ def safe_min_clip(x, min_value):
     return x
 
 
+class BladeCount(EquationBase):
+    skip_unit_check = True
+    manual_units = ('dimensionless',)
+
+    def residual(self, geo_pitch0, geo_n_blades0, geo_rr0):
+        res = cs.floor(geo_n_blades0) - 2 * np.pi * geo_rr0 / geo_pitch0
+
+        return res
+
+
 class ParabolicCamberline(EquationBase):
     # NOTE: You can use this and skip the units checks
     skip_unit_check = True
@@ -243,8 +253,3 @@ class ParabolicCamberline(EquationBase):
         r2 = geo_camb_len1 - arc_len
         r3 = geo_stagger1 - (deflection / 2 - geo_beta0)
         return r1, r2, r3
-
-
-if __name__ == '__main__':
-    eq = CumMassFlow()
-    eq._count_equations()

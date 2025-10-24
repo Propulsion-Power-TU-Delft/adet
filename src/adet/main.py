@@ -1,4 +1,5 @@
 # === IMPORTS
+import IPython
 import logging
 from itertools import accumulate
 from typing import Literal
@@ -39,7 +40,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 
 # === SETTINGS
-NUM_SPAN = 15
+NUM_SPAN = 11
 
 # Thermodynamic model
 
@@ -120,18 +121,20 @@ def solve_casadi_sys(
             'nlpsol': 'ipopt',
             'nlpsol_options': {
                 'ipopt.print_level': 1,
-                'ipopt.hessian_approximation': 'limited-memory',  #! Need this
+                # Need that, the eos does not have an hessian
+                #  (jah)
+                'ipopt.hessian_approximation': 'limited-memory',
             },
         },
     )
 
-    # with suppress_output():
-    logger.info('Solving the system...')
-    match method:
-        case 'newton':
-            sol = G_newt(x0.flatten(), 0.0)
-        case 'nlpsol':
-            sol = G_nlp(x0.flatten(), 0.0)
+    with suppress_output():
+        logger.info('Solving the system...')
+        match method:
+            case 'newton':
+                sol = G_newt(x0.flatten(), 0.0)
+            case 'nlpsol':
+                sol = G_nlp(x0.flatten(), 0.0)
 
     return sol
 
@@ -141,15 +144,15 @@ sol = solve_casadi_sys(ntw.system, 'nlpsol')
 sol_dict = ntw.system.solution_to_dict(sol.toarray())
 
 # Use midspan as precursor
-# sys_multi = ntw.system.copy()
-# sys_multi.spanwise_stations = NUM_SPAN
-# sys_multi.build(SCALED)
-#
-# sol_multi = solve_casadi_sys(sys_multi, 'nlpsol', sol_dict)
-#
-# # Overwrite
-# sol = sol_multi
-# ntw.system = sys_multi
+sys_multi = ntw.system.copy()
+sys_multi.spanwise_stations = NUM_SPAN
+sys_multi.build(SCALED)
+
+sol_multi = solve_casadi_sys(sys_multi, 'nlpsol', sol_dict)
+
+# Overwrite
+sol = sol_multi
+ntw.system = sys_multi
 
 
 # === JAX VERSION - broken
@@ -211,6 +214,8 @@ if PLOTS:
             offset[n0_idx // 2],
         )
 
-    plt.show()
+    # plt.show()
 else:
     plt.close('all')
+
+IPython.embed(colors='linux', confirm_exit=False)

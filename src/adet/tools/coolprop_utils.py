@@ -103,7 +103,7 @@ class DebugAbstractState(cp.AbstractState):
 
     def __init__(self, *args, **kwargs) -> None:
         self.num_updates = 0
-        self.print = False
+        self.debug_print = False
         super().__init__()
 
     def update(self, *args, **kwargs):
@@ -118,7 +118,8 @@ class DebugAbstractState(cp.AbstractState):
 ========================
         """
 
-        print(debug_str)
+        if self.debug_print:
+            print(debug_str)
         return super().update(*args, **kwargs)
 
 

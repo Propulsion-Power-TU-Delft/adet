@@ -21,7 +21,7 @@ from adet.tools.coolprop_utils import DebugAbstractState
 #  |             Leading edge
 #  |___________________________> Distance along blade
 #
-class IncRectVelocity(EquationBase):
+class RectVelocityIncompressible(EquationBase):
     """
     References
     ----------
@@ -189,7 +189,7 @@ class DentonProfileLoss(EquationBase):
         kin_Vt0,
         kin_Vt1,
         # Misc
-        oth_massflow,
+        oth_massflow1,
         oth_x_by_camb_len_A1,
         oth_x_by_camb_len_B1,
         oth_k_prof,
@@ -198,7 +198,7 @@ class DentonProfileLoss(EquationBase):
         geo_hh1,
         geo_chord_ax1,
         geo_camb_len1,
-        geo_pitch1,
+        geo_n_blades1,
     ):
         x_by_camb_len, W_distr_ss, W_distr_ps = self._build_velocity_profile(
             oth_x_by_camb_len_A1, oth_x_by_camb_len_B1, oth_k_prof, kin_W0, kin_W1
@@ -233,8 +233,8 @@ class DentonProfileLoss(EquationBase):
         # D_mean = (rho_ss[:, 0] + rho_ps[:, 0]) / 2  # Average density
         # W_mean = (kin_W0 + kin_W1) / 2  # Average axial velocity
 
-        # Camber-to-pitch ratio (solidity-like parameter)
-        Cs_s = geo_camb_len1 / geo_pitch1
+        # Single channel mass flow
+        channel_mass_flow = oth_massflow1 / geo_n_blades1
 
         # Full entropy integral with proper scaling (Denton model)
         entropy_integral = Cs_s * (entropy_int_ps + entropy_int_ss)
@@ -247,9 +247,9 @@ class DentonProfileLoss(EquationBase):
         delta_Vt = cs.fabs(kin_Vt1 - kin_Vt0)
 
         # Tangential momentum balance [N]
-        r1 = oth_massflow * delta_Vt - pressure_integral * geo_hh1
+        r1 = oth_massflow1 * delta_Vt - pressure_integral * geo_hh1
         # Specific entropy generation [J / kg / K]
-        r2 = stc_smass1 - stc_smass0 - entropy_integral * geo_hh1 / oth_massflow
+        r2 = stc_smass1 - stc_smass0 - entropy_integral * geo_hh1 / oth_massflow1
 
         return r1, r2
 
