@@ -96,7 +96,10 @@ def make_lookup_table(
 
 
 class DebugAbstractState(cp.AbstractState):
-    """Light wrapper for counting the number of updates"""
+    """
+    Light wrapper for counting the number of updates
+    and printing on update
+    """
 
     def __init__(self, *args, **kwargs) -> None:
         self.num_updates = 0

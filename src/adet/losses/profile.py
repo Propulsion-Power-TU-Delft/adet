@@ -97,7 +97,7 @@ class DentonProfileLoss(EquationBase):
         This requires intermediate state updates, meaning ad eos object has to be
         provided manually
         """
-        self.eos = fluid_model.eos_object
+        self._fluid_model = fluid_model
         self._eos_callback = None
         super().__init__(scaling_factor)
 
@@ -143,7 +143,7 @@ class DentonProfileLoss(EquationBase):
         if self._eos_callback is None:
             _eos_callback = CasadiEoS(
                 f'Denton_HS_{id(self)}',
-                self.eos,
+                self._fluid_model.eos_object,
                 cp.HmassSmass_INPUTS,
                 ['p', 'rhomass', 'T'],
                 num_span,
@@ -193,10 +193,12 @@ class DentonProfileLoss(EquationBase):
         oth_x_by_camb_len_A1,
         oth_x_by_camb_len_B1,
         oth_k_prof,
+        oth_Cd_profile1,
         # Geo
         geo_hh1,
         geo_chord_ax1,
         geo_camb_len1,
+        geo_pitch1,
     ):
         x_by_camb_len, W_distr_ss, W_distr_ps = self._build_velocity_profile(
             oth_x_by_camb_len_A1, oth_x_by_camb_len_B1, oth_k_prof, kin_W0, kin_W1
@@ -215,23 +217,37 @@ class DentonProfileLoss(EquationBase):
 
         # Trapezoidal integration (can't use np.trapezoidal for differentiability)
         # (trapezoidal rule is exact because everything is linear)
-        pressure_integral = self._trapezoid(p_ps - p_ss, x_dimensional)  # [Pa]
+        # [Pa * m = N / m]
+        pressure_integral = self._trapezoid(p_ps - p_ss, x_dimensional)
 
-        avg_velocity = (kin_W0 + kin_W1) / 2
+        # Entropy generation from viscous dissipation (Denton model)
+        # Compute integrals separately for each side using actual velocity distributions
+        entropy_int_ss = self._trapezoid(
+            oth_Cd_profile1 * rho_ss * W_distr_ss**3 / T_ss, x_dimensional
+        )
+        entropy_int_ps = self._trapezoid(
+            oth_Cd_profile1 * rho_ps * W_distr_ps**3 / T_ps, x_dimensional
+        )
 
-        entropy_primitive = (rho_ss / T_ss + rho_ps / T_ps) * avg_velocity**3
-        entropy_integral = self._trapezoid(entropy_primitive, x_dimensional)
+        # Normalization factors
+        # D_mean = (rho_ss[:, 0] + rho_ps[:, 0]) / 2  # Average density
+        # W_mean = (kin_W0 + kin_W1) / 2  # Average axial velocity
+
+        # Camber-to-pitch ratio (solidity-like parameter)
+        Cs_s = geo_camb_len1 / geo_pitch1
+
+        # Full entropy integral with proper scaling (Denton model)
+        entropy_integral = Cs_s * (entropy_int_ps + entropy_int_ss)
         # Integral = Entropy production (NOT SPECIFIC)
         # per unit length (in height direction) per unit time
         # To convert to specific (see residual definition below)
         #     |> divide my massflow
         #     |> multiply by height sector
 
-        # TODO: Check these definitions
-        delta_Vt = cs.fabs(kin_Vt0 - kin_Vt0)
+        delta_Vt = cs.fabs(kin_Vt1 - kin_Vt0)
 
         # Tangential momentum balance [N]
-        r1 = oth_massflow * delta_Vt - pressure_integral * geo_chord_ax1 * geo_hh1
+        r1 = oth_massflow * delta_Vt - pressure_integral * geo_hh1
         # Specific entropy generation [J / kg / K]
         r2 = stc_smass1 - stc_smass0 - entropy_integral * geo_hh1 / oth_massflow
 
@@ -270,6 +286,7 @@ if __name__ == '__main__':
     Cd = 0.002 * np.ones(N_SPAN)
     chord_ax = 0.1 * np.ones(N_SPAN)
     camb_len = 0.15 * np.ones(N_SPAN)
+    pitch = 0.2 * np.ones(N_SPAN)
     k_prof = 0.6 * np.ones(N_SPAN)
 
     # Test
@@ -287,9 +304,11 @@ if __name__ == '__main__':
         x_by_camb_len1,
         x_by_camb_len2,
         k_prof,
+        Cd,
         dummy_hh,
         chord_ax,
         camb_len,
+        pitch,
     )
 
     # TODO: Test with symbolics

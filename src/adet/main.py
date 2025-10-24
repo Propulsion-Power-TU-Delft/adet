@@ -13,14 +13,13 @@ from adet.assembly import CasadiSystem
 from adet.components import ComponentNetwork
 from adet.diagnostics import SystemDiagnostics
 from adet.components.blade_row import plot_from_nodes
-from adet.fluid.settings import FluidSettings, AbstractStateModel, IdealGasModel
+from adet.fluid.settings import FluidSettings
 from adet.config_main import fluid_model, inlet, row1  # row2, row3, row4
 
 # Tooling
 from adet.tools.iter import grouper
 from adet.tools.loggers import setup_logger
 from adet.tools.context import suppress_output
-from adet.tools.coolprop_utils import DebugAbstractState
 
 
 logger = logging.getLogger(__name__)
@@ -117,9 +116,10 @@ def solve_casadi_sys(
         'nlpsol',
         rootfind_problem,
         {
+            'error_on_fail': False,
             'nlpsol': 'ipopt',
             'nlpsol_options': {
-                'ipopt.print_level': 6,
+                'ipopt.print_level': 1,
                 'ipopt.hessian_approximation': 'limited-memory',  #! Need this
             },
         },
@@ -141,15 +141,15 @@ sol = solve_casadi_sys(ntw.system, 'nlpsol')
 sol_dict = ntw.system.solution_to_dict(sol.toarray())
 
 # Use midspan as precursor
-sys_multi = ntw.system.copy()
-sys_multi.spanwise_stations = NUM_SPAN
-sys_multi.build(SCALED)
-
-sol_multi = solve_casadi_sys(sys_multi, 'nlpsol', sol_dict)
-
-# Overwrite
-sol = sol_multi
-ntw.system = sys_multi
+# sys_multi = ntw.system.copy()
+# sys_multi.spanwise_stations = NUM_SPAN
+# sys_multi.build(SCALED)
+#
+# sol_multi = solve_casadi_sys(sys_multi, 'nlpsol', sol_dict)
+#
+# # Overwrite
+# sol = sol_multi
+# ntw.system = sys_multi
 
 
 # === JAX VERSION - broken

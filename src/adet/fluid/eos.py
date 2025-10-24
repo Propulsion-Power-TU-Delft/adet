@@ -97,6 +97,15 @@ class CasadiEoS(cs.Callback):
     def __del__(self):
         logger.debug(f'Callback reference {self.name()} deleted')
 
+    def __deepcopy__(self, dummy=None):
+        return self.__class__(
+            self.name(),
+            self._eos,
+            self._input_pair,
+            self._output_props,
+            self._num_span,
+        )
+
     def get_n_in(self):
         return len(self._input_names)
 
