@@ -4,6 +4,7 @@
       "Bash(tree:*)",
       "Bash(find:*)",
       "Bash(git:*)",
+      "git *",
       "Bash(okular:*)"
     ],
     "deny": []
