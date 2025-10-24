@@ -143,16 +143,16 @@ sol = solve_casadi_sys(ntw.system, 'nlpsol')
 
 sol_dict = ntw.system.solution_to_dict(sol.toarray())
 
-# Use midspan as precursor
-sys_multi = ntw.system.copy()
-sys_multi.spanwise_stations = NUM_SPAN
-sys_multi.build(SCALED)
-
-sol_multi = solve_casadi_sys(sys_multi, 'nlpsol', sol_dict)
-
-# Overwrite
-sol = sol_multi
-ntw.system = sys_multi
+# # Use midspan as precursor
+# sys_multi = ntw.system.copy()
+# sys_multi.spanwise_stations = NUM_SPAN
+# sys_multi.build(SCALED)
+#
+# sol_multi = solve_casadi_sys(sys_multi, 'nlpsol', sol_dict)
+#
+# # Overwrite
+# sol = sol_multi
+# ntw.system = sys_multi
 
 
 # === JAX VERSION - broken

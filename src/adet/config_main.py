@@ -120,8 +120,8 @@ row1 = BladeRow(
     ],
     extra_equations={
         ZeroDeviation(): 1,  # No outlet deviation
-        RectVelocityIncompressible(): (0, 1),  # Rectangular profile
-        # DentonProfileLoss(fluid_model): (0, 1),  # Rectangular profile
+        # RectVelocityIncompressible(): (0, 1),  # Rectangular profile
+        DentonProfileLoss(fluid_model): (0, 1),  # Rectangular profile
         ParabolicCamberline(): (0, 1),
         BladeCount(): 1,
         # -| Compute nondimensional coefficients |-
