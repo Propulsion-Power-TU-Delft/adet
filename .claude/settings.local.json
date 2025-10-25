@@ -4,8 +4,8 @@
       "Bash(tree:*)",
       "Bash(find:*)",
       "Bash(git:*)",
-      "git *",
-      "Bash(okular:*)"
+      "Bash(okular:*)",
+      "Bash(uv run:*)"
     ],
     "deny": []
   }
