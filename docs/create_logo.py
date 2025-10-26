@@ -1,13 +1,6 @@
-"""
-ADeT Logo Generator
-
-Creates a logo based on velocity triangles - a fundamental concept in turbomachinery.
-The logo features multiple right-angle triangles with vector arrows representing
-velocity components.
-"""
+"""ADeT Logo Generator"""
 
 import numpy as np
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 
@@ -36,13 +29,13 @@ Y = func(S)
 U = Y * np.sin(ANGLE)
 
 
-cmap = plt.get_cmap('Purples')
+cmap = plt.get_cmap('YlOrRd')
 plot_settings = {'angles': 'xy', 'scale_units': 'xy', 'scale': 1}
 
-C = [cmap(i / NUM_ARROWS) for i in range(NUM_ARROWS)]
-W = np.linspace(0.005, 0.01, NUM_ARROWS)
+C = [cmap(i / NUM_ARROWS / 1.2) for i in range(NUM_ARROWS)]
+W = np.linspace(0.005, 0.008, NUM_ARROWS)
 
-fig, ax = plt.subplots(figsize=(15, 10))
+fig, ax = plt.subplots()
 # BOTTOM
 for i in range(NUM_ARROWS):
     ax.quiver(
@@ -64,7 +57,7 @@ ax.quiver(
     zero,
     (Y - 1),
     color=C[-1],
-    width=0.03,
+    width=0.07,
     headwidth=0,
     headlength=0,
     headaxislength=0,
@@ -77,7 +70,7 @@ ax.quiver(
     ((Y - 1) * np.sin(angle)),
     (Y - 1),
     color=C[-1],
-    width=0.01,
+    width=0.015,
     headwidth=0,
     headlength=0,
     headaxislength=0,
@@ -85,8 +78,12 @@ ax.quiver(
 )
 
 
-ax.set_xbound(0.0, np.tan(ANGLE))
-ax.set_ybound(0.0, 1.0)
+# Set bounds to center the logo
+ax.set_xlim(0.5, np.tan(ANGLE) + 0.1)
+ax.set_ylim(0.0, 1.1)
 ax.set_aspect('equal')
+
+# Remove axes
+ax.axis('off')
 
 plt.show()
