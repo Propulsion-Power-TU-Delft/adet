@@ -71,6 +71,10 @@ ntw = ComponentNetwork(
     ],
 )
 
+ntw.system.add_global_constraints(
+    {'oth': {'cpmassid': 1004, 'cvmassid': 700, 'T_ref': 1, 'p_ref': 1}}
+)
+
 ntw.build_network()
 
 n0 = ntw.system.nodes[0]

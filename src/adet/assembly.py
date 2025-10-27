@@ -89,6 +89,10 @@ class SystemAssembler(ABC):
         self.constraints: tuple[str, ...] = tuple()
         """All the constraints"""
 
+        self._global_constraints: defaultdict[
+            NodeStatesNames, dict[str, ArrayLike | PlainQuantity]
+        ] = defaultdict(dict)
+
         self._kwarg_maps: dict[EquationBase, dict[str, str]] = {}
         """
         Mapping of keyword arguments to move between relative and absolute arguments in
@@ -167,6 +171,9 @@ class SystemAssembler(ABC):
         for state_id, state_bc in bc_dict.items():
             self.boundary_conditions[node_index][state_id].update(state_bc)
 
+    def add_global_constraints(self, bc_dict):
+        self._global_constraints.update(bc_dict)
+
     def _write_bc_to_nodes(self):
         """Write the stored boundary conditions to the nodes"""
         logger.debug('Writing boundary conditions to nodes...')
@@ -184,7 +191,7 @@ class SystemAssembler(ABC):
 
         for node_idx, node in enumerate(self.nodes):
             # Add virtual constraints (e.g. cp, cv for ideal gas)
-            # self.add_boundary_conditions(virtual_constraints, node_idx)
+            self.add_boundary_conditions(self._global_constraints, node_idx)
 
             # Convert to base units arrays
             bc_arrays = jax.tree.map(to_base_units, self.boundary_conditions[node_idx])
@@ -293,6 +300,8 @@ class SystemAssembler(ABC):
             self._scaled = True
 
         self._create_nodes()
+        self._add_fluid_equations()
+
         self._write_bc_to_nodes()
         self.constraints, self.constraints_values = self._get_constraints()
 
@@ -342,6 +351,12 @@ class SystemAssembler(ABC):
         )
 
         logger.debug(f'Successfully created {len(self.nodes)} nodes')
+
+    def _add_fluid_equations(self):
+        fl_model = self._fluid_settings.model
+        if isinstance(fl_model, AnalyticalFluidModel):
+            for node_idx, _ in enumerate(self.nodes):
+                [self.add_equation(eq, node_idx) for eq in fl_model.get_equations()]
 
     def _get_constraints(self) -> tuple[tuple[str, ...], NDArray]:
         """
