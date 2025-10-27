@@ -21,7 +21,7 @@ from adet.tools.strings import get_arg_state, get_arg_type
 from adet.constants import NodeStatesNames, ArrayLike
 from adet.variables import VariableContainer, KinematicContainer, ThermostateContainer
 
-from adet.fluid.settings import AbstractStateModel, FluidSettings, IdealGasModel
+from adet.fluid.settings import FluidSettings
 from adet.fluid.properties import GasPropertiesMixin
 
 logger = logging.getLogger(__name__)
@@ -205,31 +205,3 @@ class FlowNode(GasPropertiesMixin):
 │ OTHER VARS │
 ╰────────────╯
 {self.oth}"""
-
-
-if __name__ == '__main__':
-    import CoolProp as cp
-
-    logging.basicConfig(level=logging.INFO)
-
-    NUM_SPAN = 11
-
-    model = AbstractStateModel(cp.AbstractState('HEOS', 'Air'))
-
-    model = IdealGasModel(R=287, gamma=1.4)
-    sett = FluidSettings(
-        model,
-        update_variables=('smass', 'T', 'p', 'rhomass'),
-        update_length=2,
-    )
-
-    node = FlowNode(sett, NUM_SPAN)
-
-    node.rlt.add_variable('p', 3e5)
-    node.rlt.add_variable('T', 400)
-
-    node.stc.add_variable('p', 10, 'bar')
-    node.stc.add_variable('T', 260, 'degC')
-
-    node.tot.add_variable('p', 10, 'bar')
-    node.tot.add_variable('T', 260, 'degC')

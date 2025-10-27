@@ -111,12 +111,23 @@ class Kinematics(EquationBase):
         kin_alpha0,
         kin_beta0,
     ):
-        r1 = kin_V0**2 - (kin_Vm0**2 + kin_Vt0**2)
-        r2 = kin_W0**2 - (kin_Wm0**2 + kin_Wt0**2)
+        # Only if Vm and Vt are zero the denominator
+        # nullifies, but Vm > 0 always, thus the
+        # square root should pose no problems
+        r1 = kin_V0 - (kin_Vm0**2 + kin_Vt0**2) ** 0.5
+        r2 = kin_W0 - (kin_Wm0**2 + kin_Wt0**2) ** 0.5
+
         r3 = kin_Vm0 - kin_Wm0
         r4 = kin_Vt0 - (kin_Wt0 + kin_U0)
+
+        # atan2 ensures that the angles are between
+        # - pi / 2 and pi / 2
         r5 = kin_alpha0 - np.atan2(kin_Vt0, kin_Vm0)
         r6 = kin_beta0 - np.atan2(kin_Wt0, kin_Wm0)
+
+        # Alternative formulation
+        # r5 = kin_Wm0 - kin_W0 * np.cos(kin_beta0)
+        # r6 = kin_Vm0 - kin_V0 * np.cos(kin_alpha0)
 
         return r1, r2, r3, r4, r5, r6
 
@@ -182,17 +193,25 @@ def safe_min_clip(x, min_value):
 
 
 class BladeCount(EquationBase):
-    skip_unit_check = True
-    manual_units = ('dimensionless',)
+    # NOTE: I deliberately did not include a mechanism for imposing an integer
+    # number of blades. It should be done by the loading criteria
+    # - - -
+    # e.g. If the user imposes no loading criteria and just specifies radius and
+    # pitch, the num of blades might be forced by input not to be an integer.
+    # Therefore, we choose not to violate the user's constraints for a single
+    # root problem because it is not compatible with the current architecture.
+    # - - -
 
-    def residual(self, geo_pitch0, geo_n_blades0, geo_rr0):
-        res = cs.floor(geo_n_blades0) - 2 * np.pi * geo_rr0 / geo_pitch0
+    def residual(
+        self, geo_pitch0, geo_n_blades0, geo_rr0, oth_ch_massflow0, oth_massflow0
+    ):
+        r1 = geo_pitch0 * geo_n_blades0 - 2 * np.pi * geo_rr0
+        r2 = geo_n_blades0 * oth_ch_massflow0 - oth_massflow0
 
-        return res
+        return r1, r2
 
 
 class ParabolicCamberline(EquationBase):
-    # NOTE: You can use this and skip the units checks
     skip_unit_check = True
     manual_units = ('m', 'm', 'rad')
 

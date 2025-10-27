@@ -1,12 +1,12 @@
 from typing import Callable, cast
 from adet.equations import EquationBase
 
-from adet.fluid.eos import CasadiEoS
+from adet.fluid.casadi_eos import CasadiEoS
 import CoolProp as cp
 import casadi as cs
 import numpy as np
 
-from adet.fluid.settings import AbstractStateModel, FluidModel
+from adet.fluid.settings import FluidModel
 from adet.tools.coolprop_utils import DebugAbstractState
 
 
@@ -82,7 +82,8 @@ class DentonProfileLoss(EquationBase):
 
     Warning
     -------
-    This function is ONLY compatible with CasADi
+    - This function is ONLY compatible with CasADi
+    - This assumes an abstract state gas model
     """
 
     skip_unit_check = True
@@ -90,7 +91,7 @@ class DentonProfileLoss(EquationBase):
 
     def __init__(
         self,
-        fluid_model: AbstractStateModel,
+        fluid_model: FluidModel,
         scaling_factor: list[float] | None = None,
     ):
         """
@@ -103,20 +104,29 @@ class DentonProfileLoss(EquationBase):
 
     @staticmethod
     def _build_velocity_profile(
-        x_by_camb_len1, x_by_camb_len2, k_prof, kin_W0, kin_W1
+        x_by_camb_len_A, x_by_camb_len_B, k_prof, kin_W0, kin_W1
     ) -> tuple[cs.DM, cs.DM, cs.DM]:
         """Build the velocity proile"""
         # Positions
         x_by_camb_len = cs.horzcat(
-            0.0 * x_by_camb_len1,
-            x_by_camb_len1,
-            x_by_camb_len2,
-            x_by_camb_len1 / x_by_camb_len1,
+            0.0 * x_by_camb_len_A,
+            x_by_camb_len_A,
+            x_by_camb_len_B,
+            x_by_camb_len_A / x_by_camb_len_A,
         )
 
         # Velocity values
         CLIP_RATIO = 5  # Clip pressure side to inlet W / ratio
         delta_W = kin_W1 - kin_W0
+
+        # NOTE: Nothing prevents k_prof from being negative, because
+        # the values used in the residual formulation to compute the pressure
+        # only use W**2.
+        # The problem arises when you try to use the clip ratio, because you
+        # are assuming the value of the sign by using the max function
+        # => Solution = Take the absolute value of k_prof
+
+        k_prof = cs.fabs(k_prof)  # Take the absolute value
         W_mid_ps = cs.fmax(k_prof * kin_W0 - delta_W, kin_W0 / CLIP_RATIO)
         W_mid_ss = 2 * k_prof * kin_W1 + delta_W
 
@@ -143,7 +153,7 @@ class DentonProfileLoss(EquationBase):
         if self._eos_callback is None:
             _eos_callback = CasadiEoS(
                 f'Denton_HS_{id(self)}',
-                self._fluid_model.eos_object,
+                self._fluid_model.eos,
                 cp.HmassSmass_INPUTS,
                 ['p', 'rhomass', 'T'],
                 num_span,
@@ -189,7 +199,7 @@ class DentonProfileLoss(EquationBase):
         kin_Vt0,
         kin_Vt1,
         # Misc
-        oth_massflow1,
+        oth_ch_massflow1,
         oth_x_by_camb_len_A1,
         oth_x_by_camb_len_B1,
         oth_k_prof1,
@@ -205,8 +215,8 @@ class DentonProfileLoss(EquationBase):
             oth_x_by_camb_len_A1, oth_x_by_camb_len_B1, oth_k_prof1, kin_W0, kin_W1
         )
 
-        # TODO: Idea, make smass1 also an input and distribute s linearly
-        # between inlet and outlet
+        # TODO: Idea, make smass1 also an input and distribute
+        # entropy (linearly?) between inlet and outlet
         p_ss, rho_ss, T_ss = self._compute_thermo_distributions(
             rlt_hmass0, stc_smass0, W_distr_ss
         )
@@ -214,7 +224,7 @@ class DentonProfileLoss(EquationBase):
             rlt_hmass0, stc_smass0, W_distr_ps
         )
 
-        # X is the CHORD coordinate!
+        # X is the along the chord
         x_dimensional = x_by_camb_len * geo_camb_len1
 
         # Trapezoidal integration (can't use np.trapezoidal for differentiability)
@@ -223,26 +233,33 @@ class DentonProfileLoss(EquationBase):
         pressure_integral = self._trapezoid(p_ps - p_ss, x_dimensional)
 
         # Entropy generation from 2D viscous dissipation
-        entropy_integral = self._trapezoid(
-            oth_Cd_profile1 * (rho_ps + rho_ss) * W_distr_ps**3 / T_ps, x_dimensional
+        # [ kg / m**3 ] * [ m**3 / s**3 ] / [K] * [m]
+        # = [ kg * m / s**3 / K ] = [ N / s / K ]
+        entropy_integral_ps = self._trapezoid(
+            oth_Cd_profile1 * rho_ps * W_distr_ps**3 / T_ps,
+            x_dimensional,
         )
+
+        entropy_integral_ss = self._trapezoid(
+            oth_Cd_profile1 * rho_ss * W_distr_ss**3 / T_ss,
+            x_dimensional,
+        )
+
+        entropy_integral = entropy_integral_ps + entropy_integral_ss
         # NOTE: Integral = Entropy production (NOT SPECIFIC)
         # per unit length (in height direction) per unit time
         # To convert to specific (see residual definition below):
         #    |> multiply by height sector
         #    |> divide my massflow of each channel
 
+        # 1. Tangential momentum balance [N]
         delta_Vt = cs.fabs(kin_Vt1 - kin_Vt0)
-
-        # Tangential momentum balance [N]
-        r1 = oth_massflow1 * delta_Vt - pressure_integral * geo_hh1 * np.cos(
+        r1 = oth_ch_massflow1 * delta_Vt - pressure_integral * geo_hh1 * np.cos(
             geo_stagger1
         )
 
-        # Specific entropy generation [J / kg / K]
-        # Single channel mass flow
-        channel_massflow = oth_massflow1 / geo_n_blades1
-        r2 = stc_smass1 - stc_smass0 - entropy_integral * geo_hh1 / channel_massflow
+        # 2. SPECIFIC entropy generation [J / kg / K]
+        r2 = stc_smass1 - stc_smass0 - entropy_integral * geo_hh1 / oth_ch_massflow1
 
         return r1, r2
 
@@ -258,7 +275,7 @@ if __name__ == '__main__':
     # array is AT LEAST 2D
     N_SPAN = 11
     eos = DebugAbstractState('HEOS', 'Air')
-    model = AbstractStateModel(eos)
+    model = FluidModel(eos, False)
 
     # Define example values
     W0 = np.linspace(100, 300, N_SPAN)
@@ -267,8 +284,8 @@ if __name__ == '__main__':
     Vt0 = np.linspace(40, 50, N_SPAN)
     Vt1 = np.linspace(40, 50, N_SPAN)
 
-    x_by_camb_len1 = cs.linspace(0.3, 0.3, N_SPAN)
-    x_by_camb_len2 = np.linspace(0.6, 0.6, N_SPAN)
+    x_by_camb_len_A = cs.linspace(0.3, 0.3, N_SPAN)
+    x_by_camb_len_B = np.linspace(0.6, 0.6, N_SPAN)
 
     dummy_hh = cs.DM.ones(N_SPAN) * 0.05  # pyright:ignore
 
@@ -288,7 +305,7 @@ if __name__ == '__main__':
     # Plots to check pressure and velocity distro
     # => First station should clip to W_1 / 5
     x_by_camb_len, V_ss, V_ps = dl._build_velocity_profile(
-        x_by_camb_len1, x_by_camb_len2, k_prof, W0, W1
+        x_by_camb_len_A, x_by_camb_len_B, k_prof, W0, W1
     )
     p_ss, rho_ss, T_ss = dl._compute_thermo_distributions(dummy_ht, dummy_st, V_ss)
     p_ps, rho_ps, T_ps = dl._compute_thermo_distributions(dummy_ht, dummy_st, V_ps)

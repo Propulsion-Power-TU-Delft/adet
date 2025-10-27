@@ -5,7 +5,7 @@ import casadi as cs
 import CoolProp as cp
 
 from adet.constants import COOLPROP_NAMES_MAP
-from adet.tools.coolprop_utils import get_input_names
+from adet.tools.coolprop_utils import DebugAbstractState, get_input_names
 
 
 logger = logging.getLogger(__name__)
@@ -40,17 +40,6 @@ class Sparsity(cs.Sparsity):
         return cs.Sparsity.dense(*args)
 
 
-class AbstractState(cp.AbstractState):
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__()
-        self.num_updates = 0
-
-    def update(self, *args):
-        logger.debug(f'Updating with {args}')
-        self.num_updates += 1
-        super().update(*args)
-
-
 # *** DUMMY HELPER FUNCTIONS FOR DEV
 # These are needed to mock the actual function,
 # and get information about the shapes required
@@ -77,7 +66,7 @@ class CasadiEoS(cs.Callback):
     def __init__(
         self,
         name: str,
-        eos: cp.AbstractState | Any,
+        eos: Any,
         input_pair: int,
         output_props: list[str] | tuple[str, ...],
         num_span: int = 1,
@@ -242,7 +231,8 @@ if __name__ == '__main__':
     from numpy.typing import ArrayLike
 
     # Setup a CoolProp EOS
-    eos = AbstractState('HEOS', 'CO2')
+    eos = DebugAbstractState('HEOS', 'Air')
+
     NUM_SPAN = 10
     PROPERTIES = [
         'hmass',

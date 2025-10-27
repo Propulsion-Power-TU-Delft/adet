@@ -8,17 +8,21 @@ import casadi as cs
 import numpy as np
 import matplotlib.pyplot as plt
 
-from adet.fluid.eos import CasadiEoS
+from adet.fluid.casadi_eos import CasadiEoS
 from adet.tools.coolprop_utils import DebugAbstractState
 
 
-def solve_diffuser_problem(r2, r3, p2, T2, Vm2, Vt2, eos, entropy_gen_pct, num_points):
-    eos.update(cp.PT_INPUTS, p2, T2)
+def solve_diffuser_problem(
+    r2, r3, p2, T2, Vm2, Vt2, casadi_eos, entropy_gen_pct, num_points
+):
+    casadi_eos.update(cp.PT_INPUTS, p2, T2)
 
-    s2 = eos.smass()
-    rho2 = eos.rhomass()
+    s2 = casadi_eos.smass()
+    rho2 = casadi_eos.rhomass()
 
-    get_density_PS = CasadiEoS('EOS', eos, cp.PSmass_INPUTS, ['rhomass'], 1)
+    get_density_PS = CasadiEoS(
+        'casadi_eos', casadi_eos, cp.PSmass_INPUTS, ['rhomass'], 1
+    )
 
     # CasADi setup
     r_dist = np.linspace(r2, r3, num_points)
@@ -54,10 +58,10 @@ def solve_diffuser_problem(r2, r3, p2, T2, Vm2, Vt2, eos, entropy_gen_pct, num_p
     def entropy_gen(r):
         return s2 + deltaS / (r3 - r2) * (r - r2)
 
-    density_eos = rho - get_density_PS(p, s)
+    density_casadi_eos = rho - get_density_PS(p, s)
     entropy_inc = s - entropy_gen(r)
 
-    alg = cs.vertcat(density_eos, entropy_inc)
+    alg = cs.vertcat(density_casadi_eos, entropy_inc)
     alg_variables = cs.vertcat(rho, s)
 
     # Integrator
@@ -103,9 +107,9 @@ if __name__ == '__main__':
     p2 = 6e5  # Static pressure [Pa]
     T2 = 500  # Static pressure [Pa]
 
-    eos = DebugAbstractState('HEOS', 'Water')
+    casadi_eos = DebugAbstractState('Hcasadi_eos', 'Water')
 
-    solution = solve_diffuser_problem(r2, r3, p2, T2, Vm2, Vt2, eos, 0.05, 100)
+    solution = solve_diffuser_problem(r2, r3, p2, T2, Vm2, Vt2, casadi_eos, 0.05, 100)
 
     # Convert to Cartesian
     x_traj = solution['r'] * np.cos(solution['theta'])

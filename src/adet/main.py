@@ -1,13 +1,12 @@
 # === IMPORTS
-import IPython
 import logging
-from itertools import accumulate
 from typing import Literal
 
 import matplotlib.pyplot as plt
 import optimistix as optx
 import jax
 import numpy as np
+from itertools import accumulate
 import casadi as cs
 
 from adet.assembly import CasadiSystem
@@ -74,6 +73,9 @@ ntw = ComponentNetwork(
 
 ntw.build_network()
 
+n0 = ntw.system.nodes[0]
+n1 = ntw.system.nodes[1]
+
 x0 = ntw.system.get_initial_guess()
 
 
@@ -122,7 +124,7 @@ def solve_casadi_sys(
             'nlpsol_options': {
                 'ipopt.print_level': 1,
                 # Need that, the eos does not have an hessian
-                #  (jah)
+                #   (jah)
                 'ipopt.hessian_approximation': 'limited-memory',
             },
         },
@@ -143,16 +145,16 @@ sol = solve_casadi_sys(ntw.system, 'nlpsol')
 
 sol_dict = ntw.system.solution_to_dict(sol.toarray())
 
-# # Use midspan as precursor
-# sys_multi = ntw.system.copy()
-# sys_multi.spanwise_stations = NUM_SPAN
-# sys_multi.build(SCALED)
-#
-# sol_multi = solve_casadi_sys(sys_multi, 'nlpsol', sol_dict)
-#
-# # Overwrite
-# sol = sol_multi
-# ntw.system = sys_multi
+# Use midspan as precursor
+sys_multi = ntw.system.copy()
+sys_multi.spanwise_stations = NUM_SPAN
+sys_multi.build(SCALED)
+
+sol_multi = solve_casadi_sys(sys_multi, 'nlpsol', sol_dict)
+
+# Overwrite
+sol = sol_multi
+ntw.system = sys_multi
 
 
 # === JAX VERSION - broken
@@ -214,8 +216,10 @@ if PLOTS:
             offset[n0_idx // 2],
         )
 
-    # plt.show()
+    plt.show()
 else:
     plt.close('all')
 
-IPython.embed(colors='linux', confirm_exit=False)
+
+print(f'\n\n\n################# NODE 0 #################\n{n0}')
+print(f'\n\n\n################# NODE 1 #################\n{n1}')

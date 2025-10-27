@@ -14,7 +14,7 @@ from numpy.typing import NDArray
 from pint.facets.plain import PlainQuantity
 from pint.registry import Quantity
 
-from adet.fluid.settings import AnalyticalFluidModel, FluidSettings
+from adet.fluid.settings import FluidSettings
 from adet.registries import DefaultUnitsRegistry
 from adet.constants import ArrayLike
 from adet.tools.plotting import plot_velocity_triangles
@@ -324,8 +324,8 @@ class ThermostateContainer(VariableContainer):
         updt_len = self._sett.update_length
         updt_vars = self._sett.update_variables
 
-        if isinstance(self._sett, AnalyticalFluidModel):
-            return None
+        # if isinstance(self._sett, AnalyticalFluidModel):
+        #     return None
 
         valid_variables = set(self.all_quantities).intersection(updt_vars)
 
@@ -359,7 +359,7 @@ class ThermostateContainer(VariableContainer):
 
 if __name__ == '__main__':
     import CoolProp as cp
-    from adet.fluid.settings import AbstractStateModel
+    from adet.fluid.settings import FluidModel
 
     n_span = 11
 
@@ -383,11 +383,12 @@ if __name__ == '__main__':
 
     # ThermoState
     sett = FluidSettings(
-        AbstractStateModel(
+        FluidModel(
             cp.AbstractState(
                 'HEOS',
                 'R134a',
-            )
+            ),
+            is_analytic=False,
         ),
         ('hmass', 'p', 'T'),
         2,

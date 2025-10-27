@@ -5,7 +5,7 @@ from adet.assembly import SystemAssembler
 from adet.components import BaseComponent
 from adet.components.connections import Inlet
 from adet.equations.simplelosses import ZeroDeviation
-from adet.fluid.settings import AnalyticalFluidModel, FluidSettings
+from adet.fluid.settings import FluidSettings
 
 from adet.equations.fundamental import (
     MassAreaRelation,
@@ -76,21 +76,17 @@ class ComponentNetwork(Generic[T]):
                 self.system.add_equation(equation, traslated_pos)
 
     def _add_single_node_eqs(self, comp_stack_length: int):
-        self.system.add_equation(CumMassFlow(), 0)
+        # At the inlet geometric and kinematic angle
+        # are of course the same, there is no geometry
         self.system.add_equation(ZeroDeviation(), 0)
 
         for node in range(2 * comp_stack_length):
             # Single node relationships
+            self.system.add_equation(CumMassFlow(), node)
             self.system.add_equation(MassAreaRelation(), node)
             self.system.add_equation(Kinematics(), node)
             self.system.add_equation(MeridionalUniform(), node)
             self.system.add_equation(TotalStaticMatching(), node)
-
-            if isinstance(self.system.settings.model, AnalyticalFluidModel):
-                eos_equations = self.system.settings.model.get_equations()
-
-                for eq in eos_equations:
-                    self.system.add_equation(eq, node)
 
     def _link_components(self, comp_stack_length: int):
         # Nomenclature

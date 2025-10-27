@@ -136,6 +136,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         # Others
         'massflow': 'kg / s',
         'cum_massflow': 'kg / s',
+        'ch_massflow': 'kg / s',
         # Kinematics
         'V': 'm/s',
         'Vt': 'm/s',
@@ -189,6 +190,8 @@ class GuessRegistry(BaseRegistry[str, float]):
         'beta': 0.3,
         # OTHERS
         'massflow': 20.0,
+        'cum_massflow': 20.0,
+        'ch_massflow': 1.0,
         # GEOMETRY
         'area': 0.1,
         'meridional_angle': 0.1,

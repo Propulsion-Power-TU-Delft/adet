@@ -23,10 +23,8 @@ import jax as jax
 import jax.numpy as jnp
 
 from adet.errors import ConstraintError
-from adet.fluid.eos import CasadiEoS
+from adet.fluid.casadi_eos import CasadiEoS
 from adet.fluid.settings import (
-    AbstractStateModel,
-    AnalyticalFluidModel,
     EmptyFluidModel,
     FluidSettings,
 )
@@ -179,11 +177,13 @@ class SystemAssembler(ABC):
 
             return np.atleast_1d(mag)
 
-        virtual_constraints = self._fluid_settings.get_virtual_constraints()
+        # TODO: Unifying ideal and real gas models
+        # virtual_constraints = self._fluid_settings.get_virtual_constraints()
 
         for node_idx, node in enumerate(self.nodes):
             # Add virtual constraints (e.g. cp, cv for ideal gas)
-            self.add_boundary_conditions(virtual_constraints, node_idx)
+            # self.add_boundary_conditions(virtual_constraints, node_idx)
+
             # Convert to base units arrays
             bc_arrays = jax.tree.map(to_base_units, self.boundary_conditions[node_idx])
 
@@ -411,7 +411,7 @@ class SystemAssembler(ABC):
         the system
         """
 
-        if isinstance(self._fluid_settings.model, AnalyticalFluidModel):
+        if self._fluid_settings.model._is_analytic:
             # Just a difference between sets, sorted
             return tuple(
                 sorted(
@@ -635,17 +635,17 @@ class SystemAssembler(ABC):
         to which argument they belong, useful for passing information between
         systems for initialization
         """
-        if self._scaled:
-            argument_values = argument_values * self.free_args_scaling
 
         argument_values = argument_values.reshape(
             len(self.free_args),
             self.spanwise_stations,
         )
-        x_iter = iter(argument_values)
+
+        if self._scaled:
+            argument_values = argument_values * self.free_args_scaling
 
         # Arguments in absolute indices
-        return {arg: next(x_iter) for arg in self.free_args}
+        return {arg: argument_values[idx] for idx, arg in enumerate(self.free_args)}
 
     def write_solution_to_nodes(self, free_argument_values: NDArray):
         """
@@ -1006,12 +1006,13 @@ class CasadiSystem(SystemAssembler):
     ) -> dict[str, cs.MX]:
         fl_model = self._fluid_settings.model
 
-        if not isinstance(fl_model, AbstractStateModel):
+        if fl_model._is_analytic:
+            # TODO Add the handling of
             return {}
 
-        abstr_state = fl_model.eos_object
+        abstr_state = fl_model.eos
 
-        self._eos_callbacks = []
+        self._casadi_eos_callbacks = []
 
         discarded_thermo = self._get_discarded_thermo_args()
 
@@ -1025,8 +1026,8 @@ class CasadiSystem(SystemAssembler):
                 pair_name = pair_name_from_tuple(pair_tuple)
                 pair_id = pair_id_from_name(pair_name)
 
-                eos_cb = CasadiEoS(
-                    f'EOS_{state_name}{node_idx}',
+                casadi_eos_cb = CasadiEoS(
+                    f'casadi_eos_{state_name}{node_idx}',
                     abstr_state,
                     pair_id,
                     out_props,
@@ -1034,7 +1035,7 @@ class CasadiSystem(SystemAssembler):
                 )
 
                 # This is to keep references
-                self._eos_callbacks.append(eos_cb)
+                self._casadi_eos_callbacks.append(casadi_eos_cb)
 
                 sorted_pair_tuple = pair_based_sorting(*pair_tuple)
 
@@ -1043,8 +1044,8 @@ class CasadiSystem(SystemAssembler):
                     for var in sorted_pair_tuple
                 ]
 
-                # Symbolic representation of the EoS
-                out_props_syms = eos_cb(*symbolic_pair)
+                # Symbolic representation of the casadi_eos
+                out_props_syms = casadi_eos_cb(*symbolic_pair)
 
                 if not isinstance(out_props_syms, tuple):
                     out_props_syms = [out_props_syms]
@@ -1072,9 +1073,9 @@ class CasadiSystem(SystemAssembler):
         }
 
         all_args_products = {**free_args_products, **constraints_products}
-        eos_symbols = self._build_equations_of_state(all_args_products)
+        casadi_eos_symbols = self._build_equations_of_state(all_args_products)
 
-        self._all_symbols = {**all_args_products, **eos_symbols}
+        self._all_symbols = {**all_args_products, **casadi_eos_symbols}
 
     def _build_residual_expressions(self):
         num_span = self.spanwise_stations
@@ -1142,7 +1143,13 @@ class CasadiSystem(SystemAssembler):
             eq_scaling_values,
         )
 
-        return cs.Function('res_func', [free_args, constraints], [res_part_expr])
+        return cs.Function(
+            'res_func',
+            [free_args, constraints],
+            [res_part_expr],
+            ['free_args', 'constraints'],
+            ['residuals'],
+        )
 
     def to_jax(self):
         """

@@ -3,7 +3,7 @@
 from pint import Quantity
 
 from adet.registries import DefaultUnitsRegistry, ScalingRegistry, GuessRegistry
-from adet.fluid.settings import AbstractStateModel, IdealGasModel
+from adet.fluid.settings import FluidModel
 from adet.components import BladeRow, Shaft, Inlet
 from adet.equations.fundamental import BladeCount, ParabolicCamberline
 from adet.equations.simplelosses import ZeroDeviation
@@ -24,7 +24,7 @@ from adet.tools.coolprop_utils import DebugAbstractState
 # This counts the number of updates in an attribute
 abs_state = DebugAbstractState('HEOS', 'Air')
 abs_state.debug_print = True
-fluid_model = AbstractStateModel(abs_state)
+fluid_model = FluidModel(abs_state, False)
 
 # *** Shafts
 static_shaft = Shaft(0.0)
@@ -81,6 +81,8 @@ inlet = Inlet(
     }
 )
 
+# Save instance here for debugging
+den_loss = DentonProfileLoss(fluid_model)  # Denton approx
 row1 = BladeRow(
     {
         'kin': {
@@ -88,11 +90,10 @@ row1 = BladeRow(
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
-            'rmid': 0.45,
+            'rmid': 0.5,
             'height': 0.2,
-            # 'camb_len': 0.2,
-            # 'stagger': 0.6,
-            'n_blades': 10,
+            'n_blades': 13,
+            # 'pitch': 0.15,
             'chord': 0.2,
             # 'pitch': 0.2,
         },
@@ -101,13 +102,18 @@ row1 = BladeRow(
         },
         'oth': {
             # PROFILE LOSSES
+            # BL coefficient
             'Cd_profile': 0.002,
+            # k_prof can act as loading criteria
+            # But results in varying blade number
+            # along the span if imposed alone
+            # 'k_prof': 0.6,
             # Denton
-            'x_by_camb_len_A': 0.375,
-            'x_by_camb_len_B': 0.675,
+            'x_by_camb_len_A': 0.375,  # First chord coord
+            'x_by_camb_len_B': 0.675,  # Second chord coor
             # NONDIMENSIONAL
             # 'STratio': 0.98,
-            'workCoeff': 1.2,
+            'workCoeff': 1.8,
             # These two are not tested
             # You can check plausible values
             # 'specificSpeed': 0.4,
@@ -121,15 +127,15 @@ row1 = BladeRow(
     extra_equations={
         ZeroDeviation(): 1,  # No outlet deviation
         # RectVelocityIncompressible(): (0, 1),  # Rectangular profile
-        DentonProfileLoss(fluid_model): (0, 1),  # Rectangular profile
+        den_loss: (0, 1),
         ParabolicCamberline(): (0, 1),
         BladeCount(): 1,
         # -| Compute nondimensional coefficients |-
-        FlowCoefficient(): 0,
         WorkCoefficient(): (0, 1),
-        SpecificSpeed(): (0, 1),
-        SizeParameter(): (0, 1),
-        StaticTotalPressRatio(): (0, 1),
+        FlowCoefficient(): 0,
+        # SpecificSpeed(): (0, 1),
+        # SizeParameter(): (0, 1),
+        # StaticTotalPressRatio(): (0, 1),
     },
 )
 
