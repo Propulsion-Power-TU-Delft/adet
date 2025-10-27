@@ -6,7 +6,7 @@ import CoolProp as cp
 import casadi as cs
 import numpy as np
 
-from adet.fluid.settings import FluidModel
+from adet.fluid.settings import ExternalFluidModel
 from adet.tools.coolprop_utils import DebugAbstractState
 
 
@@ -91,14 +91,14 @@ class DentonProfileLoss(EquationBase):
 
     def __init__(
         self,
-        fluid_model: FluidModel,
+        fluid_model: ExternalFluidModel,
         scaling_factor: list[float] | None = None,
     ):
         """
         This requires intermediate state updates, meaning ad eos object has to be
         provided manually
         """
-        self._fluid_model = fluid_model
+        self._fluid_model: ExternalFluidModel = fluid_model
         self._eos_callback = None
         super().__init__(scaling_factor)
 
@@ -153,7 +153,7 @@ class DentonProfileLoss(EquationBase):
         if self._eos_callback is None:
             _eos_callback = CasadiEoS(
                 f'Denton_HS_{id(self)}',
-                self._fluid_model.eos,
+                self._fluid_model.eos_object,
                 cp.HmassSmass_INPUTS,
                 ['p', 'rhomass', 'T'],
                 num_span,
@@ -275,7 +275,7 @@ if __name__ == '__main__':
     # array is AT LEAST 2D
     N_SPAN = 11
     eos = DebugAbstractState('HEOS', 'Air')
-    model = FluidModel(eos, False)
+    model = ExternalFluidModel(eos)
 
     # Define example values
     W0 = np.linspace(100, 300, N_SPAN)

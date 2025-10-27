@@ -1,21 +1,52 @@
-from abc import ABC  # , abstractmethod
+from abc import abstractmethod
 from dataclasses import dataclass
 import logging
-from typing import Generic, TypeVar
+from typing import Generic, Any, TypeVar
+
+
+from adet.equations.base_equation import EquationBase
+from adet.equations.ideal_gas import IdealRltEos, IdealStcEos, IdealTotEos
 
 
 logger = logging.getLogger(__name__)
 
+
+# - - - - - - - - - - - - - - - FLUID MODELS
+class FluidModel:
+    pass
+
+
+class AnalyticalFluidModel(FluidModel):
+    """
+    Models which do not require passing through
+    external thermodynamic libraries
+    """
+
+    @abstractmethod
+    def get_equations(self) -> tuple[EquationBase, ...]:
+        raise NotImplementedError
+
+
+class EmptyFluidModel(AnalyticalFluidModel):
+    def get_equations(self):
+        return ()
+
+
+@dataclass
+class IdealGasModel(AnalyticalFluidModel):
+    def get_equations(self):
+        return IdealStcEos(), IdealTotEos(), IdealRltEos()
+
+
 T = TypeVar('T')
 
 
-class FluidModel(ABC, Generic[T]):
-    """Abstract base for any fluid model backend."""
+@dataclass
+class ExternalFluidModel(FluidModel, Generic[T]):
+    eos_object: T
 
-    def __init__(self, eos: T, is_analytic: bool) -> None:
-        self.eos = eos
-        self._is_analytic = is_analytic
-        super().__init__()
+    def get_constraints(self) -> dict[str, Any]:
+        return {}
 
     def __deepcopy__(self, memo):
         cls = self.__class__
@@ -24,15 +55,9 @@ class FluidModel(ABC, Generic[T]):
 
         # Just copy the same object
         # Abstract state has problems being deepcopied
-        new_obj.eos = self.eos
-        new_obj._is_analytic = self._is_analytic
+        new_obj.eos_object = self.eos_object
 
         return new_obj
-
-
-class EmptyFluidModel(FluidModel):
-    def __init__(self) -> None:
-        super().__init__(None, True)
 
 
 # - - - - - - - - - - - - - - - FLUID SETTINGS
@@ -50,7 +75,7 @@ if __name__ == '__main__':
     eos = cp.AbstractState('HEOS', 'R134a')
 
     sett = FluidSettings(
-        FluidModel(eos, False),
+        ExternalFluidModel(eos),
         ('p', 'T'),
         2,
     )

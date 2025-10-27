@@ -25,7 +25,9 @@ import jax.numpy as jnp
 from adet.errors import ConstraintError
 from adet.fluid.casadi_eos import CasadiEoS
 from adet.fluid.settings import (
+    AnalyticalFluidModel,
     EmptyFluidModel,
+    ExternalFluidModel,
     FluidSettings,
 )
 from adet.registries import GuessRegistry, ScalingRegistry
@@ -411,7 +413,7 @@ class SystemAssembler(ABC):
         the system
         """
 
-        if self._fluid_settings.model._is_analytic:
+        if isinstance(self._fluid_settings.model, AnalyticalFluidModel):
             # Just a difference between sets, sorted
             return tuple(
                 sorted(
@@ -1006,11 +1008,10 @@ class CasadiSystem(SystemAssembler):
     ) -> dict[str, cs.MX]:
         fl_model = self._fluid_settings.model
 
-        if fl_model._is_analytic:
-            # TODO Add the handling of
+        if not isinstance(fl_model, ExternalFluidModel):
             return {}
 
-        abstr_state = fl_model.eos
+        abstr_state = fl_model.eos_object
 
         self._casadi_eos_callbacks = []
 
