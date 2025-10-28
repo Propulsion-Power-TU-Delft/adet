@@ -28,7 +28,7 @@ fluid_model = AbstractStateModel(
 
 fluid_model = IdealGasModel(287.0, 1.4)
 
-ss.settings = FluidSettings(
+ss.fluid_settings = FluidSettings(
     fluid_model,
     ('p', 'T', 'hmass', 'smass'),
     2,

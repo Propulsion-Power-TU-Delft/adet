@@ -5,7 +5,7 @@ from adet.assembly import SystemAssembler
 from adet.components import BaseComponent
 from adet.components.connections import Inlet
 from adet.equations.simplelosses import ZeroDeviation
-from adet.fluid.settings import FluidSettings
+from adet.fluid.settings import AnalyticalFluidModel, FluidSettings
 
 from adet.equations.fundamental import (
     MassAreaRelation,
@@ -40,13 +40,13 @@ class ComponentNetwork(Generic[T]):
         print_header()
 
         self.system = backend
-        self.system.settings = fluid_settings
+        self.system.fluid_settings = fluid_settings
 
         self.num_components = len(components)
         self.components = components
 
         self.system = backend
-        self.system.settings = fluid_settings
+        self.system.fluid_settings = fluid_settings
 
         # Add inlet boundary conditions
         self.system.add_boundary_conditions(inlet.boundary_conditions, 0)

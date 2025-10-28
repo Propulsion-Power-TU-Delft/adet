@@ -129,11 +129,11 @@ class SystemAssembler(ABC):
         self._fluid_settings = FluidSettings(EmptyFluidModel())
 
     @property
-    def settings(self):
+    def fluid_settings(self):
         return self._fluid_settings
 
-    @settings.setter
-    def settings(self, settings: FluidSettings) -> None:
+    @fluid_settings.setter
+    def fluid_settings(self, settings: FluidSettings) -> None:
         self._fluid_settings = settings
 
     @property
@@ -143,7 +143,7 @@ class SystemAssembler(ABC):
     def reset(self) -> None:
         old_settings = self._fluid_settings
         self.__init__(self.spanwise_stations)
-        self.settings = old_settings
+        self.fluid_settings = old_settings
 
     def copy(self) -> Self:
         new_instance = self.__class__(self.spanwise_stations)
@@ -152,14 +152,22 @@ class SystemAssembler(ABC):
 
     def to_dict(self):
         FIELDS_TO_SAVE = [
-            'settings',
+            '_fluid_settings',
             'equations',
             'boundary_conditions',
+            '_global_constraints',
         ]
 
         out_dict = {}
         for field in FIELDS_TO_SAVE:
-            out_dict[field] = deepcopy(getattr(self, field))
+            try:
+                attr = getattr(self, field)
+            except AttributeError as e:
+                raise AttributeError(
+                    f'{e} encountered while trying to deepcopy attribute {attr}'
+                )
+
+            out_dict[field] = deepcopy(attr)
 
         return out_dict
 
@@ -167,12 +175,12 @@ class SystemAssembler(ABC):
         for attr, value in data_dict.items():
             setattr(self, attr, value)
 
-    def add_boundary_conditions(self, bc_dict, node_index: int):
-        for state_id, state_bc in bc_dict.items():
-            self.boundary_conditions[node_index][state_id].update(state_bc)
+    def add_boundary_conditions(self, bnd_cond: dict, node_idx: int):
+        for state_id, state_bnd_cond in bnd_cond.items():
+            self.boundary_conditions[node_idx][state_id].update(state_bnd_cond)
 
-    def add_global_constraints(self, bc_dict):
-        self._global_constraints.update(bc_dict)
+    def add_global_constraints(self, bnd_cond: dict):
+        self._global_constraints.update(bnd_cond)
 
     def _write_bc_to_nodes(self):
         """Write the stored boundary conditions to the nodes"""
@@ -185,9 +193,6 @@ class SystemAssembler(ABC):
                 mag = var.to_base_units().magnitude
 
             return np.atleast_1d(mag)
-
-        # TODO: Unifying ideal and real gas models
-        # virtual_constraints = self._fluid_settings.get_virtual_constraints()
 
         for node_idx, node in enumerate(self.nodes):
             # Add virtual constraints (e.g. cp, cv for ideal gas)
@@ -300,7 +305,7 @@ class SystemAssembler(ABC):
             self._scaled = True
 
         self._create_nodes()
-        self._add_fluid_equations()
+        self._add_exact_eqs_of_state()
 
         self._write_bc_to_nodes()
         self.constraints, self.constraints_values = self._get_constraints()
@@ -352,8 +357,10 @@ class SystemAssembler(ABC):
 
         logger.debug(f'Successfully created {len(self.nodes)} nodes')
 
-    def _add_fluid_equations(self):
-        fl_model = self._fluid_settings.model
+    def _add_exact_eqs_of_state(self):
+        """Add analytical equations of state if any"""
+        fl_model = self.fluid_settings.model
+
         if isinstance(fl_model, AnalyticalFluidModel):
             for node_idx, _ in enumerate(self.nodes):
                 [self.add_equation(eq, node_idx) for eq in fl_model.get_equations()]
@@ -786,6 +793,208 @@ class SystemAssembler(ABC):
         return np.array(guesses)
 
 
+class CasadiSystem(SystemAssembler):
+    """
+    Build a system using CasADi, good for CPU computations
+    and code generation. Good direct integration with numpy
+    """
+
+    def __init__(
+        self, spanwise_stations: int = 1, *, scale_suffix: str = '__SCALER'
+    ) -> None:
+        super().__init__(spanwise_stations)
+        self.scale_suffix = scale_suffix
+
+    def build(self, scaled: bool, throw: bool = True):
+        super().build(scaled)
+        self._build_base_symbols()
+        self._build_composed_symbols()
+        self._build_residual_expressions()
+
+    @staticmethod
+    def _create_symbols(names: Sequence[str], num_span: int, scale_suffix: str):
+        """Helper to create symbols and their scaled versions."""
+        symbols = [cs.MX.sym(name, num_span) for name in names]  # pyright:ignore
+        scales = [cs.MX.sym(name + scale_suffix, num_span) for name in names]  # pyright:ignore
+        return symbols, scales
+
+    def _build_base_symbols(self):
+        """
+        Convert the free arguments and constraints of the system to
+        lists of symbols, together with a symbolic representation of
+        their scaling values
+        """
+
+        # Create symbols
+        self.free_args_sym, self.scales_free_args_sym = self._create_symbols(
+            self.free_args,
+            self.spanwise_stations,
+            self.scale_suffix,
+        )
+        self.const_sym, self.scales_const_sym = self._create_symbols(
+            self.constraints,
+            self.spanwise_stations,
+            self.scale_suffix,
+        )
+
+    def _build_equations_of_state(
+        self, all_args_products: dict[str, cs.MX]
+    ) -> dict[str, cs.MX]:
+        fl_model = self._fluid_settings.model
+
+        if not isinstance(fl_model, ExternalFluidModel):
+            return {}
+
+        eos_obj = fl_model.eos_object
+
+        self._casadi_eos_callbacks = []
+
+        discarded_thermo = self._get_discarded_thermo_args()
+
+        out_syms = {}
+        for node_idx, discarded_vars in discarded_thermo.items():
+            node_inp_pairs = self.nodes[node_idx].get_update_variables()
+
+            for state_name, out_props in discarded_vars.items():
+                pair_tuple = node_inp_pairs[state_name]
+
+                pair_name = pair_name_from_tuple(pair_tuple)
+                pair_id = pair_id_from_name(pair_name)
+
+                casadi_eos_cb = CasadiEoS(
+                    f'casadi_eos_{state_name}{node_idx}',
+                    eos_obj,
+                    pair_id,
+                    out_props,
+                    self.spanwise_stations,
+                )
+
+                # This is to keep references
+                self._casadi_eos_callbacks.append(casadi_eos_cb)
+
+                sorted_pair_tuple = pair_based_sorting(*pair_tuple)
+
+                symbolic_pair = [
+                    all_args_products[f'{state_name}_{var}{node_idx}']
+                    for var in sorted_pair_tuple
+                ]
+
+                # Symbolic representation of the casadi_eos
+                out_props_syms = casadi_eos_cb(*symbolic_pair)
+
+                if not isinstance(out_props_syms, tuple):
+                    out_props_syms = [out_props_syms]
+
+                for pr_name, pr_sym in zip(out_props, out_props_syms):
+                    out_syms[f'{state_name}_{pr_name}{node_idx}'] = pr_sym
+
+        return out_syms
+
+    def _build_composed_symbols(self):
+        """
+        Loop through the system's equations giving as arguments symbolic
+        MX representation of each argument, mapped from the relative equation
+        indices to the absolute system indices.
+        """
+        # Build the product of each symbolic variable for their scaling value
+        free_args_products: dict[str, cs.MX] = {
+            sym.name(): sym * scale
+            for sym, scale in zip(self.free_args_sym, self.scales_free_args_sym)
+        }
+
+        constraints_products: dict[str, cs.MX] = {
+            sym.name(): sym * scale
+            for sym, scale in zip(self.const_sym, self.scales_const_sym)
+        }
+
+        all_args_products = {**free_args_products, **constraints_products}
+        casadi_eos_symbols = self._build_equations_of_state(all_args_products)
+
+        self._all_symbols = {**all_args_products, **casadi_eos_symbols}
+
+    def _build_residual_expressions(self):
+        num_span = self.spanwise_stations
+
+        # Build scaling symbols for all equations
+        self._eq_scales_sym = [
+            cs.MX.sym(f'eq{idx}{self.scale_suffix}', num_span)  # pyright:ignore
+            for idx in range(self.num_equations)
+        ]
+
+        # Build and concatenate residual equations
+        # (no need to override numpy)
+        residuals = []
+        for eq in self.equations:
+            kwmap = self._kwarg_maps[eq]  # Convert to abs args
+            args = [self._all_symbols[kwmap[k]] for k in eq.arguments]
+
+            overridden_eq = override_operators(eq.residual, 'numpy', cs)
+            residuals.append(overridden_eq(*args))
+
+        self._res_expr_scaled = list(
+            map(
+                lambda X, Y: X / Y,
+                jax.tree.leaves(residuals),
+                self._eq_scales_sym,
+            )
+        )
+
+    def make_residual_function(self):
+        """
+        Build a function object for the full residual, with the scaling
+        factors as arguments, and create an MX expression for the full
+        function with the actual scaling values assigned
+        """
+        super().make_residual_function()
+
+        FULL_ARGUMENTS = [
+            self.free_args_sym,
+            self.scales_free_args_sym,
+            self.const_sym,
+            self.scales_const_sym,
+            self._eq_scales_sym,
+        ]
+
+        full_arguments_cat = [cs.vertcat(*args) for args in FULL_ARGUMENTS]
+
+        # Symbolic free arguments and constraints
+        free_args = full_arguments_cat[0]
+        constraints = full_arguments_cat[2]
+
+        res_full_func = cs.Function(
+            'res_full_func', full_arguments_cat, [cs.vertcat(*self._res_expr_scaled)]
+        )
+
+        # Numerical values for scaling of variables and equations
+        free_args_scaling_values = self.free_args_scaling.flatten()
+        const_scaling_values = self.constraints_scaling.flatten()
+        eq_scaling_values = self.equations_scaling.flatten()
+
+        res_part_expr = res_full_func(
+            free_args,
+            free_args_scaling_values,
+            constraints,
+            const_scaling_values,
+            eq_scaling_values,
+        )
+
+        return cs.Function(
+            'res_func',
+            [free_args, constraints],
+            [res_part_expr],
+            ['free_args', 'constraints'],
+            ['residuals'],
+        )
+
+    def to_jax(self):
+        """
+        Convert system to casadi
+        """
+        jax_sys = JaxSystem(self.spanwise_stations)
+        jax_sys.from_dict(self.to_dict())
+        return jax_sys
+
+
 class JaxSystem(SystemAssembler):
     """
     Build a jax compatible assembled system, with stacked arguments input shapes,
@@ -972,205 +1181,3 @@ def {func_name}(equations, {', '.join(self._declared_arguments)}):
         cas_sys = CasadiSystem()
         cas_sys.from_dict(self.to_dict())
         return cas_sys
-
-
-class CasadiSystem(SystemAssembler):
-    """
-    Build a system using CasADi, good for CPU computations
-    and code generation. Good direct integration with numpy
-    """
-
-    def __init__(
-        self, spanwise_stations: int = 1, *, scale_suffix: str = '__SCALER'
-    ) -> None:
-        super().__init__(spanwise_stations)
-        self.scale_suffix = scale_suffix
-
-    def build(self, scaled: bool, throw: bool = True):
-        super().build(scaled)
-        self._build_base_symbols()
-        self._build_composed_symbols()
-        self._build_residual_expressions()
-
-    @staticmethod
-    def _create_symbols(names: Sequence[str], num_span: int, scale_suffix: str):
-        """Helper to create symbols and their scaled versions."""
-        symbols = [cs.MX.sym(name, num_span) for name in names]  # pyright:ignore
-        scales = [cs.MX.sym(name + scale_suffix, num_span) for name in names]  # pyright:ignore
-        return symbols, scales
-
-    def _build_base_symbols(self):
-        """
-        Convert the free arguments and constraints of the system to
-        lists of symbols, together with a symbolic representation of
-        their scaling values
-        """
-
-        # Create symbols
-        self.free_args_sym, self.scales_free_args_sym = self._create_symbols(
-            self.free_args,
-            self.spanwise_stations,
-            self.scale_suffix,
-        )
-        self.const_sym, self.scales_const_sym = self._create_symbols(
-            self.constraints,
-            self.spanwise_stations,
-            self.scale_suffix,
-        )
-
-    def _build_equations_of_state(
-        self, all_args_products: dict[str, cs.MX]
-    ) -> dict[str, cs.MX]:
-        fl_model = self._fluid_settings.model
-
-        if not isinstance(fl_model, ExternalFluidModel):
-            return {}
-
-        abstr_state = fl_model.eos_object
-
-        self._casadi_eos_callbacks = []
-
-        discarded_thermo = self._get_discarded_thermo_args()
-
-        out_syms = {}
-        for node_idx, discarded_vars in discarded_thermo.items():
-            node_inp_pairs = self.nodes[node_idx].get_update_variables()
-
-            for state_name, out_props in discarded_vars.items():
-                pair_tuple = node_inp_pairs[state_name]
-
-                pair_name = pair_name_from_tuple(pair_tuple)
-                pair_id = pair_id_from_name(pair_name)
-
-                casadi_eos_cb = CasadiEoS(
-                    f'casadi_eos_{state_name}{node_idx}',
-                    abstr_state,
-                    pair_id,
-                    out_props,
-                    self.spanwise_stations,
-                )
-
-                # This is to keep references
-                self._casadi_eos_callbacks.append(casadi_eos_cb)
-
-                sorted_pair_tuple = pair_based_sorting(*pair_tuple)
-
-                symbolic_pair = [
-                    all_args_products[f'{state_name}_{var}{node_idx}']
-                    for var in sorted_pair_tuple
-                ]
-
-                # Symbolic representation of the casadi_eos
-                out_props_syms = casadi_eos_cb(*symbolic_pair)
-
-                if not isinstance(out_props_syms, tuple):
-                    out_props_syms = [out_props_syms]
-
-                for pr_name, pr_sym in zip(out_props, out_props_syms):
-                    out_syms[f'{state_name}_{pr_name}{node_idx}'] = pr_sym
-
-        return out_syms
-
-    def _build_composed_symbols(self):
-        """
-        Loop through the system's equations giving as arguments symbolic
-        MX representation of each argument, mapped from the relative equation
-        indices to the absolute system indices.
-        """
-        # Build the product of each symbolic variable for their scaling value
-        free_args_products: dict[str, cs.MX] = {
-            sym.name(): sym * scale
-            for sym, scale in zip(self.free_args_sym, self.scales_free_args_sym)
-        }
-
-        constraints_products: dict[str, cs.MX] = {
-            sym.name(): sym * scale
-            for sym, scale in zip(self.const_sym, self.scales_const_sym)
-        }
-
-        all_args_products = {**free_args_products, **constraints_products}
-        casadi_eos_symbols = self._build_equations_of_state(all_args_products)
-
-        self._all_symbols = {**all_args_products, **casadi_eos_symbols}
-
-    def _build_residual_expressions(self):
-        num_span = self.spanwise_stations
-
-        # Build scaling symbols for all equations
-        self._eq_scales_sym = [
-            cs.MX.sym(f'eq{idx}{self.scale_suffix}', num_span)  # pyright:ignore
-            for idx in range(self.num_equations)
-        ]
-
-        # Build and concatenate residual equations
-        # (no need to override numpy)
-        residuals = []
-        for eq in self.equations:
-            kwmap = self._kwarg_maps[eq]  # Convert to abs args
-            args = [self._all_symbols[kwmap[k]] for k in eq.arguments]
-
-            overridden_eq = override_operators(eq.residual, 'numpy', cs)
-            residuals.append(overridden_eq(*args))
-
-        self._res_expr_scaled = list(
-            map(
-                lambda X, Y: X / Y,
-                jax.tree.leaves(residuals),
-                self._eq_scales_sym,
-            )
-        )
-
-    def make_residual_function(self):
-        """
-        Build a function object for the full residual, with the scaling
-        factors as arguments, and create an MX expression for the full
-        function with the actual scaling values assigned
-        """
-        super().make_residual_function()
-
-        FULL_ARGUMENTS = [
-            self.free_args_sym,
-            self.scales_free_args_sym,
-            self.const_sym,
-            self.scales_const_sym,
-            self._eq_scales_sym,
-        ]
-
-        full_arguments_cat = [cs.vertcat(*args) for args in FULL_ARGUMENTS]
-
-        # Symbolic free arguments and constraints
-        free_args = full_arguments_cat[0]
-        constraints = full_arguments_cat[2]
-
-        res_full_func = cs.Function(
-            'res_full_func', full_arguments_cat, [cs.vertcat(*self._res_expr_scaled)]
-        )
-
-        # Numerical values for scaling of variables and equations
-        free_args_scaling_values = self.free_args_scaling.flatten()
-        const_scaling_values = self.constraints_scaling.flatten()
-        eq_scaling_values = self.equations_scaling.flatten()
-
-        res_part_expr = res_full_func(
-            free_args,
-            free_args_scaling_values,
-            constraints,
-            const_scaling_values,
-            eq_scaling_values,
-        )
-
-        return cs.Function(
-            'res_func',
-            [free_args, constraints],
-            [res_part_expr],
-            ['free_args', 'constraints'],
-            ['residuals'],
-        )
-
-    def to_jax(self):
-        """
-        Convert system to casadi
-        """
-        jax_sys = JaxSystem(self.spanwise_stations)
-        jax_sys.from_dict(self.to_dict())
-        return jax_sys

@@ -3,7 +3,7 @@
 from pint import Quantity
 
 from adet.registries import DefaultUnitsRegistry, ScalingRegistry, GuessRegistry
-from adet.fluid.settings import ExternalFluidModel, FluidModel
+from adet.fluid.settings import ExternalFluidModel, IdealGasModel
 from adet.components import BladeRow, Shaft, Inlet
 from adet.equations.fundamental import BladeCount, ParabolicCamberline
 from adet.equations.simplelosses import ZeroDeviation
@@ -19,12 +19,12 @@ from adet.equations.nondimensional import (
 from adet.equations.definitions import AngleDeflection
 from adet.tools.coolprop_utils import DebugAbstractState
 
-# fluid_model = IdealGasModel(287.0, 1.4)
 
 # This counts the number of updates in an attribute
 abs_state = DebugAbstractState('HEOS', 'Air')
 abs_state.debug_print = True
 fluid_model = ExternalFluidModel(abs_state)
+# fluid_model = IdealGasModel()
 
 # *** Shafts
 static_shaft = Shaft(0.0)

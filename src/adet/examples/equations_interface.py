@@ -89,7 +89,7 @@ SOLVER_NEWTON = optx.Newton(1e-8, 1e-10)
 system_cas = CasadiSystem()
 model = IdealGasModel(287.0, 1.4)
 fluid_settings = FluidSettings(model)
-system_cas.settings = fluid_settings
+system_cas.fluid_settings = fluid_settings
 
 # === Define custom units
 units_reg = DefaultUnitsRegistry()

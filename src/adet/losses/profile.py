@@ -98,7 +98,7 @@ class DentonProfileLoss(EquationBase):
         This requires intermediate state updates, meaning ad eos object has to be
         provided manually
         """
-        self._fluid_model: ExternalFluidModel = fluid_model
+        self._fluid_model = fluid_model
         self._eos_callback = None
         super().__init__(scaling_factor)
 

@@ -11,8 +11,9 @@ from adet.equations.ideal_gas import IdealRltEos, IdealStcEos, IdealTotEos
 logger = logging.getLogger(__name__)
 
 
-# - - - - - - - - - - - - - - - FLUID MODELS
 class FluidModel:
+    """Parent class for identifying fluid models"""
+
     pass
 
 
@@ -60,7 +61,6 @@ class ExternalFluidModel(FluidModel, Generic[T]):
         return new_obj
 
 
-# - - - - - - - - - - - - - - - FLUID SETTINGS
 @dataclass
 class FluidSettings:
     model: FluidModel
