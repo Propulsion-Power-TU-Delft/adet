@@ -22,7 +22,7 @@ import casadi as cs
 import jax as jax
 import jax.numpy as jnp
 
-from adet.errors import ConstraintError
+from adet.errors import ConstraintError, ExistingEquationError
 from adet.fluid.casadi_eos import CasadiEoS
 from adet.fluid.settings import (
     AnalyticalFluidModel,
@@ -78,6 +78,8 @@ class SystemAssembler(ABC):
                 tuple[int, ...]: absolute nodes involved in the equation
             }
         """
+
+        self._eos_equations: list[EquationBase] = []
 
         self.nodes: tuple[FlowNode, ...] = tuple()
         """All the nodes called by the equations"""
@@ -147,6 +149,7 @@ class SystemAssembler(ABC):
     def copy(self) -> Self:
         new_instance = self.__class__(self.spanwise_stations)
         new_instance.from_dict(self.to_dict())
+        # Remove EoS equaitons
         return new_instance
 
     def to_dict(self):
@@ -160,7 +163,14 @@ class SystemAssembler(ABC):
         out_dict = {}
         for field in FIELDS_TO_SAVE:
             try:
-                attr = getattr(self, field)
+                if field == 'equations':
+                    attr = {
+                        eq: pos
+                        for eq, pos in self.equations.items()
+                        if eq not in self._eos_equations
+                    }
+                else:
+                    attr = getattr(self, field)
             except AttributeError as e:
                 raise AttributeError(
                     f'{e} encountered while trying to deepcopy attribute {attr}'
@@ -242,7 +252,7 @@ class SystemAssembler(ABC):
             if isinstance(eq_instance, equation.__class__) and (
                 set(eq_nodes) == set(nodal_position)
             ):
-                raise ValueError(
+                raise ExistingEquationError(
                     f'Duplicate equation entry for {equation.__class__.__name__}'
                     f' at position {nodal_position}'
                 )
@@ -304,8 +314,7 @@ class SystemAssembler(ABC):
             self._scaled = True
 
         self._create_nodes()
-        self._add_exact_eqs_of_state()
-
+        self._add_analytical_eos()
         self._write_bc_to_nodes()
         self.constraints, self.constraints_values = self._get_constraints()
 
@@ -356,13 +365,24 @@ class SystemAssembler(ABC):
 
         logger.debug(f'Successfully created {len(self.nodes)} nodes')
 
-    def _add_exact_eqs_of_state(self):
-        """Add analytical equations of state if any"""
+    def _add_analytical_eos(self):
+        """
+        Add analytical equations of state to the system
+        if the model calls for it. They are removed when
+        copied
+        """
+
         fl_model = self.fluid_settings.model
 
+        # Equations of state
         if isinstance(fl_model, AnalyticalFluidModel):
             for node_idx, _ in enumerate(self.nodes):
-                [self.add_equation(eq, node_idx) for eq in fl_model.get_equations()]
+                for eq in fl_model.get_equations():
+                    self.add_equation(eq, node_idx)
+                    logger.debug(
+                        f'Added EoS equation {eq.__class__.__name__} at {node_idx}'
+                    )
+                    self._eos_equations.append(eq)
 
     def _get_constraints(self) -> tuple[tuple[str, ...], NDArray]:
         """
@@ -1174,9 +1194,7 @@ def {func_name}(equations, {', '.join(self._declared_arguments)}):
         return residual_function
 
     def to_casadi(self):
-        """
-        Convert system to casadi
-        """
+        """Convert system to casadi backend"""
         cas_sys = CasadiSystem()
         cas_sys.from_dict(self.to_dict())
         return cas_sys

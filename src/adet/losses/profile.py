@@ -83,7 +83,7 @@ class DentonProfileLoss(EquationBase):
     Warning
     -------
     - This function is ONLY compatible with CasADi
-    - This assumes an abstract state gas model
+    - This assumes an external gas model
     """
 
     skip_unit_check = True

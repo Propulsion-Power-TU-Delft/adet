@@ -1,7 +1,6 @@
 from adet.losses import LossModel
 
 
-# TODO: improve parameters detection
 class PercentageEntropyLoss(LossModel):
     definition = 'delta_smass'
     identifier = 'pct'

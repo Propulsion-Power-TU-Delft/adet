@@ -8,11 +8,11 @@ from typing import Literal, TypeAlias
 from adet.equations import EquationBase
 
 
+# NOTE: Implemented for entropy generation for now
+# need some also to implement other cases
 LossType: TypeAlias = Literal['delta_smass', 'delta_tot_p', 'delta_tot_hmass']
 
 
-# NOTE: Implemented for entropy generation for now
-# need some also to implement other cases
 class LossModel(EquationBase, ABC):
     definition: LossType
     """Which definition of losses this model returns in its `value` function"""

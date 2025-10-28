@@ -80,13 +80,13 @@ class ComponentNetwork(Generic[T]):
         # are of course the same, there is no geometry
         self.system.add_equation(ZeroDeviation(), 0)
 
-        for node in range(2 * comp_stack_length):
+        for node_idx in range(2 * comp_stack_length):
             # Single node relationships
-            self.system.add_equation(CumMassFlow(), node)
-            self.system.add_equation(MassAreaRelation(), node)
-            self.system.add_equation(Kinematics(), node)
-            self.system.add_equation(MeridionalUniform(), node)
-            self.system.add_equation(TotalStaticMatching(), node)
+            self.system.add_equation(CumMassFlow(), node_idx)
+            self.system.add_equation(MassAreaRelation(), node_idx)
+            self.system.add_equation(Kinematics(), node_idx)
+            self.system.add_equation(MeridionalUniform(), node_idx)
+            self.system.add_equation(TotalStaticMatching(), node_idx)
 
     def _link_components(self, comp_stack_length: int):
         # Nomenclature

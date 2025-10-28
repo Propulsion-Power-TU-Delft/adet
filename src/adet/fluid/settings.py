@@ -1,11 +1,11 @@
 from abc import abstractmethod
 from dataclasses import dataclass
 import logging
-from typing import Generic, Any, TypeVar
+from typing import TYPE_CHECKING, Generic, Any, TypeVar
 
 
-from adet.equations.base_equation import EquationBase
-from adet.equations.ideal_gas import IdealRltEos, IdealStcEos, IdealTotEos
+if TYPE_CHECKING:
+    from adet.equations.base_equation import EquationBase
 
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ class AnalyticalFluidModel(FluidModel):
     """
 
     @abstractmethod
-    def get_equations(self) -> tuple[EquationBase, ...]:
+    def get_equations(self) -> tuple['EquationBase', ...]:
         raise NotImplementedError
 
 
@@ -36,6 +36,12 @@ class EmptyFluidModel(AnalyticalFluidModel):
 @dataclass
 class IdealGasModel(AnalyticalFluidModel):
     def get_equations(self):
+        from adet.equations.ideal_gas import (
+            IdealStcEos,
+            IdealTotEos,
+            IdealRltEos,
+        )
+
         return IdealStcEos(), IdealTotEos(), IdealRltEos()
 
 
@@ -45,9 +51,6 @@ T = TypeVar('T')
 @dataclass
 class ExternalFluidModel(FluidModel, Generic[T]):
     eos_object: T
-
-    def get_constraints(self) -> dict[str, Any]:
-        return {}
 
     def __deepcopy__(self, memo):
         cls = self.__class__

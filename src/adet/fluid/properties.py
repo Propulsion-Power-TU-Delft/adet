@@ -1,3 +1,9 @@
+"""
+Simple mixin class to extract some composed properties from the flow node
+This can be used as an alternative to defining trivial equations to extract
+secondary or composed properties
+"""
+
 from typing import Callable, Protocol, runtime_checkable, cast
 from numpy.typing import NDArray
 
@@ -46,7 +52,3 @@ class GasPropertiesMixin:
     @thermo_property
     def MachRel(self: HasThermodynamicProperties) -> NDArray:
         return self.kin.get('W') / self.stc.get('speed_sound')
-
-    @thermo_property
-    def MassFlow(self: HasThermodynamicProperties) -> NDArray:
-        return self.stc.get('rhomass') * self.kin.get('area') * self.kin.get('Vm')

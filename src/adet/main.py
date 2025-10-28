@@ -14,7 +14,7 @@ from adet.components import ComponentNetwork
 from adet.diagnostics import SystemDiagnostics
 from adet.components.blade_row import plot_from_nodes
 from adet.fluid.settings import FluidSettings
-from adet.config_main import fluid_model, inlet, row1  # row2, row3, row4
+from adet.config_main import real_model, ideal_model, inlet, row1, row2, row3, row4
 
 # Tooling
 from adet.tools.iter import grouper
@@ -52,7 +52,7 @@ SOLVER_NEWTON = optx.Newton(1e-8, 1e-10)
 # === SYSTEM DEFINITION
 
 settings = FluidSettings(
-    model=fluid_model,
+    model=ideal_model,
     update_variables=('p', 'T', 'hmass', 'smass', 'rhomass'),
     update_length=2,
 )
@@ -72,8 +72,19 @@ ntw = ComponentNetwork(
 )
 
 ntw.system.add_global_constraints(
-    {'oth': {'cpmassid': 1004, 'cvmassid': 700, 'T_ref': 1, 'p_ref': 1}}
+    {
+        'oth': {
+            'cpmassid': 1004,
+            'cvmassid': 700,
+            'T_ref': 1,
+            'p_ref': 1,
+            'Cd_profile': 0.002,
+            'x_by_camb_len_A': 0.375,  # First profile coord
+            'x_by_camb_len_B': 0.675,  # First profile coord
+        }
+    }
 )
+
 
 ntw.build_network()
 
@@ -123,10 +134,11 @@ def solve_casadi_sys(
         'nlpsol',
         rootfind_problem,
         {
-            'error_on_fail': False,
+            'error_on_fail': True,
             'nlpsol': 'ipopt',
             'nlpsol_options': {
                 'ipopt.print_level': 1,
+                'ipopt.max_iter': 100,
                 # Need that, the eos does not have an hessian
                 #   (jah)
                 'ipopt.hessian_approximation': 'limited-memory',
@@ -134,13 +146,13 @@ def solve_casadi_sys(
         },
     )
 
-    with suppress_output():
-        logger.info('Solving the system...')
-        match method:
-            case 'newton':
-                sol = G_newt(x0.flatten(), 0.0)
-            case 'nlpsol':
-                sol = G_nlp(x0.flatten(), 0.0)
+    # with suppress_output():
+    logger.info('Solving the system...')
+    match method:
+        case 'newton':
+            sol = G_newt(x0.flatten(), 0.0)
+        case 'nlpsol':
+            sol = G_nlp(x0.flatten(), 0.0)
 
     return sol
 
@@ -161,23 +173,6 @@ sol = sol_multi
 ntw.system = sys_multi
 
 
-# === JAX VERSION - broken
-# sys_jax = ntw.system.to_jax()
-# sys_jax.build(SCALED)
-#
-# x0 = ntw.system.get_initial_guess()
-# knowns_stack = ntw.system.get_scaled_constraints()
-# res_func_jax = sys_jax.make_residual_function()
-#
-# @jax.jit
-# def partial_res(args, aux):
-#     return res_func_jax(args, knowns_stack)
-#
-# flat_func = jax.jit(sys_jax._make_flat_resfunc(knowns_stack))
-#
-# sol_lsq = optx.root_find(partial_res, SOLVER_LSTSQ, x0)
-# sol_newt = optx.root_find(partial_res, SOLVER_NEWTON, sol_lsq.value)
-# sol = sol_newt.value
 num_args = len(ntw.system.free_args)
 ntw.system.write_solution_to_nodes(np.array(sol).reshape(num_args, -1))
 
@@ -205,20 +200,19 @@ if PLOTS:
     ax.grid()
     ax.set_title('Meridional profile', {'fontsize': 18})
 
-    chords = [0.2, 0.4, 0.4, 0.6]
-    offset = list(
-        accumulate([0.0, 0.4, 0.4, 0.35]),
-    )
+    offset = 0.0
     for n0_idx, n1_idx in grouper(num_nodes, 2, incomplete='ignore'):
         n0 = ntw.system.nodes[n0_idx]
         n1 = ntw.system.nodes[n1_idx]
+        ax_chord = n1.geo.get('chord').to_base_units().magnitude[0]
         lines = plot_from_nodes(
             n0,
             n1,
-            chords[n0_idx // 2],
+            ax_chord,
             False,
-            offset[n0_idx // 2],
+            offset,
         )
+        offset += ax_chord
 
     plt.show()
 else:

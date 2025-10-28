@@ -8,7 +8,7 @@ from adet.components import BladeRow, Shaft, Inlet
 from adet.equations.fundamental import BladeCount, ParabolicCamberline
 from adet.equations.simplelosses import ZeroDeviation
 from adet.losses.profile import DentonProfileLoss, RectVelocityIncompressible
-from adet.losses.basic import PercentageEntropyLoss
+from adet.equations.simplelosses import PercentageEntropyLoss
 from adet.equations.nondimensional import (
     StaticTotalPressRatio,
     WorkCoefficient,
@@ -22,13 +22,11 @@ from adet.tools.coolprop_utils import DebugAbstractState
 
 # This counts the number of updates in an attribute
 abs_state = DebugAbstractState('HEOS', 'Air')
-abs_state.debug_print = True
-fluid_model = ExternalFluidModel(abs_state)
-# fluid_model = IdealGasModel()
+abs_state.debug_print = False
 
-# *** Shafts
-static_shaft = Shaft(0.0)
-rotating_shaft = Shaft(Quantity(1000, 'rpm'))
+real_model = ExternalFluidModel(abs_state)
+ideal_model = IdealGasModel()
+
 
 # Set custom units and defaults
 _dfu_reg = DefaultUnitsRegistry()
@@ -58,11 +56,28 @@ _dfu_reg.from_dict(
 _scl_reg.set_fallback_value(1.0)
 _gss_reg.set_fallback_value(1.0)
 
+# BLADE ROWS EQUATION STACK
+EXTRA_EQUATIONS = {
+    ZeroDeviation(): 1,  # No outlet deviation
+    ParabolicCamberline(): (0, 1),
+    BladeCount(): 1,
+    # -| Compute nondimensional coefficients |-
+    WorkCoefficient(): (0, 1),
+    FlowCoefficient(): 0,
+    ## Profile Losses
+    # RectVelocityIncompressible(): (0, 1),  # Rectangular profile
+    # DentonProfileLoss(real_model): (0, 1),
+}
+
+# *** Shafts
+static_shaft = Shaft(0.0)
+rotating_shaft = Shaft(Quantity(1000, 'rpm'))
+
 # COMPONENT STACK
 inlet = Inlet(
     {
         'kin': {
-            # 'alpha': Quantity(25, 'deg'),
+            'Vm': 100,
             'beta': Quantity(0, 'deg'),
         },
         'geo': {
@@ -75,27 +90,23 @@ inlet = Inlet(
             'T': 500,
         },
         'oth': {
-            'flowCoeff': 1.3,
-            # 'cum_massflow': 100,
+            # 'cum_massflow': 90,
         },
     }
 )
-
-# Save instance here for debugging
-den_loss = DentonProfileLoss(fluid_model)  # Denton approx
 row1 = BladeRow(
     {
         'kin': {
-            # 'alpha': Quantity(0, 'deg'),
+            'alpha': Quantity(10, 'deg'),
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
             'rmid': 0.5,
-            'height': 0.2,
+            'height': 0.18,
+            # Blades
             'n_blades': 13,
             # 'pitch': 0.15,
             'chord': 0.2,
-            # 'pitch': 0.2,
         },
         'stc': {
             # 'p': 2e5,
@@ -103,17 +114,50 @@ row1 = BladeRow(
         'oth': {
             # PROFILE LOSSES
             # BL coefficient
-            'Cd_profile': 0.002,
             # k_prof can act as loading criteria
             # But results in varying blade number
             # along the span if imposed alone
             # 'k_prof': 0.6,
             # Denton
-            'x_by_camb_len_A': 0.375,  # First chord coord
-            'x_by_camb_len_B': 0.675,  # Second chord coor
+            # 'workCoeff': 1.8,
             # NONDIMENSIONAL
             # 'STratio': 0.98,
+            # These two are not tested
+            # You can check plausible values
+            # 'specificSpeed': 0.4,
+            # 'sizeParameter': 0.1,
+        },
+    },
+    static_shaft,
+    loss_models=[],
+    extra_equations={**EXTRA_EQUATIONS, PercentageEntropyLoss(0.0): (0, 1)},
+)
+
+row2 = BladeRow(
+    {
+        'geo': {
+            'meridional_angle': Quantity(0, 'deg'),
+            'rmid': 0.5,
+            'height': 0.2,
+            'n_blades': 13,
+            # 'pitch': 0.15,
+            'chord': 0.2,
+        },
+        'stc': {
+            # 'p': 2e5,
+        },
+        'oth': {
+            # PROFILE LOSSES
+            # BL coefficient
+            # k_prof can act as loading criteria
+            # But results in varying blade number
+            # along the span if imposed alone => Implement Zweifel
+            # 'k_prof': 0.6,
+            # Denton
             'workCoeff': 1.8,
+            'flowCoeff': 1.3,
+            # NONDIMENSIONAL
+            # 'STratio': 0.98,
             # These two are not tested
             # You can check plausible values
             # 'specificSpeed': 0.4,
@@ -121,45 +165,10 @@ row1 = BladeRow(
         },
     },
     rotating_shaft,
-    loss_models=[
-        # PercentageEntropyLoss(0.0),
-    ],
-    extra_equations={
-        ZeroDeviation(): 1,  # No outlet deviation
-        # RectVelocityIncompressible(): (0, 1),  # Rectangular profile
-        den_loss: (0, 1),
-        ParabolicCamberline(): (0, 1),
-        BladeCount(): 1,
-        # -| Compute nondimensional coefficients |-
-        WorkCoefficient(): (0, 1),
-        FlowCoefficient(): 0,
-        # SpecificSpeed(): (0, 1),
-        # SizeParameter(): (0, 1),
-        # StaticTotalPressRatio(): (0, 1),
-    },
+    loss_models=[],
+    extra_equations={**EXTRA_EQUATIONS, DentonProfileLoss(real_model): (0, 1)},
 )
 
-row2 = BladeRow(
-    {
-        'kin': {
-            'meridional_angle': Quantity(0.0, 'deg'),
-            'rmid': 1.0,
-            'height': 0.3,
-        },
-        'oth': {
-            'workCoeff': 1.1,
-            # 'deflection': Quantity(65, 'deg'),
-        },
-    },
-    rotating_shaft,
-    loss_models=[
-        PercentageEntropyLoss(0.0),
-    ],
-    extra_equations={
-        WorkCoefficient(): (0, 1),
-        # AngleDeflection(): (0, 1),
-    },
-)
 
 row3 = BladeRow(
     {
@@ -178,10 +187,7 @@ row3 = BladeRow(
     loss_models=[
         PercentageEntropyLoss(0.0),
     ],
-    extra_equations={
-        # WorkCoefficient(): (0, 1),
-        AngleDeflection(): (0, 1),
-    },
+    extra_equations=EXTRA_EQUATIONS,
 )
 
 row4 = BladeRow(
@@ -199,7 +205,5 @@ row4 = BladeRow(
     loss_models=[
         PercentageEntropyLoss(0.0),
     ],
-    extra_equations={
-        WorkCoefficient(): (0, 1),
-    },
+    extra_equations=EXTRA_EQUATIONS,
 )
