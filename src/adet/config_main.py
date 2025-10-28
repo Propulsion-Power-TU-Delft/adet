@@ -9,14 +9,6 @@ from adet.equations.fundamental import BladeCount, ParabolicCamberline
 from adet.equations.simplelosses import ZeroDeviation
 from adet.losses.profile import DentonProfileLoss, RectVelocityIncompressible
 from adet.equations.simplelosses import PercentageEntropyLoss
-from adet.equations.nondimensional import (
-    StaticTotalPressRatio,
-    WorkCoefficient,
-    FlowCoefficient,
-    SizeParameter,
-    SpecificSpeed,
-)
-from adet.equations.definitions import AngleDeflection
 from adet.tools.coolprop_utils import DebugAbstractState
 
 
@@ -62,8 +54,6 @@ EXTRA_EQUATIONS = {
     ParabolicCamberline(): (0, 1),
     BladeCount(): 1,
     # -| Compute nondimensional coefficients |-
-    WorkCoefficient(): (0, 1),
-    FlowCoefficient(): 0,
     ## Profile Losses
     # RectVelocityIncompressible(): (0, 1),  # Rectangular profile
     # DentonProfileLoss(real_model): (0, 1),
@@ -86,8 +76,8 @@ inlet = Inlet(
             'height': 0.15,
         },
         'tot': {
-            'p': 3e5,
-            'T': 500,
+            'p': 6e5,
+            'T': 700,
         },
         'oth': {
             # 'cum_massflow': 90,
@@ -97,35 +87,16 @@ inlet = Inlet(
 row1 = BladeRow(
     {
         'kin': {
-            'alpha': Quantity(10, 'deg'),
+            'alpha': Quantity(20, 'deg'),
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
             'rmid': 0.5,
-            'height': 0.18,
+            'height': 0.2,
             # Blades
             'n_blades': 13,
             # 'pitch': 0.15,
             'chord': 0.2,
-        },
-        'stc': {
-            # 'p': 2e5,
-        },
-        'oth': {
-            # PROFILE LOSSES
-            # BL coefficient
-            # k_prof can act as loading criteria
-            # But results in varying blade number
-            # along the span if imposed alone
-            # 'k_prof': 0.6,
-            # Denton
-            # 'workCoeff': 1.8,
-            # NONDIMENSIONAL
-            # 'STratio': 0.98,
-            # These two are not tested
-            # You can check plausible values
-            # 'specificSpeed': 0.4,
-            # 'sizeParameter': 0.1,
         },
     },
     static_shaft,

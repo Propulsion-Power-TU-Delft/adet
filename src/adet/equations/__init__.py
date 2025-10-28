@@ -1,1 +1,1 @@
-from .base_equation import EquationBase, CompositeEquation, IntermediateState
+from .base_equation import EquationBase
