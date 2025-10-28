@@ -51,6 +51,7 @@ def get_units_string(var):
 
 
 _scale_reg = ScalingRegistry()
+_guess_reg = GuessRegistry()
 
 
 class SystemAssembler(ABC):
@@ -64,9 +65,10 @@ class SystemAssembler(ABC):
     # to break it down into more manageable components, for now
     # it is fine
 
-    _guess_registry = GuessRegistry()
-
     def __init__(self, spanwise_stations: int) -> None:
+        # Initialize with empty settings
+        self._fluid_settings = FluidSettings(EmptyFluidModel())
+
         self.spanwise_stations = spanwise_stations
         self.equations: OrderedDict[EquationBase, tuple[int, ...]] = OrderedDict()
         """
@@ -93,7 +95,7 @@ class SystemAssembler(ABC):
             NodeStatesNames, dict[str, ArrayLike | PlainQuantity]
         ] = defaultdict(dict)
 
-        self._kwarg_maps: dict[EquationBase, dict[str, str]] = {}
+        self._arg_maps: dict[EquationBase, dict[str, str]] = {}
         """
         Mapping of keyword arguments to move between relative and absolute arguments in
         each equation:
@@ -125,9 +127,6 @@ class SystemAssembler(ABC):
         self._built: bool = False
         self._scaled: bool = False
 
-        # Initialize with empty settings
-        self._fluid_settings = FluidSettings(EmptyFluidModel())
-
     @property
     def fluid_settings(self):
         return self._fluid_settings
@@ -152,9 +151,9 @@ class SystemAssembler(ABC):
 
     def to_dict(self):
         FIELDS_TO_SAVE = [
-            '_fluid_settings',
             'equations',
             'boundary_conditions',
+            '_fluid_settings',
             '_global_constraints',
         ]
 
@@ -404,7 +403,7 @@ class SystemAssembler(ABC):
                 rel_pos: abs_pos
                 for abs_pos, rel_pos in zip(eq_position, sorted(local_indices))
             }
-            self._kwarg_maps[eq] = {}
+            self._arg_maps[eq] = {}
 
             for arg in eq.arguments:
                 arg_rel_idx = get_index(arg)
@@ -418,7 +417,7 @@ class SystemAssembler(ABC):
 
                 # Create the variable in the node
                 self.nodes[arg_abs_idx].create_vars(arg_no_digit)
-                self._kwarg_maps[eq][arg] = arg_no_digit + str(arg_abs_idx)
+                self._arg_maps[eq][arg] = arg_no_digit + str(arg_abs_idx)
 
         system_arguments = sorted(set(system_arguments))
 
@@ -541,7 +540,7 @@ class SystemAssembler(ABC):
             )
 
     def _check_equations_units(self):
-        for eq, kwmap in self._kwarg_maps.items():
+        for eq, kwmap in self._arg_maps.items():
             self._equations_units.append(self._get_eq_units(eq, kwmap))
 
         logger.debug('Units for the residual equations succesfully verified')
@@ -711,7 +710,7 @@ class SystemAssembler(ABC):
         # Symbolic equation in the absolute indices
         sym_eqs_abs = []
         for s_eq, eq in zip(sym_eqs_rel, self.equations.keys()):
-            kwarg_map = self._kwarg_maps[eq]
+            kwarg_map = self._arg_maps[eq]
             # Create a map of Relative -> Absolute arguments
             arg_map = {arg: kwarg_map[arg] for arg in eq.arguments}
 
@@ -761,8 +760,8 @@ class SystemAssembler(ABC):
                 guess_value = span_expander(manual_values[arg])
                 logger.debug(f'Using manual value {guess_value} for {arg}')
             # Else, If a guess is available in the registry
-            elif arg_type in self._guess_registry:
-                guess_value = span_expander(self._guess_registry[arg_type])
+            elif arg_type in _guess_reg:
+                guess_value = span_expander(_guess_reg[arg_type])
 
                 # Vary the total and static values, avoid singularities
                 if arg_state == 'stc':
@@ -775,15 +774,15 @@ class SystemAssembler(ABC):
             # If there is no guess and no manual value
             else:
                 # If the registry has defined a fallbak, use that
-                if self._guess_registry._fallback_value:
-                    guess_value = self._guess_registry.get(arg_type)
+                if _guess_reg._fallback_value:
+                    guess_value = _guess_reg.get(arg_type)
                 # Otherwise ask for user input
                 else:
                     input_msg = f'INPUT >>> DIMENSIONAL guess for {arg} [1.0] = '
                     guess_value = float(input(input_msg) or 1.0)
 
                     # Add the input value to the registry
-                    self._guess_registry[arg_type] = guess_value
+                    _guess_reg[arg_type] = guess_value
 
             # Scale
             scaling_factor = self.free_args_scaling[idx]
@@ -925,7 +924,7 @@ class CasadiSystem(SystemAssembler):
         # (no need to override numpy)
         residuals = []
         for eq in self.equations:
-            kwmap = self._kwarg_maps[eq]  # Convert to abs args
+            kwmap = self._arg_maps[eq]  # Convert to abs args
             args = [self._all_symbols[kwmap[k]] for k in eq.arguments]
 
             overridden_eq = override_operators(eq.residual, 'numpy', cs)
@@ -1078,7 +1077,7 @@ class JaxSystem(SystemAssembler):
         residual_indices = self._get_residual_positions()
         eq_lines = []
         for idx, eq in enumerate(self.equations):
-            kwmap = self._kwarg_maps[eq]
+            kwmap = self._arg_maps[eq]
 
             mapped_args = [kwmap[arg] for arg in eq.arguments]
 

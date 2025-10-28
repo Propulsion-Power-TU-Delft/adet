@@ -189,7 +189,7 @@ class EquationBase(ABC):
         """
         # The 1 is removed because it is the self instance
         # Careful if residual is changed to a static method
-        self._kwarg_map = {}
+        self._alias_map = {}
         self._inverse_alias_map = {}  # For looking up system names from residual args
         validated_arguments = []
 
@@ -210,9 +210,9 @@ class EquationBase(ABC):
             validated_arguments.append(validated_system_var)
 
             # Map: system_var -> residual_arg (for calling residual with correct names)
-            self._kwarg_map[validated_system_var] = residual_arg
+            self._alias_map[validated_system_var] = residual_arg
 
-            # Map: residual_arg -> system_var (for reverse lookup)
+            # Map: residual_arg -> system_var (for inverse lookup)
             self._inverse_alias_map[residual_arg] = validated_system_var
 
         return tuple(validated_arguments)
@@ -221,15 +221,17 @@ class EquationBase(ABC):
         # Updated pattern to allow digits in variable names (for intermediate states)
         # and multiple trailing digits for node indices
         # Example matches: stc_p0, stc_p_ss0_0, stc_rhomass_ps2_1
-        TEMPLATE_PATTERN = r'^[a-z]{3}_[a-zA-Z0-9_]*\d+$'
+        VALID_STATES = get_args(NodeStatesNames)
+        states_id_re = '|'.join(VALID_STATES)
+        TEMPLATE_PATTERN = rf'^({states_id_re})_[a-zA-Z0-9_]*\d+$'
 
         # Check for trailing digits (node index)
-        # Note: We now allow digits anywhere in the name (e.g., 'ss0' in 'stc_p_ss0_0')
+        # We allow digits anywhere in the name (e.g., 'ss0' in 'stc_p_ss0_0')
         # Only the trailing digits are interpreted as the node index
         arg_index = re.findall(r'\d+$', full_argument)
 
         if not arg_index:
-            logger.info(f'No index found, assigning to state 0 to {full_argument}')
+            logger.info(f'No index found, assigning relative node 0 to {full_argument}')
             full_argument += '0'
 
         if verify_string_pattern(full_argument, TEMPLATE_PATTERN) is False:
@@ -242,11 +244,10 @@ class EquationBase(ABC):
 
         # Validate the node state
         var_state = get_arg_state(full_argument)
-        valid_states = get_args(NodeStatesNames)
-        if var_state not in valid_states:
+        if var_state not in VALID_STATES:
             raise ValueError(
                 f'Unknown state for `{full_argument}`, valid states are:\n'
-                f'{valid_states}'
+                f'{VALID_STATES}'
             )
 
         return full_argument
@@ -299,9 +300,10 @@ class EquationBase(ABC):
         return str(self.to_symbolic()) + ' = 0'
 
 
-# ============================================================================
-# COMPOSITE EQUATION PATTERN - For equations with intermediate states
-# ============================================================================
+# ==================================================================================
+# COMPOSITE EQUATION PATTERN - For equations with intermediate thermodynamics states
+# ( Not yet merged into the main system assembly)
+# ==================================================================================
 
 
 @dataclass
@@ -692,9 +694,10 @@ class CompositeEquation(EquationBase):
 
 
 # ============================================================================
-# INTEGRATION SUMMARY FOR SYSTEMASSEMBLER
+# NOTES: INTEGRATION FOR SYSTEM ASSEMBLER
 # ============================================================================
 """
+28/10/2025
 To fully integrate CompositeEquation into the system, modifications are needed
 in SystemAssembler (assembly.py). Here's a summary of the key integration points:
 
@@ -774,11 +777,6 @@ in SystemAssembler (assembly.py). Here's a summary of the key integration points
    - Ends with single digit node index
    - The position_id is just part of the variable name
 
-   The regex pattern in _validate_argument might need adjustment:
-   ```python
-   TEMPLATE_PATTERN = r'^[a-z]{3}_[a-zA-Z_]*\\d{1}$'
-   ```
-   This already allows underscores in the variable name, so 'p_ss0' is valid.
 
 4. **Testing Strategy**
    --------------------
@@ -823,86 +821,4 @@ in SystemAssembler (assembly.py). Here's a summary of the key integration points
 
    d) **Symbolic representation**: The to_symbolic() method for CompositeEquation
       should probably show the main equation only, with a note about sub-equations.
-
-6. **Alternative: Simpler Approach for Denton Loss**
-   -------------------------------------------------
-   If the full CompositeEquation pattern proves too complex, a simpler alternative
-   specific to DentonProfileLoss:
-
-   ```python
-   class DentonProfileLoss(EquationBase):
-       def __init__(self, fluid_model, ...):
-           self._fluid_model = fluid_model
-
-           # In analytical mode: create explicit intermediate variables
-           # as regular equation arguments
-           if isinstance(fluid_model, AnalyticalFluidModel):
-               self._use_explicit_intermediates = True
-               # The residual signature includes all intermediate vars
-           else:
-               self._use_explicit_intermediates = False
-               # Create CasadiEoS callbacks as before
-
-           super().__init__(...)
-
-       def residual(self, ..., stc_p_ss0_0=None, stc_p_ss1_0=None, ...):
-           # Optional args for intermediate states (None in external mode)
-           if self._use_explicit_intermediates:
-               p_ss = [stc_p_ss0_0, stc_p_ss1_0, ...]
-           else:
-               p_ss = self._eos_callback(h_distr, s_distr)[0]
-   ```
-
-   Then manually add the IdealGasModel equations for each intermediate position
-   in the component setup, not in the equation itself.
-
-   This avoids the complexity of CompositeEquation but requires more manual setup.
-"""
-
-
-# ============================================================================
-# ARGUMENT ALIASING - DETAILED USAGE EXAMPLES
-# ============================================================================
-"""
-The argument aliasing feature enables equations to be reused with different
-variable names without modifying their residual functions. This is the key
-mechanism that makes CompositeEquation work elegantly.
-
-Example: Using Aliasing to Adapt IdealStcEos for Intermediate State
---------------------------------------------------------------------
-```python
-from adet.equations.ideal_gas import IdealStcEos
-
-# Standard usage
-standard_eq = IdealStcEos()
-# arguments: ('stc_p0', 'stc_T0', 'stc_rhomass0', ...)
-
-# Adapted for intermediate state at suction side position 0
-aliases = {
-    'stc_p0': 'stc_p_ss0_0',
-    'stc_T0': 'stc_T_ss0_0',
-    'stc_rhomass0': 'stc_rhomass_ss0_0',
-    # ... all thermodynamic variables
-}
-intermediate_eq = IdealStcEos(argument_aliases=aliases)
-# arguments: ('stc_p_ss0_0', 'stc_T_ss0_0', 'stc_rhomass_ss0_0', ...)
-
-# The residual function code is UNCHANGED
-# SystemAssembler handles the mapping automatically
-```
-
-How It Works:
--------------
-1. EquationBase reads residual signature: (stc_p0, stc_T0, ...)
-2. Applies aliases to get system names: (stc_p_ss0_0, stc_T_ss0_0, ...)
-3. SystemAssembler sees the aliased names in eq.arguments
-4. Builds kwarg_map: {'stc_p_ss0_0': 'stc_p0', ...}
-5. Calls residual with positional args (names don't matter!)
-
-Key Benefits:
--------------
-- No code duplication (reuse existing equation classes)
-- Type-safe (original signatures preserved)
-- Automatic (SystemAssembler handles everything)
-- Flexible (same class for nodes AND intermediate states)
 """
