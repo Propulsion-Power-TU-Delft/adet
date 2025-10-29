@@ -4,7 +4,6 @@ from adet.assembly import SystemAssembler
 from adet.components import BaseComponent
 from adet.components.connections import Inlet
 from adet.equations.nondimensional import AbsoluteMachNumber, RelativeMachNumber
-from adet.equations.simplelosses import ZeroDeviation
 from adet.fluid.settings import FluidSettings
 
 from adet.equations.fundamental import (
@@ -22,6 +21,21 @@ from adet.tools.printing import print_header
 
 
 T = TypeVar('T', bound=SystemAssembler)
+
+# Equations that are to be defined at each single node
+# of the network
+_SINGLE_NODE_EQUATIONS = [
+    # FOUNDATIONAL EQs - DO NOT REMOVE!
+    MassAreaRelation,
+    Kinematics,
+    MeridionalUniform,
+    TotalStaticMatching,
+    # Courtesy definitions (the system is well posed w/o)
+    CumMassFlow,
+    AbsoluteMachNumber,
+    RelativeMachNumber,
+    VariableAdder,
+]
 
 
 # NOTE: I use composition and not inheritance
@@ -77,29 +91,9 @@ class ComponentNetwork(Generic[T]):
                 self.system.add_equation(equation, traslated_pos)
 
     def _add_single_node_eqs(self, comp_stack_length: int):
-        # NOTE:
-        # At the INLET geometric and kinematic angle
-        # are of course the same, there is no geometry,
-        # but we still need to define the spanwise
-        # distributions that will be fed to the first row
-        self.system.add_equation(ZeroDeviation(), 0)
-
-        SINGLE_NODE_EQUATIONS = [
-            # FOUNDATIONAL EQs - DO NOT REMOVE!
-            MassAreaRelation,
-            Kinematics,
-            MeridionalUniform,
-            TotalStaticMatching,
-            # DEFINITIONS (the system is well posed w/o)
-            CumMassFlow,
-            AbsoluteMachNumber,
-            RelativeMachNumber,
-            VariableAdder,
-        ]
-
         for node_idx in range(2 * comp_stack_length):
             # Single node relationships, make instances!
-            [self.system.add_equation(eq(), node_idx) for eq in SINGLE_NODE_EQUATIONS]
+            [self.system.add_equation(eq(), node_idx) for eq in _SINGLE_NODE_EQUATIONS]
 
     def _link_components(self, comp_stack_length: int):
         # Nomenclature

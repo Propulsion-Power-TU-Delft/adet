@@ -1,13 +1,12 @@
 from dataclasses import dataclass
+from typing import Any
 from pint import Quantity
 from pint.facets.plain import PlainQuantity
-
-from adet.components import BoundaryConditions
 
 
 @dataclass
 class Inlet:
-    boundary_conditions: BoundaryConditions
+    boundary_conditions: dict[str, dict[str, Any]]
 
 
 @dataclass

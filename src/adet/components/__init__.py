@@ -1,4 +1,4 @@
-from .base_component import BaseComponent, BoundaryConditions, BaseEquationsFormat
+from .base_component import BaseComponent
 from .connections import Shaft, Inlet
 from .blade_row import BladeRow
 from .network import ComponentNetwork

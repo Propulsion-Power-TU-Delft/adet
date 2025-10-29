@@ -36,12 +36,16 @@ class ComponentLinker(EquationBase):
         geo_height1,
         geo_meridional_angle0,
         geo_meridional_angle1,
+        # Others
+        oth_massflow0,
+        oth_massflow1,
     ):
         # 1. no entropy generation, no work exchange
         r1 = tot_hmass0 - tot_hmass1
         r2 = stc_smass0 - stc_smass1
 
         # 2. Same ABSOLUTE velocity triangle
+        # (the relative changes)
         r3 = kin_Vt0 - kin_Vt1
         r4 = kin_Vm0 - kin_Vm1
 

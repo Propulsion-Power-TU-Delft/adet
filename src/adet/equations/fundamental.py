@@ -126,9 +126,9 @@ class Kinematics(EquationBase):
 
 class MeridionalUniform(EquationBase):
     # = * = * = * = * = * = * = * = * = * = * = * = * = * = *
-    # * BOUNTY (One or multiple beers):                                   =
-    # = Add differential equation for streamline curvature  *
-    # * instead of uniform distribution                     =
+    # BOUNTY:                                               =
+    # > Add differential equation for streamline curvature  *
+    # > instead of uniform distribution                     =
     # = * = * = * = * = * = * = * = * = * = * = * = * = * = *
 
     def residual(
@@ -224,7 +224,7 @@ class ParabolicCamberline(EquationBase):
         return length
 
     def plot_camber_line(self, inlet_angle, outlet_angle, chord):
-        """This is"""
+        """This is an helper function"""
         self._compute_parabola(inlet_angle, outlet_angle, chord)
 
     def residual(

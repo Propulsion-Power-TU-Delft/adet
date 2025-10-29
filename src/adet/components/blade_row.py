@@ -27,6 +27,15 @@ from adet.tools.strings import get_index
 logger = logging.getLogger(__name__)
 
 
+# (1) NOTE:
+# At the INLET, geometric and kinematic angle
+# are of course the same, there is no geometry,
+# but we still need to define the geometric
+# angle distributions at the inlet of each row,
+# therefore we impose kinematic and geometric
+# angles to be equal
+
+
 class BladeRow(BaseComponent):
     base_equations = [
         # |> Fundamental equations - do not remove
@@ -34,10 +43,13 @@ class BladeRow(BaseComponent):
         (EulerEquation, (0, 1)),
         (SpeedLinker, (1, 1)),
         (SpeedLinker, (1, 0)),
-        # |> TODO: These should be accessory
+        (ZeroDeviation, 0),  # No INLET deviation -> see (1) for meaning
+        #
+        # *** |> These are hardcoded for testing TODO REMOVE
         (ZeroDeviation, 1),  # No outlet deviation
         (ParabolicCamberline, (0, 1)),  # Camber line geometry
-        # |> Common definitions
+        #
+        # |> Common courtesy definitions
         (BladeCount, 1),
         (Solidity, 1),
     ]

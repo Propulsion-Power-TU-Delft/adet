@@ -6,8 +6,6 @@ from typing import ClassVar, TypeAlias, Type, Any
 
 from adet.equations import EquationBase
 
-BoundaryConditions: TypeAlias = dict[str, dict[str, Any]]
-
 BaseEquationsFormat: TypeAlias = list[
     tuple[
         Type[EquationBase],
@@ -33,7 +31,10 @@ class BaseComponent(ABC):
     def __init__(
         self,
         name: str,
-        boundary_conditions: BoundaryConditions,
+        boundary_conditions: dict[
+            str,
+            dict[str, Any],
+        ],
         extra_equations: dict[
             EquationBase,
             int | tuple[int, ...],

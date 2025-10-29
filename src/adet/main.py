@@ -46,6 +46,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 NUM_SPAN = 3
 SCALED = True
 PLOTS = True
+PRINTS = True
 
 # NOTE: I have now forced the system to add all possible update variables to each single
 # state (tot, stc, rlt). So this means that the first two update variables will always
@@ -71,7 +72,7 @@ ntw = ComponentNetwork(
     CasadiSystem(spanwise_stations=1),  # Backend
     *[
         row1,
-        row2,
+        # row2,
     ],
 )
 
@@ -96,8 +97,8 @@ ntw.system.add_global_constraints(
 # NOTE:
 # Multi node support needs better integration with network
 # for now it relies on manual addition
-ntw.system.add_equation(DegreeOfReaction(), (0, 1, 2, 3))
-ntw.system.add_boundary_conditions({'oth': {'reactDegree': 0.5}}, 3)
+# ntw.system.add_equation(DegreeOfReaction(), (0, 1, 2, 3))
+# ntw.system.add_boundary_conditions({'oth': {'reactDegree': 0.5}}, 3)
 
 
 ntw.system.build(SCALED)
@@ -149,6 +150,7 @@ def solve_casadi_sys(
                 # Need the limited-memory, approx (quasi-new
                 # the eos does not have an hessian
                 'ipopt.hessian_approximation': 'limited-memory',
+                # 'ipopt.jacobian_approximation': 'finite-difference-values',
             },
         },
     )
@@ -181,6 +183,7 @@ ntw.system = sys_multi
 
 
 num_args = len(ntw.system.free_args)
+
 ntw.system.write_solution_to_nodes(np.array(sol).reshape(num_args, -1))
 
 
@@ -226,7 +229,7 @@ if PLOTS:
             False,
             offset,
         )
-        offset += ax_chord * 1.02
+        offset += ax_chord * 1.05
 
     ax.plot([0.0, offset], [0.0, 0.0], color='r', linestyle='dashdot', linewidth=2.5)
 
@@ -260,16 +263,17 @@ DH_EOS = CasadiEoS(
 
 eos = real_model.eos_object
 
-for i, node in enumerate(ntw.system.nodes):
-    # For simpler access set n0, n1, n2, ...
-    globals()[f'n{i}'] = node
-    to_print = f"""
+if PRINTS:
+    for i, node in enumerate(ntw.system.nodes):
+        # For simpler access set n0, n1, n2, ...
+        globals()[f'n{i}'] = node
+        to_print = f"""
 ##################
 ##### NODE {i} #####
 ##################
-{node}\n
-"""
-    print(to_print)
+    {node}\n
+    """
+        print(to_print)
 
 if PLOTS:
     plt.show()

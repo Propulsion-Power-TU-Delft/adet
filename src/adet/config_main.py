@@ -62,23 +62,25 @@ rotating_shaft = Shaft(Quantity(1000, 'rpm'))
 inlet = Inlet(
     {
         'kin': {
-            # 'Vm': 100,
             'alpha': Quantity(0, 'deg'),
+            # 'alpha': Quantity(30, 'deg'),
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
             'rmid': 0.5,
-            'height': 0.15,
+            'height': 0.2,
         },
         'tot': {
-            'p': 6e5,
             'T': 700,
+            'p': 6e5,  # impose at outlet
         },
         'oth': {
+            'mach': 0.3,
             # 'cum_massflow': 90,
         },
     }
 )
+
 row1 = BladeRow(
     'Stator0',
     {
@@ -86,53 +88,62 @@ row1 = BladeRow(
             'alpha': Quantity(50, 'deg'),
         },
         'geo': {
+            # Meridional
             'meridional_angle': Quantity(0, 'deg'),
             'rmid': 0.5,
-            'chord': 0.2,
-            'n_blades': 7,
-            # 'height': 0.15,
+            # Blade
+            'chord': 0.15,
+            'n_blades': 40,
             # 'solidity': 0.4,
         },
+        'tot': {
+            # 'p': 6e5, # Impose either here or at inlet
+        },
         'oth': {
-            'mach': 0.4,
-            'VmRatio': 0.9,
+            'VmRatio': 0.95,
         },
     },
     shaft=static_shaft,
     extra_equations={
-        # PercentageEntropyLoss(0.0): (0, 1),
-        DentonProfileLoss(real_model): (0, 1),
         MeridionalVelocityRatio(): (0, 1),
+        # |> Losses
+        PercentageEntropyLoss(0.0): (0, 1),
+        # DentonProfileLoss(real_model): (0, 1),
     },
 )
 
 row2 = BladeRow(
     'Rotor0',
     {
+        'kin': {
+            # Repeated stage with axial discharge
+            'alpha': Quantity(0, 'deg'),
+        },
         'geo': {
+            # Meridional
             'meridional_angle': Quantity(0, 'deg'),
             'rmid': 0.5,
-            'chord': 0.2,
-            'solidity': 0.4,
-            # 'pitch': 0.15,
-            # 'height': 0.2,
-            # 'n_blades': 13,
-        },
-        'stc': {
-            # 'p': 5e5,
+            # Blade
+            'chord': 0.15,
+            # 'solidity': 0.4,
+            'n_blades': 50,
+            # NOTE: Insane sensitivity to number of blades????
+            # Some tests:
+            # - 40,42,43 do not converge
+            # - 41,44,45,46,50 converge
         },
         'oth': {
-            'workCoeff': 1.8,
-            'VmRatio': 1.0,
+            # 'workCoeff': 0.7,
+            'VmRatio': 0.95,
         },
     },
     rotating_shaft,
     extra_equations={
-        # DentonProfileLoss(real_model): (0, 1),
-        PercentageEntropyLoss(0.0): (0, 1),
         WorkCoefficient(): (0, 1),
         MeridionalVelocityRatio(): (0, 1),
-        HeightRatio(): (0, 1),
         FlowCoefficient(): 1,
+        # |> Losses
+        DentonProfileLoss(real_model): (0, 1),
+        # PercentageEntropyLoss(0.0): (0, 1),
     },
 )
