@@ -1,25 +1,29 @@
 # === IMPORTS
+# Standard library
 import logging
 from typing import Literal
 
+# External libraries
 import matplotlib.pyplot as plt
-import optimistix as optx
 import jax
 import numpy as np
-from itertools import accumulate
 import casadi as cs
 
+# Network build
 from adet.assembly import CasadiSystem
 from adet.components import ComponentNetwork
-from adet.diagnostics import SystemDiagnostics
-from adet.components.blade_row import plot_from_nodes
+from adet.equations.definitions import DegreeOfReaction
 from adet.fluid.settings import FluidSettings
-from adet.config_main import real_model, ideal_model, inlet, row1, row2, row3, row4
 
-# Tooling
+# Objects Configuration => MODIFY CONFIG FILE TO SET BOUNDARY CONDITIONS
+from adet.config_main import real_model, ideal_model, inlet, row1, row2
+
+# Tooling and utils
 from adet.tools.iter import grouper
 from adet.tools.loggers import setup_logger
+from adet.components.blade_row import plot_from_nodes
 from adet.tools.context import suppress_output
+# from adet.diagnostics import SystemDiagnostics
 
 
 logger = logging.getLogger(__name__)
@@ -39,59 +43,64 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 
 # === SETTINGS
-NUM_SPAN = 11
-
-# Thermodynamic model
-
+NUM_SPAN = 3
 SCALED = True
-SOLVER_LSTSQ = optx.BestSoFarLeastSquares(
-    optx.LevenbergMarquardt(1e-2, 1e-3),
-)
-SOLVER_NEWTON = optx.Newton(1e-8, 1e-10)
+PLOTS = True
 
-# === SYSTEM DEFINITION
+# NOTE: I have now forced the system to add all possible update variables to each single
+# state (tot, stc, rlt). So this means that the first two update variables will always
+# be used. This has a significant influence on the convergence of the system, p and T
+# variables seem to provide the most stable couple so far
 
 settings = FluidSettings(
-    model=ideal_model,
-    update_variables=('p', 'T', 'hmass', 'smass', 'rhomass'),
+    model=real_model,
+    update_variables=(
+        'p',
+        'T',
+        'rhomass',
+        'smass',
+        'hmass',
+    ),
     update_length=2,
 )
 
-
 # Create network
 ntw = ComponentNetwork(
-    settings,
-    inlet,
+    settings,  # Fluid settings
+    inlet,  # Inlet conditions
     CasadiSystem(spanwise_stations=1),  # Backend
     *[
         row1,
-        # row2,
-        # row3,
-        # row4,
+        row2,
     ],
 )
 
+# Add global constraints for ideal gas and
+# loss models
 ntw.system.add_global_constraints(
     {
         'oth': {
-            'cpmassid': 1004,
-            'cvmassid': 700,
-            'T_ref': 1,
-            'p_ref': 1,
+            'cpmassid': 1004.0,
+            'cvmassid': 717.0,
+            'T_ref': 1.0,
+            'p_ref': 1.0,
+            # Profile losses coefficients
             'Cd_profile': 0.002,
             'x_by_camb_len_A': 0.375,  # First profile coord
-            'x_by_camb_len_B': 0.675,  # First profile coord
+            'x_by_camb_len_B': 0.675,  # Second profile coord
         }
     }
 )
 
 
-ntw.build_network()
+# NOTE:
+# Multi node support needs better integration with network
+# for now it relies on manual addition
+ntw.system.add_equation(DegreeOfReaction(), (0, 1, 2, 3))
+ntw.system.add_boundary_conditions({'oth': {'reactDegree': 0.5}}, 3)
 
-n0 = ntw.system.nodes[0]
-n1 = ntw.system.nodes[1]
 
-x0 = ntw.system.get_initial_guess()
+ntw.system.build(SCALED)
 
 
 # === CASADI VERSION - Function Extraction + Solution
@@ -110,14 +119,12 @@ def solve_casadi_sys(
         knowns_stack.flatten(),  # Knowns -> Numerical values
     )
 
-    # diagn = SystemDiagnostics(system, knowns_stack)
-
     rootfind_problem = {
         'x': free_args_symbols,
         'g': res_expr_partial,
     }
 
-    # Newton-Raphson solver
+    # Newton-Raphson solver -> Fast but unstable w/o good guess
     G_newt = cs.rootfinder(
         'newton_roots',
         'newton',
@@ -139,20 +146,20 @@ def solve_casadi_sys(
             'nlpsol_options': {
                 'ipopt.print_level': 1,
                 'ipopt.max_iter': 100,
-                # Need that, the eos does not have an hessian
-                #   (jah)
+                # Need the limited-memory, approx (quasi-new
+                # the eos does not have an hessian
                 'ipopt.hessian_approximation': 'limited-memory',
             },
         },
     )
 
-    # with suppress_output():
-    logger.info('Solving the system...')
-    match method:
-        case 'newton':
-            sol = G_newt(x0.flatten(), 0.0)
-        case 'nlpsol':
-            sol = G_nlp(x0.flatten(), 0.0)
+    with suppress_output():
+        logger.info('Solving the system...')
+        match method:
+            case 'newton':
+                sol = G_newt(x0.flatten(), 0.0)
+            case 'nlpsol':
+                sol = G_nlp(x0.flatten(), 0.0)
 
     return sol
 
@@ -177,14 +184,13 @@ num_args = len(ntw.system.free_args)
 ntw.system.write_solution_to_nodes(np.array(sol).reshape(num_args, -1))
 
 
-PLOTS = True
 if PLOTS:
     FONTSIZE = 26
     FONTDICT = {'fontsize': FONTSIZE}
 
-    for idx, n in enumerate(ntw.system.nodes):
+    for i, n in enumerate(ntw.system.nodes):
         n.kin.plot()
-        plt.title(f'Node number {idx}')
+        plt.title(f'Node number {i}')
 
     plt.tick_params(labelsize=FONTSIZE / 1.5 // 1)
 
@@ -196,6 +202,14 @@ if PLOTS:
     # ax.set_ylim(0.0, 1.2)
     ax.set_ylabel('radius [m]', {'fontsize': 18})
     ax.set_xlabel('axial  [m]', {'fontsize': 18})
+    max_Y = (
+        1.1
+        * (
+            ntw.system.nodes[-1].geo.get('rmid').magnitude
+            + ntw.system.nodes[-1].geo.get('height').magnitude / 2
+        )[0]
+    )
+    ax.set_ylim(-0.01, max_Y)
     ax.tick_params('both', labelsize=18)
     ax.grid()
     ax.set_title('Meridional profile', {'fontsize': 18})
@@ -212,12 +226,52 @@ if PLOTS:
             False,
             offset,
         )
-        offset += ax_chord
+        offset += ax_chord * 1.02
 
+    ax.plot([0.0, offset], [0.0, 0.0], color='r', linestyle='dashdot', linewidth=2.5)
+
+
+from adet.fluid import CasadiEoS
+import CoolProp as cp
+
+# eos extractors for debugging
+PT_EOS = CasadiEoS(
+    'PT_eos',
+    real_model.eos_object,
+    cp.PT_INPUTS,
+    ['rhomass', 'hmass', 'smass', 'speed_sound'],
+    NUM_SPAN,
+)
+HS_EOS = CasadiEoS(
+    'HS_eos',
+    real_model.eos_object,
+    cp.HmassSmass_INPUTS,
+    ['rhomass', 'p', 'T', 'speed_sound'],
+    NUM_SPAN,
+)
+DH_EOS = CasadiEoS(
+    'DH_eos',
+    real_model.eos_object,
+    cp.DmassHmass_INPUTS,
+    ['smass', 'p', 'T', 'speed_sound'],
+    NUM_SPAN,
+)
+
+
+eos = real_model.eos_object
+
+for i, node in enumerate(ntw.system.nodes):
+    # For simpler access set n0, n1, n2, ...
+    globals()[f'n{i}'] = node
+    to_print = f"""
+##################
+##### NODE {i} #####
+##################
+{node}\n
+"""
+    print(to_print)
+
+if PLOTS:
     plt.show()
 else:
     plt.close('all')
-
-
-print(f'\n\n\n################# NODE 0 #################\n{n0}')
-print(f'\n\n\n################# NODE 1 #################\n{n1}')

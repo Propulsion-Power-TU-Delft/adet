@@ -14,7 +14,7 @@ from numpy.typing import NDArray
 from pint.facets.plain import PlainQuantity
 from pint.registry import Quantity
 
-from adet.fluid.settings import FluidSettings
+from adet.fluid.settings import ExternalFluidModel, FluidSettings
 from adet.registries import DefaultUnitsRegistry
 from adet.constants import ArrayLike
 from adet.tools.plotting import plot_velocity_triangles
@@ -197,6 +197,9 @@ class VariableContainer:
             self.add_variable(var_type)
 
         return self.all_quantities[var_type]
+
+    def __getattr__(self, var_type: str) -> NDArray:
+        return self.get(var_type).to_base_units().magnitude
 
     def __contains__(self, key):
         """
@@ -383,12 +386,11 @@ if __name__ == '__main__':
 
     # ThermoState
     sett = FluidSettings(
-        FluidModel(
+        ExternalFluidModel(
             cp.AbstractState(
                 'HEOS',
                 'R134a',
             ),
-            is_analytic=False,
         ),
         ('hmass', 'p', 'T'),
         2,

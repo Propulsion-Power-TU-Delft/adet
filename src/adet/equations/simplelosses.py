@@ -6,7 +6,7 @@ the actual loss implementations are to be found in the `losses` module
 from adet.equations import EquationBase
 
 
-class FixedPressureLoss(EquationBase):
+class TotalPressureLoss(EquationBase):
     """
     .. math::
 

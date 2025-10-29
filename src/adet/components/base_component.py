@@ -1,5 +1,7 @@
 from abc import ABC
+import inspect
 from collections import defaultdict
+import logging
 from typing import ClassVar, TypeAlias, Type, Any
 
 from adet.equations import EquationBase
@@ -13,20 +15,29 @@ BaseEquationsFormat: TypeAlias = list[
     ]
 ]
 
-ExtraEquationsFormat: TypeAlias = dict[
-    EquationBase,
-    int | tuple[int, ...],
-]
+logger = logging.getLogger(__name__)
 
 
 class BaseComponent(ABC):
-    # Force children to define these class attributes with specific types
-    base_equations: ClassVar[BaseEquationsFormat]
+    # I use a tuple because EquationBase
+    # is not hashable
+    base_equations: ClassVar[
+        list[
+            tuple[
+                Type[EquationBase],
+                int | tuple[int, ...],
+            ]
+        ]
+    ]
 
     def __init__(
         self,
+        name: str,
         boundary_conditions: BoundaryConditions,
-        extra_equations: ExtraEquationsFormat,
+        extra_equations: dict[
+            EquationBase,
+            int | tuple[int, ...],
+        ],
     ):
         self.boundary_conditions = defaultdict(dict)
         self.boundary_conditions.update(boundary_conditions)
@@ -40,12 +51,39 @@ class BaseComponent(ABC):
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
 
-        # Check if required attributes are defined
+        # Force children to define these class attributes
         if not hasattr(cls, 'base_equations'):
             raise TypeError(f'{cls.__name__} must define `base_equations`')
 
+        cls._verify_base_equation_format()
+
+    @classmethod
+    def _verify_base_equation_format(cls):
         # Check types
         if not isinstance(cls.base_equations, list):
             raise TypeError('Equations must be supplied as a list')
 
-        # TODO Validate structure
+        for eq_class, position in cls.base_equations:
+            if not inspect.isclass(eq_class):
+                raise TypeError(
+                    f'`{eq_class.__class__.__name__}` in `{cls.__name__}` is not an'
+                    f' EquationBase class type. Please provide a class object,'
+                    f' not an instance'
+                )
+
+            if not isinstance(position, (int, tuple)):
+                raise TypeError(
+                    f'Base equation position for `{eq_class.__name__}` '
+                    f'in `{cls.__name__}`, must either be an integer '
+                    f'or a tuple of integers. Found `{type(position)}`, {position}.'
+                )
+
+            if isinstance(position, tuple):
+                if not all(type(x) is int for x in position):
+                    raise TypeError(
+                        f'Ambiguous equation position `{position}` in `{cls.__name__}` '
+                        f'for `{eq_class.__name__}`. Please provide a tuple of '
+                        f'integers. '
+                    )
+
+        logger.debug(f'Base equations format in {cls.__name__} verifiedx')

@@ -132,11 +132,13 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'cvmass': 'J / (kg * K)',
         'cvmassid': 'J / (kg * K)',
         'speed_sound': 'm/s',
-        'Ma': 'dimensionless',
         # Others
         'massflow': 'kg / s',
         'cum_massflow': 'kg / s',
         'ch_massflow': 'kg / s',
+        'mach': '',
+        'relmach': '',
+        'reactDegree': 'dimensionless',
         # Kinematics
         'V': 'm/s',
         'Vt': 'm/s',
@@ -151,6 +153,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         # Meridional Geometry
         'meridional_angle': 'rad',
         'height': 'm',
+        'heightRatio': 'dimensionless',
         'hh': 'm',
         'rr': 'm',
         'rmid': 'm',
@@ -161,6 +164,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'camb_len': 'm',
         'pitch': 'm',
         'stagger': 'rad',
+        'solidity': 'dimensionless',
     }
 
 

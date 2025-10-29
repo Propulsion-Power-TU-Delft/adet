@@ -1,21 +1,22 @@
 from typing import Generic, Sequence, TypeVar
-from art import tprint
 
 from adet.assembly import SystemAssembler
 from adet.components import BaseComponent
 from adet.components.connections import Inlet
+from adet.equations.nondimensional import AbsoluteMachNumber, RelativeMachNumber
 from adet.equations.simplelosses import ZeroDeviation
-from adet.fluid.settings import AnalyticalFluidModel, FluidSettings
+from adet.fluid.settings import FluidSettings
 
 from adet.equations.fundamental import (
     MassAreaRelation,
     Kinematics,
     MeridionalUniform,
     TotalStaticMatching,
-    CumMassFlow,
 )
 
-from adet.equations.linkers import ComponentLinker
+from adet.equations.definitions import CumMassFlow
+
+from adet.equations.linkers import ComponentLinker, VariableAdder
 from adet.tools.iter import grouper
 from adet.tools.printing import print_header
 
@@ -42,8 +43,8 @@ class ComponentNetwork(Generic[T]):
         self.system = backend
         self.system.fluid_settings = fluid_settings
 
-        self.num_components = len(components)
         self.components = components
+        self.num_components = len(components)
 
         self.system = backend
         self.system.fluid_settings = fluid_settings
@@ -76,31 +77,44 @@ class ComponentNetwork(Generic[T]):
                 self.system.add_equation(equation, traslated_pos)
 
     def _add_single_node_eqs(self, comp_stack_length: int):
-        # At the inlet geometric and kinematic angle
-        # are of course the same, there is no geometry
+        # NOTE:
+        # At the INLET geometric and kinematic angle
+        # are of course the same, there is no geometry,
+        # but we still need to define the spanwise
+        # distributions that will be fed to the first row
         self.system.add_equation(ZeroDeviation(), 0)
 
+        SINGLE_NODE_EQUATIONS = [
+            # FOUNDATIONAL EQs - DO NOT REMOVE!
+            MassAreaRelation,
+            Kinematics,
+            MeridionalUniform,
+            TotalStaticMatching,
+            # DEFINITIONS (the system is well posed w/o)
+            CumMassFlow,
+            AbsoluteMachNumber,
+            RelativeMachNumber,
+            VariableAdder,
+        ]
+
         for node_idx in range(2 * comp_stack_length):
-            # Single node relationships
-            self.system.add_equation(CumMassFlow(), node_idx)
-            self.system.add_equation(MassAreaRelation(), node_idx)
-            self.system.add_equation(Kinematics(), node_idx)
-            self.system.add_equation(MeridionalUniform(), node_idx)
-            self.system.add_equation(TotalStaticMatching(), node_idx)
+            # Single node relationships, make instances!
+            [self.system.add_equation(eq(), node_idx) for eq in SINGLE_NODE_EQUATIONS]
 
     def _link_components(self, comp_stack_length: int):
         # Nomenclature
         # ~~~~~~~~~~~~
-        #        _________________________________
-        #          |         |        _________
-        #          |         |       |         |
-        #   V      |         |       |         |
-        #  -->   0 |  ROW 0  | 1   2 |  ROW 1  | 3
-        #          |         |       |         |
-        #        __|_________|_______|_________|__
-        #        /////////////////////////////////
-        #        \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
-        #        /////////////////////////////////
+        #        ___________________________________
+        #          |         |          _________
+        #          |         |  linker |         |
+        #          |         |    ^    |         |
+        #   V      |  ROW 0  |    |    |  ROW 1  |
+        #  -->   0 |         | 1 === 2 |         | 3   <- NODES
+        #        + |         | +     + |         | +
+        #        __|_________|_________|_________|__
+        #        ///////////////////////////////////
+        #        \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+        #        ///////////////////////////////////
         #       _ . _ . _ . _ . _ . _ . _ . _ . _ . _
         #
         # * components couples : (0, 1), (2, 3), ...
@@ -114,10 +128,7 @@ class ComponentNetwork(Generic[T]):
             ),
         )
 
-        # Check if this is not empty (single row case)
+        # Check that this is not empty (single row case)
         if link_node_couples:
             for nodes in link_node_couples:
                 self.system.add_equation(ComponentLinker(), nodes)
-
-    def build_network(self, scale_equations: bool = True):
-        self.system.build(scale_equations)

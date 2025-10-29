@@ -3,7 +3,8 @@ from adet.equations import EquationBase
 
 class SpeedLinker(EquationBase):
     """
-    Linker between inlet and outlet node of a blade row
+    Impose the same rotational speed (omega) between inlet
+    and outlet of a component
     """
 
     def residual(self, kin_omega0, kin_U1, geo_rr1):
@@ -45,8 +46,34 @@ class ComponentLinker(EquationBase):
         r4 = kin_Vm0 - kin_Vm1
 
         # 3. Same geometry
+        # NOTE: => Should i use hh and rr instead?
+        #          (Compatible with non-uniform distibutions)
+
         r5 = geo_rmid0 - geo_rmid1
         r6 = geo_height0 - geo_height1
         r7 = geo_meridional_angle0 - geo_meridional_angle1
 
         return r1, r2, r3, r4, r5, r6, r7
+
+
+class VariableAdder(EquationBase):
+    """
+    This is a `ghost` equation, it just forces the system to
+    add variables to the at runtime without them appearing
+    explicitly in any equation, it is mainly done to force
+    the addition of thermodynamic vars to be used in updates
+    """
+
+    def residual(
+        self,
+        rlt_rhomass0,
+        tot_rhomass0,
+        stc_rhomass0,
+        rlt_p0,
+        tot_p0,
+        stc_p0,
+        rlt_T0,
+        tot_T0,
+        stc_T0,
+    ):
+        return ()

@@ -1,24 +1,27 @@
 from dataclasses import dataclass
 import logging
-from typing import Type
+from typing import Type, Any
 
 from matplotlib.lines import Line2D
-import matplotlib.pyplot as plt
-
 import numpy as np
 
-from adet.components import (
-    BaseComponent,
-    BoundaryConditions,
-    Shaft,
-    ExtraEquationsFormat,
+from adet.components import BaseComponent, Shaft
+from adet.equations.definitions import BladeCount, Solidity
+from adet.equations.fundamental import (
+    EulerEquation,
+    MassConservation,
+    ParabolicCamberline,
 )
+
+
+# Equations
 from adet.equations import EquationBase
-from adet.equations.fundamental import EulerEquation, MassConservation
 from adet.equations.linkers import SpeedLinker
+from adet.equations.simplelosses import ZeroDeviation
+from adet.losses import LossModel
+
 from adet.node import FlowNode
 from adet.geometry import BezierCurve, StraightLine
-from adet.losses import LossModel
 from adet.tools.strings import get_index
 
 logger = logging.getLogger(__name__)
@@ -26,34 +29,50 @@ logger = logging.getLogger(__name__)
 
 class BladeRow(BaseComponent):
     base_equations = [
+        # |> Fundamental equations - do not remove
         (MassConservation, (0, 1)),
         (EulerEquation, (0, 1)),
         (SpeedLinker, (1, 1)),
         (SpeedLinker, (1, 0)),
+        # |> TODO: These should be accessory
+        (ZeroDeviation, 1),  # No outlet deviation
+        (ParabolicCamberline, (0, 1)),  # Camber line geometry
+        # |> Common definitions
+        (BladeCount, 1),
+        (Solidity, 1),
     ]
 
     def __init__(
         self,
-        boundary_conditions: BoundaryConditions,
+        name: str,
+        boundary_conditions: dict[
+            str,
+            dict[str, Any],
+        ],
         shaft: Shaft,
+        extra_equations: dict[
+            EquationBase,
+            int | tuple[int, ...],
+        ] = {},
         loss_models: list[LossModel] = [],
-        extra_equations: ExtraEquationsFormat = {},
     ):
         """
         Class that represents a blade row, compressor/turbine,
         stator/rotor
         """
-        super().__init__(boundary_conditions, extra_equations)
+        super().__init__(name, boundary_conditions, extra_equations)
         self.boundary_conditions['kin']['omega'] = shaft.omega
 
-        self._loss_models = loss_models
-
+        # NOTE: Loss models are being added just as equations now
+        # self._loss_models = loss_models
         # self._add_loss_parameters()
         # self._build_loss_matcher()
 
     # TODO: Fix this for multiple formulations interacting
     # Total pressure, enthalpy, entropy, etc.
     # This below is unused for now, loss models are just added as equations
+    # The code below was a minimal example but currently it's out of
+    # order and missing major features.
 
     def _add_loss_parameters(self):
         raise NotImplementedError

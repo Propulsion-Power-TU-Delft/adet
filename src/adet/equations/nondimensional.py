@@ -58,7 +58,7 @@ class WorkCoefficient(EquationBase):
     """
 
     def residual(self, tot_hmass0, tot_hmass1, kin_Vt0, kin_U0, oth_workCoeff1):
-        return kin_U0**2 * oth_workCoeff1 - (tot_hmass0 - tot_hmass1)
+        return (tot_hmass0 - tot_hmass1) - kin_U0**2 * oth_workCoeff1
 
 
 class SwallowingCapacity(EquationBase):
@@ -91,12 +91,7 @@ class SpecificSpeed(EquationBase):
 
 class SizeParameter(EquationBase):
     def residual(
-        self,
-        oth_sizeParameter1,
-        oth_massflow1,
-        stc_rhomass1,
-        tot_hmass0,
-        stc_hmass1,
+        self, oth_sizeParameter1, oth_massflow1, stc_rhomass1, tot_hmass0, stc_hmass1
     ):
         return oth_sizeParameter1 * ((tot_hmass0 - stc_hmass1) ** (1 / 4)) - np.sqrt(
             oth_massflow1 / stc_rhomass1

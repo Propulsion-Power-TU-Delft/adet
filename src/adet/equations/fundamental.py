@@ -19,15 +19,6 @@ class MassConservation(EquationBase):
         return oth_massflow0 - oth_massflow1
 
 
-class CumMassFlow(EquationBase):
-    """
-    Cumulative massflow
-    """
-
-    def residual(self, oth_cum_massflow0, oth_massflow0):
-        return oth_cum_massflow0 - np.sum(oth_massflow0)
-
-
 class MassAreaRelation(EquationBase):
     """
     .. math::
@@ -74,6 +65,7 @@ class TotalStaticMatching(EquationBase):
         rlt_smass0,
         kin_V0,
         kin_W0,
+        # Force to add density as variables in all states
     ):
         r1 = tot_hmass0 - (stc_hmass0 + kin_V0**2 / 2)
         r2 = rlt_hmass0 - (stc_hmass0 + kin_W0**2 / 2)
@@ -190,25 +182,6 @@ def safe_min_clip(x, min_value):
         x = np.clip(np.abs(x), min_value, None)
 
     return x
-
-
-class BladeCount(EquationBase):
-    # NOTE: I deliberately did not include a mechanism for imposing an integer
-    # number of blades. It should be done by the loading criteria
-    # - - -
-    # e.g. If the user imposes no loading criteria and just specifies radius and
-    # pitch, the num of blades might be forced by input not to be an integer.
-    # Therefore, we choose not to violate the user's constraints for a single
-    # root problem because it is not compatible with the current architecture.
-    # - - -
-
-    def residual(
-        self, geo_pitch0, geo_n_blades0, geo_rr0, oth_ch_massflow0, oth_massflow0
-    ):
-        r1 = geo_pitch0 * geo_n_blades0 - 2 * np.pi * geo_rr0
-        r2 = geo_n_blades0 * oth_ch_massflow0 - oth_massflow0
-
-        return r1, r2
 
 
 class ParabolicCamberline(EquationBase):

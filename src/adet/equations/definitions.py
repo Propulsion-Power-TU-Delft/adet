@@ -4,6 +4,7 @@ the single quantities
 """
 
 from adet.equations.base_equation import EquationBase
+import numpy as np
 
 
 class AngleDeflection(EquationBase):
@@ -16,11 +17,61 @@ class RadiusRatio(EquationBase):
         return oth_radiusRatio1 - geo_rmid1 / geo_rmid0
 
 
+class Solidity(EquationBase):
+    def residual(self, geo_solidity0, geo_pitch0, geo_chord0):
+        return geo_pitch0 * geo_solidity0 - geo_chord0
+
+
 class HeightRatio(EquationBase):
     def residual(self, geo_height0, geo_height1, oth_heightRatio1):
         return oth_heightRatio1 - geo_height1 / geo_height0
 
 
+class DegreeOfReaction(EquationBase):
+    def residual(
+        self,
+        stc_hmass0,
+        stc_hmass1,
+        stc_hmass2,
+        stc_hmass3,
+        oth_reactDegree3,
+    ):
+        delta_hmass_row0 = stc_hmass1 - stc_hmass0
+        delta_hmass_row1 = stc_hmass3 - stc_hmass2
+
+        return oth_reactDegree3 - delta_hmass_row0 / delta_hmass_row1
+
+
 class MeridionalVelocityRatio(EquationBase):
     def residual(self, kin_Vm0, kin_Vm1, oth_VmRatio1):
         return oth_VmRatio1 - kin_Vm1 / kin_Vm0
+
+
+class CumMassFlow(EquationBase):
+    """Cumulative massflow"""
+
+    def residual(self, oth_cum_massflow0, oth_massflow0):
+        return oth_cum_massflow0 - np.sum(oth_massflow0)
+
+
+class BladeCount(EquationBase):
+    """
+    Define pitch as circumference / n_blades and the massflow per blade channel
+
+    Note
+    ----
+    I deliberately did not include a mechanism for imposing an integer
+    number of blades. It should be done by the loading criteria
+    e.g. If the user imposes no loading criteria and just specifies radius and
+    pitch, the num of blades might be forced by input not to be an integer.
+    Therefore, we choose not to violate the user's constraints for a single
+    root problem because it is not compatible with the current architecture.
+    """
+
+    def residual(
+        self, geo_pitch0, geo_n_blades0, geo_rr0, oth_ch_massflow0, oth_massflow0
+    ):
+        r1 = geo_pitch0 * geo_n_blades0 - 2 * np.pi * geo_rr0
+        r2 = geo_n_blades0 * oth_ch_massflow0 - oth_massflow0
+
+        return r1, r2
