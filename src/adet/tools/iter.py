@@ -43,6 +43,17 @@ def grouper(
 ) -> Iterator[tuple[T, T, T]]: ...
 
 
+# Length 3 case
+@overload
+def grouper(
+    iterable: Iterable[T],
+    n: Literal[4],
+    *,
+    incomplete: Literal['strict', 'ignore'],
+    fillvalue: Any = ...,
+) -> Iterator[tuple[T, T, T, T]]: ...
+
+
 def grouper(
     iterable: Iterable[T],
     n: int,

@@ -12,6 +12,7 @@ class Inlet:
 @dataclass
 class Shaft:
     omega: float | PlainQuantity
+    is_constrained: bool
 
     def __post_init__(self):
         if isinstance(self.omega, float):

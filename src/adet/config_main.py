@@ -55,14 +55,18 @@ _gss_reg.set_fallback_value(1.0)
 
 
 # *** Shafts
-static_shaft = Shaft(0.0)
-rotating_shaft = Shaft(Quantity(1000, 'rpm'))
+static_shaft = Shaft(0.0, is_constrained=True)
+rotating_shaft = Shaft(
+    Quantity(1000, 'rpm'),
+    is_constrained=False,
+)
 
 # COMPONENT STACK
 inlet = Inlet(
     {
         'kin': {
             'alpha': Quantity(0, 'deg'),
+            'Vm': Quantity(75, 'm/s'),
             # 'alpha': Quantity(30, 'deg'),
         },
         'geo': {
@@ -75,17 +79,86 @@ inlet = Inlet(
             'p': 6e5,  # impose at outlet
         },
         'oth': {
-            'mach': 0.3,
+            # 'mach': 0.3,
             # 'cum_massflow': 90,
         },
     }
 )
 
-row1 = BladeRow(
+row0 = BladeRow(
     'Stator0',
     {
         'kin': {
-            'alpha': Quantity(50, 'deg'),
+            'alpha': Quantity(70, 'deg'),
+        },
+        'geo': {
+            # Meridional
+            'meridional_angle': Quantity(0, 'deg'),
+            'rmid': 0.5,
+            # Blade
+            'chord': 0.15,
+            'n_blades': 40,
+            # 'solidity': 0.4,
+        },
+        'tot': {
+            # 'p': 6e5, # Impose either here or at inlet
+        },
+        'oth': {
+            # 'VmRatio': 1.0,
+        },
+    },
+    shaft=static_shaft,
+    extra_equations={
+        MeridionalVelocityRatio(): (0, 1),
+        # |> Losses
+        PercentageEntropyLoss(0.0): (0, 1),
+        # DentonProfileLoss(real_model): (0, 1),
+    },
+)
+
+row1 = BladeRow(
+    'Rotor0',
+    {
+        'kin': {
+            # Repeated stage with axial discharge
+            # 'alpha': Quantity(0, 'deg'),
+        },
+        'geo': {
+            # Meridional
+            'meridional_angle': Quantity(0, 'deg'),
+            'rmid': 0.5,
+            # Blade
+            'chord': 0.15,
+            'n_blades': 40,
+            # 'solidity': 0.4,
+            # NOTE: Insane sensitivity to number of blades????
+            # Some tests:
+            # - 40,42,43 do not converge
+            # - 41,44,45,46,50 converge
+        },
+        'oth': {
+            # 'workCoeff': 1.1,
+            # 'heightRatio': 1.1,
+            # 'VmRatio': 1.0,
+        },
+    },
+    rotating_shaft,
+    extra_equations={
+        WorkCoefficient(): (0, 1),
+        MeridionalVelocityRatio(): (0, 1),
+        HeightRatio(): (0, 1),
+        FlowCoefficient(): 1,
+        # |> Losses
+        PercentageEntropyLoss(0.0): (0, 1),
+        # DentonProfileLoss(real_model): (0, 1),
+    },
+)
+
+row2 = BladeRow(
+    'Stator1',
+    {
+        'kin': {
+            # 'alpha': Quantity(0, 'deg'),
         },
         'geo': {
             # Meridional
@@ -109,43 +182,5 @@ row1 = BladeRow(
         # |> Losses
         PercentageEntropyLoss(0.0): (0, 1),
         # DentonProfileLoss(real_model): (0, 1),
-    },
-)
-
-row2 = BladeRow(
-    'Rotor0',
-    {
-        'kin': {
-            # Repeated stage with axial discharge
-            # 'alpha': Quantity(0, 'deg'),
-        },
-        'geo': {
-            # Meridional
-            'meridional_angle': Quantity(0, 'deg'),
-            'rmid': 0.5,
-            # Blade
-            'chord': 0.15,
-            # 'solidity': 0.4,
-            'n_blades': 50,
-            # NOTE: Insane sensitivity to number of blades????
-            # Some tests:
-            # - 40,42,43 do not converge
-            # - 41,44,45,46,50 converge
-        },
-        'oth': {
-            'workCoeff': 1.5,
-            'heightRatio': 1.1,
-            # 'VmRatio': 0.9,
-        },
-    },
-    rotating_shaft,
-    extra_equations={
-        WorkCoefficient(): (0, 1),
-        MeridionalVelocityRatio(): (0, 1),
-        HeightRatio(): (0, 1),
-        FlowCoefficient(): 1,
-        # |> Losses
-        DentonProfileLoss(real_model): (0, 1),
-        # PercentageEntropyLoss(0.0): (0, 1),
     },
 )

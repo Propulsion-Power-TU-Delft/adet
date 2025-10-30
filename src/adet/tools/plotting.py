@@ -18,17 +18,17 @@ logger = logging.getLogger(__name__)
 # )
 
 
-def plot_velocity_triangles(kine, geo):
+def plot_velocity_triangles(kine, geo, fontsize):
     plot_settings = {'angles': 'xy', 'scale_units': 'xy', 'scale': 1}
     fig, ax = plt.subplots()
-    FONTSIZE = 14
-    TICKSIZE = FONTSIZE / 1.5 // 1
-    FONTDICT = {'fontsize': FONTSIZE}
+    fontsize = 14
+    ticksize = fontsize / 1.5 // 1
+    fontdict = {'fontsize': fontsize}
 
-    ax.set_ylabel(r'Radial coordinate [mm]', FONTDICT)
-    ax.set_xlabel(r'Axial coordinate [mm]', FONTDICT)
+    ax.set_ylabel(r'Radial coordinate [mm]', fontdict)
+    ax.set_xlabel(r'Axial coordinate [mm]', fontdict)
 
-    ax.tick_params(labelsize=TICKSIZE)
+    ax.tick_params(labelsize=ticksize)
     ax.set_aspect('equal')
     ax.grid()
 
@@ -91,17 +91,17 @@ def plot_velocity_triangles(kine, geo):
         ticks=np.linspace(rr[0], rr[-1], 5),
         format=FuncFormatter(fmt),
     )
-    cbar_v.set_label('Radius [m]', loc=None, **FONTDICT)
+    cbar_v.set_label('Radius [m]', loc=None, **fontdict)
 
     # ax.legend(['W', 'U', 'V'], loc='lower right', **fontsett)
 
     ax.set_xlabel(
         'Meridional Component [m/s]',
-        fontdict=FONTDICT,
+        fontdict=fontdict,
     )
     ax.set_ylabel(
         'Tangential Component [m/s]',
-        fontdict=FONTDICT,
+        fontdict=fontdict,
     )
 
     return fig, ax

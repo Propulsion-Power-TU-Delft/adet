@@ -126,3 +126,14 @@ class ComponentNetwork(Generic[T]):
         if link_node_couples:
             for nodes in link_node_couples:
                 self.system.add_equation(ComponentLinker(), nodes)
+
+    def print_structure(self):
+        component_repr = ''
+        for idx, comp in enumerate(self.components):
+            comp_name = comp.name
+            component_repr += (
+                f' {{{{ (node {2 * idx})--|[ {comp_name} ]|'
+                f'--(node {2 * idx + 1}) }}}} =='
+            )
+
+        print(component_repr)

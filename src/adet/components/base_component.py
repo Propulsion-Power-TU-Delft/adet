@@ -40,6 +40,7 @@ class BaseComponent(ABC):
             int | tuple[int, ...],
         ],
     ):
+        self.name = name
         self.boundary_conditions = defaultdict(dict)
         self.boundary_conditions.update(boundary_conditions)
 

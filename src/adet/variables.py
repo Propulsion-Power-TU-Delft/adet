@@ -284,8 +284,8 @@ KinematicVariable = Literal[
 class KinematicContainer(VariableContainer):
     valid_types = get_args(KinematicVariable)
 
-    def plot(self, geo):
-        return plot_velocity_triangles(self, geo)
+    def plot(self, geo, fontsize):
+        return plot_velocity_triangles(self, geo, fontsize)
 
 
 ThermoVariable = Literal[

@@ -8,8 +8,8 @@ import numpy as np
 
 
 class AngleDeflection(EquationBase):
-    def residual(self, kin_alpha0, kin_alpha1, oth_deflection1):
-        return kin_alpha1 - kin_alpha0 - oth_deflection1
+    def residual(self, kin_beta0, kin_beta1, oth_deflection1):
+        return kin_beta1 - kin_beta0 - oth_deflection1
 
 
 class RadiusRatio(EquationBase):
@@ -27,7 +27,21 @@ class HeightRatio(EquationBase):
         return oth_heightRatio1 - geo_height1 / geo_height0
 
 
+class RepeatedStage(EquationBase):
+    def residual(self, kin_alpha0, kin_alpha3, kin_Vm0, kin_Vm1, kin_Vm2, kin_Vm3):
+        r1 = kin_alpha0 - kin_alpha3
+        r2 = kin_Vm3 - kin_Vm2
+        r3 = kin_Vm1 - kin_Vm0
+
+        return r1, r2, r3
+
+
 class DegreeOfReaction(EquationBase):
+    """
+    This assumes the stator is on nodes 0,1 and the stator on 2,3 is the rotor.
+    The degree of reaction is an `oth` property of node 3
+    """
+
     def residual(
         self,
         stc_hmass0,
@@ -36,10 +50,10 @@ class DegreeOfReaction(EquationBase):
         stc_hmass3,
         oth_reactDegree3,
     ):
-        delta_hmass_row0 = stc_hmass1 - stc_hmass0
-        delta_hmass_row1 = stc_hmass3 - stc_hmass2
+        delta_hmass_rotor = stc_hmass3 - stc_hmass2
+        delta_hmass_stage = stc_hmass3 - stc_hmass0
 
-        return oth_reactDegree3 - delta_hmass_row0 / delta_hmass_row1
+        return delta_hmass_stage * oth_reactDegree3 - delta_hmass_rotor
 
 
 class MeridionalVelocityRatio(EquationBase):

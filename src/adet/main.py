@@ -12,14 +12,12 @@ import casadi as cs
 # Network build
 from adet.assembly import CasadiSystem
 from adet.components import ComponentNetwork
-from adet.equations.base_equation import EquationOfState
-from adet.equations.definitions import DegreeOfReaction
-from adet.equations.fundamental import FreeVortexDistribution
-from adet.equations.nondimensional import WorkCoefficient
+from adet.equations.definitions import DegreeOfReaction, RepeatedStage
+from adet.equations.fundamental import ForcedVortexDistribution, FreeVortexDistribution
 from adet.fluid.settings import FluidSettings
 
 # Objects Configuration => MODIFY CONFIG FILE TO SET BOUNDARY CONDITIONS
-from adet.config_main import real_model, ideal_model, inlet, row1, row2
+from adet.config_main import real_model, ideal_model, inlet, row0, row1, row2
 
 # Tooling and utils
 from adet.losses.base_loss import LossModel
@@ -48,7 +46,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 
 # === SETTINGS
-NUM_SPAN = 3
+NUM_SPAN = 1
 SCALED = True
 PLOTS = True
 PRINTS = True
@@ -76,8 +74,11 @@ ntw = ComponentNetwork(
     inlet,  # Inlet conditions
     CasadiSystem(spanwise_stations=1),  # Backend
     *[
+        row0,
         row1,
-        row2,
+        # row0,
+        # row1,
+        # row2,
     ],
 )
 
@@ -99,11 +100,16 @@ ntw.system.add_global_constraints(
 )
 
 
-# NOTE:
+# TODO:
 # Multi node support needs better integration with network
-# for now it relies on manual addition
-# ntw.system.add_equation(DegreeOfReaction(), (0, 1, 2, 3))
-# ntw.system.add_boundary_conditions({'oth': {'reactDegree': 0.5}}, 3)
+# for now it relies on manual addition to the nodes
+all_nodes = list(grouper(range(2 * ntw.num_components), 4, incomplete='strict'))
+for stage in range(ntw.num_components // 2):
+    nodes = all_nodes[stage]
+
+    ntw.system.add_equation(RepeatedStage(), nodes)
+    ntw.system.add_equation(DegreeOfReaction(), nodes)
+    ntw.system.add_boundary_conditions({'oth': {'reactDegree': 0.5}}, nodes[-1])
 
 
 ntw.system.build(SCALED)
@@ -152,7 +158,7 @@ def solve_casadi_sys(
             'nlpsol_options': {
                 'ipopt.print_level': 1,
                 'ipopt.max_iter': 100,
-                # Need the limited-memory, approx (quasi-new
+                # Need the limited-memory, approx (quasi-newton)
                 # the eos does not have an hessian
                 'ipopt.hessian_approximation': 'limited-memory',
                 # 'ipopt.jacobian_approximation': 'finite-difference-values',
@@ -179,15 +185,17 @@ sol_dict = ntw.system.solution_to_dict(sol.toarray())
 sys_multi = ntw.system.copy()
 sys_multi.spanwise_stations = NUM_SPAN
 
+
+# Set vortex distribution, remove work (or equivalent) constraint
+# sys_multi.add_equation(FreeVortexDistribution(), 3)
+# sys_multi.boundary_conditions[3]['oth'].pop('reactDegree')  # remove the constraint
+# sys_multi.boundary_conditions[3]['oth']['Vtmid'] = sol_dict['kin_Vt3'][0]
+
 # Remove isentropic losses and add denton loss models
-sys_multi.remove_equation_type(LossModel)
-sys_multi.remove_equation_type(WorkCoefficient)
-
-sys_multi.add_equation(FreeVortexDistribution(), 3)
-sys_multi.boundary_conditions[3]['oth']['Vtmid'] = sol_dict['kin_Vt3'][0]
-
-sys_multi.add_equation(DentonProfileLoss(real_model), (0, 1))
-sys_multi.add_equation(DentonProfileLoss(real_model), (2, 3))
+# sys_multi.remove_equation_type(LossModel)
+# for nodes in grouper
+# for pos in grouper(range(2 * ntw.num_components), 2, incomplete='strict'):
+#     sys_multi.add_equation(DentonProfileLoss(real_model), pos)
 
 sys_multi.build(SCALED)
 
@@ -204,11 +212,11 @@ ntw.system.write_solution_to_nodes(np.array(sol).reshape(num_args, -1))
 
 
 if PLOTS:
-    FONTSIZE = 26
+    FONTSIZE = 18
     FONTDICT = {'fontsize': FONTSIZE}
 
     for i, n in enumerate(ntw.system.nodes):
-        n.kin.plot(n.geo)
+        n.kin.plot(n.geo, FONTSIZE)
         plt.title(f'Node number {i}')
 
     plt.tick_params(labelsize=FONTSIZE / 1.5 // 1)
@@ -290,6 +298,8 @@ if PRINTS:
     {node}\n
     """
         print(to_print)
+
+    ntw.print_structure()
 
 if PLOTS:
     plt.show()

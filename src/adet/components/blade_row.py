@@ -6,7 +6,7 @@ from matplotlib.lines import Line2D
 import numpy as np
 
 from adet.components import BaseComponent, Shaft
-from adet.equations.definitions import BladeCount, Solidity
+from adet.equations.definitions import AngleDeflection, BladeCount, Solidity
 from adet.equations.fundamental import (
     EulerEquation,
     MassConservation,
@@ -52,6 +52,7 @@ class BladeRow(BaseComponent):
         # |> Common courtesy definitions
         (BladeCount, 1),
         (Solidity, 1),
+        # (AngleDeflection, (0, 1)),
     ]
 
     def __init__(
@@ -73,7 +74,8 @@ class BladeRow(BaseComponent):
         stator/rotor
         """
         super().__init__(name, boundary_conditions, extra_equations)
-        self.boundary_conditions['kin']['omega'] = shaft.omega
+        if shaft.is_constrained:
+            self.boundary_conditions['kin']['omega'] = shaft.omega
 
         # NOTE: Loss models are being added just as equations now
         # self._loss_models = loss_models
