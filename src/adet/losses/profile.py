@@ -1,5 +1,4 @@
 from typing import Callable, cast
-from adet.equations import EquationBase
 
 from adet.fluid.casadi_eos import CasadiEoS
 import CoolProp as cp
@@ -7,6 +6,7 @@ import casadi as cs
 import numpy as np
 
 from adet.fluid.settings import ExternalFluidModel
+from adet.losses.base_loss import LossModel
 from adet.tools.coolprop_utils import DebugAbstractState
 
 
@@ -21,7 +21,7 @@ from adet.tools.coolprop_utils import DebugAbstractState
 #  |             Leading edge
 #  |___________________________> Distance along blade
 #
-class RectVelocityIncompressible(EquationBase):
+class RectVelocityIncompressible(LossModel):
     """
     References
     ----------
@@ -73,7 +73,7 @@ class RectVelocityIncompressible(EquationBase):
 #            x_by_camb_len1   x_by_camb_len2
 
 
-class DentonProfileLoss(EquationBase):
+class DentonProfileLoss(LossModel):
     """
     Axial blade profile losses based on simplified pressure distribution.
     It should be able to be used for axial compresstore and turbine blades,

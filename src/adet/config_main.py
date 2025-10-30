@@ -2,18 +2,17 @@
 
 from pint import Quantity
 
+# Equations
 from adet.equations.definitions import HeightRatio, MeridionalVelocityRatio
-from adet.equations.nondimensional import (
-    AbsoluteMachNumber,
-    FlowCoefficient,
-    WorkCoefficient,
-)
+from adet.equations.nondimensional import FlowCoefficient, WorkCoefficient
+from adet.losses.profile import DentonProfileLoss, RectVelocityIncompressible
+from adet.losses.basic import PercentageEntropyLoss
+
+# Tooling & Components
+from adet.tools.coolprop_utils import DebugAbstractState
 from adet.registries import DefaultUnitsRegistry, ScalingRegistry, GuessRegistry
 from adet.fluid.settings import ExternalFluidModel, IdealGasModel
 from adet.components import BladeRow, Shaft, Inlet
-from adet.losses.profile import DentonProfileLoss, RectVelocityIncompressible
-from adet.equations.simplelosses import PercentageEntropyLoss
-from adet.tools.coolprop_utils import DebugAbstractState
 
 
 # This counts the number of updates in an attribute
@@ -29,7 +28,7 @@ _dfu_reg = DefaultUnitsRegistry()
 _scl_reg = ScalingRegistry()
 _gss_reg = GuessRegistry()
 
-# Add units for some variables
+# Add units for custom variables
 _dfu_reg.from_dict(
     {
         'delta_smass_pct': 'J/(kg*K)',
@@ -40,6 +39,7 @@ _dfu_reg.from_dict(
         'specificSpeed': 'dimensionless',
         'STratio': 'dimensionless',
         'VmRatio': 'dimensionless',
+        'Vtmid': 'm/s',  # For vortex distributions
         'Cd_profile': 'dimensionless',
         'sizeParameter': 'meters',
         'n_blades': 'dimensionless',
@@ -117,7 +117,7 @@ row2 = BladeRow(
     {
         'kin': {
             # Repeated stage with axial discharge
-            'alpha': Quantity(0, 'deg'),
+            # 'alpha': Quantity(0, 'deg'),
         },
         'geo': {
             # Meridional
@@ -133,14 +133,16 @@ row2 = BladeRow(
             # - 41,44,45,46,50 converge
         },
         'oth': {
-            # 'workCoeff': 0.7,
-            'VmRatio': 0.95,
+            'workCoeff': 1.5,
+            'heightRatio': 1.1,
+            # 'VmRatio': 0.9,
         },
     },
     rotating_shaft,
     extra_equations={
         WorkCoefficient(): (0, 1),
         MeridionalVelocityRatio(): (0, 1),
+        HeightRatio(): (0, 1),
         FlowCoefficient(): 1,
         # |> Losses
         DentonProfileLoss(real_model): (0, 1),

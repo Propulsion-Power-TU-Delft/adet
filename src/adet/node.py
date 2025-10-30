@@ -148,12 +148,19 @@ class FlowNode(GasPropertiesMixin):
 
         return update_vars
 
-    def read_from_node(self, var_specs: Sequence[str]) -> list[Quantity]:
+    def read_from_node(
+        self, var_specs: Sequence[str], create_missing: bool = False
+    ) -> list[Quantity]:
         output_variables = []
         for arg in var_specs:
             var_state = get_arg_state(arg)
             var_type = get_arg_type(arg)
             state_obj = self.fetch_state(var_state)
+
+            # If create missing is explicitly set, create the variable
+            if create_missing and var_type not in state_obj.all_quantities:
+                state_obj.add_variable(var_type)
+
             variable = state_obj.get(var_type)
             output_variables.append(variable)
 
@@ -164,7 +171,7 @@ class FlowNode(GasPropertiesMixin):
         Simpler syntax for just adding a series of variables, identified
         with, <state>_<var_type> as in `read_from_node`
         """
-        self.read_from_node(variables_to_add)
+        self.read_from_node(variables_to_add, create_missing=True)
 
     def __str__(self):
         """

@@ -17,7 +17,7 @@ from adet.equations.fundamental import (
 # Equations
 from adet.equations import EquationBase
 from adet.equations.linkers import SpeedLinker
-from adet.equations.simplelosses import ZeroDeviation
+from adet.losses.basic import ZeroDeviation
 from adet.losses import LossModel
 
 from adet.node import FlowNode

@@ -1,9 +1,8 @@
 from inspect import getfullargspec
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 import logging
 import re
-from typing import get_args, cast, Self, TYPE_CHECKING
+from typing import get_args, cast, Self
 import ast
 import inspect
 import textwrap
@@ -11,17 +10,16 @@ import textwrap
 import sympy as sp
 import numpy as np
 
-from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidModel
-from adet.tools.strings import get_index, verify_string_pattern, get_arg_state
+from adet.tools.strings import verify_string_pattern, get_arg_state
 from adet.tools.context import override_operators, suppress_output
 from adet.constants import NodeStatesNames
 
-if TYPE_CHECKING:
-    from adet.fluid.settings import FluidModel
 
 logger = logging.getLogger(__name__)
 
 
+# TODO: A lot of argument validation could be done at the class level
+# instead of instance
 class EquationBase(ABC):
     """
     Base Class for defining equations, including argument validation and organization,
@@ -37,7 +35,7 @@ class EquationBase(ABC):
     def __init__(
         self,
         scaling_factor: list[float] | None = None,
-        argument_aliases: dict[str, str] | None = None,
+        argument_aliases: dict[str, str] = {},
     ):
         """
         Parameters
@@ -60,9 +58,9 @@ class EquationBase(ABC):
 
             The residual function is defined with standard args
             (stc_p0, stc_T0, ...), but when added to the system,
-            these are mapped to intermediate variable names.
+            these are mapped to alternative variable names.
         """
-        self._argument_aliases = argument_aliases or {}
+        self._argument_aliases = argument_aliases
 
         # Read arguments from residual signature
         residual_args = getfullargspec(self.residual).args[1:]
@@ -72,7 +70,7 @@ class EquationBase(ABC):
             residual_args,
         )
 
-        # TODO: Move scaling factor
+        # TODO: Move scaling factor to class attribute
         self.scaling_factor = scaling_factor
 
         self._num_equations: int | None = None
@@ -128,6 +126,23 @@ class EquationBase(ABC):
     def num_args(self):
         return len(self._arguments)
 
+    def _count_equations_arg_inj(self):
+        """
+        Count how many residual equations are contained
+        in this residual formulation by argument
+        injection
+        """
+        num_args = len(self.arguments)
+        dummy_args = np.full((num_args, 1), np.nan)
+        dummy_res = self.residual(*dummy_args)
+
+        if hasattr(dummy_res, '__len__'):
+            num_equations = len(dummy_res)
+        else:
+            num_equations = 1
+
+        return num_equations
+
     def _count_equations_ast(self):
         """
         Count the number of residual equation using
@@ -157,23 +172,6 @@ class EquationBase(ABC):
                     num_ret += 1
 
         return num_ret
-
-    def _count_equations_arg_inj(self):
-        """
-        Count how many residual equations are contained
-        in this residual formulation by argument
-        injection
-        """
-        num_args = len(self.arguments)
-        dummy_args = np.full((num_args, 1), np.nan)
-        dummy_res = self.residual(*dummy_args)
-
-        if hasattr(dummy_res, '__len__'):
-            num_equations = len(dummy_res)
-        else:
-            num_equations = 1
-
-        return num_equations
 
     def _read_and_validate_arguments(self, all_arguments: list[str]):
         """
@@ -299,3 +297,7 @@ class EquationBase(ABC):
 
     def __str__(self):
         return str(self.to_symbolic()) + ' = 0'
+
+
+class EquationOfState(EquationBase):
+    pass

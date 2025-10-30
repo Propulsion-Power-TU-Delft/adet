@@ -12,13 +12,18 @@ import casadi as cs
 # Network build
 from adet.assembly import CasadiSystem
 from adet.components import ComponentNetwork
+from adet.equations.base_equation import EquationOfState
 from adet.equations.definitions import DegreeOfReaction
+from adet.equations.fundamental import FreeVortexDistribution
+from adet.equations.nondimensional import WorkCoefficient
 from adet.fluid.settings import FluidSettings
 
 # Objects Configuration => MODIFY CONFIG FILE TO SET BOUNDARY CONDITIONS
 from adet.config_main import real_model, ideal_model, inlet, row1, row2
 
 # Tooling and utils
+from adet.losses.base_loss import LossModel
+from adet.losses.profile import DentonProfileLoss
 from adet.tools.iter import grouper
 from adet.tools.loggers import setup_logger
 from adet.components.blade_row import plot_from_nodes
@@ -72,7 +77,7 @@ ntw = ComponentNetwork(
     CasadiSystem(spanwise_stations=1),  # Backend
     *[
         row1,
-        # row2,
+        row2,
     ],
 )
 
@@ -173,6 +178,17 @@ sol_dict = ntw.system.solution_to_dict(sol.toarray())
 # Use midspan as precursor
 sys_multi = ntw.system.copy()
 sys_multi.spanwise_stations = NUM_SPAN
+
+# Remove isentropic losses and add denton loss models
+sys_multi.remove_equation_type(LossModel)
+sys_multi.remove_equation_type(WorkCoefficient)
+
+sys_multi.add_equation(FreeVortexDistribution(), 3)
+sys_multi.boundary_conditions[3]['oth']['Vtmid'] = sol_dict['kin_Vt3'][0]
+
+sys_multi.add_equation(DentonProfileLoss(real_model), (0, 1))
+sys_multi.add_equation(DentonProfileLoss(real_model), (2, 3))
+
 sys_multi.build(SCALED)
 
 sol_multi = solve_casadi_sys(sys_multi, 'nlpsol', sol_dict)
@@ -192,7 +208,7 @@ if PLOTS:
     FONTDICT = {'fontsize': FONTSIZE}
 
     for i, n in enumerate(ntw.system.nodes):
-        n.kin.plot()
+        n.kin.plot(n.geo)
         plt.title(f'Node number {i}')
 
     plt.tick_params(labelsize=FONTSIZE / 1.5 // 1)

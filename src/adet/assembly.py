@@ -22,6 +22,7 @@ import casadi as cs
 import jax as jax
 import jax.numpy as jnp
 
+from adet.equations.ideal_gas import EquationOfState
 from adet.errors import ConstraintError, ExistingEquationError
 from adet.fluid.casadi_eos import CasadiEoS
 from adet.fluid.settings import (
@@ -163,14 +164,7 @@ class SystemAssembler(ABC):
         out_dict = {}
         for field in FIELDS_TO_SAVE:
             try:
-                if field == 'equations':
-                    attr = {
-                        eq: pos
-                        for eq, pos in self.equations.items()
-                        if eq not in self._eos_equations
-                    }
-                else:
-                    attr = getattr(self, field)
+                attr = getattr(self, field)
             except AttributeError as e:
                 raise AttributeError(
                     f'{e} encountered while trying to deepcopy attribute {attr}'
@@ -263,6 +257,14 @@ class SystemAssembler(ABC):
             f'Added equation {equation.__class__.__name__} to system {id(self)}'
             f' in position {nodal_position}'
         )
+
+    def remove_equation_type(self, *eq_child_class: Type[EquationBase]):
+        cleaned_equations = self.equations.copy()
+        for eq in self.equations:
+            if isinstance(eq, eq_child_class):
+                cleaned_equations.pop(eq)
+
+        self.equations = cleaned_equations
 
     def remove_equation(
         self,
@@ -378,11 +380,14 @@ class SystemAssembler(ABC):
         if isinstance(fl_model, AnalyticalFluidModel):
             for node_idx, _ in enumerate(self.nodes):
                 for eq in fl_model.get_equations():
-                    self.add_equation(eq, node_idx)
-                    logger.debug(
-                        f'Added EoS equation {eq.__class__.__name__} at {node_idx}'
-                    )
-                    self._eos_equations.append(eq)
+                    try:
+                        self.add_equation(eq, node_idx)
+                        logger.debug(
+                            f'Added EoS equation {eq.__class__.__name__} at {node_idx}'
+                        )
+                        self._eos_equations.append(eq)
+                    except ExistingEquationError:
+                        pass
 
     def _get_constraints(self) -> tuple[tuple[str, ...], NDArray]:
         """

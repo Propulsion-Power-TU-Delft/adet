@@ -161,6 +161,9 @@ class VariableContainer:
 
     def set_value(self, var_type: str, magnitude: ArrayLike) -> None:
         """This assumes base units"""
+        if var_type not in self.all_quantities:
+            self.add_variable(var_type)
+
         var = self.get(var_type)
         var.ito_base_units()
         mag_verified = self._validate_magnitude(magnitude)
@@ -193,9 +196,6 @@ class VariableContainer:
         self._variables.pop(var_type, None)
 
     def get(self, var_type: str) -> PlainQuantity:
-        if var_type not in self.all_quantities:
-            self.add_variable(var_type)
-
         return self.all_quantities[var_type]
 
     def __getattr__(self, var_type: str) -> NDArray:
@@ -284,8 +284,8 @@ KinematicVariable = Literal[
 class KinematicContainer(VariableContainer):
     valid_types = get_args(KinematicVariable)
 
-    def plot(self):
-        return plot_velocity_triangles(self)
+    def plot(self, geo):
+        return plot_velocity_triangles(self, geo)
 
 
 ThermoVariable = Literal[
