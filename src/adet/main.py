@@ -46,7 +46,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 
 # === SETTINGS
-NUM_SPAN = 1
+NUM_SPAN = 3
 SCALED = True
 PLOTS = True
 PRINTS = True
@@ -58,13 +58,7 @@ PRINTS = True
 
 settings = FluidSettings(
     model=real_model,
-    update_variables=(
-        'p',
-        'T',
-        'rhomass',
-        'smass',
-        'hmass',
-    ),
+    update_variables=('p', 'T', 'rhomass', 'smass', 'hmass'),
     update_length=2,
 )
 
@@ -76,8 +70,8 @@ ntw = ComponentNetwork(
     *[
         row0,
         row1,
-        # row0,
-        # row1,
+        row0,
+        row1,
         # row2,
     ],
 )
@@ -186,10 +180,16 @@ sys_multi = ntw.system.copy()
 sys_multi.spanwise_stations = NUM_SPAN
 
 
+# For multi span, fix the rotational speed and remove degree of reaction
+# (= constraint only at midspan)
+sys_multi.boundary_conditions[3]['oth'].pop('reactDegree')  # remove the constraint
+sys_multi.boundary_conditions[3]['kin']['omega'] = sol_dict['kin_omega3'][0]
+
 # Set vortex distribution, remove work (or equivalent) constraint
+# sys_multi.add_equation(FreeVortexDistribution(), 1)
 # sys_multi.add_equation(FreeVortexDistribution(), 3)
-# sys_multi.boundary_conditions[3]['oth'].pop('reactDegree')  # remove the constraint
 # sys_multi.boundary_conditions[3]['oth']['Vtmid'] = sol_dict['kin_Vt3'][0]
+# sys_multi.boundary_conditions[1]['oth']['Vtmid'] = sol_dict['kin_Vt1'][0]
 
 # Remove isentropic losses and add denton loss models
 # sys_multi.remove_equation_type(LossModel)
