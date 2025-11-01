@@ -128,12 +128,10 @@ class ComponentNetwork(Generic[T]):
                 self.system.add_equation(ComponentLinker(), nodes)
 
     def print_structure(self):
-        component_repr = ''
+        component_repr = '@ = node\n\nInlet == @0'
+
         for idx, comp in enumerate(self.components):
             comp_name = comp.name
-            component_repr += (
-                f' {{{{ (node {2 * idx})--|[ {comp_name} ]|'
-                f'--(node {2 * idx + 1}) }}}} =='
-            )
+            component_repr += f'\n== @{2 * idx}--|[ {comp_name} ]|--@{2 * idx + 1} =='
 
         print(component_repr)

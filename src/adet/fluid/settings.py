@@ -52,6 +52,12 @@ T = TypeVar('T')
 class ExternalFluidModel(FluidModel, Generic[T]):
     eos_object: T
 
+    def __copy__(self):
+        cls = self.__class__
+        new_obj = cls.__new__(cls)
+        new_obj.eos_object = self.eos_object
+        return new_obj
+
     def __deepcopy__(self, memo):
         cls = self.__class__
         new_obj = cls.__new__(cls)

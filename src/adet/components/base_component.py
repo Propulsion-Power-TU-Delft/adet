@@ -44,6 +44,7 @@ class BaseComponent(ABC):
         self.boundary_conditions = defaultdict(dict)
         self.boundary_conditions.update(boundary_conditions)
 
+        # This makes equations non-reusable!
         base_equation_instances = {
             equation(): position for equation, position in self.base_equations
         }

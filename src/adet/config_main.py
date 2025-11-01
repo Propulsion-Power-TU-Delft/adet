@@ -1,5 +1,6 @@
 """Define some components"""
 
+from math import nan
 from pint import Quantity
 
 # Equations
@@ -55,9 +56,12 @@ _gss_reg.set_fallback_value(1.0)
 
 
 # *** Shafts
-static_shaft = Shaft(0.0, is_constrained=True)
+static_shaft = Shaft(
+    0.0,
+    is_constrained=True,
+)
 rotating_shaft = Shaft(
-    Quantity(1000, 'rpm'),
+    Quantity(nan, 'rpm'),
     is_constrained=False,
 )
 
@@ -65,9 +69,8 @@ rotating_shaft = Shaft(
 inlet = Inlet(
     {
         'kin': {
-            'alpha': Quantity(0, 'deg'),
             'Vm': Quantity(75, 'm/s'),
-            # 'alpha': Quantity(30, 'deg'),
+            'alpha': Quantity(0, 'deg'),
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
@@ -109,7 +112,6 @@ row0 = BladeRow(
     },
     shaft=static_shaft,
     extra_equations={
-        MeridionalVelocityRatio(): (0, 1),
         # |> Losses
         PercentageEntropyLoss(0.0): (0, 1),
         # DentonProfileLoss(real_model): (0, 1),
@@ -119,10 +121,7 @@ row0 = BladeRow(
 row1 = BladeRow(
     'Rotor0',
     {
-        'kin': {
-            # Repeated stage with axial discharge
-            # 'alpha': Quantity(0, 'deg'),
-        },
+        'kin': {},
         'geo': {
             # Meridional
             'meridional_angle': Quantity(0, 'deg'),
@@ -131,54 +130,18 @@ row1 = BladeRow(
             'chord': 0.15,
             'n_blades': 40,
             # 'solidity': 0.4,
-            # NOTE: Insane sensitivity to number of blades????
-            # Some tests:
-            # - 40,42,43 do not converge
-            # - 41,44,45,46,50 converge
+            # NOTE: Observed high sens. to n_blades
         },
         'oth': {
-            # 'workCoeff': 1.1,
+            # 'workCoeff': 1.0,
             # 'heightRatio': 1.1,
             # 'VmRatio': 1.0,
         },
     },
     rotating_shaft,
     extra_equations={
-        WorkCoefficient(): (0, 1),
-        MeridionalVelocityRatio(): (0, 1),
-        HeightRatio(): (0, 1),
-        FlowCoefficient(): 1,
-        # |> Losses
-        PercentageEntropyLoss(0.0): (0, 1),
-        # DentonProfileLoss(real_model): (0, 1),
-    },
-)
-
-row2 = BladeRow(
-    'Stator1',
-    {
-        'kin': {
-            # 'alpha': Quantity(0, 'deg'),
-        },
-        'geo': {
-            # Meridional
-            'meridional_angle': Quantity(0, 'deg'),
-            'rmid': 0.5,
-            # Blade
-            'chord': 0.15,
-            'n_blades': 40,
-            # 'solidity': 0.4,
-        },
-        'tot': {
-            # 'p': 6e5, # Impose either here or at inlet
-        },
-        'oth': {
-            'VmRatio': 0.95,
-        },
-    },
-    shaft=static_shaft,
-    extra_equations={
-        MeridionalVelocityRatio(): (0, 1),
+        WorkCoefficient(): (0, 1),  # -> !| These are defined ONLY for rotors!
+        FlowCoefficient(): 1,  ###### -> !| => U != 0
         # |> Losses
         PercentageEntropyLoss(0.0): (0, 1),
         # DentonProfileLoss(real_model): (0, 1),

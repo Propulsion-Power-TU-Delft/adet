@@ -7,7 +7,7 @@ from adet.equations.fundamental import Kinematics, TotalStaticMatching
 
 from adet.equations.ideal_gas import IdealRltEos, IdealStcEos, IdealTotEos
 from adet.equations.linkers import SpeedLinker
-from adet.fluid.settings import AbstractStateModel, FluidSettings, IdealGasModel
+from adet.fluid.settings import ExternalFluidModel, FluidSettings, IdealGasModel
 from adet.registries import DefaultUnitsRegistry, GuessRegistry
 
 
@@ -22,11 +22,11 @@ class MachProblem(EquationBase):
 ss = CasadiSystem(3, scale_suffix='<|')
 
 # Set up the fluid model
-fluid_model = AbstractStateModel(
+fluid_model = ExternalFluidModel(
     AbstractState('HEOS', 'Air'),
 )
 
-fluid_model = IdealGasModel(287.0, 1.4)
+fluid_model = IdealGasModel()
 
 ss.fluid_settings = FluidSettings(
     fluid_model,

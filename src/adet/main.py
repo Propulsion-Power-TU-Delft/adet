@@ -1,5 +1,6 @@
 # === IMPORTS
 # Standard library
+from copy import deepcopy
 import logging
 from typing import Literal
 
@@ -17,7 +18,7 @@ from adet.equations.fundamental import ForcedVortexDistribution, FreeVortexDistr
 from adet.fluid.settings import FluidSettings
 
 # Objects Configuration => MODIFY CONFIG FILE TO SET BOUNDARY CONDITIONS
-from adet.config_main import real_model, ideal_model, inlet, row0, row1, row2
+from adet.config_main import real_model, ideal_model, inlet, row0, row1
 
 # Tooling and utils
 from adet.losses.base_loss import LossModel
@@ -47,6 +48,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 # === SETTINGS
 NUM_SPAN = 3
+NUM_STAGES = 6
 SCALED = True
 PLOTS = True
 PRINTS = True
@@ -62,18 +64,15 @@ settings = FluidSettings(
     update_length=2,
 )
 
+stage_obj = [row0, row1]
+rows = list(map(deepcopy, NUM_STAGES * stage_obj))
+
 # Create network
 ntw = ComponentNetwork(
     settings,  # Fluid settings
     inlet,  # Inlet conditions
     CasadiSystem(spanwise_stations=1),  # Backend
-    *[
-        row0,
-        row1,
-        row0,
-        row1,
-        # row2,
-    ],
+    *rows,
 )
 
 # Add global constraints for ideal gas and
@@ -81,6 +80,7 @@ ntw = ComponentNetwork(
 ntw.system.add_global_constraints(
     {
         'oth': {
+            # Ideal gas (keep even w/ real model)
             'cpmassid': 1004.0,
             'cvmassid': 717.0,
             'T_ref': 1.0,
@@ -97,9 +97,9 @@ ntw.system.add_global_constraints(
 # TODO:
 # Multi node support needs better integration with network
 # for now it relies on manual addition to the nodes
-all_nodes = list(grouper(range(2 * ntw.num_components), 4, incomplete='strict'))
+nodes_by_stage = list(grouper(range(2 * ntw.num_components), 4, incomplete='strict'))
 for stage in range(ntw.num_components // 2):
-    nodes = all_nodes[stage]
+    nodes = nodes_by_stage[stage]
 
     ntw.system.add_equation(RepeatedStage(), nodes)
     ntw.system.add_equation(DegreeOfReaction(), nodes)
@@ -175,39 +175,7 @@ sol = solve_casadi_sys(ntw.system, 'nlpsol')
 
 sol_dict = ntw.system.solution_to_dict(sol.toarray())
 
-# Use midspan as precursor
-sys_multi = ntw.system.copy()
-sys_multi.spanwise_stations = NUM_SPAN
-
-
-# For multi span, fix the rotational speed and remove degree of reaction
-# (= constraint only at midspan)
-sys_multi.boundary_conditions[3]['oth'].pop('reactDegree')  # remove the constraint
-sys_multi.boundary_conditions[3]['kin']['omega'] = sol_dict['kin_omega3'][0]
-
-# Set vortex distribution, remove work (or equivalent) constraint
-# sys_multi.add_equation(FreeVortexDistribution(), 1)
-# sys_multi.add_equation(FreeVortexDistribution(), 3)
-# sys_multi.boundary_conditions[3]['oth']['Vtmid'] = sol_dict['kin_Vt3'][0]
-# sys_multi.boundary_conditions[1]['oth']['Vtmid'] = sol_dict['kin_Vt1'][0]
-
-# Remove isentropic losses and add denton loss models
-# sys_multi.remove_equation_type(LossModel)
-# for nodes in grouper
-# for pos in grouper(range(2 * ntw.num_components), 2, incomplete='strict'):
-#     sys_multi.add_equation(DentonProfileLoss(real_model), pos)
-
-sys_multi.build(SCALED)
-
-sol_multi = solve_casadi_sys(sys_multi, 'nlpsol', sol_dict)
-
-# Overwrite
-sol = sol_multi
-ntw.system = sys_multi
-
-
 num_args = len(ntw.system.free_args)
-
 ntw.system.write_solution_to_nodes(np.array(sol).reshape(num_args, -1))
 
 
@@ -253,7 +221,7 @@ if PLOTS:
             False,
             offset,
         )
-        offset += ax_chord * 1.05
+        offset += ax_chord * 1.15
 
     ax.plot([0.0, offset], [0.0, 0.0], color='r', linestyle='dashdot', linewidth=2.5)
 

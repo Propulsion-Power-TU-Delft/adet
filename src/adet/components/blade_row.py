@@ -5,55 +5,63 @@ from typing import Type, Any
 from matplotlib.lines import Line2D
 import numpy as np
 
-from adet.components import BaseComponent, Shaft
-from adet.equations.definitions import AngleDeflection, BladeCount, Solidity
+# Equation objects
+from adet.equations.definitions import (
+    AngleDeflection,
+    BladeCount,
+    HeightRatio,
+    MeridionalVelocityRatio,
+    Solidity,
+)
 from adet.equations.fundamental import (
     EulerEquation,
     MassConservation,
     ParabolicCamberline,
 )
-
-
-# Equations
 from adet.equations import EquationBase
 from adet.equations.linkers import SpeedLinker
 from adet.losses.basic import ZeroDeviation
 from adet.losses import LossModel
 
+# Dependencies and tooling
 from adet.node import FlowNode
+from adet.components import BaseComponent, Shaft
 from adet.geometry import BezierCurve, StraightLine
 from adet.tools.strings import get_index
 
 logger = logging.getLogger(__name__)
 
 
-# (1) NOTE:
-# At the INLET, geometric and kinematic angle
-# are of course the same, there is no geometry,
-# but we still need to define the geometric
-# angle distributions at the inlet of each row,
-# therefore we impose kinematic and geometric
-# angles to be equal
-
-
 class BladeRow(BaseComponent):
     base_equations = [
+        # ***
         # |> Fundamental equations - do not remove
         (MassConservation, (0, 1)),
         (EulerEquation, (0, 1)),
         (SpeedLinker, (1, 1)),
         (SpeedLinker, (1, 0)),
-        (ZeroDeviation, 0),  # No INLET deviation -> see (1) for meaning
-        #
-        # *** |> These are hardcoded for testing TODO REMOVE
-        (ZeroDeviation, 1),  # No outlet deviation
-        (ParabolicCamberline, (0, 1)),  # Camber line geometry
-        #
+        # ***
         # |> Common courtesy definitions
         (BladeCount, 1),
         (Solidity, 1),
-        # (AngleDeflection, (0, 1)),
+        (AngleDeflection, (0, 1)),
+        (MeridionalVelocityRatio, (0, 1)),
+        (HeightRatio, (0, 1)),
+        # ***
+        # |> TODO: These are hardcoded for testing REMOVE!
+        #          user should choose blade and dev. model
+        (ZeroDeviation, 0),  # No INLET deviation -> see (1) for meaning
+        (ZeroDeviation, 1),  # No outlet deviation
+        (ParabolicCamberline, (0, 1)),  # Camber line geometry
     ]
+
+    # NOTES:
+    # (1) At the INLET, geometric and kinematic angle
+    # are of course the same, there is no geometry,
+    # but we still need to define the geometric
+    # angle distributions at the inlet of each row,
+    # therefore we impose kinematic and geometric
+    # angles to be equal ~> what about incidence?
 
     def __init__(
         self,
