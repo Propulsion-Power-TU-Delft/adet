@@ -16,9 +16,11 @@ from adet.components import ComponentNetwork
 from adet.equations.definitions import DegreeOfReaction, RepeatedStage
 from adet.equations.fundamental import ForcedVortexDistribution, FreeVortexDistribution
 from adet.fluid.settings import FluidSettings
+from adet.fluid import CasadiEoS
+import CoolProp as cp
 
 # Objects Configuration => MODIFY CONFIG FILE TO SET BOUNDARY CONDITIONS
-from adet.config_main import real_model, ideal_model, inlet, row0, row1
+from adet.config_main import real_model, ideal_model, inlet, row0
 
 # Tooling and utils
 from adet.losses.base_loss import LossModel
@@ -64,15 +66,12 @@ settings = FluidSettings(
     update_length=2,
 )
 
-stage_obj = [row0, row1]
-rows = list(map(deepcopy, NUM_STAGES * stage_obj))
-
 # Create network
 ntw = ComponentNetwork(
     settings,  # Fluid settings
     inlet,  # Inlet conditions
     CasadiSystem(spanwise_stations=1),  # Backend
-    *rows,
+    *[row0],
 )
 
 # Add global constraints for ideal gas and
@@ -94,18 +93,6 @@ ntw.system.add_global_constraints(
 )
 
 
-# TODO:
-# Multi node support needs better integration with network
-# for now it relies on manual addition to the nodes
-nodes_by_stage = list(grouper(range(2 * ntw.num_components), 4, incomplete='strict'))
-for stage in range(ntw.num_components // 2):
-    nodes = nodes_by_stage[stage]
-
-    ntw.system.add_equation(RepeatedStage(), nodes)
-    ntw.system.add_equation(DegreeOfReaction(), nodes)
-    ntw.system.add_boundary_conditions({'oth': {'reactDegree': 0.5}}, nodes[-1])
-
-
 ntw.system.build(SCALED)
 
 
@@ -114,9 +101,15 @@ def solve_casadi_sys(
     system: CasadiSystem,
     method: Literal['newton', 'nlpsol'],
     manual_guess={},
+    overwrite_known=[],
 ):
     x0 = system.get_initial_guess(manual_guess)
     knowns_stack = system.get_scaled_constraints()
+
+    if overwrite_known:
+        for ow in overwrite_known:
+            knowns_stack[ow[0]] = ow[1]
+
     res_func_casadi = system.make_residual_function()
     free_args_symbols = cs.vertcat(*system.free_args_sym)
 
@@ -171,9 +164,30 @@ def solve_casadi_sys(
     return sol
 
 
-sol = solve_casadi_sys(ntw.system, 'nlpsol')
+k_profile = []
+w0 = []
+w1 = []
+angle_space = np.linspace(np.pi / 2, 0, 30)
+for out_angle in angle_space:
+    try:
+        sol = solve_casadi_sys(ntw.system, 'nlpsol', {})
+        sol_dict = ntw.system.solution_to_dict(sol.toarray())
 
-sol_dict = ntw.system.solution_to_dict(sol.toarray())
+        sys_loss = ntw.system.copy()
+        sys_loss.remove_equation_type(LossModel)
+        sys_loss.add_equation(DentonProfileLoss(real_model), (0, 1))
+        sys_loss.build(SCALED)
+        sol = solve_casadi_sys(sys_loss, 'nlpsol', sol_dict, [(14, out_angle)])
+        sol_dict = sys_loss.solution_to_dict(sol.toarray())
+        k_profile.append(sol_dict['oth_k_prof1'])
+        w0.append(sol_dict['kin_W0'])
+        w1.append(sol_dict['kin_W1'])
+
+    except RuntimeError:
+        k_profile.append(np.array([np.nan]))
+
+plt.plot(angle_space, abs(np.array(k_profile)))
+plt.show()
 
 num_args = len(ntw.system.free_args)
 ntw.system.write_solution_to_nodes(np.array(sol).reshape(num_args, -1))
@@ -225,9 +239,6 @@ if PLOTS:
 
     ax.plot([0.0, offset], [0.0, 0.0], color='r', linestyle='dashdot', linewidth=2.5)
 
-
-from adet.fluid import CasadiEoS
-import CoolProp as cp
 
 # eos extractors for debugging
 PT_EOS = CasadiEoS(

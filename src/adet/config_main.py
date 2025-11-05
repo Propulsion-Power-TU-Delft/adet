@@ -92,7 +92,7 @@ row0 = BladeRow(
     'Stator0',
     {
         'kin': {
-            'alpha': Quantity(70, 'deg'),
+            'alpha': Quantity(0, 'deg'),
         },
         'geo': {
             # Meridional
@@ -107,41 +107,11 @@ row0 = BladeRow(
             # 'p': 6e5, # Impose either here or at inlet
         },
         'oth': {
-            # 'VmRatio': 1.0,
+            'heightRatio': 1.1,
         },
     },
     shaft=static_shaft,
     extra_equations={
-        # |> Losses
-        PercentageEntropyLoss(0.0): (0, 1),
-        # DentonProfileLoss(real_model): (0, 1),
-    },
-)
-
-row1 = BladeRow(
-    'Rotor0',
-    {
-        'kin': {},
-        'geo': {
-            # Meridional
-            'meridional_angle': Quantity(0, 'deg'),
-            'rmid': 0.5,
-            # Blade
-            'chord': 0.15,
-            'n_blades': 40,
-            # 'solidity': 0.4,
-            # NOTE: Observed high sens. to n_blades
-        },
-        'oth': {
-            # 'workCoeff': 1.0,
-            # 'heightRatio': 1.1,
-            # 'VmRatio': 1.0,
-        },
-    },
-    rotating_shaft,
-    extra_equations={
-        WorkCoefficient(): (0, 1),  # -> !| These are defined ONLY for rotors!
-        FlowCoefficient(): 1,  ###### -> !| => U != 0
         # |> Losses
         PercentageEntropyLoss(0.0): (0, 1),
         # DentonProfileLoss(real_model): (0, 1),

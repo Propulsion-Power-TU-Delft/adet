@@ -127,8 +127,8 @@ class DentonProfileLoss(LossModel):
         # => Solution = Take the absolute value of k_prof
 
         k_prof = cs.fabs(k_prof)  # Take the absolute value
-        W_mid_ps = cs.fmax(k_prof * kin_W0 - delta_W, kin_W0 / CLIP_RATIO)
         W_mid_ss = 2 * k_prof * kin_W1 + delta_W
+        W_mid_ps = cs.fmax(k_prof * kin_W0 - delta_W, kin_W0 / CLIP_RATIO)
 
         # Full velocity distribution
         W_distr_ss = cs.horzcat(1.0 * kin_W0, W_mid_ss, W_mid_ss, kin_W1)  # Suction
@@ -297,7 +297,7 @@ if __name__ == '__main__':
     chord_ax = 0.1 * np.ones(N_SPAN)
     camb_len = 0.15 * np.ones(N_SPAN)
     pitch = 0.2 * np.ones(N_SPAN)
-    k_prof = 0.6 * np.ones(N_SPAN)
+    k_prof = -0.7 * np.ones(N_SPAN)
 
     # Test
     dl = DentonProfileLoss(model)
@@ -323,7 +323,6 @@ if __name__ == '__main__':
         ax[1].grid(True)
 
     fig.show()
-    plt.close('all')
 
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # #

@@ -190,22 +190,26 @@ class ParabolicCamberline(EquationBase):
     manual_units = ('m', 'm', 'rad')
 
     @staticmethod
-    def _compute_parabola(inlet_angle, outlet_angle, axial_chord):
+    def _compute_parabola(inlet_angle, outlet_angle, chord):
         """
-        Compute a, b for y = ax^2 + bx such that:
-        dy/dx at x=0 = tan(beta0), at x=L = tan(beta1)
+        Compute a, b for y = ax^2 + bx such that the inlet and outlet
+        angles are each half of the deflection. The parabola is 0 at
+        x=0 and x=chord. The stagger is then computed to rotate such
+        parabola to get the actual angles.
+
+        The final parabola therefore is
+        y = a * x**2 + (b + tan(stagger)) * x
         """
         deflection = outlet_angle - inlet_angle
         camber_sign = -cs.sign(deflection)
         delta_angle = camber_sign * cs.fabs(deflection)
 
-        stagger = inlet_angle - delta_angle / 2
-
         tan0 = np.tan(delta_angle / 2)
         tan1 = np.tan(-delta_angle / 2)
 
-        a = (tan1 - tan0) / (2 * axial_chord)
+        a = (tan1 - tan0) / (2 * chord)
         b = tan0
+        stagger = inlet_angle - delta_angle / 2
 
         return a, b, stagger
 
@@ -227,10 +231,10 @@ class ParabolicCamberline(EquationBase):
 
         return length
 
-    def plot_camber_line(self, inlet_angle, outlet_angle, axial_chord):
+    def plot_camber_line(self, inlet_angle, outlet_angle, chord):
         """This is an helper function"""
-        a, b, stagger = self._compute_parabola(inlet_angle, outlet_angle, axial_chord)
-        x = np.linspace(0, axial_chord, 50)
+        a, b, stagger = self._compute_parabola(inlet_angle, outlet_angle, chord)
+        x = np.linspace(0, chord * np.cos(stagger), 50)
         y = a * x**2 + b * x
         plt.plot(x, y + np.tan(stagger) * x)
 
@@ -254,13 +258,15 @@ class ParabolicCamberline(EquationBase):
 
 if __name__ == '__main__':
     pbc = ParabolicCamberline()
-    fig, ax = plt.subplots()
-    ax.set_aspect('equal')
-    angle_in = -np.pi / 4
-    angle_out = np.pi / 3
-    pbc.plot_camber_line(angle_in, angle_out, 0.6)
+    angle_in = -np.pi / 3
+    angle_out = np.pi / 5
+    chord = 0.6
 
-    a, b, _ = pbc._compute_parabola(angle_in, angle_out, 0.6)
-    pbc._parabolic_arc_len(a, b, 0.6)
+    a, b, stagger = pbc._compute_parabola(angle_in, angle_out, chord)
+    arc_len = pbc._parabolic_arc_len(a, b, chord)
+
+    fig, ax = plt.subplots()
+    pbc.plot_camber_line(angle_in, angle_out, chord)
+    ax.set_aspect('equal')
     ax.grid()
     plt.show()
