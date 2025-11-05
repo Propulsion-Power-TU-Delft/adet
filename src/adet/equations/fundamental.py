@@ -7,6 +7,7 @@ import numpy as np
 import casadi as cs
 import sympy as sp
 from pint.facets.plain import PlainQuantity
+import matplotlib.pyplot as plt
 
 
 class EulerEquation(EquationBase):
@@ -189,26 +190,29 @@ class ParabolicCamberline(EquationBase):
     manual_units = ('m', 'm', 'rad')
 
     @staticmethod
-    def _compute_parabola(geo_beta0, geo_beta1, chord):
+    def _compute_parabola(inlet_angle, outlet_angle, axial_chord):
         """
         Compute a, b for y = ax^2 + bx such that:
         dy/dx at x=0 = tan(beta0), at x=L = tan(beta1)
         """
-        delta_angle = geo_beta1 - geo_beta0
+        deflection = outlet_angle - inlet_angle
+        camber_sign = -cs.sign(deflection)
+        delta_angle = camber_sign * cs.fabs(deflection)
+
+        stagger = inlet_angle - delta_angle / 2
+
         tan0 = np.tan(delta_angle / 2)
         tan1 = np.tan(-delta_angle / 2)
 
-        a = (tan1 - tan0) / (2 * chord)
+        a = (tan1 - tan0) / (2 * axial_chord)
         b = tan0
 
-        a = safe_min_clip(a, 0.001)
-
-        return a, b
+        return a, b, stagger
 
     @staticmethod
     def _parabolic_arc_len(a, b, chord):
         """
-        Exact arc length of y = ax² + bx from x = 0 to x = chord_ax
+        Exact arc length of y = ax² + bx from x = 0 to x = chord
         """
         term1 = 2 * a * chord + b
         term0 = b
@@ -223,9 +227,12 @@ class ParabolicCamberline(EquationBase):
 
         return length
 
-    def plot_camber_line(self, inlet_angle, outlet_angle, chord):
+    def plot_camber_line(self, inlet_angle, outlet_angle, axial_chord):
         """This is an helper function"""
-        self._compute_parabola(inlet_angle, outlet_angle, chord)
+        a, b, stagger = self._compute_parabola(inlet_angle, outlet_angle, axial_chord)
+        x = np.linspace(0, axial_chord, 50)
+        y = a * x**2 + b * x
+        plt.plot(x, y + np.tan(stagger) * x)
 
     def residual(
         self,
@@ -236,12 +243,24 @@ class ParabolicCamberline(EquationBase):
         geo_chord_ax1,
         geo_camb_len1,
     ):
-        a, b = self._compute_parabola(geo_beta0, geo_beta1, geo_chord1)
+        a, b, stagger = self._compute_parabola(geo_beta0, geo_beta1, geo_chord1)
         arc_len = self._parabolic_arc_len(a, b, geo_chord1)
-
-        deflection = geo_beta1 - geo_beta0
 
         r1 = geo_chord_ax1 - geo_chord1 * np.cos(geo_stagger1)
         r2 = geo_camb_len1 - arc_len
-        r3 = geo_stagger1 - (deflection / 2 - geo_beta0)
+        r3 = geo_stagger1 - stagger
         return r1, r2, r3
+
+
+if __name__ == '__main__':
+    pbc = ParabolicCamberline()
+    fig, ax = plt.subplots()
+    ax.set_aspect('equal')
+    angle_in = -np.pi / 4
+    angle_out = np.pi / 3
+    pbc.plot_camber_line(angle_in, angle_out, 0.6)
+
+    a, b, _ = pbc._compute_parabola(angle_in, angle_out, 0.6)
+    pbc._parabolic_arc_len(a, b, 0.6)
+    ax.grid()
+    plt.show()

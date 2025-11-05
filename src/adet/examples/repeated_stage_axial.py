@@ -61,7 +61,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 # === CONFIGURATION
 # Simulation settings
 NUM_SPAN = 3  # Number of spanwise stations
-NUM_STAGES = 2  # Number of turbine stages (stator-rotor pairs)
+NUM_STAGES = 4  # Number of turbine stages (stator-rotor pairs)
 SCALED = True  # Use scaled equations for better numerical conditioning
 PLOTS = True  # Show plots at end
 PRINTS = True  # Print node information
@@ -229,6 +229,7 @@ nodes_by_stage = list(grouper(range(2 * ntw.num_components), 4, incomplete='stri
 for stage in range(ntw.num_components // 2):
     nodes = nodes_by_stage[stage]
     # Repeated stage: inlet conditions same as outlet of previous stage
+    # Constant meridional velocity
     ntw.system.add_equation(RepeatedStage(), nodes)
     # Degree of reaction constraint
     ntw.system.add_equation(DegreeOfReaction(), nodes)
