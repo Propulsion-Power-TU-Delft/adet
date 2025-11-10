@@ -57,6 +57,7 @@ class SystemDiagnostics(Generic[T]):
     def _build_casadi_functions(self, system: CasadiSystem):
         args_sym = cs.vertcat(*system.free_args_sym)
         const_values = self.const_stack.flatten()
+        num_args = len(system.free_args)
 
         # Residual
         res_func = system.make_residual_function()
@@ -85,12 +86,12 @@ class SystemDiagnostics(Generic[T]):
         # it is in order of arguments and concatenated instead of
         # being a 3D array with an hessian 2D matrix for each equation
         sequence = []
-        for i in range(system.num_args):
-            sequence += [i + j * system.num_args for j in range(system.num_args)]
+        for i in range(num_args):
+            sequence += [i + j * num_args for j in range(num_args)]
 
         def hes_cas(x):
             return np.array(hes_func(x))[sequence, :].reshape(
-                system.num_args, system.num_args, system.num_args
+                num_args, num_args, num_args
             )
 
         self._res_func = res_cas

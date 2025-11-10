@@ -32,7 +32,9 @@ from adet.equations.definitions import DegreeOfReaction, RepeatedStage
 from adet.fluid.settings import FluidSettings, ExternalFluidModel, IdealGasModel
 
 # Losses
-from adet.losses.basic import PercentageEntropyLoss
+from adet.losses.base_loss import LossModel
+from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
+from adet.losses.profile import DentonProfileLoss
 from adet.equations.nondimensional import FlowCoefficient, WorkCoefficient
 
 # Tooling and utils
@@ -61,7 +63,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 # === CONFIGURATION
 # Simulation settings
 NUM_SPAN = 3  # Number of spanwise stations
-NUM_STAGES = 4  # Number of turbine stages (stator-rotor pairs)
+NUM_STAGES = 3  # Number of turbine stages (stator-rotor pairs)
 SCALED = True  # Use scaled equations for better numerical conditioning
 PLOTS = True  # Show plots at end
 PRINTS = True  # Print node information
@@ -102,8 +104,8 @@ _dfu_reg.from_dict(
         'Cd_profile': 'dimensionless',
         'sizeParameter': 'meters',
         'n_blades': 'dimensionless',
-        'x_by_camb_len_A': 'meters',
-        'x_by_camb_len_B': 'meters',
+        'xi_by_camb_len_A': 'meters',
+        'xi_by_camb_len_B': 'meters',
         'k_prof': '',
     }
 )
@@ -156,7 +158,7 @@ row0 = BladeRow(
             'meridional_angle': Quantity(0, 'deg'),
             'rmid': 0.5,
             'chord': 0.15,  # Blade chord length [m]
-            'n_blades': 40,  # Number of blades
+            'n_blades': 30,  # Number of blades
         },
         'tot': {},
         'oth': {},
@@ -177,7 +179,7 @@ row1 = BladeRow(
             'meridional_angle': Quantity(0, 'deg'),
             'rmid': 0.5,
             'chord': 0.15,
-            'n_blades': 40,
+            'n_blades': 30,
         },
         'oth': {},
     },
@@ -216,8 +218,8 @@ ntw.system.add_global_constraints(
             'p_ref': 1.0,
             # Profile loss coefficients
             'Cd_profile': 0.002,
-            'x_by_camb_len_A': 0.375,
-            'x_by_camb_len_B': 0.675,
+            'xi_by_camb_len_A': 0.375,
+            'xi_by_camb_len_B': 0.675,
         }
     }
 )
@@ -320,13 +322,24 @@ def solve_casadi_sys(
 
 # === SOLVE THE SYSTEM
 sol = solve_casadi_sys(ntw.system, 'nlpsol')
-
 # Convert solution to dictionary format
 sol_dict = ntw.system.solution_to_dict(sol.toarray())
 
+# Build system with loss models
+sys_loss = ntw.system.copy()
+sys_loss.remove_equation_type(LossModel)
+
+for position in grouper(range(2 * ntw.num_components), 2, incomplete='strict'):
+    sys_loss.add_equation(DentonProfileLoss(real_model), position)
+
+sys_loss.build(SCALED)
+
+ntw.system = sys_loss
+sol_loss = solve_casadi_sys(sys_loss, 'nlpsol', sol_dict)
+
 # Write solution back to FlowNodes
 num_args = len(ntw.system.free_args)
-ntw.system.write_solution_to_nodes(np.array(sol).reshape(num_args, -1))
+ntw.system.write_solution_to_nodes(np.array(sol_loss).reshape(num_args, -1))
 
 
 # === POST-PROCESSING AND VISUALIZATION

@@ -70,7 +70,7 @@ class RectVelocityIncompressible(LossModel):
 #  |       0  /   side
 #  |____________________________> Distance along blade
 #               |          |
-#            x_by_camb_len1   x_by_camb_len2
+#            xi_by_camb_len1   xi_by_camb_len2
 
 
 class DentonProfileLoss(LossModel):
@@ -104,20 +104,26 @@ class DentonProfileLoss(LossModel):
 
     @staticmethod
     def _build_velocity_profile(
-        x_by_camb_len_A, x_by_camb_len_B, k_prof, kin_W0, kin_W1
+        xi_by_camb_len_A, xi_by_camb_len_B, k_prof, kin_W0, kin_W1
     ) -> tuple[cs.DM, cs.DM, cs.DM]:
-        """Build the velocity proile"""
+        """
+        Build the velocity proile. `xi` is the curvilinear coordinate
+        along the camberline
+        """
         # Positions
-        x_by_camb_len = cs.horzcat(
-            0.0 * x_by_camb_len_A,
-            x_by_camb_len_A,
-            x_by_camb_len_B,
-            x_by_camb_len_A / x_by_camb_len_A,
+        xi_by_camb_len = cs.horzcat(
+            0.0 * xi_by_camb_len_A,
+            xi_by_camb_len_A,
+            xi_by_camb_len_B,
+            xi_by_camb_len_A / xi_by_camb_len_A,
         )
 
         # Velocity values
         CLIP_RATIO = 5  # Clip pressure side to inlet W / ratio
-        delta_W = kin_W1 - kin_W0
+
+        # NOTE: With the absolute value this should work for both diffusing
+        # and accelerating channels
+        delta_W = cs.fabs(kin_W1 - kin_W0)
 
         # NOTE: Nothing prevents k_prof from being negative, because
         # the values used in the residual formulation to compute the pressure
@@ -134,7 +140,7 @@ class DentonProfileLoss(LossModel):
         W_distr_ss = cs.horzcat(1.0 * kin_W0, W_mid_ss, W_mid_ss, kin_W1)  # Suction
         W_distr_ps = cs.horzcat(0.0 * kin_W0, W_mid_ps, W_mid_ps, kin_W1)  # Pressure
 
-        return x_by_camb_len, W_distr_ss, W_distr_ps
+        return xi_by_camb_len, W_distr_ss, W_distr_ps
 
     def _compute_thermo_distributions(self, rlt_hmass0, stc_smass0, W_distr):
         """
@@ -200,8 +206,8 @@ class DentonProfileLoss(LossModel):
         kin_Vt1,
         # Misc
         oth_ch_massflow1,
-        oth_x_by_camb_len_A1,
-        oth_x_by_camb_len_B1,
+        oth_xi_by_camb_len_A1,
+        oth_xi_by_camb_len_B1,
         oth_k_prof1,
         oth_Cd_profile1,
         # Geo
@@ -211,8 +217,8 @@ class DentonProfileLoss(LossModel):
         geo_stagger1,
         geo_n_blades1,
     ):
-        x_by_camb_len, W_distr_ss, W_distr_ps = self._build_velocity_profile(
-            oth_x_by_camb_len_A1, oth_x_by_camb_len_B1, oth_k_prof1, kin_W0, kin_W1
+        xi_by_camb_len, W_distr_ss, W_distr_ps = self._build_velocity_profile(
+            oth_xi_by_camb_len_A1, oth_xi_by_camb_len_B1, oth_k_prof1, kin_W0, kin_W1
         )
 
         # TODO: Idea, make smass1 also an input and distribute
@@ -224,25 +230,25 @@ class DentonProfileLoss(LossModel):
             rlt_hmass0, stc_smass0, W_distr_ps
         )
 
-        # X is the along the chord
-        x_dimensional = x_by_camb_len * geo_camb_len1
+        # xi is the curvilinear coordinate along the chord
+        xi_dimensional = xi_by_camb_len * geo_camb_len1
 
         # Trapezoidal integration (can't use np.trapezoidal for differentiability)
         # (trapezoidal rule is exact because everything is linear)
         # [Pa * m = N / m]
-        pressure_integral = self._trapezoid(p_ps - p_ss, x_dimensional)
+        pressure_integral = self._trapezoid(p_ps - p_ss, xi_dimensional)
 
         # Entropy generation from 2D viscous dissipation
         # [ kg / m**3 ] * [ m**3 / s**3 ] / [K] * [m]
         # = [ kg * m / s**3 / K ] = [ N / s / K ]
         entropy_integral_ps = self._trapezoid(
             oth_Cd_profile1 * rho_ps * W_distr_ps**3 / T_ps,
-            x_dimensional,
+            xi_dimensional,
         )
 
         entropy_integral_ss = self._trapezoid(
             oth_Cd_profile1 * rho_ss * W_distr_ss**3 / T_ss,
-            x_dimensional,
+            xi_dimensional,
         )
 
         entropy_integral = entropy_integral_ps + entropy_integral_ss
@@ -273,7 +279,7 @@ if __name__ == '__main__':
     # numpy array, but remember casadi is consistent
     # with shape manipulation and extraction, and every
     # array is AT LEAST 2D
-    N_SPAN = 11
+    N_SPAN = 5
     eos = DebugAbstractState('HEOS', 'Air')
     model = ExternalFluidModel(eos)
 
@@ -284,12 +290,12 @@ if __name__ == '__main__':
     Vt0 = np.linspace(40, 50, N_SPAN)
     Vt1 = np.linspace(40, 50, N_SPAN)
 
-    x_by_camb_len_A = cs.linspace(0.3, 0.3, N_SPAN)
-    x_by_camb_len_B = np.linspace(0.6, 0.6, N_SPAN)
+    xi_by_camb_len_A = cs.linspace(0.375, 0.375, N_SPAN)
+    xi_by_camb_len_B = np.linspace(0.675, 0.675, N_SPAN)
 
     dummy_hh = cs.DM.ones(N_SPAN) * 0.05  # pyright:ignore
-
     dummy_ht = cs.DM.ones(N_SPAN) * 5e5  # pyright:ignore
+
     dummy_st = np.ones(N_SPAN) * 4000
     dummy_mass_flow = np.ones(N_SPAN) * 10
 
@@ -297,31 +303,45 @@ if __name__ == '__main__':
     chord_ax = 0.1 * np.ones(N_SPAN)
     camb_len = 0.15 * np.ones(N_SPAN)
     pitch = 0.2 * np.ones(N_SPAN)
-    k_prof = -0.7 * np.ones(N_SPAN)
+    k_prof = 0.6 * np.ones(N_SPAN)
 
-    # Test
+    # *** Tests ***
     dl = DentonProfileLoss(model)
 
-    # Plots to check pressure and velocity distro
+    # Plots to check pressure and velocity distributions
     # => First station should clip to W_1 / 5
-    x_by_camb_len, V_ss, V_ps = dl._build_velocity_profile(
-        x_by_camb_len_A, x_by_camb_len_B, k_prof, W0, W1
+    xi_by_camb_len, W_ss, W_ps = dl._build_velocity_profile(
+        xi_by_camb_len_A, xi_by_camb_len_B, k_prof, W0, W1
     )
-    p_ss, rho_ss, T_ss = dl._compute_thermo_distributions(dummy_ht, dummy_st, V_ss)
-    p_ps, rho_ps, T_ps = dl._compute_thermo_distributions(dummy_ht, dummy_st, V_ps)
-    fig, ax = plt.subplots(1, 2, figsize=(15, 8))
+    p_ss, rho_ss, T_ss = dl._compute_thermo_distributions(dummy_ht, dummy_st, W_ss)
+    p_ps, rho_ps, T_ps = dl._compute_thermo_distributions(dummy_ht, dummy_st, W_ps)
+    fig, ax = plt.subplots(2, 2, figsize=(10, 10))
     cmap = plt.get_cmap('viridis')
     for i in range(N_SPAN):
         color = cmap(i / (N_SPAN))
-        ax[0].plot(np.array(x_by_camb_len)[i], np.array(V_ss)[i], color=color)
-        ax[0].plot(np.array(x_by_camb_len)[i], np.array(V_ps)[i], color=color)
+        ax[0, 0].plot(np.array(xi_by_camb_len)[i], np.array(W_ss)[i], color=color)
+        ax[0, 0].plot(np.array(xi_by_camb_len)[i], np.array(W_ps)[i], color=color)
+        ax[0, 0].set_title('Velocities')
 
-        ax[1].plot(np.array(x_by_camb_len)[i], np.array(p_ss)[i], color=color)
-        ax[1].plot(np.array(x_by_camb_len)[i], np.array(p_ps)[i], color=color)
+        ax[0, 1].plot(np.array(xi_by_camb_len)[i], np.array(p_ss)[i], color=color)
+        ax[0, 1].plot(np.array(xi_by_camb_len)[i], np.array(p_ps)[i], color=color)
+        ax[0, 1].set_title('Pressures')
 
-        ax[0].grid(True)
-        ax[1].grid(True)
+        ax[1, 0].plot(np.array(xi_by_camb_len)[i], np.array(rho_ss)[i], color=color)
+        ax[1, 0].plot(np.array(xi_by_camb_len)[i], np.array(rho_ps)[i], color=color)
+        ax[1, 0].set_title('Densities')
 
+        ax[1, 1].plot(np.array(xi_by_camb_len)[i], np.array(T_ss)[i], color=color)
+        ax[1, 1].plot(np.array(xi_by_camb_len)[i], np.array(T_ps)[i], color=color)
+        ax[1, 1].set_title('Temperatures')
+
+        ax[0, 0].grid(True)
+        ax[0, 1].grid(True)
+        ax[1, 0].grid(True)
+        ax[1, 1].grid(True)
+
+    # Let's check the integrals
+    pressure_int = dl._trapezoid(p_ps - p_ss, xi_by_camb_len * camb_len)
     fig.show()
 
 

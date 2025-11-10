@@ -44,8 +44,8 @@ _dfu_reg.from_dict(
         'Cd_profile': 'dimensionless',
         'sizeParameter': 'meters',
         'n_blades': 'dimensionless',
-        'x_by_camb_len_A': 'meters',
-        'x_by_camb_len_B': 'meters',
+        'xi_by_camb_len_A': 'meters',
+        'xi_by_camb_len_B': 'meters',
         'k_prof': '',
     }
 )
@@ -92,7 +92,7 @@ row0 = BladeRow(
     'Stator0',
     {
         'kin': {
-            'alpha': Quantity(0, 'deg'),
+            'alpha': Quantity(10, 'deg'),
         },
         'geo': {
             # Meridional
@@ -100,7 +100,7 @@ row0 = BladeRow(
             'rmid': 0.5,
             # Blade
             'chord': 0.15,
-            'n_blades': 40,
+            'n_blades': 30,
             # 'solidity': 0.4,
         },
         'tot': {
@@ -113,7 +113,7 @@ row0 = BladeRow(
     shaft=static_shaft,
     extra_equations={
         # |> Losses
-        PercentageEntropyLoss(0.0): (0, 1),
-        # DentonProfileLoss(real_model): (0, 1),
+        # PercentageEntropyLoss(0.0): (0, 1),
+        DentonProfileLoss(real_model): (0, 1),
     },
 )

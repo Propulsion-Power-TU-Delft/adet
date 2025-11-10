@@ -174,13 +174,18 @@ def safe_min_clip(x, min_value):
     Type safe for casadi, numpy and pint
     """
     if is_casady_type(x):
-        x = cs.fmax(cs.fabs(x), min_value)
+        # OBS: If x is exactly 0 the normal sign function
+        # is problematic
+        x_sign = cs.if_else(x >= 0, 1, -1)
+        x = x_sign * cs.fmax(cs.fabs(x), min_value)
     elif isinstance(x, PlainQuantity):
-        x = np.clip(np.abs(x.magnitude), min_value * x.units, None)
+        x_sign = np.sign(x.magnitude)
+        x = x_sign * np.clip(np.abs(x.magnitude), min_value, None) * x.units
     elif isinstance(x, sp.Symbol):
         pass
     else:
-        x = np.clip(np.abs(x), min_value, None)
+        x_sign = np.sign(x)
+        x = x_sign * np.clip(np.abs(x), min_value, None)
 
     return x
 
@@ -190,35 +195,24 @@ class ParabolicCamberline(EquationBase):
     manual_units = ('m', 'm', 'rad')
 
     @staticmethod
-    def _compute_parabola(inlet_angle, outlet_angle, chord):
-        """
-        Compute a, b for y = ax^2 + bx such that the inlet and outlet
-        angles are each half of the deflection. The parabola is 0 at
-        x=0 and x=chord. The stagger is then computed to rotate such
-        parabola to get the actual angles.
+    def _compute_parabola(inlet_angle, outlet_angle, chord_ax):
+        tan0 = np.tan(inlet_angle)
+        tan1 = np.tan(outlet_angle)
 
-        The final parabola therefore is
-        y = a * x**2 + (b + tan(stagger)) * x
-        """
-        deflection = outlet_angle - inlet_angle
-        camber_sign = -cs.sign(deflection)
-        delta_angle = camber_sign * cs.fabs(deflection)
-
-        tan0 = np.tan(delta_angle / 2)
-        tan1 = np.tan(-delta_angle / 2)
-
-        a = (tan1 - tan0) / (2 * chord)
+        a = (tan1 - tan0) / (2 * chord_ax)
         b = tan0
-        stagger = inlet_angle - delta_angle / 2
+
+        a = safe_min_clip(a, 1e-3)
+
+        y_out = a * chord_ax**2 + b * chord_ax
+        stagger = np.arctan(y_out / chord_ax)
 
         return a, b, stagger
 
     @staticmethod
-    def _parabolic_arc_len(a, b, chord):
-        """
-        Exact arc length of y = ax² + bx from x = 0 to x = chord
-        """
-        term1 = 2 * a * chord + b
+    def _parabolic_arc_len(a, b, chord_ax):
+        """Exact arc length of y = ax² + bx from x = 0 to x = chord_ax"""
+        term1 = 2 * a * chord_ax + b
         term0 = b
 
         sqrt1 = np.sqrt(1 + term1**2)
@@ -231,12 +225,12 @@ class ParabolicCamberline(EquationBase):
 
         return length
 
-    def plot_camber_line(self, inlet_angle, outlet_angle, chord):
+    def plot_camber_line(self, axis, inlet_angle, outlet_angle, chord_ax, color):
         """This is an helper function"""
-        a, b, stagger = self._compute_parabola(inlet_angle, outlet_angle, chord)
-        x = np.linspace(0, chord * np.cos(stagger), 50)
+        a, b, _ = self._compute_parabola(inlet_angle, outlet_angle, chord_ax)
+        x = np.linspace(0, chord_ax, 50)
         y = a * x**2 + b * x
-        plt.plot(x, y + np.tan(stagger) * x)
+        axis.plot(x, y, color=color)
 
     def residual(
         self,
@@ -247,8 +241,8 @@ class ParabolicCamberline(EquationBase):
         geo_chord_ax1,
         geo_camb_len1,
     ):
-        a, b, stagger = self._compute_parabola(geo_beta0, geo_beta1, geo_chord1)
-        arc_len = self._parabolic_arc_len(a, b, geo_chord1)
+        a, b, stagger = self._compute_parabola(geo_beta0, geo_beta1, geo_chord_ax1)
+        arc_len = self._parabolic_arc_len(a, b, geo_chord_ax1)
 
         r1 = geo_chord_ax1 - geo_chord1 * np.cos(geo_stagger1)
         r2 = geo_camb_len1 - arc_len
@@ -258,15 +252,29 @@ class ParabolicCamberline(EquationBase):
 
 if __name__ == '__main__':
     pbc = ParabolicCamberline()
-    angle_in = -np.pi / 3
-    angle_out = np.pi / 5
-    chord = 0.6
+    angle_in = 0
+    N_PROFILES = 50
+    angles_out = np.linspace(-np.pi / 2.5, np.pi / 2.5, N_PROFILES)
+    chord_axial = 0.15
 
-    a, b, stagger = pbc._compute_parabola(angle_in, angle_out, chord)
-    arc_len = pbc._parabolic_arc_len(a, b, chord)
+    fig, ax = plt.subplots(1, 3, figsize=(9, 3))
+    staggers = []
+    arc_lengths = []
+    cm = plt.get_cmap('autumn')
+    for i, a_out in enumerate(angles_out):
+        a, b, stag = pbc._compute_parabola(angle_in, a_out, chord_axial)
+        staggers.append(stag)
+        arc_len = pbc._parabolic_arc_len(a, b, chord_axial)
+        arc_lengths.append(arc_len)
+        pbc.plot_camber_line(ax[0], angle_in, a_out, chord_axial, cm(i / N_PROFILES))
+        ax[0].set_aspect('equal')
+        ax[0].set_title('Camber lines')
+        ax[0].grid()
 
-    fig, ax = plt.subplots()
-    pbc.plot_camber_line(angle_in, angle_out, chord)
-    ax.set_aspect('equal')
-    ax.grid()
+    ax[1].set_title('Stagger angles')
+    ax[1].plot(angles_out, staggers)
+
+    ax[2].set_title('Arc lengths')
+    ax[2].plot(angles_out, arc_lengths)
+
     plt.show()

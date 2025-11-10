@@ -29,7 +29,7 @@ from adet.tools.iter import grouper
 from adet.tools.loggers import setup_logger
 from adet.components.blade_row import plot_from_nodes
 from adet.tools.context import suppress_output
-# from adet.diagnostics import SystemDiagnostics
+from adet.diagnostics import SystemDiagnostics
 
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 NUM_SPAN = 3
 NUM_STAGES = 6
 SCALED = True
-PLOTS = True
+PLOTS = False
 PRINTS = True
 
 # NOTE: I have now forced the system to add all possible update variables to each single
@@ -86,8 +86,8 @@ ntw.system.add_global_constraints(
             'p_ref': 1.0,
             # Profile losses coefficients
             'Cd_profile': 0.002,
-            'x_by_camb_len_A': 0.375,  # First profile coord
-            'x_by_camb_len_B': 0.675,  # Second profile coord
+            'xi_by_camb_len_A': 0.375,  # First profile coord
+            'xi_by_camb_len_B': 0.675,  # Second profile coord
         }
     }
 )
@@ -143,7 +143,7 @@ def solve_casadi_sys(
             'error_on_fail': True,
             'nlpsol': 'ipopt',
             'nlpsol_options': {
-                'ipopt.print_level': 1,
+                'ipopt.print_level': 10,
                 'ipopt.max_iter': 100,
                 # Need the limited-memory, approx (quasi-newton)
                 # the eos does not have an hessian
@@ -164,29 +164,8 @@ def solve_casadi_sys(
     return sol
 
 
-k_profile = []
-w0 = []
-w1 = []
-angle_space = np.linspace(np.pi / 2, 0, 30)
-for out_angle in angle_space:
-    try:
-        sol = solve_casadi_sys(ntw.system, 'nlpsol', {})
-        sol_dict = ntw.system.solution_to_dict(sol.toarray())
+sol = solve_casadi_sys(ntw.system, 'nlpsol', {})
 
-        sys_loss = ntw.system.copy()
-        sys_loss.remove_equation_type(LossModel)
-        sys_loss.add_equation(DentonProfileLoss(real_model), (0, 1))
-        sys_loss.build(SCALED)
-        sol = solve_casadi_sys(sys_loss, 'nlpsol', sol_dict, [(14, out_angle)])
-        sol_dict = sys_loss.solution_to_dict(sol.toarray())
-        k_profile.append(sol_dict['oth_k_prof1'])
-        w0.append(sol_dict['kin_W0'])
-        w1.append(sol_dict['kin_W1'])
-
-    except RuntimeError:
-        k_profile.append(np.array([np.nan]))
-
-plt.plot(angle_space, abs(np.array(k_profile)))
 plt.show()
 
 num_args = len(ntw.system.free_args)
