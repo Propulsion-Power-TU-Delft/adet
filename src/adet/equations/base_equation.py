@@ -297,7 +297,3 @@ class EquationBase(ABC):
 
     def __str__(self):
         return str(self.to_symbolic()) + ' = 0'
-
-
-class EquationOfState(EquationBase):
-    pass

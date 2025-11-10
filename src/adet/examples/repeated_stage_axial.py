@@ -29,11 +29,12 @@ from pint import Quantity
 from adet.assembly import CasadiSystem
 from adet.components import ComponentNetwork, BladeRow, Shaft, Inlet
 from adet.equations.definitions import DegreeOfReaction, RepeatedStage
+from adet.equations.fundamental import FreeVortexDistribution
 from adet.fluid.settings import FluidSettings, ExternalFluidModel, IdealGasModel
 
 # Losses
 from adet.losses.base_loss import LossModel
-from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
+from adet.losses.basic import PercentageEntropyLoss
 from adet.losses.profile import DentonProfileLoss
 from adet.equations.nondimensional import FlowCoefficient, WorkCoefficient
 
@@ -62,8 +63,8 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 # === CONFIGURATION
 # Simulation settings
-NUM_SPAN = 3  # Number of spanwise stations
-NUM_STAGES = 3  # Number of turbine stages (stator-rotor pairs)
+NUM_SPAN = 1  # Number of spanwise stations
+NUM_STAGES = 4  # Number of turbine stages (stator-rotor pairs)
 SCALED = True  # Use scaled equations for better numerical conditioning
 PLOTS = True  # Show plots at end
 PRINTS = True  # Print node information
@@ -137,18 +138,18 @@ inlet = Inlet(
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
             'rmid': 0.5,  # Mid-span radius [m]
-            'height': 0.2,  # Blade height [m]
+            'height': 0.1,  # Blade height [m]
         },
         'tot': {
-            'T': 700,  # Total temperature [K]
-            'p': 6e5,  # Total pressure [Pa]
+            'T': 900,  # Total temperature [K]
+            'p': 20e5,  # Total pressure [Pa]
         },
         'oth': {},
     }
 )
 
 # Stator blade row definition
-row0 = BladeRow(
+stator = BladeRow(
     'Stator0',
     {
         'kin': {
@@ -157,7 +158,7 @@ row0 = BladeRow(
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
             'rmid': 0.5,
-            'chord': 0.15,  # Blade chord length [m]
+            'chord': 0.1,  # Blade chord length [m]
             'n_blades': 30,  # Number of blades
         },
         'tot': {},
@@ -171,21 +172,23 @@ row0 = BladeRow(
 )
 
 # Rotor blade row definition
-row1 = BladeRow(
+rotor = BladeRow(
     'Rotor0',
     {
         'kin': {},
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
             'rmid': 0.5,
-            'chord': 0.15,
+            'chord': 0.1,
             'n_blades': 30,
         },
-        'oth': {},
+        'oth': {
+            # 'workCoeff': 1.1,
+        },
     },
     rotating_shaft,
     extra_equations={
-        # Work and flow coefficients constrain rotor performance
+        # Work and flow coefficients defined only on rotor
         WorkCoefficient(): (0, 1),
         FlowCoefficient(): 1,
         # Simplified loss model
@@ -195,7 +198,7 @@ row1 = BladeRow(
 
 # === NETWORK ASSEMBLY
 # Replicate stage (stator-rotor pair) NUM_STAGES times
-stage_obj = [row0, row1]
+stage_obj = [stator, rotor]
 rows = list(map(deepcopy, NUM_STAGES * stage_obj))
 
 # Create component network
@@ -268,6 +271,8 @@ def solve_casadi_sys(
     """
     x0 = system.get_initial_guess(manual_guess)
     knowns_stack = system.get_scaled_constraints()
+
+    logger.debug('Building the residual function...')
     res_func_casadi = system.make_residual_function()
     free_args_symbols = cs.vertcat(*system.free_args_sym)
 
@@ -281,41 +286,40 @@ def solve_casadi_sys(
         'g': res_expr_partial,
     }
 
-    # Newton-Raphson solver -> Fast but unstable w/o good guess
-    G_newt = cs.rootfinder(
-        'newton_roots',
-        'newton',
-        rootfind_problem,
-        {
-            'print_iteration': False,
-            'error_on_fail': True,
-        },
-    )
-
-    # IPOPT solver (more robust)
-    G_nlp = cs.rootfinder(
-        'nlpsol_roots',
-        'nlpsol',
-        rootfind_problem,
-        {
-            'error_on_fail': True,
-            'nlpsol': 'ipopt',
-            'nlpsol_options': {
-                'ipopt.print_level': 1,
-                'ipopt.max_iter': 100,
-                # Quasi-Newton approximation (required for real gas EOS)
-                'ipopt.hessian_approximation': 'limited-memory',
-            },
-        },
-    )
-
     with suppress_output():
-        logger.info('Solving the system...')
+        logger.debug('Building rootfinder object...')
         match method:
             case 'newton':
-                sol = G_newt(x0.flatten(), 0.0)
+                # Newton-Raphson solver -> Fast but unstable w/o good guess
+                rootfinder = cs.rootfinder(
+                    'newton_roots',
+                    'newton',
+                    rootfind_problem,
+                    {
+                        'print_iteration': False,
+                        'error_on_fail': True,
+                    },
+                )
             case 'nlpsol':
-                sol = G_nlp(x0.flatten(), 0.0)
+                # IPOPT solver (more robust)
+                rootfinder = cs.rootfinder(
+                    'nlpsol_roots',
+                    'nlpsol',
+                    rootfind_problem,
+                    {
+                        'error_on_fail': True,
+                        'nlpsol': 'ipopt',
+                        'nlpsol_options': {
+                            'ipopt.print_level': 1,
+                            'ipopt.max_iter': 100,
+                            # Quasi-Newton approximation (required for real gas EOS)
+                            'ipopt.hessian_approximation': 'limited-memory',
+                        },
+                    },
+                )
+
+        logger.info('Solving the system...')
+        sol = rootfinder(x0.flatten(), 0.0)
 
     return sol
 
@@ -325,12 +329,21 @@ sol = solve_casadi_sys(ntw.system, 'nlpsol')
 # Convert solution to dictionary format
 sol_dict = ntw.system.solution_to_dict(sol.toarray())
 
-# Build system with loss models
+# Build system with loss models and multi_span distribution
 sys_loss = ntw.system.copy()
+sys_loss.spanwise_stations = NUM_SPAN
 sys_loss.remove_equation_type(LossModel)
 
-for position in grouper(range(2 * ntw.num_components), 2, incomplete='strict'):
-    sys_loss.add_equation(DentonProfileLoss(real_model), position)
+for nodes in nodes_by_stage:
+    stator_nodes = (nodes[0], nodes[1])
+    rotor_nodes = (nodes[2], nodes[3])
+    sys_loss.add_equation(DentonProfileLoss(real_model), stator_nodes)
+    sys_loss.add_equation(DentonProfileLoss(real_model), rotor_nodes)
+    sys_loss.boundary_conditions[nodes[-1]]['oth'].pop('reactDegree')
+    # Rotational speed is now fixed by midspan, add it to OUTLET rotor node
+    sys_loss.boundary_conditions[nodes[-1]]['kin']['omega'] = sol_dict[
+        f'kin_omega{nodes[-1]}'
+    ]
 
 sys_loss.build(SCALED)
 

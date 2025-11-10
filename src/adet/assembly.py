@@ -22,7 +22,6 @@ import casadi as cs
 import jax as jax
 import jax.numpy as jnp
 
-from adet.equations.ideal_gas import EquationOfState
 from adet.errors import ConstraintError, ExistingEquationError
 from adet.fluid.casadi_eos import CasadiEoS
 from adet.fluid.settings import (
@@ -335,7 +334,7 @@ class SystemAssembler(ABC):
         # 2. Solvers throw an error for shape mismatch anyway, although more cryptic
 
         self._built = True
-        logger.info('System built succesfully')
+        logger.info('System assembled succesfully')
 
     def _create_nodes(self):
         """
@@ -831,6 +830,7 @@ class CasadiSystem(SystemAssembler):
 
     def build(self, scaled: bool, throw: bool = True):
         super().build(scaled)
+        logger.info('Building CasADi backend')
         self._build_base_symbols()
         self._build_composed_symbols()
         self._build_residual_expressions()
@@ -838,8 +838,8 @@ class CasadiSystem(SystemAssembler):
     @staticmethod
     def _create_symbols(names: Sequence[str], num_span: int, scale_suffix: str):
         """Helper to create symbols and their scaled versions."""
-        symbols = [cs.MX.sym(name, num_span) for name in names]  # pyright:ignore
-        scales = [cs.MX.sym(name + scale_suffix, num_span) for name in names]  # pyright:ignore
+        symbols = [cs.SX.sym(name, num_span) for name in names]  # pyright:ignore
+        scales = [cs.SX.sym(name + scale_suffix, num_span) for name in names]  # pyright:ignore
         return symbols, scales
 
     def _build_base_symbols(self):
@@ -862,8 +862,8 @@ class CasadiSystem(SystemAssembler):
         )
 
     def _build_equations_of_state(
-        self, all_args_products: dict[str, cs.MX]
-    ) -> dict[str, cs.MX]:
+        self, all_args_products: dict[str, cs.SX]
+    ) -> dict[str, cs.SX]:
         fl_model = self._fluid_settings.model
 
         if not isinstance(fl_model, ExternalFluidModel):
@@ -921,12 +921,12 @@ class CasadiSystem(SystemAssembler):
         indices to the absolute system indices.
         """
         # Build the product of each symbolic variable for their scaling value
-        free_args_products: dict[str, cs.MX] = {
+        free_args_products: dict[str, cs.SX] = {
             sym.name(): sym * scale
             for sym, scale in zip(self.free_args_sym, self.scales_free_args_sym)
         }
 
-        constraints_products: dict[str, cs.MX] = {
+        constraints_products: dict[str, cs.SX] = {
             sym.name(): sym * scale
             for sym, scale in zip(self.const_sym, self.scales_const_sym)
         }
@@ -941,10 +941,15 @@ class CasadiSystem(SystemAssembler):
 
         # Build scaling symbols for all equations
         self._eq_scales_sym = [
-            cs.MX.sym(f'eq{idx}{self.scale_suffix}', num_span)  # pyright:ignore
+            cs.SX.sym(f'eq{idx}{self.scale_suffix}', num_span)  # pyright:ignore
             for idx in range(self.num_equations)
         ]
 
+        logger.info(
+            f'System info: {num_span * len(self.free_args)} total variables, '
+            f'{num_span * self.num_equations} total equations'
+        )
+        logger.info('Building residual equation symbolics (this may take a while)...')
         # Build and concatenate residual equations
         # (no need to override numpy)
         residuals = []

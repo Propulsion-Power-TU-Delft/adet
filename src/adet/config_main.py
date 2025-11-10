@@ -92,7 +92,7 @@ row0 = BladeRow(
     'Stator0',
     {
         'kin': {
-            'alpha': Quantity(10, 'deg'),
+            'alpha': Quantity(25, 'deg'),
         },
         'geo': {
             # Meridional
@@ -100,7 +100,7 @@ row0 = BladeRow(
             'rmid': 0.5,
             # Blade
             'chord': 0.15,
-            'n_blades': 30,
+            'n_blades': 15,
             # 'solidity': 0.4,
         },
         'tot': {
