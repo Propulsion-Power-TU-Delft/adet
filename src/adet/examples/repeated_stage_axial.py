@@ -29,7 +29,8 @@ from pint import Quantity
 from adet.assembly import CasadiSystem
 from adet.components import ComponentNetwork, BladeRow, Shaft, Inlet
 from adet.equations.definitions import DegreeOfReaction, RepeatedStage
-from adet.equations.fundamental import FreeVortexDistribution
+from adet.equations.fundamental import ParabolicCamberline
+from adet.fluid.casadi_eos import CasadiEoS
 from adet.fluid.settings import FluidSettings, ExternalFluidModel, IdealGasModel
 
 # Losses
@@ -63,7 +64,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 # === CONFIGURATION
 # Simulation settings
-NUM_SPAN = 1  # Number of spanwise stations
+NUM_SPAN = 5  # Number of spanwise stations
 NUM_STAGES = 4  # Number of turbine stages (stator-rotor pairs)
 SCALED = True  # Use scaled equations for better numerical conditioning
 PLOTS = True  # Show plots at end
@@ -359,6 +360,7 @@ ntw.system.write_solution_to_nodes(np.array(sol_loss).reshape(num_args, -1))
 if PLOTS:
     FONTSIZE = 18
     FONTDICT = {'fontsize': FONTSIZE}
+    COLORMAP = plt.get_cmap('viridis')
 
     # Plot velocity triangles for each node
     for i, n in enumerate(ntw.system.nodes):
@@ -400,11 +402,85 @@ if PLOTS:
             ax_chord,
             False,
             offset,
+            color=COLORMAP((n1_idx - 1) / ntw.num_components),
         )
         offset += ax_chord * 1.15
 
     # Draw centerline
-    ax.plot([0.0, offset], [0.0, 0.0], color='r', linestyle='dashdot', linewidth=2.5)
+    ax.plot([0.0, offset], [0.0, 0.0], color='k', linestyle='dashdot', linewidth=2.5)
+
+    # === 3D BLADE PLOTS
+    # Plot all 3D blade geometries in a single plot
+    pbc = ParabolicCamberline()
+    blade_rows = list(grouper(num_nodes, 2, incomplete='ignore'))
+
+    # === RELATIVE TOTAL PRESSURE INCREMENT PLOT
+    # Plot the relative total pressure change across blade rows
+    # as well as entropy change
+    from CoolProp import PT_INPUTS
+
+    PT_EOS = CasadiEoS('PT_EoS', real_model.eos_object, PT_INPUTS, ['smass'], NUM_SPAN)
+    fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+
+    for idx, (n0_idx, n1_idx) in enumerate(blade_rows):
+        n0 = ntw.system.nodes[n0_idx]
+        n1 = ntw.system.nodes[n1_idx]
+
+        # Extract relative total pressure at inlet and outlet
+        p_rlt_in = n0.rlt.get('p').to('Pa').magnitude
+        p_rlt_out = n1.rlt.get('p').to('Pa').magnitude
+
+        T_rlt_in = n0.rlt.get('T').to('K').magnitude
+        T_rlt_out = n1.rlt.get('T').to('K').magnitude
+
+        smass_in = PT_EOS(p_rlt_in, T_rlt_in)
+        smass_out = PT_EOS(p_rlt_out, T_rlt_out)
+
+        # Calculate pressure increment (normalized by inlet pressure)
+        delta_p_normalized = (p_rlt_out - p_rlt_in) / p_rlt_in
+
+        # Extract blade height for normalization
+        height_in = n0.geo.get('height').to('m').magnitude[0]
+
+        # Normalize radial positions by blade height (hub = 0, tip = 1)
+        radii = n0.geo.get('rr').to('m').magnitude
+        rmid = n0.geo.get('rmid').to('m').magnitude[0]
+        span_normalized = (radii - (rmid - height_in / 2)) / height_in
+
+        # Determine blade type and color
+        is_stator = (n0_idx // 2) % 2 == 0
+        blade_type = 'Stator' if is_stator else 'Rotor'
+        stage_num = n0_idx // 4
+        color = 'steelblue' if is_stator else 'coral'
+        linestyle = '-' if is_stator else '--'
+
+        # Plot
+        ax[0].plot(
+            span_normalized,
+            delta_p_normalized * 100,  # Convert to percentage
+            label=f'Stage {stage_num} {blade_type}',
+            color=color,
+            linestyle=linestyle,
+            linewidth=2,
+            marker='o',
+        )
+        ax[1].plot(
+            span_normalized,
+            smass_out,  # Convert to percentage
+            label=f'Stage {stage_num} {blade_type}',
+            color=color,
+            linestyle=linestyle,
+            linewidth=2,
+            marker='o',
+        )
+
+    ax[0].set_xlabel('Normalized Span (hub=0, tip=1)', FONTDICT)
+    ax[0].set_ylabel('Relative Total Pressure Change [%]', FONTDICT)
+    ax[0].set_title('Relative Total Pressure Increment Across Blade Rows', FONTDICT)
+    ax[1].set_title('Entropy [J / kg / K]', FONTDICT)
+    ax[0].grid(True, alpha=0.3)
+    ax[0].legend(loc='best', fontsize=FONTSIZE // 1.5)
+    fig.tight_layout()
 
 
 # === PRINT NODE INFORMATION

@@ -183,32 +183,32 @@ class FlowNode(GasPropertiesMixin):
         """
         return f"""FlowNode `{self.identifier}`: (ID {id(self)})
 
-╭──────────────╮
-│ STATIC STATE │
-╰──────────────╯
++--------------+
+| STATIC STATE |
++--------------+
 {self.stc}
 
-╭─────────────╮
-│ TOTAL STATE │
-╰─────────────╯
++-------------+
+| TOTAL STATE |
++-------------+
 {self.tot}
 
-╭──────────────────╮
-│ REL. TOTAL STATE │
-╰──────────────────╯
++------------------+
+| REL. TOTAL STATE |
++------------------+
 {self.rlt}
 
-╭────────────╮
-│ KINEMATICS │
-╰────────────╯
++------------+
+| KINEMATICS |
++------------+
 {self.kin}
 
-╭──────────╮
-│ GEOMETRY │
-╰──────────╯
++----------+
+| GEOMETRY |
++----------+
 {self.geo}
 
-╭────────────╮
-│ OTHER VARS │
-╰────────────╯
++------------+
+| OTHER VARS |
++------------+
 {self.oth}"""

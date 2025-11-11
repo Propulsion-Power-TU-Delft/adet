@@ -241,7 +241,7 @@ class RowGeometry:
 
     def plot_meridional_profile(
         self,
-        color: str | None = None,
+        color=None,
         debug: bool = False,
     ) -> tuple[Line2D, ...]:
         """
@@ -303,6 +303,7 @@ def plot_from_nodes(
     axial_chord: float,
     semi_cone_angle: bool = False,
     axial_offset: float = 0.0,
+    color: tuple | str = 'k',
 ):
     """
     Utility plot function, for now the chord is
@@ -323,7 +324,7 @@ def plot_from_nodes(
         axial_offset=axial_offset,
     )
 
-    lines = geom.plot_meridional_profile('k')
+    lines = geom.plot_meridional_profile(color)
 
     for line in lines:
         line.set_linewidth(2.5)

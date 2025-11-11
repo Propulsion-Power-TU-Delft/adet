@@ -52,7 +52,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 NUM_SPAN = 3
 NUM_STAGES = 6
 SCALED = True
-PLOTS = False
+PLOTS = True
 PRINTS = True
 
 # NOTE: I have now forced the system to add all possible update variables to each single
@@ -70,7 +70,7 @@ settings = FluidSettings(
 ntw = ComponentNetwork(
     settings,  # Fluid settings
     inlet,  # Inlet conditions
-    CasadiSystem(spanwise_stations=1),  # Backend
+    CasadiSystem(spanwise_stations=NUM_SPAN),  # Backend
     *[row0],
 )
 
@@ -218,32 +218,6 @@ if PLOTS:
 
     ax.plot([0.0, offset], [0.0, 0.0], color='r', linestyle='dashdot', linewidth=2.5)
 
-
-# eos extractors for debugging
-PT_EOS = CasadiEoS(
-    'PT_eos',
-    real_model.eos_object,
-    cp.PT_INPUTS,
-    ['rhomass', 'hmass', 'smass', 'speed_sound'],
-    NUM_SPAN,
-)
-HS_EOS = CasadiEoS(
-    'HS_eos',
-    real_model.eos_object,
-    cp.HmassSmass_INPUTS,
-    ['rhomass', 'p', 'T', 'speed_sound'],
-    NUM_SPAN,
-)
-DH_EOS = CasadiEoS(
-    'DH_eos',
-    real_model.eos_object,
-    cp.DmassHmass_INPUTS,
-    ['smass', 'p', 'T', 'speed_sound'],
-    NUM_SPAN,
-)
-
-
-eos = real_model.eos_object
 
 if PRINTS:
     for i, node in enumerate(ntw.system.nodes):

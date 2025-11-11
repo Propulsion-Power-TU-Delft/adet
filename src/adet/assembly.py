@@ -838,8 +838,8 @@ class CasadiSystem(SystemAssembler):
     @staticmethod
     def _create_symbols(names: Sequence[str], num_span: int, scale_suffix: str):
         """Helper to create symbols and their scaled versions."""
-        symbols = [cs.SX.sym(name, num_span) for name in names]  # pyright:ignore
-        scales = [cs.SX.sym(name + scale_suffix, num_span) for name in names]  # pyright:ignore
+        symbols = [cs.MX.sym(name, num_span) for name in names]  # pyright:ignore
+        scales = [cs.MX.sym(name + scale_suffix, num_span) for name in names]  # pyright:ignore
         return symbols, scales
 
     def _build_base_symbols(self):
@@ -862,8 +862,8 @@ class CasadiSystem(SystemAssembler):
         )
 
     def _build_equations_of_state(
-        self, all_args_products: dict[str, cs.SX]
-    ) -> dict[str, cs.SX]:
+        self, all_args_products: dict[str, cs.MX]
+    ) -> dict[str, cs.MX]:
         fl_model = self._fluid_settings.model
 
         if not isinstance(fl_model, ExternalFluidModel):
@@ -921,12 +921,12 @@ class CasadiSystem(SystemAssembler):
         indices to the absolute system indices.
         """
         # Build the product of each symbolic variable for their scaling value
-        free_args_products: dict[str, cs.SX] = {
+        free_args_products: dict[str, cs.MX] = {
             sym.name(): sym * scale
             for sym, scale in zip(self.free_args_sym, self.scales_free_args_sym)
         }
 
-        constraints_products: dict[str, cs.SX] = {
+        constraints_products: dict[str, cs.MX] = {
             sym.name(): sym * scale
             for sym, scale in zip(self.const_sym, self.scales_const_sym)
         }
@@ -941,7 +941,7 @@ class CasadiSystem(SystemAssembler):
 
         # Build scaling symbols for all equations
         self._eq_scales_sym = [
-            cs.SX.sym(f'eq{idx}{self.scale_suffix}', num_span)  # pyright:ignore
+            cs.MX.sym(f'eq{idx}{self.scale_suffix}', num_span)  # pyright:ignore
             for idx in range(self.num_equations)
         ]
 
