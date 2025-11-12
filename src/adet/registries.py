@@ -164,6 +164,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'camb_len': 'm',
         'pitch': 'm',
         'stagger': 'rad',
+        'metal_angle': 'rad',
         'solidity': 'dimensionless',
     }
 
@@ -219,6 +220,7 @@ SCALING_FACTORS: dict[str, float] = {
     'K': 500.0,
     'J / kg': 5e5,
     'J / (kg * K)': 1e3,
+    'J / kg / m': 5e5,  # Radial equilibrium
     'kg / s': 5e1,
     'rad / s': 1e3,
     'rad': 0.5,

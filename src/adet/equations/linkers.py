@@ -8,13 +8,27 @@ class SpeedLinker(EquationBase):
     """
 
     def residual(self, kin_omega0, kin_U1, geo_rr1):
-        return kin_U1 - (kin_omega0[0] * kin_omega0**0) * geo_rr1
+        # NOTE: This strange syntax on omega is to ensure
+        # shape consistency (EVERYTHING is a vector, even technically
+        # scalar quantities) witout it omega could change along the span,
+        # which works mathematically but has no physical sense.
+        # The omega we actually refer to is stored on the first spanwise
+        # station (similar to what is done for rmid and height)
+        return kin_U1 - kin_omega0[0] * geo_rr1
 
 
 class ComponentLinker(EquationBase):
     """
     Link bewteen outlet of a component and inlet of the next,
-    needed to change the relative frame reference
+    needed to change the relative frame reference.
+
+    Note
+    ----
+    This does NOT model the flow in an annular duct, but only acts
+    as an exchange of information between components. If you wanted
+    to model the interspace between rows the workflow would have to be
+    somethingn like
+    Row -> ComponentLinker -> Interspace -> ComponentLinker -> Row
     """
 
     def residual(
@@ -52,6 +66,8 @@ class ComponentLinker(EquationBase):
         # 3. Same geometry
         # NOTE: => Should i use hh and rr instead?
         #          (Compatible with non-uniform distibutions)
+        #
+        # Let's try!
 
         r5 = geo_rmid0 - geo_rmid1
         r6 = geo_height0 - geo_height1
@@ -62,22 +78,25 @@ class ComponentLinker(EquationBase):
 
 class VariableAdder(EquationBase):
     """
-    This is a `ghost` equation, it just forces the system to
-    add variables to the at runtime without them appearing
-    explicitly in any equation, it is mainly done to force
-    the addition of thermodynamic vars to be used in updates
+    This is a `ghost` equation, but don't get scared!
+    It essentially forces to add variables
+    to the system at runtime without them appearing
+    explicitly in any equation, it is currently to force
+    the addition of thermodynamic vars to be used in state updates
     """
+
+    # TODO: This could be made dynamic
 
     def residual(
         self,
-        rlt_rhomass0,
-        tot_rhomass0,
-        stc_rhomass0,
         rlt_p0,
         tot_p0,
         stc_p0,
         rlt_T0,
         tot_T0,
         stc_T0,
+        rlt_rhomass0,
+        tot_rhomass0,
+        stc_rhomass0,
     ):
         return ()

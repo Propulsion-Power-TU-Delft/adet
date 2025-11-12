@@ -5,9 +5,20 @@ from pint import Quantity
 
 # Equations
 from adet.equations.definitions import HeightRatio, MeridionalVelocityRatio
+from adet.equations.fundamental import (
+    FreeVortexDistribution,
+    MidspanAngle,
+    NisRe,
+    SimpleRadialEquilibrium,
+)
 from adet.equations.nondimensional import FlowCoefficient, WorkCoefficient
 from adet.losses.profile import DentonProfileLoss, RectVelocityIncompressible
-from adet.losses.basic import PercentageEntropyLoss
+from adet.losses.basic import (
+    PercTotalPressureLoss,
+    PercentageEntropyLoss,
+    TotalPressureLoss,
+    DesignAngle,
+)
 
 # Tooling & Components
 from adet.tools.coolprop_utils import DebugAbstractState
@@ -32,7 +43,7 @@ _gss_reg = GuessRegistry()
 # Add units for custom variables
 _dfu_reg.from_dict(
     {
-        'delta_smass_pct': 'J/(kg*K)',
+        'delta_smass_pct': 'J/ (kg * K)',
         'deflection': 'rad',
         'percentage_loss': 'dimensionless',
         'workCoeff': 'dimensionless',
@@ -40,8 +51,9 @@ _dfu_reg.from_dict(
         'specificSpeed': 'dimensionless',
         'STratio': 'dimensionless',
         'VmRatio': 'dimensionless',
-        'Vtmid': 'm/s',  # For vortex distributions
-        'Cd_profile': 'dimensionless',
+        'Vt_mid': 'm/s',  # For vortex distributions
+        'alpha_mid': 'rad',  # For vortex distributions
+        'Cd_profile': 'dimensionless',  # For profile losses
         'sizeParameter': 'meters',
         'n_blades': 'dimensionless',
         'xi_by_camb_len_A': 'meters',
@@ -69,7 +81,6 @@ rotating_shaft = Shaft(
 inlet = Inlet(
     {
         'kin': {
-            'Vm': Quantity(75, 'm/s'),
             'alpha': Quantity(0, 'deg'),
         },
         'geo': {
@@ -82,7 +93,7 @@ inlet = Inlet(
             'p': 6e5,  # impose at outlet
         },
         'oth': {
-            # 'mach': 0.3,
+            'mach': 0.15,
             # 'cum_massflow': 90,
         },
     }
@@ -100,7 +111,7 @@ row0 = BladeRow(
             'rmid': 0.5,
             # Blade
             'chord': 0.15,
-            'n_blades': 35,
+            'n_blades': 25,
             # 'solidity': 0.4,
         },
         'tot': {
@@ -108,12 +119,16 @@ row0 = BladeRow(
         },
         'oth': {
             'heightRatio': 1.1,
+            # 'mach': 0.3,
         },
     },
     shaft=static_shaft,
     extra_equations={
-        # |> Losses
-        # PercentageEntropyLoss(0.0): (0, 1),
-        DentonProfileLoss(real_model): (0, 1),
+        # |> Losses & Dev
+        PercentageEntropyLoss(0.0): (0, 1),
+        DesignAngle(): 1,
+        # MidspanAngle(): 1,
+        # TotalPressureLoss(0.0): (0, 1),
+        # DentonProfileLoss(real_model): (0, 1),
     },
 )

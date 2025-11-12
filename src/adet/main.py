@@ -1,8 +1,6 @@
 # === IMPORTS
 # Standard library
-from copy import deepcopy
 import logging
-from typing import Literal
 
 # External libraries
 import matplotlib.pyplot as plt
@@ -13,17 +11,19 @@ import casadi as cs
 # Network build
 from adet.assembly import CasadiSystem
 from adet.components import ComponentNetwork
-from adet.equations.definitions import DegreeOfReaction, RepeatedStage
-from adet.equations.fundamental import ForcedVortexDistribution, FreeVortexDistribution
+from adet.equations.fundamental import (
+    FreeVortexDistribution,
+    NisRe,
+    SimpleRadialEquilibrium,
+)
 from adet.fluid.settings import FluidSettings
-from adet.fluid import CasadiEoS
-import CoolProp as cp
 
 # Objects Configuration => MODIFY CONFIG FILE TO SET BOUNDARY CONDITIONS
-from adet.config_main import real_model, ideal_model, inlet, row0
+from adet.config_main import real_model, inlet, row0
 
 # Tooling and utils
 from adet.losses.base_loss import LossModel
+from adet.losses.basic import DesignAngle
 from adet.losses.profile import DentonProfileLoss
 from adet.tools.iter import grouper
 from adet.tools.loggers import setup_logger
@@ -49,7 +49,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 
 # === SETTINGS
-NUM_SPAN = 3
+NUM_SPAN = 25
 NUM_STAGES = 6
 SCALED = True
 PLOTS = True
@@ -71,7 +71,7 @@ ntw = ComponentNetwork(
     settings,  # Fluid settings
     inlet,  # Inlet conditions
     CasadiSystem(spanwise_stations=NUM_SPAN),  # Backend
-    *[row0],
+    row0,
 )
 
 # Add global constraints for ideal gas and
@@ -96,80 +96,96 @@ ntw.system.add_global_constraints(
 ntw.system.build(SCALED)
 
 
-# === CASADI VERSION - Function Extraction + Solution
-def solve_casadi_sys(
-    system: CasadiSystem,
-    method: Literal['newton', 'nlpsol'],
-    manual_guess={},
-    overwrite_known=[],
-):
-    x0 = system.get_initial_guess(manual_guess)
-    knowns_stack = system.get_scaled_constraints()
-
-    if overwrite_known:
-        for ow in overwrite_known:
-            knowns_stack[ow[0]] = ow[1]
-
-    res_func_casadi = system.make_residual_function()
-    free_args_symbols = cs.vertcat(*system.free_args_sym)
-
-    res_expr_partial = res_func_casadi(
-        free_args_symbols,  # Unknowns -> Symbols
-        knowns_stack.flatten(),  # Knowns -> Numerical values
-    )
-
-    rootfind_problem = {
-        'x': free_args_symbols,
-        'g': res_expr_partial,
-    }
-
-    # Newton-Raphson solver -> Fast but unstable w/o good guess
-    G_newt = cs.rootfinder(
-        'newton_roots',
-        'newton',
-        rootfind_problem,
-        {
-            'print_iteration': False,
-            'error_on_fail': True,
-        },
-    )
-
-    # IPOPT solver
-    G_nlp = cs.rootfinder(
-        'nlpsol_roots',
-        'nlpsol',
-        rootfind_problem,
-        {
-            'error_on_fail': True,
-            'nlpsol': 'ipopt',
-            'nlpsol_options': {
-                'ipopt.print_level': 10,
-                'ipopt.max_iter': 100,
-                # Need the limited-memory, approx (quasi-newton)
-                # the eos does not have an hessian
-                'ipopt.hessian_approximation': 'limited-memory',
-                # 'ipopt.jacobian_approximation': 'finite-difference-values',
-            },
-        },
-    )
-
+def solve_problem(rootfinder, guess, knowns):
+    """Solve rootfinding problem"""
     with suppress_output():
         logger.info('Solving the system...')
-        match method:
-            case 'newton':
-                sol = G_newt(x0.flatten(), 0.0)
-            case 'nlpsol':
-                sol = G_nlp(x0.flatten(), 0.0)
 
-    return sol
+        sol = np.array(
+            rootfinder(
+                guess.flatten(),
+                knowns.flatten(),
+            )
+        )
+
+        return sol
 
 
-sol = solve_casadi_sys(ntw.system, 'nlpsol', {})
+x0_is = ntw.system.get_initial_guess()
+kn_is = ntw.system.get_scaled_constraints()
+rootfinder_is = ntw.system.make_rootfinder('nlpsol')
+sol_is = solve_problem(rootfinder_is, x0_is, kn_is)
+ntw.system.write_solution_to_nodes(sol_is)
+sol_is_dict = ntw.system.solution_to_dict(sol_is)
 
-plt.show()
+# *** OFF DESIGN
+sys_is_off = ntw.system.copy()
+sys_is_off.spanwise_stations = NUM_SPAN
+
+sys_is_off.remove_equation_type(DesignAngle)
+sys_is_off.add_equation(NisRe(), 1)
+
+# Fix the metal angle
+sys_is_off.boundary_conditions[0]['geo']['metal_angle'] = ntw.system.nodes[
+    0
+].geo.metal_angle
+sys_is_off.boundary_conditions[1]['geo']['metal_angle'] = ntw.system.nodes[
+    1
+].geo.metal_angle
+# Change the inlet angle
+
+sys_is_off.boundary_conditions[0]['kin']['alpha'] = 0.0
+sys_is_off.boundary_conditions[1]['kin'].pop('alpha')
+
+sys_is_off.build(SCALED)
+rootfinder_is_off = sys_is_off.make_rootfinder('nlpsol')
+
+x0_is_off = sys_is_off.get_initial_guess(sol_is_dict).flatten()
+kn_is_off = sys_is_off.get_scaled_constraints().flatten()
+sol_is_off = solve_problem(rootfinder_is_off, x0_is_off, kn_is_off)
+
+# # *** Get residual function and jacobian for debugging
+# res_func = sys_is_off.make_residual_function()
+# initial_residual = res_func(x0_is_off, kn_is_off)
+# jac_func = res_func.jacobian()
+# jacobian = np.array(
+#     jac_func(x0_is_off, kn_is_off, initial_residual)[0],
+# )
+
+
+# Copy the system
+# sys_design_loss = ntw.system.copy()
+
+# # Modify spanwise stations and equations
+# sys_design_loss.spanwise_stations = NUM_SPAN
+# sys_design_loss.remove_equation_type(LossModel)
+# sys_design_loss.add_equation(DentonProfileLoss(real_model), (0, 1))
+
+# # Add the system back to the network (just for access), rebuild it
+# ntw.system = sys_design_loss
+# ntw.system.build(SCALED)
+
+# rootfinder_design = ntw.system.make_rootfinder('nlpsol')
+# # Use primal solution
+# x0_design = ntw.system.get_initial_guess(sol_is_dict)
+# kn_design = ntw.system.get_scaled_constraints()
+
+# with suppress_output():
+#     sol_full = np.array(
+#         rootfinder_design(
+#             x0_design.flatten(),
+#             kn_design.flatten(),
+#         )
+#     )
+
+# sys_off_design = sys_design_loss.copy()
+
 
 num_args = len(ntw.system.free_args)
-ntw.system.write_solution_to_nodes(np.array(sol).reshape(num_args, -1))
+
+ntw.system = sys_is_off
+sol = sol_is_off
+ntw.system.write_solution_to_nodes(sol)
 
 
 if PLOTS:

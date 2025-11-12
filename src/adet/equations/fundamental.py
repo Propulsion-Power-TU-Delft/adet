@@ -1,29 +1,11 @@
-"""
-Module that gathers fundamental equations for internal flows
-"""
+"""Module that gathers fundamental equations for internal flows"""
+
+import numpy as np
+import matplotlib.pyplot as plt
+from sympy import N
 
 from adet.equations import EquationBase
-import numpy as np
-import casadi as cs
-import sympy as sp
-from pint.facets.plain import PlainQuantity
-import matplotlib.pyplot as plt
-
-
-def fin_diff(f, x):
-    """
-    Centered finite difference derivative along the span, fwd and
-    bwd on the edges
-    """
-    first_delta_x = x[1] - x[0]
-    first_der = (-3 * f[0] + 4 * f[1] - f[2]) / (2 * first_delta_x)
-
-    end_delta_x = x[-1] - x[-2]
-    last_der = (f[-3] - 4 * f[-2] + 3 * f[-1]) / (2 * end_delta_x)
-
-    internal_der = (f[2:] - f[:-2]) / (x[2:] - x[:-2])
-
-    return cs.vertcat(first_der, internal_der, last_der)
+from adet.tools.interpolation import safe_min_clip, fin_diff
 
 
 class EulerEquation(EquationBase):
@@ -98,22 +80,21 @@ class SimpleRadialEquilibrium(EquationBase):
     zero streamline curvature is assumed
     """
 
+    skip_unit_check = True
+    manual_units = ('J / kg / m',)
+
     def residual(self, geo_rr0, stc_p0, kin_Vt0, stc_rhomass0):
-        if max(geo_rr0.shape) == 1:
-            raise RuntimeError('Radial equilibrium on a single station')
-
         dp_dr = fin_diff(stc_p0, geo_rr0)
+        return dp_dr / stc_rhomass0 - kin_Vt0**2 / geo_rr0
 
-        return dp_dr - stc_rhomass0 * kin_Vt0**2 / geo_rr0
 
-
-class NISRE(EquationBase):
+class NisRe(EquationBase):
     """Non-ISentropic Radial Equilibrium"""
 
-    def residual(self, geo_rr0, kin_Vt0, kin_Vm0, tot_hmass0, stc_T0, stc_smass0):
-        if max(geo_rr0.shape) == 1:
-            raise RuntimeError('Radial equilibrium on a single station')
+    skip_unit_check = True
+    manual_units = ('J / kg / m',)
 
+    def residual(self, geo_rr0, kin_Vt0, kin_Vm0, tot_hmass0, stc_T0, stc_smass0):
         dVt_dr = fin_diff(kin_Vt0, geo_rr0)
         dVm_dr = fin_diff(kin_Vm0, geo_rr0)
         dht_dr = fin_diff(tot_hmass0, geo_rr0)
@@ -125,8 +106,14 @@ class NISRE(EquationBase):
 
 
 class FreeVortexDistribution(EquationBase):
-    def residual(self, geo_rr0, kin_Vt0, geo_rmid0, oth_Vtmid0):
-        return geo_rr0 * kin_Vt0 - geo_rmid0 * oth_Vtmid0
+    def residual(self, geo_rr0, kin_Vt0, geo_rmid0, oth_Vt_mid0):
+        return geo_rr0 * kin_Vt0 - geo_rmid0 * oth_Vt_mid0
+
+
+class MidspanAngle(EquationBase):
+    def residual(self, kin_alpha0, oth_alpha_mid0):
+        n_span = max(kin_alpha0.shape)
+        return oth_alpha_mid0 - kin_alpha0[n_span // 2]
 
 
 class ForcedVortexDistribution(EquationBase):
@@ -211,33 +198,6 @@ class MeridionalUniform(EquationBase):
         return r1, r2, r3
 
 
-def is_casadi_type(x):
-    return isinstance(x, (cs.DM, cs.MX, cs.SX))
-
-
-def safe_min_clip(x, min_value):
-    """
-    Lower clipping of the absolute vaue of x
-    with respect to a minimum value.
-    Type safe for casadi, numpy and pint
-    """
-    if is_casadi_type(x):
-        # OBS: If x is exactly 0 the normal sign function
-        # is problematic
-        x_sign = cs.if_else(x >= 0, 1, -1)
-        x = x_sign * cs.fmax(cs.fabs(x), min_value)
-    elif isinstance(x, PlainQuantity):
-        x_sign = np.sign(x.magnitude)
-        x = x_sign * np.clip(np.abs(x.magnitude), min_value, None) * x.units
-    elif isinstance(x, sp.Symbol):
-        pass
-    else:
-        x_sign = np.sign(x)
-        x = x_sign * np.clip(np.abs(x), min_value, None)
-
-    return x
-
-
 class ParabolicCamberline(EquationBase):
     skip_unit_check = True
     manual_units = ('m', 'm', 'rad')
@@ -275,14 +235,16 @@ class ParabolicCamberline(EquationBase):
 
     def residual(
         self,
-        geo_beta0,
-        geo_beta1,
+        geo_metal_angle0,
+        geo_metal_angle1,
         geo_chord1,
         geo_stagger1,
         geo_chord_ax1,
         geo_camb_len1,
     ):
-        a, b, stagger = self._compute_parabola(geo_beta0, geo_beta1, geo_chord_ax1)
+        a, b, stagger = self._compute_parabola(
+            geo_metal_angle0, geo_metal_angle1, geo_chord_ax1
+        )
         arc_len = self._parabolic_arc_len(a, b, geo_chord_ax1)
 
         r1 = geo_chord_ax1 - geo_chord1 * np.cos(geo_stagger1)
@@ -363,8 +325,6 @@ class ParabolicCamberline(EquationBase):
 
         # Create figure if axis not provided
         if axis is None:
-            from mpl_toolkits.mplot3d import Axes3D
-
             fig = plt.figure(figsize=(10, 8))
             ax = fig.add_subplot(111, projection='3d')
         else:

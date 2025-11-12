@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from collections import defaultdict, OrderedDict
 from copy import deepcopy
 import logging
-from typing import Callable, Self, Sequence, Type
+from typing import Callable, Self, Sequence, Type, Literal
 
 from numpy.typing import NDArray
 from pint import Quantity
@@ -766,7 +766,7 @@ class SystemAssembler(ABC):
         return self.constraints_values / self.constraints_scaling
 
     def get_initial_guess(
-        self, manual_values: dict[str, jax.Array] | None = None
+        self, manual_values: dict[str, NDArray] | None = None
     ) -> NDArray:
         self._check_built()
 
@@ -828,7 +828,7 @@ class CasadiSystem(SystemAssembler):
         super().__init__(spanwise_stations)
         self.scale_suffix = scale_suffix
 
-    def build(self, scaled: bool, throw: bool = True):
+    def build(self, scaled: bool = True, throw: bool = True):
         super().build(scaled)
         logger.info('Building CasADi backend')
         self._build_base_symbols()
@@ -836,7 +836,9 @@ class CasadiSystem(SystemAssembler):
         self._build_residual_expressions()
 
     @staticmethod
-    def _create_symbols(names: Sequence[str], num_span: int, scale_suffix: str):
+    def _create_symbols(
+        names: Sequence[str], num_span: int, scale_suffix: str
+    ) -> tuple[list[cs.MX], list[cs.MX]]:
         """Helper to create symbols and their scaled versions."""
         symbols = [cs.MX.sym(name, num_span) for name in names]  # pyright:ignore
         scales = [cs.MX.sym(name + scale_suffix, num_span) for name in names]  # pyright:ignore
@@ -921,17 +923,21 @@ class CasadiSystem(SystemAssembler):
         indices to the absolute system indices.
         """
         # Build the product of each symbolic variable for their scaling value
+        # 1. For free arguments
         free_args_products: dict[str, cs.MX] = {
             sym.name(): sym * scale
             for sym, scale in zip(self.free_args_sym, self.scales_free_args_sym)
         }
 
+        # 2. For constrained arguments
         constraints_products: dict[str, cs.MX] = {
             sym.name(): sym * scale
             for sym, scale in zip(self.const_sym, self.scales_const_sym)
         }
 
         all_args_products = {**free_args_products, **constraints_products}
+
+        # 3. Build symbols that derive from the equation of state
         casadi_eos_symbols = self._build_equations_of_state(all_args_products)
 
         self._all_symbols = {**all_args_products, **casadi_eos_symbols}
@@ -945,13 +951,13 @@ class CasadiSystem(SystemAssembler):
             for idx in range(self.num_equations)
         ]
 
+        # Build and concatenate residual equations
         logger.info(
             f'System info: {num_span * len(self.free_args)} total variables, '
             f'{num_span * self.num_equations} total equations'
         )
         logger.info('Building residual equation symbolics (this may take a while)...')
-        # Build and concatenate residual equations
-        # (no need to override numpy)
+
         residuals = []
         for eq in self.equations:
             kwmap = self._arg_maps[eq]  # Convert to abs args
@@ -960,6 +966,7 @@ class CasadiSystem(SystemAssembler):
             overridden_eq = override_operators(eq.residual, 'numpy', cs)
             residuals.append(overridden_eq(*args))
 
+        # Divide each resigual expression by its scaling symbol
         self._res_expr_scaled = list(
             map(
                 lambda X, Y: X / Y,
@@ -1014,6 +1021,67 @@ class CasadiSystem(SystemAssembler):
             ['free_args', 'constraints'],
             ['residuals'],
         )
+
+    def make_rootfinder(
+        self, root_method: Literal['newton', 'nlpsol'], opts={}
+    ) -> Callable[[ArrayLike, ArrayLike], cs.DM]:
+        """
+        Create a rootfinder callable object that takes as a first input the
+        initial guess and as second input the values of the constraints and
+        returns the solution.
+        """
+        res_func_casadi = self.make_residual_function()
+
+        free_args_symbols = cs.vertcat(*self.free_args_sym)
+        constraints_symbols = cs.vertcat(*self.const_sym)
+
+        res_expr_partial = res_func_casadi(
+            free_args_symbols,
+            constraints_symbols,
+        )
+
+        rootfind_problem = {
+            'x': free_args_symbols,
+            'g': res_expr_partial,
+            'p': constraints_symbols,
+        }
+
+        # TODO: remove hardcoded options
+        match root_method:
+            case 'newton':
+                # Newton-Raphson solver -> Fast but unstable w/o good guess
+                rootfinder = cs.rootfinder(
+                    'newton_rootfinder',
+                    'newton',
+                    rootfind_problem,
+                    {
+                        'print_iteration': False,
+                        'error_on_fail': True,
+                        **opts,
+                    },
+                )
+
+            case 'nlpsol':
+                # IPOPT solver
+                rootfinder = cs.rootfinder(
+                    'nlpsol_rootfinder',
+                    'nlpsol',
+                    rootfind_problem,
+                    {
+                        'error_on_fail': True,
+                        'nlpsol': 'ipopt',
+                        'nlpsol_options': {
+                            'ipopt.print_level': 0,
+                            'ipopt.max_iter': 100,
+                            # Need the limited-memory, approx (quasi-newton)
+                            # the eos does not have an hessian
+                            'ipopt.hessian_approximation': 'limited-memory',
+                            # 'ipopt.jacobian_approximation': 'finite-difference-values',
+                        },
+                        **opts,
+                    },
+                )
+        return rootfinder
 
     def to_jax(self):
         """

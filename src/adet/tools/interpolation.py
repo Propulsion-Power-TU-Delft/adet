@@ -1,5 +1,52 @@
+from sympy import Symbol
+from pint.facets.plain import PlainQuantity
 import numpy as np
 import matplotlib.pyplot as plt
+import casadi as cs
+
+
+def is_casadi_type(x):
+    return isinstance(x, (cs.DM, cs.MX, cs.SX))
+
+
+def safe_min_clip(x, min_value):
+    """
+    Lower clipping of the absolute vaue of x
+    with respect to a minimum value.
+    Type safe for casadi, numpy and pint
+    """
+    if is_casadi_type(x):
+        # OBS: If x is exactly 0 the normal sign function
+        # is problematic
+        x_sign = cs.if_else(x >= 0, 1, -1)
+        x = x_sign * cs.fmax(cs.fabs(x), min_value)
+    elif isinstance(x, PlainQuantity):
+        x_sign = np.sign(x.magnitude)
+        x = x_sign * np.clip(np.abs(x.magnitude), min_value, None) * x.units
+    elif isinstance(x, Symbol):
+        pass
+    else:
+        x_sign = np.sign(x)
+        x = x_sign * np.clip(np.abs(x), min_value, None)
+
+    return x
+
+
+def fin_diff(f, x):
+    """
+    Centered finite difference derivative along the span, fwd and
+    bwd on the edges
+    """
+    first_delta_x = safe_min_clip(x[1] - x[0], 1e-8)
+    first_der = (-3 * f[0] + 4 * f[1] - f[2]) / (2 * first_delta_x)
+
+    end_delta_x = safe_min_clip(x[-1] - x[-2], 1e-8)
+    last_der = (f[-3] - 4 * f[-2] + 3 * f[-1]) / (2 * end_delta_x)
+
+    inner_delta_x = safe_min_clip(x[2:] - x[:-2], 1e-8)
+    internal_der = (f[2:] - f[:-2]) / inner_delta_x
+
+    return cs.vertcat(first_der, internal_der, last_der)
 
 
 def findpro(x, vec):

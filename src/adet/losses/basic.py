@@ -2,6 +2,21 @@ from adet.equations import EquationBase
 from adet.losses import LossModel
 
 
+class PercTotalPressureLoss(LossModel):
+    """
+    .. math::
+
+        \\mathrm{Y} = \\frac{p_{t1}^{r}- p_{t0}^{r}}{p_{t0}^{r} - p_0}
+    """
+
+    def __init__(self, loss_coefficient: float = 0.0):
+        super().__init__()
+        self.loss_coeff = loss_coefficient
+
+    def residual(self, rlt_p0, rlt_p1):
+        return rlt_p1 - rlt_p0 * (1 - self.loss_coeff)
+
+
 class TotalPressureLoss(LossModel):
     """
     .. math::
@@ -9,12 +24,12 @@ class TotalPressureLoss(LossModel):
         \\mathrm{Y} = \\frac{p_{t1}^{r}- p_{t0}^{r}}{p_{t0}^{r} - p_0}
     """
 
-    def __init__(self, loss_coefficient: float = 0.95):
+    def __init__(self, loss_coefficient: float = 0.0):
         super().__init__()
         self.loss_coeff = loss_coefficient
 
     def residual(self, rlt_p0, stc_p0, rlt_p1):
-        return (rlt_p1 - rlt_p0) - (rlt_p0 - stc_p0) * self.loss_coeff
+        return (rlt_p0 - rlt_p1) - (rlt_p0 - stc_p0) * self.loss_coeff
 
 
 class PercentageEntropyLoss(LossModel):
@@ -43,8 +58,13 @@ class FixedEnthalpyLoss(LossModel):
         return tot_hmass0 - (oth_htis0 + oth_ent_loss0)
 
 
-class ZeroDeviation(EquationBase):
-    def residual(self, kin_alpha0, geo_alpha0, geo_beta0, kin_beta0):
-        r1 = kin_alpha0 - geo_alpha0
-        r2 = kin_beta0 - geo_beta0
-        return r1, r2
+class DesignAngle(EquationBase):
+    """Impose equality between kinematic and geometric angles at a node"""
+
+    def residual(self, geo_metal_angle0, kin_beta0):
+        return kin_beta0 - geo_metal_angle0
+
+
+class Something(EquationBase):
+    def residual(self, geo_alpha0, geo_beta0):
+        pass

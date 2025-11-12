@@ -20,7 +20,7 @@ from adet.equations.fundamental import (
 )
 from adet.equations import EquationBase
 from adet.equations.linkers import SpeedLinker
-from adet.losses.basic import ZeroDeviation
+from adet.losses.basic import DesignAngle
 from adet.losses import LossModel
 
 # Dependencies and tooling
@@ -50,8 +50,7 @@ class BladeRow(BaseComponent):
         # ***
         # |> TODO: These are hardcoded for testing REMOVE!
         #          user should choose blade and dev. model
-        (ZeroDeviation, 0),  # No INLET deviation -> see (1) for meaning
-        (ZeroDeviation, 1),  # No outlet deviation
+        (DesignAngle, 0),  # No INLET deviation -> see (1) for meaning
         (ParabolicCamberline, (0, 1)),  # Camber line geometry
     ]
 
