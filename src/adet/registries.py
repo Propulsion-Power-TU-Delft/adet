@@ -163,6 +163,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'chord_ax': 'm',
         'camb_len': 'm',
         'pitch': 'm',
+        'throat': 'm',
         'stagger': 'rad',
         'metal_angle': 'rad',
         'solidity': 'dimensionless',
@@ -207,6 +208,7 @@ class GuessRegistry(BaseRegistry[str, float]):
         'chord': 0.1,
         'chord_ax': 0.1,
         'pitch': 0.1,
+        'throat': 0.1,
         'stagger': 0.1,
     }
 

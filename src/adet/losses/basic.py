@@ -58,7 +58,7 @@ class FixedEnthalpyLoss(LossModel):
         return tot_hmass0 - (oth_htis0 + oth_ent_loss0)
 
 
-class DesignAngle(EquationBase):
+class ZeroDeviation(EquationBase):
     """Impose equality between kinematic and geometric angles at a node"""
 
     def residual(self, geo_metal_angle0, kin_beta0):

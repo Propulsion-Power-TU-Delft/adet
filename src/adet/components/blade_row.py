@@ -19,11 +19,11 @@ from adet.equations.fundamental import (
     ParabolicCamberline,
 )
 from adet.equations import EquationBase
-from adet.equations.linkers import SpeedLinker
-from adet.losses.basic import DesignAngle
+from adet.equations.linkers import SpeedLinker, ComponentLinker
 from adet.losses import LossModel
 
 # Dependencies and tooling
+from adet.losses.mixing import MixingMassBalance, RowMixerLink
 from adet.node import FlowNode
 from adet.components import BaseComponent, Shaft
 from adet.geometry import BezierCurve, StraightLine
@@ -50,17 +50,10 @@ class BladeRow(BaseComponent):
         # ***
         # |> TODO: These are hardcoded for testing REMOVE!
         #          user should choose blade and dev. model
-        (DesignAngle, 0),  # No INLET deviation -> see (1) for meaning
         (ParabolicCamberline, (0, 1)),  # Camber line geometry
     ]
 
-    # NOTES:
-    # (1) At the INLET, geometric and kinematic angle
-    # are of course the same, there is no geometry,
-    # but we still need to define the geometric
-    # angle distributions at the inlet of each row,
-    # therefore we impose kinematic and geometric
-    # angles to be equal ~> what about incidence?
+    linker_equations = [ComponentLinker]
 
     def __init__(
         self,
@@ -119,6 +112,17 @@ class {CLASS_NAME}(EquationBase):
         GenClass = nspace[CLASS_NAME]
 
         self._equations[GenClass()] = (0, 1)
+
+
+class DownstreamMixer(BaseComponent):
+    base_equations = [
+        (MixingMassBalance, (0, 1)),
+    ]
+
+    linker_equations = [
+        ComponentLinker,
+        RowMixerLink,
+    ]
 
 
 @dataclass
@@ -299,7 +303,6 @@ class RowGeometry:
 def plot_from_nodes(
     n0: FlowNode,
     n1: FlowNode,
-    axial_chord: float,
     semi_cone_angle: bool = False,
     axial_offset: float = 0.0,
     color: tuple | str = 'k',
@@ -316,9 +319,10 @@ def plot_from_nodes(
         for node in [n0, n1]:
             args.append(node.geo.get(var).to_base_units().magnitude[0])
 
+    args.append(node.geo.get('chord_ax').to_base_units().magnitude[0])
+
     geom = RowGeometry(
         *args,
-        axial_chord=axial_chord,
         semi_cone_angle=semi_cone_angle,
         axial_offset=axial_offset,
     )

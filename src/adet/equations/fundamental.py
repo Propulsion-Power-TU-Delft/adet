@@ -241,6 +241,7 @@ class ParabolicCamberline(EquationBase):
         geo_stagger1,
         geo_chord_ax1,
         geo_camb_len1,
+        geo_pitch1,
     ):
         a, b, stagger = self._compute_parabola(
             geo_metal_angle0, geo_metal_angle1, geo_chord_ax1
@@ -253,11 +254,17 @@ class ParabolicCamberline(EquationBase):
         return r1, r2, r3
 
     # CAMBERLINE PLOTTING FUNCTIONS
-    def plot_camber_line(self, axis, inlet_angle, outlet_angle, chord_ax, color):
+    def plot_camber_line(
+        self, axis, inlet_angle, outlet_angle, chord_ax, color, pitch=None
+    ):
         a, b, _ = self._compute_parabola(inlet_angle, outlet_angle, chord_ax)
-        x = np.linspace(0, chord_ax, 50)
+        N_PTS = 50
+        x = np.linspace(0, chord_ax, N_PTS)
         y = a * x**2 + b * x
+
         axis.plot(x, y, color=color)
+        if pitch is not None:
+            axis.plot(x, y + pitch, color=color)
 
     def plot_3d_blade(
         self,

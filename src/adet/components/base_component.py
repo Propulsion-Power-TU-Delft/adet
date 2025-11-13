@@ -28,6 +28,10 @@ class BaseComponent(ABC):
         ]
     ]
 
+    # These describe extra links between the outlet
+    # node of the component and the next one
+    linker_equations: ClassVar[list[Type[EquationBase]]]
+
     def __init__(
         self,
         name: str,
@@ -44,7 +48,8 @@ class BaseComponent(ABC):
         self.boundary_conditions = defaultdict(dict)
         self.boundary_conditions.update(boundary_conditions)
 
-        # This makes equations non-reusable!
+        # Careful, This makes equations non-reusable, because when
+        # added to a system the instance is used for dictionary keys
         base_equation_instances = {
             equation(): position for equation, position in self.base_equations
         }
@@ -57,6 +62,11 @@ class BaseComponent(ABC):
         # Force children to define these class attributes
         if not hasattr(cls, 'base_equations'):
             raise TypeError(f'{cls.__name__} must define `base_equations`')
+
+        if not hasattr(cls, 'linker_equations'):
+            raise TypeError(
+                f'{cls.__name__} must define `linker_equations` for component interface'
+            )
 
         cls._verify_base_equation_format()
 

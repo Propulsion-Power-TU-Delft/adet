@@ -44,17 +44,17 @@ class ComponentLinker(EquationBase):
         stc_smass0,
         stc_smass1,
         # Geometry
-        geo_rmid0,
-        geo_rmid1,
-        geo_height0,
-        geo_height1,
+        geo_rr0,
+        geo_rr1,
+        geo_hh0,
+        geo_hh1,
         geo_meridional_angle0,
         geo_meridional_angle1,
         # Others
         oth_massflow0,
         oth_massflow1,
     ):
-        # 1. no entropy generation, no work exchange
+        # 1. no entropy generation, no work exchange -> Same thermo state
         r1 = tot_hmass0 - tot_hmass1
         r2 = stc_smass0 - stc_smass1
 
@@ -63,14 +63,9 @@ class ComponentLinker(EquationBase):
         r3 = kin_Vt0 - kin_Vt1
         r4 = kin_Vm0 - kin_Vm1
 
-        # 3. Same geometry
-        # NOTE: => Should i use hh and rr instead?
-        #          (Compatible with non-uniform distibutions)
-        #
-        # Let's try!
-
-        r5 = geo_rmid0 - geo_rmid1
-        r6 = geo_height0 - geo_height1
+        # 3. Same geometry distribution
+        r5 = geo_rr0 - geo_rr1
+        r6 = geo_hh0 - geo_hh1
         r7 = geo_meridional_angle0 - geo_meridional_angle1
 
         return r1, r2, r3, r4, r5, r6, r7

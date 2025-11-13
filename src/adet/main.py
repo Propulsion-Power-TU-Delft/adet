@@ -14,8 +14,10 @@ from adet.components import ComponentNetwork
 from adet.equations.fundamental import (
     FreeVortexDistribution,
     NisRe,
+    ParabolicCamberline,
     SimpleRadialEquilibrium,
 )
+from adet.fluid.casadi_eos import CasadiEoS
 from adet.fluid.settings import FluidSettings
 
 # Objects Configuration => MODIFY CONFIG FILE TO SET BOUNDARY CONDITIONS
@@ -23,7 +25,7 @@ from adet.config_main import real_model, inlet, row0
 
 # Tooling and utils
 from adet.losses.base_loss import LossModel
-from adet.losses.basic import DesignAngle
+from adet.losses.basic import ZeroDeviation
 from adet.losses.profile import DentonProfileLoss
 from adet.tools.iter import grouper
 from adet.tools.loggers import setup_logger
@@ -49,8 +51,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 
 # === SETTINGS
-NUM_SPAN = 25
-NUM_STAGES = 6
+NUM_SPAN = 5
 SCALED = True
 PLOTS = True
 PRINTS = True
@@ -118,67 +119,17 @@ sol_is = solve_problem(rootfinder_is, x0_is, kn_is)
 ntw.system.write_solution_to_nodes(sol_is)
 sol_is_dict = ntw.system.solution_to_dict(sol_is)
 
-# *** OFF DESIGN
+# *** With losses and multispan
 sys_is_off = ntw.system.copy()
 sys_is_off.spanwise_stations = NUM_SPAN
-
-sys_is_off.remove_equation_type(DesignAngle)
-sys_is_off.add_equation(NisRe(), 1)
-
-# Fix the metal angle
-sys_is_off.boundary_conditions[0]['geo']['metal_angle'] = ntw.system.nodes[
-    0
-].geo.metal_angle
-sys_is_off.boundary_conditions[1]['geo']['metal_angle'] = ntw.system.nodes[
-    1
-].geo.metal_angle
-# Change the inlet angle
-
-sys_is_off.boundary_conditions[0]['kin']['alpha'] = 0.0
-sys_is_off.boundary_conditions[1]['kin'].pop('alpha')
-
+sys_is_off.remove_equation_type(LossModel)
+sys_is_off.add_equation(DentonProfileLoss(real_model), (0, 1))
 sys_is_off.build(SCALED)
 rootfinder_is_off = sys_is_off.make_rootfinder('nlpsol')
 
 x0_is_off = sys_is_off.get_initial_guess(sol_is_dict).flatten()
 kn_is_off = sys_is_off.get_scaled_constraints().flatten()
 sol_is_off = solve_problem(rootfinder_is_off, x0_is_off, kn_is_off)
-
-# # *** Get residual function and jacobian for debugging
-# res_func = sys_is_off.make_residual_function()
-# initial_residual = res_func(x0_is_off, kn_is_off)
-# jac_func = res_func.jacobian()
-# jacobian = np.array(
-#     jac_func(x0_is_off, kn_is_off, initial_residual)[0],
-# )
-
-
-# Copy the system
-# sys_design_loss = ntw.system.copy()
-
-# # Modify spanwise stations and equations
-# sys_design_loss.spanwise_stations = NUM_SPAN
-# sys_design_loss.remove_equation_type(LossModel)
-# sys_design_loss.add_equation(DentonProfileLoss(real_model), (0, 1))
-
-# # Add the system back to the network (just for access), rebuild it
-# ntw.system = sys_design_loss
-# ntw.system.build(SCALED)
-
-# rootfinder_design = ntw.system.make_rootfinder('nlpsol')
-# # Use primal solution
-# x0_design = ntw.system.get_initial_guess(sol_is_dict)
-# kn_design = ntw.system.get_scaled_constraints()
-
-# with suppress_output():
-#     sol_full = np.array(
-#         rootfinder_design(
-#             x0_design.flatten(),
-#             kn_design.flatten(),
-#         )
-#     )
-
-# sys_off_design = sys_design_loss.copy()
 
 
 num_args = len(ntw.system.free_args)
@@ -187,21 +138,69 @@ ntw.system = sys_is_off
 sol = sol_is_off
 ntw.system.write_solution_to_nodes(sol)
 
+# === POST-PROCESS ===
+if PRINTS:
+    for i, node in enumerate(ntw.system.nodes):
+        # For simpler access set n0, n1, n2, ...
+        globals()[f'n{i}'] = node
+        to_print = f"""
+###################
+##### NODE {i:<2} #####
+###################
+{node}\n
+    """
+        print(to_print)
+
+    ntw.print_structure()
+
+
+PT_EOS = CasadiEoS(
+    'PT_EOS',
+    real_model.eos_object,
+    9,
+    ['rhomass', 'smass'],
+    NUM_SPAN,
+)
+
 
 if PLOTS:
     FONTSIZE = 18
     FONTDICT = {'fontsize': FONTSIZE}
 
+    # Plot velocity triangles
     for i, n in enumerate(ntw.system.nodes):
         n.kin.plot(n.geo, FONTSIZE)
         plt.title(f'Node number {i}')
+
+    _, smass0 = PT_EOS(n0.tot.p, n0.tot.T)  # pyright:ignore
+    # Plot entropy rise
+    fig, ax = plt.subplots()
+    ax.set_title('Entropy rise')
+    for i, n in enumerate(ntw.system.nodes):
+        rho, smass = PT_EOS(n.tot.p, n.tot.T)  # pyright:ignore
+        # Plot entropy distributions
+        ax.plot(n.geo.rr, smass - smass0)  # pyright:ignore
 
     plt.tick_params(labelsize=FONTSIZE / 1.5 // 1)
 
     num_nodes = range(len(ntw.system.nodes))
 
+    # Plot camberline at midspan
     fig, ax = plt.subplots()
+    ax.set_title('Camberlines at midspan')
+    ax.axis('equal')
+    pbl = ParabolicCamberline()
+    pbl.plot_camber_line(
+        ax,
+        n0.geo.metal_angle[NUM_SPAN // 2],  # pyright:ignore
+        n1.geo.metal_angle[NUM_SPAN // 2],  # pyright:ignore
+        n1.geo.chord_ax[NUM_SPAN // 2],  # pyright:ignore
+        'k',
+        n1.geo.pitch[NUM_SPAN // 2],  # pyright:ignore
+    )
 
+    # Plot meridional profile
+    fig, ax = plt.subplots()
     ax.axis('equal')
     # ax.set_ylim(0.0, 1.2)
     ax.set_ylabel('radius [m]', {'fontsize': 18})
@@ -226,28 +225,12 @@ if PLOTS:
         lines = plot_from_nodes(
             n0,
             n1,
-            ax_chord,
             False,
             offset,
         )
         offset += ax_chord * 1.15
 
     ax.plot([0.0, offset], [0.0, 0.0], color='r', linestyle='dashdot', linewidth=2.5)
-
-
-if PRINTS:
-    for i, node in enumerate(ntw.system.nodes):
-        # For simpler access set n0, n1, n2, ...
-        globals()[f'n{i}'] = node
-        to_print = f"""
-##################
-##### NODE {i} #####
-##################
-    {node}\n
-    """
-        print(to_print)
-
-    ntw.print_structure()
 
 if PLOTS:
     plt.show()

@@ -35,7 +35,7 @@ from adet.fluid.settings import FluidSettings, ExternalFluidModel, IdealGasModel
 
 # Losses
 from adet.losses.base_loss import LossModel
-from adet.losses.basic import PercentageEntropyLoss
+from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.losses.profile import DentonProfileLoss
 from adet.equations.nondimensional import FlowCoefficient, WorkCoefficient
 
@@ -169,6 +169,8 @@ stator = BladeRow(
     extra_equations={
         # Simplified loss model (0% entropy rise)
         PercentageEntropyLoss(0.0): (0, 1),
+        ZeroDeviation(): 0,
+        ZeroDeviation(): 1,
     },
 )
 
@@ -192,6 +194,8 @@ rotor = BladeRow(
         # Work and flow coefficients defined only on rotor
         WorkCoefficient(): (0, 1),
         FlowCoefficient(): 1,
+        ZeroDeviation(): 0,
+        ZeroDeviation(): 1,
         # Simplified loss model
         PercentageEntropyLoss(0.0): (0, 1),
     },

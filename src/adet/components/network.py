@@ -122,10 +122,11 @@ class ComponentNetwork(Generic[T]):
             ),
         )
 
-        # Check that this is not empty (single row case)
         if link_node_couples:
-            for nodes in link_node_couples:
-                self.system.add_equation(ComponentLinker(), nodes)
+            # Check that this is not empty (single row case)
+            for component, nodes in zip(self.components, link_node_couples):
+                for eq in component.linker_equations:
+                    self.system.add_equation(eq(), nodes)
 
     def print_structure(self):
         component_repr = '@ = node\n\nInlet == @0'

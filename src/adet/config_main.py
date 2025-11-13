@@ -17,7 +17,7 @@ from adet.losses.basic import (
     PercTotalPressureLoss,
     PercentageEntropyLoss,
     TotalPressureLoss,
-    DesignAngle,
+    ZeroDeviation,
 )
 
 # Tooling & Components
@@ -126,7 +126,8 @@ row0 = BladeRow(
     extra_equations={
         # |> Losses & Dev
         PercentageEntropyLoss(0.0): (0, 1),
-        DesignAngle(): 1,
+        ZeroDeviation(): 0,
+        ZeroDeviation(): 1,
         # MidspanAngle(): 1,
         # TotalPressureLoss(0.0): (0, 1),
         # DentonProfileLoss(real_model): (0, 1),
