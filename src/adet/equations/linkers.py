@@ -8,12 +8,6 @@ class SpeedLinker(EquationBase):
     """
 
     def residual(self, kin_omega0, kin_U1, geo_rr1):
-        # NOTE: This strange syntax on omega is to ensure
-        # shape consistency (EVERYTHING is a vector, even technically
-        # scalar quantities) witout it omega could change along the span,
-        # which works mathematically but has no physical sense.
-        # The omega we actually refer to is stored on the first spanwise
-        # station (similar to what is done for rmid and height)
         return kin_U1 - kin_omega0[0] * geo_rr1
 
 
@@ -44,10 +38,10 @@ class ComponentLinker(EquationBase):
         stc_smass0,
         stc_smass1,
         # Geometry
-        geo_rr0,
-        geo_rr1,
-        geo_hh0,
-        geo_hh1,
+        geo_rmid0,
+        geo_rmid1,
+        geo_height0,
+        geo_height1,
         geo_meridional_angle0,
         geo_meridional_angle1,
         # Others
@@ -64,8 +58,8 @@ class ComponentLinker(EquationBase):
         r4 = kin_Vm0 - kin_Vm1
 
         # 3. Same geometry distribution
-        r5 = geo_rr0 - geo_rr1
-        r6 = geo_hh0 - geo_hh1
+        r5 = geo_rmid0 - geo_rmid1
+        r6 = geo_height0 - geo_height1
         r7 = geo_meridional_angle0 - geo_meridional_angle1
 
         return r1, r2, r3, r4, r5, r6, r7

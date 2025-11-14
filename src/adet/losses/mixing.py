@@ -76,11 +76,11 @@ class RowMixerLink(EquationBase):
 
     def residual(
         self,
-        geo_throat0,
         geo_pitch0,
-        geo_te_thick0,
-        geo_throat1,
         geo_pitch1,
+        geo_throat0,
+        geo_throat1,
+        geo_te_thick0,
         geo_te_thick1,
     ):
         r1 = geo_throat0 - geo_throat1

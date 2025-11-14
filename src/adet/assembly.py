@@ -9,8 +9,9 @@ from abc import ABC, abstractmethod
 from collections import defaultdict, OrderedDict
 from copy import deepcopy
 import logging
-from typing import Callable, Self, Sequence, Type, Literal
+from typing import Callable, Self, Sequence, Type, Literal, Any
 
+from jax._src.interpreters.partial_eval import FreeVar
 from numpy.typing import NDArray
 from pint import Quantity
 
@@ -40,7 +41,7 @@ from adet.tools.strings import get_arg_state, rm_digits, get_index, get_arg_type
 from adet.equations import EquationBase
 from adet.node import FlowNode
 from adet.constants import NodeStatesNames, ArrayLike
-from adet.tools.context import override_operators
+from adet.tools.context import override_operators, suppress_output
 
 
 logger = logging.getLogger(__name__)
@@ -79,7 +80,7 @@ class SystemAssembler(ABC):
             }
         """
 
-        self._eos_equations: list[EquationBase] = []
+        self._analytic_eos_equations: list[EquationBase] = []
 
         self.nodes: tuple[FlowNode, ...] = tuple()
         """All the nodes called by the equations"""
@@ -384,7 +385,7 @@ class SystemAssembler(ABC):
                         logger.debug(
                             f'Added EoS equation {eq.__class__.__name__} at {node_idx}'
                         )
-                        self._eos_equations.append(eq)
+                        self._analytic_eos_equations.append(eq)
                     except ExistingEquationError:
                         pass
 
@@ -873,7 +874,7 @@ class CasadiSystem(SystemAssembler):
 
         eos_obj = fl_model.eos_object
 
-        self._casadi_eos_callbacks = []
+        self._eos_callbacks = []
 
         discarded_thermo = self._get_discarded_thermo_args()
 
@@ -896,7 +897,7 @@ class CasadiSystem(SystemAssembler):
                 )
 
                 # This is to keep references
-                self._casadi_eos_callbacks.append(casadi_eos_cb)
+                self._eos_callbacks.append(casadi_eos_cb)
 
                 sorted_pair_tuple = pair_based_sorting(*pair_tuple)
 
@@ -1276,3 +1277,18 @@ def {func_name}(equations, {', '.join(self._declared_arguments)}):
         cas_sys = CasadiSystem()
         cas_sys.from_dict(self.to_dict())
         return cas_sys
+
+
+def solve_problem(rootfinder: Any, guess: NDArray, knowns: NDArray):
+    """Simple utility function for solving rootfinding problems"""
+    with suppress_output():
+        logger.info('Solving the system...')
+
+        sol = np.array(
+            rootfinder(
+                guess.flatten(),
+                knowns.flatten(),
+            )
+        )
+
+        return sol

@@ -2,7 +2,6 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-from sympy import N
 
 from adet.equations import EquationBase
 from adet.tools.interpolation import safe_min_clip, fin_diff

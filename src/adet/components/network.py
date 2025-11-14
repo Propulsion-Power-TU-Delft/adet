@@ -1,3 +1,4 @@
+from itertools import pairwise
 from typing import Generic, Sequence, TypeVar
 
 from adet.assembly import SystemAssembler
@@ -15,7 +16,7 @@ from adet.equations.fundamental import (
 
 from adet.equations.definitions import CumMassFlow
 
-from adet.equations.linkers import ComponentLinker, VariableAdder
+from adet.equations.linkers import VariableAdder
 from adet.tools.iter import grouper
 from adet.tools.printing import print_header
 
@@ -70,7 +71,7 @@ class ComponentNetwork(Generic[T]):
         self._read_components(components)
 
         self._add_single_node_eqs(self.num_components)
-        self._link_components(self.num_components)
+        self._link_components()
 
     def _read_components(self, components: Sequence[BaseComponent]):
         for position, comp in enumerate(components):
@@ -95,7 +96,7 @@ class ComponentNetwork(Generic[T]):
             # Single node relationships, make instances!
             [self.system.add_equation(eq(), node_idx) for eq in _SINGLE_NODE_EQUATIONS]
 
-    def _link_components(self, comp_stack_length: int):
+    def _link_components(self):
         # Nomenclature
         # ~~~~~~~~~~~~
         #        ___________________________________
@@ -114,19 +115,12 @@ class ComponentNetwork(Generic[T]):
         # * components couples : (0, 1), (2, 3), ...
         # * link couples : (1, 2), ...
 
-        link_node_couples = list(
-            grouper(
-                range(1, 2 * comp_stack_length),
-                2,
-                incomplete='ignore',
-            ),
-        )
-
-        if link_node_couples:
-            # Check that this is not empty (single row case)
-            for component, nodes in zip(self.components, link_node_couples):
+        if len(self.components) > 1:
+            for comp_index, component in enumerate(self.components[1:], 1):
+                in_node = 2 * comp_index  # Of the current component
+                out_node = in_node - 1  # Of the previous component
                 for eq in component.linker_equations:
-                    self.system.add_equation(eq(), nodes)
+                    self.system.add_equation(eq(), (out_node, in_node))
 
     def print_structure(self):
         component_repr = '@ = node\n\nInlet == @0'

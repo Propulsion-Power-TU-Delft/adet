@@ -36,17 +36,18 @@ class BladeRow(BaseComponent):
     base_equations = [
         # ***
         # |> Fundamental equations - do not remove
-        (MassConservation, (0, 1)),
         (EulerEquation, (0, 1)),
+        (MassConservation, (0, 1)),
+        # |> Link inlet and outlet omega
         (SpeedLinker, (1, 1)),
         (SpeedLinker, (1, 0)),
         # ***
         # |> Common courtesy definitions
-        (BladeCount, 1),
         (Solidity, 1),
+        (BladeCount, 1),
+        (HeightRatio, (0, 1)),
         (AngleDeflection, (0, 1)),
         (MeridionalVelocityRatio, (0, 1)),
-        (HeightRatio, (0, 1)),
         # ***
         # |> TODO: These are hardcoded for testing REMOVE!
         #          user should choose blade and dev. model

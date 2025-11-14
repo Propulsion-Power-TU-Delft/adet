@@ -63,8 +63,3 @@ class ZeroDeviation(EquationBase):
 
     def residual(self, geo_metal_angle0, kin_beta0):
         return kin_beta0 - geo_metal_angle0
-
-
-class Something(EquationBase):
-    def residual(self, geo_alpha0, geo_beta0):
-        pass

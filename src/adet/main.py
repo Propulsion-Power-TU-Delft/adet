@@ -9,7 +9,7 @@ import numpy as np
 import casadi as cs
 
 # Network build
-from adet.assembly import CasadiSystem
+from adet.assembly import CasadiSystem, solve_problem
 from adet.components import ComponentNetwork
 from adet.equations.fundamental import (
     FreeVortexDistribution,
@@ -21,18 +21,14 @@ from adet.fluid.casadi_eos import CasadiEoS
 from adet.fluid.settings import FluidSettings
 
 # Objects Configuration => MODIFY CONFIG FILE TO SET BOUNDARY CONDITIONS
-from adet.config_main import real_model, inlet, row0
+from adet.config_main import real_model, inlet, row0, row1
 
 # Tooling and utils
 from adet.losses.base_loss import LossModel
-from adet.losses.basic import ZeroDeviation
 from adet.losses.profile import DentonProfileLoss
 from adet.tools.iter import grouper
 from adet.tools.loggers import setup_logger
 from adet.components.blade_row import plot_from_nodes
-from adet.tools.context import suppress_output
-from adet.diagnostics import SystemDiagnostics
-
 
 logger = logging.getLogger(__name__)
 jax.config.update('jax_enable_x64', True)
@@ -51,7 +47,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 
 # === SETTINGS
-NUM_SPAN = 5
+NUM_SPAN = 3
 SCALED = True
 PLOTS = True
 PRINTS = True
@@ -72,7 +68,7 @@ ntw = ComponentNetwork(
     settings,  # Fluid settings
     inlet,  # Inlet conditions
     CasadiSystem(spanwise_stations=NUM_SPAN),  # Backend
-    row0,
+    *[row0, row1],
 )
 
 # Add global constraints for ideal gas and
@@ -97,21 +93,6 @@ ntw.system.add_global_constraints(
 ntw.system.build(SCALED)
 
 
-def solve_problem(rootfinder, guess, knowns):
-    """Solve rootfinding problem"""
-    with suppress_output():
-        logger.info('Solving the system...')
-
-        sol = np.array(
-            rootfinder(
-                guess.flatten(),
-                knowns.flatten(),
-            )
-        )
-
-        return sol
-
-
 x0_is = ntw.system.get_initial_guess()
 kn_is = ntw.system.get_scaled_constraints()
 rootfinder_is = ntw.system.make_rootfinder('nlpsol')
@@ -119,30 +100,31 @@ sol_is = solve_problem(rootfinder_is, x0_is, kn_is)
 ntw.system.write_solution_to_nodes(sol_is)
 sol_is_dict = ntw.system.solution_to_dict(sol_is)
 
-# *** With losses and multispan
-sys_is_off = ntw.system.copy()
-sys_is_off.spanwise_stations = NUM_SPAN
-sys_is_off.remove_equation_type(LossModel)
-sys_is_off.add_equation(DentonProfileLoss(real_model), (0, 1))
-sys_is_off.build(SCALED)
-rootfinder_is_off = sys_is_off.make_rootfinder('nlpsol')
+# # *** With losses and multispan
+# sys_is_off = ntw.system.copy()
+# sys_is_off.spanwise_stations = NUM_SPAN
+# sys_is_off.remove_equation_type(LossModel)
+# sys_is_off.add_equation(DentonProfileLoss(real_model), (0, 1))
+# sys_is_off.build(SCALED)
+# rootfinder_is_off = sys_is_off.make_rootfinder('nlpsol')
 
-x0_is_off = sys_is_off.get_initial_guess(sol_is_dict).flatten()
-kn_is_off = sys_is_off.get_scaled_constraints().flatten()
-sol_is_off = solve_problem(rootfinder_is_off, x0_is_off, kn_is_off)
+# x0_is_off = sys_is_off.get_initial_guess(sol_is_dict).flatten()
+# kn_is_off = sys_is_off.get_scaled_constraints().flatten()
+# sol_is_off = solve_problem(rootfinder_is_off, x0_is_off, kn_is_off)
 
 
-num_args = len(ntw.system.free_args)
+# num_args = len(ntw.system.free_args)
 
-ntw.system = sys_is_off
-sol = sol_is_off
+# ntw.system = sys_is
+sol = sol_is
 ntw.system.write_solution_to_nodes(sol)
 
 # === POST-PROCESS ===
+nodes = {}
 if PRINTS:
     for i, node in enumerate(ntw.system.nodes):
         # For simpler access set n0, n1, n2, ...
-        globals()[f'n{i}'] = node
+        nodes[i] = node
         to_print = f"""
 ###################
 ##### NODE {i:<2} #####
@@ -172,7 +154,7 @@ if PLOTS:
         n.kin.plot(n.geo, FONTSIZE)
         plt.title(f'Node number {i}')
 
-    _, smass0 = PT_EOS(n0.tot.p, n0.tot.T)  # pyright:ignore
+    _, smass0 = PT_EOS(nodes[0].tot.p, nodes[0].tot.T)  # pyright:ignore
     # Plot entropy rise
     fig, ax = plt.subplots()
     ax.set_title('Entropy rise')
@@ -192,11 +174,11 @@ if PLOTS:
     pbl = ParabolicCamberline()
     pbl.plot_camber_line(
         ax,
-        n0.geo.metal_angle[NUM_SPAN // 2],  # pyright:ignore
-        n1.geo.metal_angle[NUM_SPAN // 2],  # pyright:ignore
-        n1.geo.chord_ax[NUM_SPAN // 2],  # pyright:ignore
+        nodes[0].geo.metal_angle[NUM_SPAN // 2],  # pyright:ignore
+        nodes[1].geo.metal_angle[NUM_SPAN // 2],  # pyright:ignore
+        nodes[1].geo.chord_ax[NUM_SPAN // 2],  # pyright:ignore
         'k',
-        n1.geo.pitch[NUM_SPAN // 2],  # pyright:ignore
+        nodes[1].geo.pitch[NUM_SPAN // 2],  # pyright:ignore
     )
 
     # Plot meridional profile
@@ -219,12 +201,12 @@ if PLOTS:
 
     offset = 0.0
     for n0_idx, n1_idx in grouper(num_nodes, 2, incomplete='ignore'):
-        n0 = ntw.system.nodes[n0_idx]
-        n1 = ntw.system.nodes[n1_idx]
-        ax_chord = n1.geo.get('chord').to_base_units().magnitude[0]
+        nodes[0] = ntw.system.nodes[n0_idx]
+        nodes[1] = ntw.system.nodes[n1_idx]
+        ax_chord = nodes[1].geo.get('chord').to_base_units().magnitude[0]
         lines = plot_from_nodes(
-            n0,
-            n1,
+            nodes[0],
+            nodes[1],
             False,
             offset,
         )

@@ -15,18 +15,16 @@ It shows how to:
 # Standard library
 from copy import deepcopy
 import logging
-from typing import Literal
 from math import nan
 
 # External libraries
 import matplotlib.pyplot as plt
 import jax
 import numpy as np
-import casadi as cs
 from pint import Quantity
 
 # Network build
-from adet.assembly import CasadiSystem
+from adet.assembly import CasadiSystem, solve_problem
 from adet.components import ComponentNetwork, BladeRow, Shaft, Inlet
 from adet.equations.definitions import DegreeOfReaction, RepeatedStage
 from adet.equations.fundamental import ParabolicCamberline
@@ -44,7 +42,6 @@ from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.iter import grouper
 from adet.tools.loggers import setup_logger
 from adet.components.blade_row import plot_from_nodes
-from adet.tools.context import suppress_output
 from adet.registries import DefaultUnitsRegistry, ScalingRegistry, GuessRegistry
 
 
@@ -65,7 +62,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 # === CONFIGURATION
 # Simulation settings
 NUM_SPAN = 5  # Number of spanwise stations
-NUM_STAGES = 4  # Number of turbine stages (stator-rotor pairs)
+NUM_STAGES = 1  # Number of turbine stages (stator-rotor pairs)
 SCALED = True  # Use scaled equations for better numerical conditioning
 PLOTS = True  # Show plots at end
 PRINTS = True  # Print node information
@@ -151,7 +148,7 @@ inlet = Inlet(
 
 # Stator blade row definition
 stator = BladeRow(
-    'Stator0',
+    'Stator',
     {
         'kin': {
             'alpha': Quantity(70, 'deg'),  # Exit flow angle
@@ -176,7 +173,7 @@ stator = BladeRow(
 
 # Rotor blade row definition
 rotor = BladeRow(
-    'Rotor0',
+    'Rotor',
     {
         'kin': {},
         'geo': {
@@ -191,13 +188,13 @@ rotor = BladeRow(
     },
     rotating_shaft,
     extra_equations={
-        # Work and flow coefficients defined only on rotor
-        WorkCoefficient(): (0, 1),
-        FlowCoefficient(): 1,
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
         # Simplified loss model
         PercentageEntropyLoss(0.0): (0, 1),
+        # Work and flow coefficients defined only on rotor
+        WorkCoefficient(): (0, 1),
+        FlowCoefficient(): 1,
     },
 )
 
@@ -249,90 +246,13 @@ for stage in range(ntw.num_components // 2):
 
 # Build the system (assemble all equations and constraints)
 ntw.system.build(SCALED)
+rootfinder_single_span = ntw.system.make_rootfinder('nlpsol')
+x0 = ntw.system.get_initial_guess()
+kn = ntw.system.get_scaled_constraints()
+sol = solve_problem(rootfinder_single_span, x0, kn)
 
-
-# === SOLVER DEFINITION
-def solve_casadi_sys(
-    system: CasadiSystem,
-    method: Literal['newton', 'nlpsol'],
-    manual_guess={},
-):
-    """
-    Solve the system of equations using CasADi rootfinder.
-
-    Parameters
-    ----------
-    system : CasadiSystem
-        The assembled system to solve
-    method : {'newton', 'nlpsol'}
-        Solver method ('newton' for Newton-Raphson, 'nlpsol' for IPOPT)
-    manual_guess : dict
-        Manual initial guess overrides
-
-    Returns
-    -------
-    sol : casadi.DM
-        Solution vector
-    """
-    x0 = system.get_initial_guess(manual_guess)
-    knowns_stack = system.get_scaled_constraints()
-
-    logger.debug('Building the residual function...')
-    res_func_casadi = system.make_residual_function()
-    free_args_symbols = cs.vertcat(*system.free_args_sym)
-
-    res_expr_partial = res_func_casadi(
-        free_args_symbols,  # Unknowns -> Symbols
-        knowns_stack.flatten(),  # Knowns -> Numerical values
-    )
-
-    rootfind_problem = {
-        'x': free_args_symbols,
-        'g': res_expr_partial,
-    }
-
-    with suppress_output():
-        logger.debug('Building rootfinder object...')
-        match method:
-            case 'newton':
-                # Newton-Raphson solver -> Fast but unstable w/o good guess
-                rootfinder = cs.rootfinder(
-                    'newton_roots',
-                    'newton',
-                    rootfind_problem,
-                    {
-                        'print_iteration': False,
-                        'error_on_fail': True,
-                    },
-                )
-            case 'nlpsol':
-                # IPOPT solver (more robust)
-                rootfinder = cs.rootfinder(
-                    'nlpsol_roots',
-                    'nlpsol',
-                    rootfind_problem,
-                    {
-                        'error_on_fail': True,
-                        'nlpsol': 'ipopt',
-                        'nlpsol_options': {
-                            'ipopt.print_level': 1,
-                            'ipopt.max_iter': 100,
-                            # Quasi-Newton approximation (required for real gas EOS)
-                            'ipopt.hessian_approximation': 'limited-memory',
-                        },
-                    },
-                )
-
-        logger.info('Solving the system...')
-        sol = rootfinder(x0.flatten(), 0.0)
-
-    return sol
-
-
-# === SOLVE THE SYSTEM
-sol = solve_casadi_sys(ntw.system, 'nlpsol')
 # Convert solution to dictionary format
-sol_dict = ntw.system.solution_to_dict(sol.toarray())
+sol_dict = ntw.system.solution_to_dict(sol)
 
 # Build system with loss models and multi_span distribution
 sys_loss = ntw.system.copy()
@@ -353,11 +273,14 @@ for nodes in nodes_by_stage:
 sys_loss.build(SCALED)
 
 ntw.system = sys_loss
-sol_loss = solve_casadi_sys(sys_loss, 'nlpsol', sol_dict)
+rootfinder_full = ntw.system.make_rootfinder('nlpsol')
+x0_full = ntw.system.get_initial_guess(sol_dict)
+kn_full = ntw.system.get_scaled_constraints()
+sol_full = solve_problem(rootfinder_full, x0_full, kn_full)
 
 # Write solution back to FlowNodes
 num_args = len(ntw.system.free_args)
-ntw.system.write_solution_to_nodes(np.array(sol_loss).reshape(num_args, -1))
+ntw.system.write_solution_to_nodes(np.array(sol_full).reshape(num_args, -1))
 
 
 # === POST-PROCESSING AND VISUALIZATION
@@ -403,7 +326,6 @@ if PLOTS:
         lines = plot_from_nodes(
             n0,
             n1,
-            ax_chord,
             False,
             offset,
             color=COLORMAP((n1_idx - 1) / ntw.num_components),

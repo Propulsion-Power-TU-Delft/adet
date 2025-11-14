@@ -29,7 +29,7 @@ class BaseComponent(ABC):
     ]
 
     # These describe extra links between the outlet
-    # node of the component and the next one
+    # inlet node of the component and the previous one
     linker_equations: ClassVar[list[Type[EquationBase]]]
 
     def __init__(
@@ -83,7 +83,6 @@ class BaseComponent(ABC):
                     f' EquationBase class type. Please provide a class object,'
                     f' not an instance'
                 )
-
             if not isinstance(position, (int, tuple)):
                 raise TypeError(
                     f'Base equation position for `{eq_class.__name__}` '
