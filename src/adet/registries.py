@@ -256,6 +256,16 @@ class ScalingRegistry(BaseRegistry[PlainUnit, float]):
         return super().get(units)
 
 
+class ScalarsRegistry(BaseRegistry[str, None]):
+    DEFAULTS = {
+        'omega': None,
+        'rmid': None,
+        'rmidRatio': None,
+        'height': None,
+        'heightRatio': None,
+    }
+
+
 # This registry is not actively used anywhere for now
 class VariableBoundsRegistry(
     BaseRegistry[

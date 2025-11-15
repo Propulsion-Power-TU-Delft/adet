@@ -61,7 +61,7 @@ static_shaft = Shaft(
 )
 rotating_shaft = Shaft(
     Quantity(1000.0, 'rpm'),
-    is_constrained=False,
+    is_constrained=True,
 )
 
 # COMPONENT STACK
@@ -76,8 +76,8 @@ inlet = Inlet(
             'height': 0.2,
         },
         'tot': {
-            'T': 700,
             'p': 6e5,  # impose at outlet
+            'T': 700,
         },
         'oth': {
             'mach': 0.15,
@@ -125,7 +125,8 @@ row1 = BladeRow(
     'Rotor',
     {
         'kin': {
-            'alpha': Quantity(0, 'deg'),
+            # 'alpha': Quantity(0, 'deg'),
+            # 'U': [10, 20, 30],
         },
         'geo': {
             # Meridional

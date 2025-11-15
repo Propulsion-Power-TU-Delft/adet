@@ -68,7 +68,7 @@ ntw = ComponentNetwork(
     settings,  # Fluid settings
     inlet,  # Inlet conditions
     CasadiSystem(spanwise_stations=NUM_SPAN),  # Backend
-    *[row0, row1],
+    *[row0],  # , row1],
 )
 
 # Add global constraints for ideal gas and
@@ -93,9 +93,9 @@ ntw.system.add_global_constraints(
 ntw.system.build(SCALED)
 
 
+rootfinder_is = ntw.system.make_rootfinder('nlpsol')
 x0_is = ntw.system.get_initial_guess()
 kn_is = ntw.system.get_scaled_constraints()
-rootfinder_is = ntw.system.make_rootfinder('nlpsol')
 sol_is = solve_problem(rootfinder_is, x0_is, kn_is)
 ntw.system.write_solution_to_nodes(sol_is)
 sol_is_dict = ntw.system.solution_to_dict(sol_is)

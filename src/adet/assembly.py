@@ -11,7 +11,6 @@ from copy import deepcopy
 import logging
 from typing import Callable, Self, Sequence, Type, Literal, Any
 
-from jax._src.interpreters.partial_eval import FreeVar
 from numpy.typing import NDArray
 from pint import Quantity
 
@@ -31,7 +30,7 @@ from adet.fluid.settings import (
     ExternalFluidModel,
     FluidSettings,
 )
-from adet.registries import GuessRegistry, ScalingRegistry
+from adet.registries import GuessRegistry, ScalingRegistry, ScalarsRegistry
 from adet.tools.coolprop_utils import (
     pair_based_sorting,
     pair_id_from_name,
@@ -52,6 +51,7 @@ def get_units_string(var):
 
 
 _scale_reg = ScalingRegistry()
+_scalars_reg = ScalarsRegistry()
 _guess_reg = GuessRegistry()
 
 
@@ -94,6 +94,8 @@ class SystemAssembler(ABC):
         self.constraints: tuple[str, ...] = tuple()
         """All the constraints"""
 
+        self._scalar_arguments: tuple[str, ...] = tuple()
+
         self._global_constraints: defaultdict[
             NodeStatesNames, dict[str, ArrayLike | PlainQuantity]
         ] = defaultdict(dict)
@@ -108,7 +110,7 @@ class SystemAssembler(ABC):
             }
         """
 
-        self.constraints_values: NDArray = np.array([])
+        self.constraints_values: list[NDArray] = []
         """All the constraints defined by the FlowNodes"""
 
         self.boundary_conditions: defaultdict[
@@ -190,10 +192,10 @@ class SystemAssembler(ABC):
         logger.debug('Writing boundary conditions to nodes...')
 
         def to_base_units(var) -> NDArray:
-            if not isinstance(var, PlainQuantity):
-                mag = var
-            else:
+            if isinstance(var, PlainQuantity):
                 mag = var.to_base_units().magnitude
+            else:
+                mag = var
 
             return np.atleast_1d(mag)
 
@@ -201,8 +203,13 @@ class SystemAssembler(ABC):
             # Add virtual constraints (e.g. cp, cv for ideal gas)
             self.add_boundary_conditions(self._global_constraints, node_idx)
 
-            # Convert to base units arrays
-            bc_arrays = jax.tree.map(to_base_units, self.boundary_conditions[node_idx])
+            # Convert to base units arrays,
+            # lists and tuples are treated as leaves
+            bc_arrays = jax.tree.map(
+                to_base_units,
+                self.boundary_conditions[node_idx],
+                is_leaf=lambda x: isinstance(x, (list, tuple)),
+            )
 
             for state_id, constraints in bc_arrays.items():
                 state_obj = node.fetch_state(state_id)
@@ -316,12 +323,13 @@ class SystemAssembler(ABC):
             self._scaled = True
 
         self._create_nodes()
+        self._declared_arguments = self._ingest_eqs_arguments()
+
         self._add_analytical_eos()
         self._write_bc_to_nodes()
         self.constraints, self.constraints_values = self._get_constraints()
 
         # Arguments manipulation
-        self._declared_arguments = self._ingest_eqs_arguments()
         self.free_args = self._identify_free_arguments()
 
         # Validity checks and scaling
@@ -389,7 +397,7 @@ class SystemAssembler(ABC):
                     except ExistingEquationError:
                         pass
 
-    def _get_constraints(self) -> tuple[tuple[str, ...], NDArray]:
+    def _get_constraints(self) -> tuple[tuple[str, ...], list[NDArray]]:
         """
         Get all the constraints defined by the nodes taking part in
         the system of equations
@@ -398,17 +406,17 @@ class SystemAssembler(ABC):
         constraint_values = []
 
         for node_idx, node in enumerate(self.nodes):
-            for key, value in node.get_constraints().items():
-                constraint_names.append(key + str(node_idx))
-                constraint_values.append(value.to_base_units().magnitude)
+            for arg_no_idx, value in node.get_constraints().items():
+                arg = arg_no_idx + str(node_idx)
+                constraint_names.append(arg)
+                constr_value = value.to_base_units().magnitude
 
-        if constraint_values:
-            const_values_ret = np.vstack(constraint_values)
-        else:
-            # Catch the case with no constraints
-            const_values_ret = np.array([])
+                if arg in self._scalar_arguments:
+                    constr_value = np.atleast_1d(constr_value[0])
 
-        return tuple(constraint_names), const_values_ret
+                constraint_values.append(constr_value)
+
+        return tuple(constraint_names), constraint_values
 
     def _ingest_eqs_arguments(self) -> tuple[str, ...]:
         """
@@ -418,6 +426,7 @@ class SystemAssembler(ABC):
         maps the relative argument of that equation to the absolute system arguments.
         """
         system_arguments = []
+        scalar_arguments = []
 
         logger.debug('Reading all the equation arguments...')
 
@@ -434,21 +443,38 @@ class SystemAssembler(ABC):
                 arg_rel_idx = get_index(arg)
                 arg_abs_idx = index_map[arg_rel_idx]
 
+                arg_type = get_arg_type(arg)
+
                 arg_no_digit = rm_digits(arg)
 
-                system_arguments.append(
-                    arg_no_digit + str(eq_position[arg_rel_idx]),
-                )
+                system_arg = arg_no_digit + str(eq_position[arg_rel_idx])
+                system_arguments.append(system_arg)
+
+                if arg_type in _scalars_reg:
+                    scalar_arguments.append(system_arg)
 
                 # Create the variable in the node
                 self.nodes[arg_abs_idx].create_vars(arg_no_digit)
                 self._arg_maps[eq][arg] = arg_no_digit + str(arg_abs_idx)
 
         system_arguments = sorted(set(system_arguments))
+        self._scalar_arguments = tuple(scalar_arguments)
 
         logger.debug(f'Arguments detected are: {", ".join(system_arguments)}')
 
         return tuple(system_arguments)
+
+    def _make_arg_structure(self, arguments: Sequence[str]):
+        """
+        Detect the arguent structure of a sequence of arguments
+        """
+        arguments_struct = []
+        for arg in arguments:
+            num_span = 1 if arg in self._scalar_arguments else self.spanwise_stations
+            branch = num_span * [0]
+            arguments_struct.append(branch)
+
+        return jax.tree.structure(arguments_struct)
 
     def _identify_free_arguments(self) -> tuple[str, ...]:
         """
@@ -608,18 +634,18 @@ class SystemAssembler(ABC):
         """Build multi-span scaling factors for constraints"""
         return self._argument_scaling_helper(self.constraints)
 
-    def _argument_scaling_helper(self, arguments: Sequence[str]):
+    def _argument_scaling_helper(self, arguments: Sequence[str]) -> list[float]:
         """Returns the arguments scales for a sequence of system arguments"""
         if not self._scaled:
-            scales = np.ones(len(arguments))
+            scales = len(arguments) * [1.0]
         else:
-            all_args_scales = jax.tree.map(
+            all_args_scales: dict[str, float] = jax.tree.map(
                 self._assign_scaling_factor,
                 self._arguments_units,
             )
+            scales = [all_args_scales[arg] for arg in arguments]
 
-            scales = np.array([all_args_scales[arg] for arg in arguments])
-        return np.tile(scales, (self.spanwise_stations, 1)).T
+        return scales
 
     @property
     def equations_indices(self):
@@ -661,7 +687,7 @@ class SystemAssembler(ABC):
 
             scales = np.array(eq_scales)
 
-        return np.tile(scales, (self.spanwise_stations, 1)).T
+        return scales
 
     def _split_arguments_by_node(self, arguments: Sequence[str]):
         """
@@ -677,50 +703,58 @@ class SystemAssembler(ABC):
 
         return node_by_args
 
-    def solution_to_dict(self, argument_values: NDArray) -> dict[str, NDArray]:
+    def _unflatten_solution(self, solution_values: NDArray) -> list[NDArray]:
+        """Unflatten the solution based on a PyTree definition"""
+        free_args_struct = self._make_arg_structure(self.free_args)
+        solution_values_inflated = jax.tree.unflatten(
+            free_args_struct, solution_values.flatten().tolist()
+        )
+
+        return list(map(np.array, solution_values_inflated))
+
+    def solution_to_dict(
+        self, solution_values: list[NDArray] | NDArray
+    ) -> dict[str, NDArray]:
         """
         Simple utility method for mapping some argument values to a dict pointing
         to which argument they belong, useful for passing information between
         systems for initialization
         """
 
-        argument_values = argument_values.reshape(
-            len(self.free_args),
-            self.spanwise_stations,
-        )
+        if isinstance(solution_values, np.ndarray):
+            solution_values = self._unflatten_solution(solution_values)
 
         if self._scaled:
-            argument_values = argument_values * self.free_args_scaling
+            solution_values = jax.tree.map(
+                lambda x, y: x * y,
+                solution_values,
+                self.free_args_scaling,
+            )
 
         # Arguments in absolute indices
-        return {arg: argument_values[idx] for idx, arg in enumerate(self.free_args)}
+        return {arg: solution_values[idx] for idx, arg in enumerate(self.free_args)}
 
-    def write_solution_to_nodes(self, free_argument_values: NDArray):
+    def write_solution_to_nodes(self, solution_values: NDArray):
         """
         Dispatch the provided values to the correct node and return
         the arguments in absolute indices
         """
-
-        free_argument_values = np.array(free_argument_values).reshape(
-            len(self.free_args), -1
-        )
         self._check_built()
 
         split_arg_dictionaries = self._split_arguments_by_node(self.free_args)
+        solution_dict = self.solution_to_dict(solution_values)
 
-        args_values = self.solution_to_dict(free_argument_values)
-
-        arg_print = ', '.join(args_values)
+        arg_print = ', '.join(solution_dict)  # Debug print
         logger.debug(f'Writing arguments to node: {arg_print}')
 
         for node, args_to_write in split_arg_dictionaries.items():
             node_idx = str(self.nodes.index(node))
             node.write_to_node(
-                {arg: args_values[arg + node_idx] for arg in args_to_write},
+                {arg: solution_dict[arg + node_idx] for arg in args_to_write},
                 fixed=False,
             )
 
-        return args_values
+        return solution_dict
 
     def to_symbolic(self) -> tuple[sp.Expr, ...]:
         """
@@ -763,30 +797,33 @@ class SystemAssembler(ABC):
     def make_residual_function(self):
         self._check_built()
 
-    def get_scaled_constraints(self) -> NDArray:
-        return self.constraints_values / self.constraints_scaling
+    def get_scaled_constraints(self) -> list[NDArray]:
+        return jax.tree.map(
+            lambda x, y: x / y,
+            self.constraints_values,
+            self.constraints_scaling,
+        )
 
     def get_initial_guess(
-        self, manual_values: dict[str, NDArray] | None = None
-    ) -> NDArray:
+        self, manual_values: dict[str, NDArray | float] = {}
+    ) -> list[NDArray]:
         self._check_built()
 
         guesses = []
-
-        def span_expander(value):
-            return value * np.ones(self.spanwise_stations)
+        free_args_scaling = self.free_args_scaling
 
         for idx, arg in enumerate(self.free_args):
             arg_type = get_arg_type(arg)
             arg_state = get_arg_state(arg)
 
             # If there is a manual value, overwrite the guess registry
-            if manual_values is not None and arg in manual_values:
-                guess_value = span_expander(manual_values[arg])
+            if arg in manual_values:
+                guess_value = manual_values[arg]
                 logger.debug(f'Using manual value {guess_value} for {arg}')
-            # Else, If a guess is available in the registry
+
+            # If a guess is available in the registry
             elif arg_type in _guess_reg:
-                guess_value = span_expander(_guess_reg[arg_type])
+                guess_value = _guess_reg[arg_type]
 
                 # Vary the total and static values, avoid singularities
                 if arg_state == 'stc':
@@ -809,12 +846,17 @@ class SystemAssembler(ABC):
                     # Add the input value to the registry
                     _guess_reg[arg_type] = guess_value
 
+            guess_value = np.atleast_1d(guess_value)
+
+            if arg not in self._scalar_arguments:
+                guess_value = np.repeat(guess_value, self.spanwise_stations)
+
             # Scale
-            scaling_factor = self.free_args_scaling[idx]
+            scaling_factor = free_args_scaling[idx]
             guess_value_scaled = guess_value / scaling_factor
             guesses.append(guess_value_scaled)
 
-        return np.array(guesses)
+        return guesses
 
 
 class CasadiSystem(SystemAssembler):
@@ -836,13 +878,19 @@ class CasadiSystem(SystemAssembler):
         self._build_composed_symbols()
         self._build_residual_expressions()
 
-    @staticmethod
     def _create_symbols(
-        names: Sequence[str], num_span: int, scale_suffix: str
+        self, arg_names: Sequence[str], num_span: int, scale_suffix: str
     ) -> tuple[list[cs.MX], list[cs.MX]]:
         """Helper to create symbols and their scaled versions."""
-        symbols = [cs.MX.sym(name, num_span) for name in names]  # pyright:ignore
-        scales = [cs.MX.sym(name + scale_suffix, num_span) for name in names]  # pyright:ignore
+        symbols = []
+        scales = []
+
+        for arg in arg_names:
+            symbol_length = 1 if arg in self._scalar_arguments else num_span
+            symbols.append(cs.MX.sym(arg, symbol_length))  # pyright:ignore
+            # -> Choice: Scales are all single dimensional
+            scales.append(cs.MX.sym(arg + scale_suffix, 1))  # pyright:ignore
+
         return symbols, scales
 
     def _build_base_symbols(self):
@@ -923,7 +971,7 @@ class CasadiSystem(SystemAssembler):
         MX representation of each argument, mapped from the relative equation
         indices to the absolute system indices.
         """
-        # Build the product of each symbolic variable for their scaling value
+        # === Build the product of each symbolic variable for their scaling value
         # 1. For free arguments
         free_args_products: dict[str, cs.MX] = {
             sym.name(): sym * scale
@@ -938,7 +986,7 @@ class CasadiSystem(SystemAssembler):
 
         all_args_products = {**free_args_products, **constraints_products}
 
-        # 3. Build symbols that derive from the equation of state
+        # === Build equation of state symbols
         casadi_eos_symbols = self._build_equations_of_state(all_args_products)
 
         self._all_symbols = {**all_args_products, **casadi_eos_symbols}
@@ -948,7 +996,7 @@ class CasadiSystem(SystemAssembler):
 
         # Build scaling symbols for all equations
         self._eq_scales_sym = [
-            cs.MX.sym(f'eq{idx}{self.scale_suffix}', num_span)  # pyright:ignore
+            cs.MX.sym(f'eq{idx}{self.scale_suffix}', 1)  # pyright:ignore
             for idx in range(self.num_equations)
         ]
 
@@ -1003,9 +1051,9 @@ class CasadiSystem(SystemAssembler):
         )
 
         # Numerical values for scaling of variables and equations
-        free_args_scaling_values = self.free_args_scaling.flatten()
-        const_scaling_values = self.constraints_scaling.flatten()
-        eq_scaling_values = self.equations_scaling.flatten()
+        free_args_scaling_values = self.free_args_scaling
+        const_scaling_values = self.constraints_scaling
+        eq_scaling_values = self.equations_scaling
 
         res_part_expr = res_full_func(
             free_args,
@@ -1279,16 +1327,14 @@ def {func_name}(equations, {', '.join(self._declared_arguments)}):
         return cas_sys
 
 
-def solve_problem(rootfinder: Any, guess: NDArray, knowns: NDArray):
+def solve_problem(rootfinder: Any, guess: list[NDArray], knowns: list[NDArray]):
     """Simple utility function for solving rootfinding problems"""
     with suppress_output():
         logger.info('Solving the system...')
 
-        sol = np.array(
-            rootfinder(
-                guess.flatten(),
-                knowns.flatten(),
-            )
-        )
+        guess_cat = np.concatenate(guess)
+        knowns_cat = np.concatenate(knowns)
+
+        sol = np.array(rootfinder(guess_cat, knowns_cat))
 
         return sol

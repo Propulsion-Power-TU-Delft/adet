@@ -8,7 +8,7 @@ class SpeedLinker(EquationBase):
     """
 
     def residual(self, kin_omega0, kin_U1, geo_rr1):
-        return kin_U1 - kin_omega0[0] * geo_rr1
+        return kin_U1 - kin_omega0 * geo_rr1
 
 
 class ComponentLinker(EquationBase):

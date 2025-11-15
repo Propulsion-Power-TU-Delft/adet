@@ -183,9 +183,9 @@ class MeridionalUniform(EquationBase):
             unit_space = np.linspace(0, 1, spanwise_stations)
 
             r1 = geo_rr0 - (
-                geo_rmid0[0]
-                - geo_height0[0] / 2 * np.cos(geo_meridional_angle0[0])
-                + unit_space * (geo_height0[0] * np.cos(geo_meridional_angle0[0]))
+                geo_rmid0
+                - geo_height0 / 2 * np.cos(geo_meridional_angle0)
+                + unit_space * (geo_height0 * np.cos(geo_meridional_angle0))
             )
 
             r2 = geo_hh0 - geo_height0 / spanwise_stations
