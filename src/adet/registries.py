@@ -257,12 +257,35 @@ class ScalingRegistry(BaseRegistry[PlainUnit, float]):
 
 
 class ScalarsRegistry(BaseRegistry[str, None]):
+    """
+    Quantities that should be always be treated as scalars,
+
+    Note:
+    -----
+    This may not always be necessary as the system may be
+    well defined with some arguments that act as scalars
+    but are just constant-valued vectors (e.g. cumulative
+    massflow).
+    Instead, if the problem is being solved FOR one of these variables,
+    having them appear in the system at only at one
+    spanwise station is problematic.
+    For example, kin_omega0 (node 0) is unknown, but it appears
+    only as kin_omega0[0] e.g. in SpeedLinker, because physically
+    the user wants to make it constant. The root problem is apparently
+    well defined (n equations = n unknowns), but the other `spurious`
+    components of omega DO NOT appear in the system, meaning the
+    rootfinder will always fail due to a rank deficiency in the Jacobian.
+    """
+
     DEFAULTS = {
         'omega': None,
         'rmid': None,
-        'rmidRatio': None,
+        'rmidRatio': None,  # Not used
         'height': None,
         'heightRatio': None,
+        'cum_massflow': None,
+        'meridional_angle': None,
+        'n_blades': None,
     }
 
 

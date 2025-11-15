@@ -5,18 +5,11 @@ import logging
 # External libraries
 import matplotlib.pyplot as plt
 import jax
-import numpy as np
-import casadi as cs
 
 # Network build
 from adet.assembly import CasadiSystem, solve_problem
 from adet.components import ComponentNetwork
-from adet.equations.fundamental import (
-    FreeVortexDistribution,
-    NisRe,
-    ParabolicCamberline,
-    SimpleRadialEquilibrium,
-)
+from adet.equations.fundamental import ParabolicCamberline
 from adet.fluid.casadi_eos import CasadiEoS
 from adet.fluid.settings import FluidSettings
 
@@ -49,7 +42,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 # === SETTINGS
 NUM_SPAN = 3
 SCALED = True
-PLOTS = True
+PLOTS = False
 PRINTS = True
 
 # NOTE: I have now forced the system to add all possible update variables to each single
@@ -68,7 +61,7 @@ ntw = ComponentNetwork(
     settings,  # Fluid settings
     inlet,  # Inlet conditions
     CasadiSystem(spanwise_stations=NUM_SPAN),  # Backend
-    *[row0],  # , row1],
+    *[row0, row1],
 )
 
 # Add global constraints for ideal gas and
@@ -94,11 +87,13 @@ ntw.system.build(SCALED)
 
 
 rootfinder_is = ntw.system.make_rootfinder('nlpsol')
+
 x0_is = ntw.system.get_initial_guess()
 kn_is = ntw.system.get_scaled_constraints()
+
 sol_is = solve_problem(rootfinder_is, x0_is, kn_is)
-ntw.system.write_solution_to_nodes(sol_is)
-sol_is_dict = ntw.system.solution_to_dict(sol_is)
+
+sol_dict = ntw.system.write_solution_to_nodes(sol_is)
 
 # # *** With losses and multispan
 # sys_is_off = ntw.system.copy()

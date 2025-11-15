@@ -4,7 +4,7 @@ import numpy as np
 from adet.equations.base_equation import EquationBase
 
 
-class MixingMassBalance(EquationBase):
+class MixingBalances(EquationBase):
     """Balances of mass, momentum and energy for a mixing"""
 
     def _get_base_pressure(self):
@@ -12,7 +12,7 @@ class MixingMassBalance(EquationBase):
 
     # TODO:
     # 1. Check if choked / sonic loop
-    # 2. Add Sieverding (Check turbosim)
+    # 2. Add Sieverding base pressures (Check turbosim)
 
     def residual(
         self,

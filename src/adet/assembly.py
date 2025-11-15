@@ -992,8 +992,6 @@ class CasadiSystem(SystemAssembler):
         self._all_symbols = {**all_args_products, **casadi_eos_symbols}
 
     def _build_residual_expressions(self):
-        num_span = self.spanwise_stations
-
         # Build scaling symbols for all equations
         self._eq_scales_sym = [
             cs.MX.sym(f'eq{idx}{self.scale_suffix}', 1)  # pyright:ignore
@@ -1001,10 +999,6 @@ class CasadiSystem(SystemAssembler):
         ]
 
         # Build and concatenate residual equations
-        logger.info(
-            f'System info: {num_span * len(self.free_args)} total variables, '
-            f'{num_span * self.num_equations} total equations'
-        )
         logger.info('Building residual equation symbolics (this may take a while)...')
 
         residuals = []
@@ -1022,6 +1016,11 @@ class CasadiSystem(SystemAssembler):
                 jax.tree.leaves(residuals),
                 self._eq_scales_sym,
             )
+        )
+        num_vars = max(cs.vertcat(*self.free_args_sym).shape)
+        num_residuals = max(cs.vertcat(*self._res_expr_scaled).shape)
+        logger.info(
+            f'System info: {num_vars} total variables, {num_residuals} total equations'
         )
 
     def make_residual_function(self):

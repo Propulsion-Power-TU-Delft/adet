@@ -362,7 +362,6 @@ class ThermostateContainer(VariableContainer):
 
 if __name__ == '__main__':
     import CoolProp as cp
-    from adet.fluid.settings import FluidModel
 
     n_span = 11
 

@@ -38,8 +38,8 @@ class ComponentLinker(EquationBase):
         stc_smass0,
         stc_smass1,
         # Geometry
-        geo_rmid0,
-        geo_rmid1,
+        geo_rr0,
+        geo_rr1,
         geo_height0,
         geo_height1,
         geo_meridional_angle0,
@@ -58,11 +58,9 @@ class ComponentLinker(EquationBase):
         r4 = kin_Vm0 - kin_Vm1
 
         # 3. Same geometry distribution
-        r5 = geo_rmid0 - geo_rmid1
-        r6 = geo_height0 - geo_height1
-        r7 = geo_meridional_angle0 - geo_meridional_angle1
+        r5 = geo_rr0 - geo_rr1
 
-        return r1, r2, r3, r4, r5, r6, r7
+        return r1, r2, r3, r4, r5
 
 
 class VariableAdder(EquationBase):

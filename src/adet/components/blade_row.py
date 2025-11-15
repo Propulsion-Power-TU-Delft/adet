@@ -23,7 +23,7 @@ from adet.equations.linkers import SpeedLinker, ComponentLinker
 from adet.losses import LossModel
 
 # Dependencies and tooling
-from adet.losses.mixing import MixingMassBalance, RowMixerLink
+from adet.losses.mixing import MixingBalances, RowMixerLink
 from adet.node import FlowNode
 from adet.components import BaseComponent, Shaft
 from adet.geometry import BezierCurve, StraightLine
@@ -50,7 +50,6 @@ class BladeRow(BaseComponent):
         (MeridionalVelocityRatio, (0, 1)),
         # ***
         # |> TODO: These are hardcoded for testing REMOVE!
-        #          user should choose blade and dev. model
         (ParabolicCamberline, (0, 1)),  # Camber line geometry
     ]
 
@@ -117,7 +116,7 @@ class {CLASS_NAME}(EquationBase):
 
 class DownstreamMixer(BaseComponent):
     base_equations = [
-        (MixingMassBalance, (0, 1)),
+        (MixingBalances, (0, 1)),
     ]
 
     linker_equations = [

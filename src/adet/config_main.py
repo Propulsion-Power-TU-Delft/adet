@@ -1,6 +1,5 @@
 """Define some components"""
 
-from math import nan
 from pint import Quantity
 
 # Equations
@@ -40,12 +39,13 @@ _dfu_reg.from_dict(
         'VmRatio': 'dimensionless',
         'Vt_mid': 'm/s',  # For vortex distributions
         'alpha_mid': 'rad',  # For vortex distributions
-        'Cd_profile': 'dimensionless',  # For profile losses
         'sizeParameter': 'meters',
         'n_blades': 'dimensionless',
+        # Profile losses
+        'Cd_profile': 'dimensionless',
         'xi_by_camb_len_A': 'meters',
         'xi_by_camb_len_B': 'meters',
-        'k_prof': '',
+        'k_prof': 'dimensionless',
     }
 )
 
@@ -69,6 +69,7 @@ inlet = Inlet(
     {
         'kin': {
             'alpha': Quantity(0, 'deg'),
+            'Vm': Quantity(80, 'm/s'),
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
@@ -80,7 +81,6 @@ inlet = Inlet(
             'T': 700,
         },
         'oth': {
-            'mach': 0.15,
             # 'cum_massflow': 90,
         },
     }
@@ -125,8 +125,7 @@ row1 = BladeRow(
     'Rotor',
     {
         'kin': {
-            # 'alpha': Quantity(0, 'deg'),
-            # 'U': [10, 20, 30],
+            'beta': Quantity(0, 'deg'),
         },
         'geo': {
             # Meridional
@@ -135,14 +134,13 @@ row1 = BladeRow(
             # Blade
             'chord_ax': 0.15,
             'n_blades': 25,
-            # 'solidity': 0.4,
         },
         'tot': {
             # 'p': 6e5, # Impose either here or at inlet
         },
         'oth': {
             'heightRatio': 1.1,
-            'workCoeff': 1.0,
+            # 'workCoeff': 1.0,
         },
     },
     shaft=rotating_shaft,

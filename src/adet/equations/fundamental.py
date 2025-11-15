@@ -175,6 +175,13 @@ class MeridionalUniform(EquationBase):
         geo_meridional_angle0,
         geo_area0,
     ):
+        #          ==    rr[n] + hh[n] / 2
+        #           \
+        #  |\        +  <- rr[n]
+        #  |_\        \
+        #  |  \       ==  rr[n] + hh[n] / 2
+        #   mer_angle
+
         spanwise_stations = max(geo_rr0.shape)
         if spanwise_stations == 1:
             r1 = geo_rr0 - geo_rmid0
@@ -182,14 +189,18 @@ class MeridionalUniform(EquationBase):
         else:
             unit_space = np.linspace(0, 1, spanwise_stations)
 
+            # Segment between innermost and outermost stations
+            quasi_height = (spanwise_stations - 1) * geo_hh0
+
+            r_hub = geo_rmid0 - quasi_height / 2 * np.cos(geo_meridional_angle0)
+
             r1 = geo_rr0 - (
-                geo_rmid0
-                - geo_height0 / 2 * np.cos(geo_meridional_angle0)
-                + unit_space * (geo_height0 * np.cos(geo_meridional_angle0))
+                r_hub + unit_space * quasi_height * np.cos(geo_meridional_angle0)
             )
 
-            r2 = geo_hh0 - geo_height0 / spanwise_stations
+            r2 = geo_hh0**2**0.5 - geo_height0 / spanwise_stations
 
+        # Circular annuli at various spanwise
         r3 = geo_area0 - np.pi * (
             (geo_rr0 + geo_hh0 / 2) ** 2 - (geo_rr0 - geo_hh0 / 2) ** 2
         )
