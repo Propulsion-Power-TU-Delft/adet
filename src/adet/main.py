@@ -42,7 +42,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 # === SETTINGS
 NUM_SPAN = 3
 SCALED = True
-PLOTS = False
+PLOTS = True
 PRINTS = True
 
 # NOTE: I have now forced the system to add all possible update variables to each single
@@ -93,18 +93,19 @@ kn_is = ntw.system.get_scaled_constraints()
 
 sol_is = solve_problem(rootfinder_is, x0_is, kn_is)
 
-sol_dict = ntw.system.write_solution_to_nodes(sol_is)
+sol_is_dict = ntw.system.write_solution_to_nodes(sol_is)
 
 # # *** With losses and multispan
 # sys_is_off = ntw.system.copy()
 # sys_is_off.spanwise_stations = NUM_SPAN
 # sys_is_off.remove_equation_type(LossModel)
 # sys_is_off.add_equation(DentonProfileLoss(real_model), (0, 1))
+# sys_is_off.add_equation(DentonProfileLoss(real_model), (2, 3))
 # sys_is_off.build(SCALED)
 # rootfinder_is_off = sys_is_off.make_rootfinder('nlpsol')
-
-# x0_is_off = sys_is_off.get_initial_guess(sol_is_dict).flatten()
-# kn_is_off = sys_is_off.get_scaled_constraints().flatten()
+#
+# x0_is_off = sys_is_off.get_initial_guess(sol_is_dict)
+# kn_is_off = sys_is_off.get_scaled_constraints()
 # sol_is_off = solve_problem(rootfinder_is_off, x0_is_off, kn_is_off)
 
 
@@ -205,7 +206,7 @@ if PLOTS:
             False,
             offset,
         )
-        offset += ax_chord * 1.15
+        offset += ax_chord * 1.05
 
     ax.plot([0.0, offset], [0.0, 0.0], color='r', linestyle='dashdot', linewidth=2.5)
 

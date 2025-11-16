@@ -42,14 +42,14 @@ class BladeRow(BaseComponent):
         (SpeedLinker, (1, 1)),
         (SpeedLinker, (1, 0)),
         # ***
-        # |> Common courtesy definitions
-        (Solidity, 1),
-        (BladeCount, 1),
         (HeightRatio, (0, 1)),
         (AngleDeflection, (0, 1)),
         (MeridionalVelocityRatio, (0, 1)),
         # ***
         # |> TODO: These are hardcoded for testing REMOVE!
+        # |> Common courtesy definitions
+        (Solidity, 1),
+        (BladeCount, 1),
         (ParabolicCamberline, (0, 1)),  # Camber line geometry
     ]
 

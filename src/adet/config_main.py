@@ -90,7 +90,7 @@ row0 = BladeRow(
     'Stator',
     {
         'kin': {
-            'alpha': Quantity(70, 'deg'),
+            # 'alpha': Quantity(70, 'deg'),
         },
         'geo': {
             # Meridional
@@ -106,7 +106,7 @@ row0 = BladeRow(
         },
         'oth': {
             'heightRatio': 1.1,
-            # 'mach': 0.3,
+            'mach': 0.3,
         },
     },
     shaft=static_shaft,
@@ -125,7 +125,8 @@ row1 = BladeRow(
     'Rotor',
     {
         'kin': {
-            'beta': Quantity(0, 'deg'),
+            # 'beta': Quantity(0, 'deg'),
+            # 'alpha': 0.0,
         },
         'geo': {
             # Meridional
@@ -133,14 +134,14 @@ row1 = BladeRow(
             'rmid': 0.5,
             # Blade
             'chord_ax': 0.15,
-            'n_blades': 25,
+            'n_blades': 22,
         },
         'tot': {
             # 'p': 6e5, # Impose either here or at inlet
         },
         'oth': {
             'heightRatio': 1.1,
-            # 'workCoeff': 1.0,
+            'workCoeff': 1.5,
         },
     },
     shaft=rotating_shaft,

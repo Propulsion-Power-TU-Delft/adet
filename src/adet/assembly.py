@@ -805,7 +805,7 @@ class SystemAssembler(ABC):
         )
 
     def get_initial_guess(
-        self, manual_values: dict[str, NDArray | float] = {}
+        self, manual_values: dict[str, NDArray] = {}
     ) -> list[NDArray]:
         self._check_built()
 
@@ -848,8 +848,16 @@ class SystemAssembler(ABC):
 
             guess_value = np.atleast_1d(guess_value)
 
-            if arg not in self._scalar_arguments:
-                guess_value = np.repeat(guess_value, self.spanwise_stations)
+            if max(guess_value.shape) != self.spanwise_stations:
+                if max(guess_value.shape) != 1:
+                    logger.warning(
+                        f'Length mismatch in guess for {arg},'
+                        f' using the first element as guess'
+                    )
+                    guess_value = guess_value[0]
+
+                if arg not in self._scalar_arguments:
+                    guess_value = np.repeat(guess_value, self.spanwise_stations)
 
             # Scale
             scaling_factor = free_args_scaling[idx]

@@ -61,7 +61,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 # === CONFIGURATION
 # Simulation settings
-NUM_SPAN = 5  # Number of spanwise stations
+NUM_SPAN = 3  # Number of spanwise stations
 NUM_STAGES = 1  # Number of turbine stages (stator-rotor pairs)
 SCALED = True  # Use scaled equations for better numerical conditioning
 PLOTS = True  # Show plots at end
@@ -142,7 +142,6 @@ inlet = Inlet(
             'T': 900,  # Total temperature [K]
             'p': 20e5,  # Total pressure [Pa]
         },
-        'oth': {},
     }
 )
 
@@ -159,8 +158,6 @@ stator = BladeRow(
             'chord': 0.1,  # Blade chord length [m]
             'n_blades': 30,  # Number of blades
         },
-        'tot': {},
-        'oth': {},
     },
     shaft=static_shaft,
     extra_equations={
@@ -175,22 +172,17 @@ stator = BladeRow(
 rotor = BladeRow(
     'Rotor',
     {
-        'kin': {},
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
             'rmid': 0.5,
             'chord': 0.1,
             'n_blades': 30,
         },
-        'oth': {
-            # 'workCoeff': 1.1,
-        },
     },
     rotating_shaft,
     extra_equations={
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
-        # Simplified loss model
         PercentageEntropyLoss(0.0): (0, 1),
         # Work and flow coefficients defined only on rotor
         WorkCoefficient(): (0, 1),
@@ -265,6 +257,7 @@ for nodes in nodes_by_stage:
     sys_loss.add_equation(DentonProfileLoss(real_model), stator_nodes)
     sys_loss.add_equation(DentonProfileLoss(real_model), rotor_nodes)
     sys_loss.boundary_conditions[nodes[-1]]['oth'].pop('reactDegree')
+    # sys_loss.boundary_conditions[nodes[1]]['kin'].pop('alpha')
     # Rotational speed is now fixed by midspan, add it to OUTLET rotor node
     sys_loss.boundary_conditions[nodes[-1]]['kin']['omega'] = sol_dict[
         f'kin_omega{nodes[-1]}'
@@ -272,15 +265,15 @@ for nodes in nodes_by_stage:
 
 sys_loss.build(SCALED)
 
-ntw.system = sys_loss
-rootfinder_full = ntw.system.make_rootfinder('nlpsol')
-x0_full = ntw.system.get_initial_guess(sol_dict)
-kn_full = ntw.system.get_scaled_constraints()
+rootfinder_full = sys_loss.make_rootfinder('nlpsol')
+x0_full = sys_loss.get_initial_guess(sol_dict)
+kn_full = sys_loss.get_scaled_constraints()
 sol_full = solve_problem(rootfinder_full, x0_full, kn_full)
 
+
+ntw.system = sys_loss
 # Write solution back to FlowNodes
-num_args = len(ntw.system.free_args)
-ntw.system.write_solution_to_nodes(np.array(sol_full).reshape(num_args, -1))
+ntw.system.write_solution_to_nodes(sol_full)
 
 
 # === POST-PROCESSING AND VISUALIZATION

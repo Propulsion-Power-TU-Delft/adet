@@ -185,11 +185,11 @@ class MeridionalUniform(EquationBase):
         spanwise_stations = max(geo_rr0.shape)
         if spanwise_stations == 1:
             r1 = geo_rr0 - geo_rmid0
-            r2 = geo_hh0 - geo_height0
         else:
             unit_space = np.linspace(0, 1, spanwise_stations)
 
             # Segment between innermost and outermost stations
+            # quasi_height = (spanwise_stations - 1) * geo_hh0
             quasi_height = (spanwise_stations - 1) * geo_hh0
 
             r_hub = geo_rmid0 - quasi_height / 2 * np.cos(geo_meridional_angle0)
@@ -198,7 +198,9 @@ class MeridionalUniform(EquationBase):
                 r_hub + unit_space * quasi_height * np.cos(geo_meridional_angle0)
             )
 
-            r2 = geo_hh0**2**0.5 - geo_height0 / spanwise_stations
+        # The power enforces hh to be positive, otherwise a negative
+        # height, massflow, etc. is techincally a valid solution
+        r2 = geo_hh0 - geo_height0 / spanwise_stations
 
         # Circular annuli at various spanwise
         r3 = geo_area0 - np.pi * (
@@ -421,7 +423,7 @@ if __name__ == '__main__':
     chord_axial = 0.15
 
     # 2D Analysis plots
-    fig, ax = plt.subplots(1, 3, figsize=(9, 3))
+    fig, ax = plt.subplots(1, 3, figsize=(12, 4))
     staggers = []
     arc_lengths = []
     cm = plt.get_cmap('autumn')
