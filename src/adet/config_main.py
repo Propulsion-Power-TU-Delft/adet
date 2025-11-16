@@ -3,10 +3,16 @@
 from pint import Quantity
 
 # Equations
+from adet.equations.geometrical import (
+    MinimalCamberLine,
+    ParabolicCamberline,
+    TwoSegmentCamberline,
+)
 from adet.equations.nondimensional import WorkCoefficient
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 
 # Tooling & Components
+from adet.losses.profile import DentonProfileLoss
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.registries import DefaultUnitsRegistry, ScalingRegistry, GuessRegistry
 from adet.fluid.settings import ExternalFluidModel, IdealGasModel
@@ -111,12 +117,14 @@ row0 = BladeRow(
     },
     shaft=static_shaft,
     extra_equations={
+        # Camberline model
+        MinimalCamberLine(): (0, 1),
+        # TwoSegmentCamberline(): (0, 1),
+        # ParabolicCamberline(): (0, 1),
         # |> Losses & Dev
-        PercentageEntropyLoss(0.0): (0, 1),
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
-        # MidspanAngle(): 1,
-        # TotalPressureLoss(0.0): (0, 1),
+        PercentageEntropyLoss(0.0): (0, 1),
         # DentonProfileLoss(real_model): (0, 1),
     },
 )
@@ -134,25 +142,27 @@ row1 = BladeRow(
             'rmid': 0.5,
             # Blade
             'chord_ax': 0.15,
-            'n_blades': 22,
+            'n_blades': 25,
         },
         'tot': {
             # 'p': 6e5, # Impose either here or at inlet
         },
         'oth': {
             'heightRatio': 1.1,
-            'workCoeff': 1.5,
+            'workCoeff': 2.4,
         },
     },
     shaft=rotating_shaft,
     extra_equations={
+        # Camberline model
+        MinimalCamberLine(): (0, 1),
+        # TwoSegmentCamberline(): (0, 1),
+        # ParabolicCamberline(): (0, 1),
         # |> Losses & Dev
-        PercentageEntropyLoss(0.0): (0, 1),
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
         WorkCoefficient(): (0, 1),
-        # MidspanAngle(): 1,
-        # TotalPressureLoss(0.0): (0, 1),
         # DentonProfileLoss(real_model): (0, 1),
+        PercentageEntropyLoss(0.0): (0, 1),
     },
 )

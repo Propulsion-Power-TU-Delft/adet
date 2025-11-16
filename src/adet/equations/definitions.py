@@ -92,3 +92,8 @@ class BladeCount(EquationBase):
 class Solidity(EquationBase):
     def residual(self, geo_solidity0, geo_pitch0, geo_chord0):
         return geo_pitch0 * geo_solidity0 - geo_chord0
+
+
+class AxialChord(EquationBase):
+    def residual(self, geo_chord_ax0, geo_chord0, geo_stagger0):
+        return geo_chord_ax0 - geo_chord0 * np.cos(geo_stagger0)

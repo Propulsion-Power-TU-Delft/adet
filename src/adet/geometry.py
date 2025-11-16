@@ -245,8 +245,10 @@ class GenericCurve(ABC):
     def get_area(self):
         raise NotImplementedError
 
-    def plot_curve(self, color: str | None = None) -> Line2D:
-        line = plt.plot(self.z_coords, self.r_coords)[0]
+    def plot_curve(self, color: str | None = None, ax=None) -> Line2D:
+        if ax is None:
+            ax = plt.gca()
+        line = ax.plot(self.z_coords, self.r_coords)[0]
 
         if color:
             line.set_color(color)

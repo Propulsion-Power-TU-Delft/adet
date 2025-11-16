@@ -7,17 +7,12 @@ from adet.components.connections import Inlet
 from adet.equations.nondimensional import AbsoluteMachNumber, RelativeMachNumber
 from adet.fluid.settings import FluidSettings
 
-from adet.equations.fundamental import (
-    MassAreaRelation,
-    Kinematics,
-    MeridionalUniform,
-    TotalStaticMatching,
-)
+from adet.equations.fundamental import MassAreaRelation, Kinematics, TotalStaticMatching
+from adet.equations.geometrical import MeridionalUniform
 
 from adet.equations.definitions import CumMassFlow
 
 from adet.equations.linkers import VariableAdder
-from adet.tools.iter import grouper
 from adet.tools.printing import print_header
 
 

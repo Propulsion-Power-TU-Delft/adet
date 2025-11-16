@@ -8,16 +8,14 @@ import numpy as np
 # Equation objects
 from adet.equations.definitions import (
     AngleDeflection,
+    AxialChord,
     BladeCount,
     HeightRatio,
     MeridionalVelocityRatio,
     Solidity,
 )
-from adet.equations.fundamental import (
-    EulerEquation,
-    MassConservation,
-    ParabolicCamberline,
-)
+from adet.equations.fundamental import EulerEquation, MassConservation
+from adet.equations.geometrical import ParabolicCamberline
 from adet.equations import EquationBase
 from adet.equations.linkers import SpeedLinker, ComponentLinker
 from adet.losses import LossModel
@@ -41,16 +39,12 @@ class BladeRow(BaseComponent):
         # |> Link inlet and outlet omega
         (SpeedLinker, (1, 1)),
         (SpeedLinker, (1, 0)),
-        # ***
+        # *** Common definitions
         (HeightRatio, (0, 1)),
         (AngleDeflection, (0, 1)),
         (MeridionalVelocityRatio, (0, 1)),
-        # ***
-        # |> TODO: These are hardcoded for testing REMOVE!
-        # |> Common courtesy definitions
         (Solidity, 1),
         (BladeCount, 1),
-        (ParabolicCamberline, (0, 1)),  # Camber line geometry
     ]
 
     linker_equations = [ComponentLinker]
@@ -246,6 +240,7 @@ class RowGeometry:
         self,
         color=None,
         debug: bool = False,
+        ax=None,
     ) -> tuple[Line2D, ...]:
         """
         Plots the meridional profile of the blade row.
@@ -260,10 +255,10 @@ class RowGeometry:
 
         color = None if debug else color
 
-        tip = self._tip_curve.plot_curve(color)
-        hub = self._hub_curve.plot_curve(color)
-        le = self._le_curve.plot_curve(color)
-        te = self._te_curve.plot_curve(color)
+        tip = self._tip_curve.plot_curve(color, ax=ax)
+        hub = self._hub_curve.plot_curve(color, ax=ax)
+        le = self._le_curve.plot_curve(color, ax=ax)
+        te = self._te_curve.plot_curve(color, ax=ax)
 
         return (tip, hub, le, te)
 
@@ -306,6 +301,7 @@ def plot_from_nodes(
     semi_cone_angle: bool = False,
     axial_offset: float = 0.0,
     color: tuple | str = 'k',
+    ax=None,
 ):
     """
     Utility plot function, for now the chord is
@@ -327,7 +323,7 @@ def plot_from_nodes(
         axial_offset=axial_offset,
     )
 
-    lines = geom.plot_meridional_profile(color)
+    lines = geom.plot_meridional_profile(color, ax=ax)
 
     for line in lines:
         line.set_linewidth(2.5)

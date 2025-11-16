@@ -9,7 +9,11 @@ import jax
 # Network build
 from adet.assembly import CasadiSystem, solve_problem
 from adet.components import ComponentNetwork
-from adet.equations.fundamental import ParabolicCamberline
+from adet.equations.geometrical import (
+    MinimalCamberLine,
+    ParabolicCamberline,
+    TwoSegmentCamberline,
+)
 from adet.fluid.casadi_eos import CasadiEoS
 from adet.fluid.settings import FluidSettings
 
@@ -40,7 +44,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 
 # === SETTINGS
-NUM_SPAN = 3
+NUM_SPAN = 1
 SCALED = True
 PLOTS = True
 PRINTS = True
@@ -95,24 +99,37 @@ sol_is = solve_problem(rootfinder_is, x0_is, kn_is)
 
 sol_is_dict = ntw.system.write_solution_to_nodes(sol_is)
 
-# # *** With losses and multispan
-# sys_is_off = ntw.system.copy()
-# sys_is_off.spanwise_stations = NUM_SPAN
-# sys_is_off.remove_equation_type(LossModel)
-# sys_is_off.add_equation(DentonProfileLoss(real_model), (0, 1))
-# sys_is_off.add_equation(DentonProfileLoss(real_model), (2, 3))
-# sys_is_off.build(SCALED)
-# rootfinder_is_off = sys_is_off.make_rootfinder('nlpsol')
-#
-# x0_is_off = sys_is_off.get_initial_guess(sol_is_dict)
-# kn_is_off = sys_is_off.get_scaled_constraints()
-# sol_is_off = solve_problem(rootfinder_is_off, x0_is_off, kn_is_off)
+# === Add losses and increase spanwise stations
+sys_loss = ntw.system.copy()
+sys_loss.spanwise_stations = NUM_SPAN * 3
+sys_loss.remove_equation_type(LossModel)
+sys_loss.add_equation(DentonProfileLoss(real_model), (0, 1))
+sys_loss.add_equation(DentonProfileLoss(real_model), (2, 3))
+sys_loss.build(SCALED)
+rootfinder_loss = sys_loss.make_rootfinder('nlpsol')
 
+x0_loss = sys_loss.get_initial_guess(sol_is_dict)
+kn_loss = sys_loss.get_scaled_constraints()
+sol_loss = solve_problem(rootfinder_loss, x0_loss, kn_loss)
+sol_loss_dict = sys_loss.write_solution_to_nodes(sol_loss)
+
+# === Switch to parabolic camberline
+sys_camber = sys_loss.copy()
+sys_camber.spanwise_stations = NUM_SPAN * 5
+sys_camber.remove_equation_type(MinimalCamberLine)
+sys_camber.remove_equation_type(TwoSegmentCamberline)
+sys_camber.add_equation(ParabolicCamberline(), (0, 1))
+sys_camber.add_equation(ParabolicCamberline(), (2, 3))
+sys_camber.build(SCALED)
+rootfinder_camber = sys_camber.make_rootfinder('nlpsol')
+
+x0_camber = sys_camber.get_initial_guess(sol_loss_dict)
+kn_camber = sys_camber.get_scaled_constraints()
+sol_camber = solve_problem(rootfinder_camber, x0_camber, kn_camber)
 
 # num_args = len(ntw.system.free_args)
-
-# ntw.system = sys_is
-sol = sol_is
+ntw.system = sys_camber
+sol = sol_camber
 ntw.system.write_solution_to_nodes(sol)
 
 # === POST-PROCESS ===
@@ -137,7 +154,7 @@ PT_EOS = CasadiEoS(
     real_model.eos_object,
     9,
     ['rhomass', 'smass'],
-    NUM_SPAN,
+    ntw.system.spanwise_stations,
 )
 
 
@@ -163,26 +180,13 @@ if PLOTS:
 
     num_nodes = range(len(ntw.system.nodes))
 
-    # Plot camberline at midspan
-    fig, ax = plt.subplots()
-    ax.set_title('Camberlines at midspan')
-    ax.axis('equal')
-    pbl = ParabolicCamberline()
-    pbl.plot_camber_line(
-        ax,
-        nodes[0].geo.metal_angle[NUM_SPAN // 2],  # pyright:ignore
-        nodes[1].geo.metal_angle[NUM_SPAN // 2],  # pyright:ignore
-        nodes[1].geo.chord_ax[NUM_SPAN // 2],  # pyright:ignore
-        'k',
-        nodes[1].geo.pitch[NUM_SPAN // 2],  # pyright:ignore
-    )
+    # Plot meridional profile and camberlines in subplots
+    fig, (ax_merid, ax_camber) = plt.subplots(1, 2, figsize=(14, 6))
 
-    # Plot meridional profile
-    fig, ax = plt.subplots()
-    ax.axis('equal')
-    # ax.set_ylim(0.0, 1.2)
-    ax.set_ylabel('radius [m]', {'fontsize': 18})
-    ax.set_xlabel('axial  [m]', {'fontsize': 18})
+    # Configure meridional profile subplot
+    ax_merid.axis('equal')
+    ax_merid.set_ylabel('radius [m]', {'fontsize': 18})
+    ax_merid.set_xlabel('axial  [m]', {'fontsize': 18})
     max_Y = (
         1.1
         * (
@@ -190,25 +194,64 @@ if PLOTS:
             + ntw.system.nodes[-1].geo.get('height').magnitude / 2
         )[0]
     )
-    ax.set_ylim(-0.01, max_Y)
-    ax.tick_params('both', labelsize=18)
-    ax.grid()
-    ax.set_title('Meridional profile', {'fontsize': 18})
+    ax_merid.set_ylim(-0.01, max_Y)
+    ax_merid.tick_params('both', labelsize=18)
+    ax_merid.grid()
+    ax_merid.set_title('Meridional profile', {'fontsize': 18})
 
+    # Configure camberline subplot
+    ax_camber.set_title('Camberlines at midspan', {'fontsize': 18})
+    ax_camber.axis('equal')
+    ax_camber.tick_params('both', labelsize=18)
+    ax_camber.grid()
+
+    # Merged loop for both plots
+    pbl = ParabolicCamberline()
     offset = 0.0
     for n0_idx, n1_idx in grouper(num_nodes, 2, incomplete='ignore'):
         nodes[0] = ntw.system.nodes[n0_idx]
         nodes[1] = ntw.system.nodes[n1_idx]
-        ax_chord = nodes[1].geo.get('chord').to_base_units().magnitude[0]
+        ax_chord = nodes[1].geo.get('chord_ax').to_base_units().magnitude[0]
+
+        # Plot meridional profile
         lines = plot_from_nodes(
             nodes[0],
             nodes[1],
             False,
             offset,
+            ax=ax_merid,
         )
+
+        # Plot camberlines at midspan (3 blades for rotor, 1 for stator)
+        midspan_idx = ntw.system.spanwise_stations // 2
+        inlet_angle = nodes[0].geo.metal_angle[midspan_idx]  # pyright:ignore
+        outlet_angle = nodes[1].geo.metal_angle[midspan_idx]  # pyright:ignore
+        chord_ax = nodes[1].geo.chord_ax[midspan_idx]  # pyright:ignore
+        pitch = nodes[1].geo.pitch[midspan_idx]  # pyright:ignore
+
+        # Determine number of blades (3 for rotor, 1 for stator)
+        # Assuming first row (n0_idx=0) is rotor
+        n_blades = 3
+
+        for blade_num in range(n_blades):
+            pbl.plot_camber_line(
+                ax_camber,
+                inlet_angle,
+                outlet_angle,
+                chord_ax,
+                'k',
+                axial_offset=offset,
+                tangential_offset=blade_num * pitch,
+            )
+
         offset += ax_chord * 1.05
 
-    ax.plot([0.0, offset], [0.0, 0.0], color='r', linestyle='dashdot', linewidth=2.5)
+    # Add axis reference line for meridional plot
+    ax_merid.plot(
+        [0.0, offset], [0.0, 0.0], color='r', linestyle='dashdot', linewidth=2.5
+    )
+
+    plt.tight_layout()
 
 if PLOTS:
     plt.show()

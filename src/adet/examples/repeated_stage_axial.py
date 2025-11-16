@@ -25,7 +25,7 @@ from pint import Quantity
 from adet.assembly import CasadiSystem, solve_problem
 from adet.components import ComponentNetwork, BladeRow, Shaft, Inlet
 from adet.equations.definitions import DegreeOfReaction, RepeatedStage
-from adet.equations.fundamental import ParabolicCamberline
+from adet.equations.geometrical import ParabolicCamberline
 from adet.fluid.casadi_eos import CasadiEoS
 from adet.fluid.settings import FluidSettings, ExternalFluidModel, IdealGasModel
 
@@ -160,6 +160,7 @@ stator = BladeRow(
     shaft=casing,
     extra_equations={
         PercentageEntropyLoss(0.0): (0, 1),
+        ParabolicCamberline(): (0, 1),
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
     },
@@ -179,6 +180,7 @@ rotor = BladeRow(
     shaft=rotating_shaft,
     extra_equations={
         PercentageEntropyLoss(0.0): (0, 1),
+        ParabolicCamberline(): (0, 1),
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
         # Work and flow coefficients defined only on rotor
