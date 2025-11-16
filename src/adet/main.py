@@ -115,9 +115,8 @@ sol_loss_dict = sys_loss.write_solution_to_nodes(sol_loss)
 
 # === Switch to parabolic camberline
 sys_camber = sys_loss.copy()
-sys_camber.spanwise_stations = NUM_SPAN * 5
-sys_camber.remove_equation_type(MinimalCamberLine)
-sys_camber.remove_equation_type(TwoSegmentCamberline)
+sys_camber.spanwise_stations = NUM_SPAN * 9
+sys_camber.remove_equation_type(TwoSegmentCamberline, MinimalCamberLine)
 sys_camber.add_equation(ParabolicCamberline(), (0, 1))
 sys_camber.add_equation(ParabolicCamberline(), (2, 3))
 sys_camber.build(SCALED)
@@ -127,7 +126,7 @@ x0_camber = sys_camber.get_initial_guess(sol_loss_dict)
 kn_camber = sys_camber.get_scaled_constraints()
 sol_camber = solve_problem(rootfinder_camber, x0_camber, kn_camber)
 
-# num_args = len(ntw.system.free_args)
+# Write solution to network (just for post processing)
 ntw.system = sys_camber
 sol = sol_camber
 ntw.system.write_solution_to_nodes(sol)
@@ -228,10 +227,7 @@ if PLOTS:
         outlet_angle = nodes[1].geo.metal_angle[midspan_idx]  # pyright:ignore
         chord_ax = nodes[1].geo.chord_ax[midspan_idx]  # pyright:ignore
         pitch = nodes[1].geo.pitch[midspan_idx]  # pyright:ignore
-
-        # Determine number of blades (3 for rotor, 1 for stator)
-        # Assuming first row (n0_idx=0) is rotor
-        n_blades = 3
+        n_blades = 3  # blades to plot
 
         for blade_num in range(n_blades):
             pbl.plot_camber_line(
@@ -244,7 +240,7 @@ if PLOTS:
                 tangential_offset=blade_num * pitch,
             )
 
-        offset += ax_chord * 1.05
+        offset += ax_chord * 1.1
 
     # Add axis reference line for meridional plot
     ax_merid.plot(

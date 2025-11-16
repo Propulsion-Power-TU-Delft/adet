@@ -18,14 +18,14 @@ import logging
 
 # External libraries
 import matplotlib.pyplot as plt
-import jax
+import numpy as np
 from pint import Quantity
 
 # Network build
 from adet.assembly import CasadiSystem, solve_problem
 from adet.components import ComponentNetwork, BladeRow, Shaft, Inlet
 from adet.equations.definitions import DegreeOfReaction, RepeatedStage
-from adet.equations.geometrical import ParabolicCamberline
+from adet.equations.geometrical import ParabolicCamberline, MinimalCamberLine
 from adet.fluid.casadi_eos import CasadiEoS
 from adet.fluid.settings import FluidSettings, ExternalFluidModel, IdealGasModel
 
@@ -45,7 +45,6 @@ from adet.registries import DefaultUnitsRegistry, ScalingRegistry, GuessRegistry
 
 # === LOGGING SETUP
 logger = logging.getLogger(__name__)
-jax.config.update('jax_enable_x64', True)
 
 setup_logger(
     logger,
@@ -59,7 +58,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 # === CONFIGURATION
 # Simulation settings
-NUM_SPAN = 10  # Number of spanwise stations
+NUM_SPAN = 1  # Number of spanwise stations
 NUM_STAGES = 5  # Number of turbine stages (stator-rotor pairs)
 SCALED = True  # Use scaled equations for better numerical conditioning
 PLOTS = True  # Show plots at end
@@ -160,7 +159,7 @@ stator = BladeRow(
     shaft=casing,
     extra_equations={
         PercentageEntropyLoss(0.0): (0, 1),
-        ParabolicCamberline(): (0, 1),
+        MinimalCamberLine(): (0, 1),
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
     },
@@ -180,7 +179,7 @@ rotor = BladeRow(
     shaft=rotating_shaft,
     extra_equations={
         PercentageEntropyLoss(0.0): (0, 1),
-        ParabolicCamberline(): (0, 1),
+        MinimalCamberLine(): (0, 1),
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
         # Work and flow coefficients defined only on rotor
@@ -235,47 +234,89 @@ for stage in range(ntw.num_components // 2):
     ntw.system.add_boundary_conditions({'oth': {'reactDegree': 0.5}}, nodes[-1])
 
 
-# Build the system (assemble all equations and constraints)
+# === SOLVE STAGE 1: Meanline isentropic with minimal camberline ===
+# This determines the rotational speed at midspan (single spanwise station)
 ntw.system.build(SCALED)
-rootfinder_single_span = ntw.system.make_rootfinder('nlpsol')
-x0 = ntw.system.get_initial_guess()
-kn = ntw.system.get_scaled_constraints()
-sol = solve_problem(rootfinder_single_span, x0, kn)
+rootfinder_mean_is = ntw.system.make_rootfinder('nlpsol')
+x0_mean_is = ntw.system.get_initial_guess()
+kn_mean_is = ntw.system.get_scaled_constraints()
+sol_mean_is = solve_problem(rootfinder_mean_is, x0_mean_is, kn_mean_is)
+sol_mean_is_dict = ntw.system.solution_to_dict(sol_mean_is)
 
-# Convert solution to dictionary format
-sol_dict = ntw.system.solution_to_dict(sol)
-
-# Build system with loss models and multi_span distribution
-sys_span = ntw.system.copy()
-sys_span.spanwise_stations = NUM_SPAN
-
-sys_span.remove_equation_type(RepeatedStage)
+# === SOLVE STAGE 2: Meanline with Denton losses (midspan only) ===
+sys_mean_loss = ntw.system.copy()
+sys_mean_loss.remove_equation_type(LossModel)
+# Keep MinimalCamberLine, add Denton losses
 for nodes in nodes_by_stage:
     stator_nodes = (nodes[0], nodes[1])
     rotor_nodes = (nodes[2], nodes[3])
+    sys_mean_loss.add_equation(DentonProfileLoss(real_model), stator_nodes)
+    sys_mean_loss.add_equation(DentonProfileLoss(real_model), rotor_nodes)
 
-    # Rotational speed is now fixed by midspan, add it to OUTLET rotor node
-    sys_span.boundary_conditions[nodes[3]]['kin']['omega'] = sol_dict[
+sys_mean_loss.build(SCALED)
+rootfinder_mean_loss = sys_mean_loss.make_rootfinder('nlpsol')
+x0_mean_loss = sys_mean_loss.get_initial_guess(sol_mean_is_dict)
+kn_mean_loss = sys_mean_loss.get_scaled_constraints()
+sol_mean_loss = solve_problem(rootfinder_mean_loss, x0_mean_loss, kn_mean_loss)
+sol_mean_loss_dict = sys_mean_loss.solution_to_dict(sol_mean_loss)
+
+# === SOLVE STAGE 3: Multi-span with Denton losses and minimal camberline ===
+sys_span_loss = sys_mean_loss.copy()
+sys_span_loss.spanwise_stations = NUM_SPAN
+sys_span_loss.remove_equation_type(RepeatedStage)
+
+for nodes in nodes_by_stage:
+    # Fix rotational speed from meanline solution
+    sys_span_loss.boundary_conditions[nodes[3]]['kin']['omega'] = sol_mean_loss_dict[
         f'kin_omega{nodes[3]}'
     ]
-    sys_span.boundary_conditions[nodes[1]]['geo']['height'] = sol_dict[
+    # Fix blade heights from meanline solution
+    sys_span_loss.boundary_conditions[nodes[1]]['geo']['height'] = sol_mean_loss_dict[
         f'geo_height{nodes[1]}'
     ]
-    sys_span.boundary_conditions[nodes[3]]['geo']['height'] = sol_dict[
+    sys_span_loss.boundary_conditions[nodes[3]]['geo']['height'] = sol_mean_loss_dict[
         f'geo_height{nodes[3]}'
     ]
 
-sys_span.build(SCALED)
+sys_span_loss.build(SCALED)
+rootfinder_span_loss = sys_span_loss.make_rootfinder('nlpsol')
+x0_span_loss = sys_span_loss.get_initial_guess(sol_mean_loss_dict)
+kn_span_loss = sys_span_loss.get_scaled_constraints()
+sol_span_loss = solve_problem(rootfinder_span_loss, x0_span_loss, kn_span_loss)
+sol_span_loss_dict = sys_span_loss.solution_to_dict(sol_span_loss)
 
-rootfinder_full = sys_span.make_rootfinder('nlpsol')
-x0_full = sys_span.get_initial_guess(sol_dict)
-kn_full = sys_span.get_scaled_constraints()
-sol_full = solve_problem(rootfinder_full, x0_full, kn_full)
+# === SOLVE STAGE 4: Multi-span with Denton losses and parabolic camberline ===
+sys_camber = sys_span_loss.copy()
+sys_camber.remove_equation_type(MinimalCamberLine)
+for nodes in nodes_by_stage:
+    stator_nodes = (nodes[0], nodes[1])
+    rotor_nodes = (nodes[2], nodes[3])
+    sys_camber.add_equation(ParabolicCamberline(), stator_nodes)
+    sys_camber.add_equation(ParabolicCamberline(), rotor_nodes)
+
+sys_camber.build(SCALED)
+rootfinder_camber = sys_camber.make_rootfinder('nlpsol')
+x0_camber = sys_camber.get_initial_guess(sol_span_loss_dict)
+kn_camber = sys_camber.get_scaled_constraints()
+sol_camber = solve_problem(rootfinder_camber, x0_camber, kn_camber)
+sol_camber_dict = sys_camber.solution_to_dict(sol_camber)
+
+# === SOLVE STAGE 5: High-resolution multi-span ===
+
+sys_highres = sys_camber.copy()
+sys_highres.spanwise_stations = NUM_SPAN * 5
 
 
-ntw.system = sys_span
+sys_highres.build(SCALED)
+rootfinder_highres = sys_highres.make_rootfinder('nlpsol')
+# Use interpolated solution as initial guess
+x0_highres = sys_highres.get_initial_guess(sol_camber_dict)
+kn_highres = sys_highres.get_scaled_constraints()
+sol_highres = solve_problem(rootfinder_highres, x0_highres, kn_highres)
+
 # Write solution back to FlowNodes
-ntw.system.write_solution_to_nodes(sol_full)
+ntw.system = sys_highres
+ntw.system.write_solution_to_nodes(sol_highres)
 
 
 # === POST-PROCESSING AND VISUALIZATION
@@ -291,15 +332,15 @@ if PLOTS:
 
     plt.tick_params(labelsize=FONTSIZE / 1.5 // 1)
 
-    # Plot meridional profile (blade geometry)
     num_nodes = range(len(ntw.system.nodes))
 
-    fig, ax = plt.subplots()
-    ax.axis('equal')
-    ax.set_ylabel('radius [m]', {'fontsize': 18})
-    ax.set_xlabel('axial  [m]', {'fontsize': 18})
+    # Plot meridional profile and camberlines in subplots
+    fig, (ax_merid, ax_camber) = plt.subplots(1, 2, figsize=(14, 6))
 
-    # Calculate y-axis limit based on last node geometry
+    # Configure meridional profile subplot
+    ax_merid.axis('equal')
+    ax_merid.set_ylabel('radius [m]', {'fontsize': 18})
+    ax_merid.set_xlabel('axial  [m]', {'fontsize': 18})
     max_Y = (
         1.1
         * (
@@ -307,32 +348,65 @@ if PLOTS:
             + ntw.system.nodes[-1].geo.get('height').magnitude / 2
         )[0]
     )
-    ax.set_ylim(-0.01, max_Y)
-    ax.tick_params('both', labelsize=18)
-    ax.grid()
-    ax.set_title('Meridional profile', {'fontsize': 18})
+    ax_merid.set_ylim(-0.01, max_Y)
+    ax_merid.tick_params('both', labelsize=18)
+    ax_merid.grid()
+    ax_merid.set_title('Meridional profile', {'fontsize': 18})
 
-    # Plot blade rows
+    # Configure camberline subplot
+    ax_camber.set_title('Camberlines at midspan', {'fontsize': 18})
+    ax_camber.axis('equal')
+    ax_camber.tick_params('both', labelsize=18)
+    ax_camber.grid()
+
+    # Merged loop for both plots
+    pbl = ParabolicCamberline()
     offset = 0.0
     for n0_idx, n1_idx in grouper(num_nodes, 2, incomplete='ignore'):
         n0 = ntw.system.nodes[n0_idx]
         n1 = ntw.system.nodes[n1_idx]
         ax_chord = n1.geo.get('chord_ax').to_base_units().magnitude[0]
+
+        # Plot meridional profile
         lines = plot_from_nodes(
             n0,
             n1,
             False,
             offset,
+            ax=ax_merid,
             color=COLORMAP((n1_idx - 1) // ntw.num_components),
         )
+
+        # Plot camberlines at midspan (3 blades for all rows)
+        midspan_idx = ntw.system.spanwise_stations // 2
+        inlet_angle = n0.geo.metal_angle[midspan_idx]  # pyright:ignore
+        outlet_angle = n1.geo.metal_angle[midspan_idx]  # pyright:ignore
+        chord_ax = n1.geo.chord_ax[midspan_idx]  # pyright:ignore
+        pitch = n1.geo.pitch[midspan_idx]  # pyright:ignore
+
+        # Draw 3 camberlines for all blade rows
+        n_blades = 3
+
+        for blade_num in range(n_blades):
+            pbl.plot_camber_line(
+                ax_camber,
+                inlet_angle,
+                outlet_angle,
+                chord_ax,
+                'k',
+                axial_offset=offset,
+                tangential_offset=blade_num * pitch,
+            )
+
         offset += ax_chord * 1.1
 
-    # Draw centerline
-    ax.plot([0.0, offset], [0.0, 0.0], color='k', linestyle='dashdot', linewidth=2.5)
+    # Add axis reference line for meridional plot
+    ax_merid.plot(
+        [0.0, offset], [0.0, 0.0], color='r', linestyle='dashdot', linewidth=2.5
+    )
 
-    # === 3D BLADE PLOTS
-    # Plot all 3D blade geometries in a single plot
-    pbc = ParabolicCamberline()
+    plt.tight_layout()
+
     blade_rows = list(grouper(num_nodes, 2, incomplete='ignore'))
 
     # === RELATIVE TOTAL PRESSURE INCREMENT PLOT
