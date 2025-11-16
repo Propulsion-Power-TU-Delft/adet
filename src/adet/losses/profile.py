@@ -221,7 +221,7 @@ class DentonProfileLoss(LossModel):
             oth_xi_by_camb_len_A1, oth_xi_by_camb_len_B1, oth_k_prof1, kin_W0, kin_W1
         )
 
-        # TODO: Idea, make smass1 also an input and distribute
+        # NOTE: Idea, make smass1 also an input and distribute
         # entropy (linearly?) between inlet and outlet
         p_ss, rho_ss, T_ss = self._compute_thermo_distributions(
             rlt_hmass0, stc_smass0, W_distr_ss

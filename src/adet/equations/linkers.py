@@ -21,7 +21,7 @@ class ComponentLinker(EquationBase):
     This does NOT model the flow in an annular duct, but only acts
     as an exchange of information between components. If you wanted
     to model the interspace between rows the workflow would have to be
-    somethingn like
+    something like
     Row -> ComponentLinker -> Interspace -> ComponentLinker -> Row
     """
 

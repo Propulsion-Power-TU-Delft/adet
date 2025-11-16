@@ -70,7 +70,7 @@ class SystemAssembler(ABC):
         # Initialize with empty settings
         self._fluid_settings = FluidSettings(EmptyFluidModel())
 
-        self.spanwise_stations = spanwise_stations
+        self._spanwise_stations = spanwise_stations
         self.equations: OrderedDict[EquationBase, tuple[int, ...]] = OrderedDict()
         """
         All the equations, in the form of a dictionary:
@@ -133,6 +133,22 @@ class SystemAssembler(ABC):
         self._scaled: bool = False
 
     @property
+    def spanwise_stations(self):
+        return self._spanwise_stations
+
+    @spanwise_stations.setter
+    def spanwise_stations(self, spanwise_stations):
+        if spanwise_stations % 2 == 0:
+            # Round to the closest odd number
+            self._spanwise_stations = spanwise_stations | 1
+            logger.warning(
+                f'Rounding up the spanwise_stations {spanwise_stations}'
+                f' to the nearest odd number ({self._spanwise_stations})'
+            )
+        else:
+            self._spanwise_stations = spanwise_stations
+
+    @property
     def fluid_settings(self):
         return self._fluid_settings
 
@@ -146,11 +162,11 @@ class SystemAssembler(ABC):
 
     def reset(self) -> None:
         old_settings = self._fluid_settings
-        self.__init__(self.spanwise_stations)
+        self.__init__(self._spanwise_stations)
         self.fluid_settings = old_settings
 
     def copy(self) -> Self:
-        new_instance = self.__class__(self.spanwise_stations)
+        new_instance = self.__class__(self._spanwise_stations)
         new_instance.from_dict(self.to_dict())
         # Remove EoS equaitons
         return new_instance
@@ -369,7 +385,7 @@ class SystemAssembler(ABC):
             )
 
         self.nodes = tuple(
-            FlowNode(self._fluid_settings, self.spanwise_stations)
+            FlowNode(self._fluid_settings, self._spanwise_stations)
             for _ in range(0, 1 + max(node_indices))
         )
 
@@ -470,7 +486,7 @@ class SystemAssembler(ABC):
         """
         arguments_struct = []
         for arg in arguments:
-            num_span = 1 if arg in self._scalar_arguments else self.spanwise_stations
+            num_span = 1 if arg in self._scalar_arguments else self._spanwise_stations
             branch = num_span * [0]
             arguments_struct.append(branch)
 
@@ -848,7 +864,7 @@ class SystemAssembler(ABC):
 
             guess_value = np.atleast_1d(guess_value)
 
-            if max(guess_value.shape) != self.spanwise_stations:
+            if max(guess_value.shape) != self._spanwise_stations:
                 if max(guess_value.shape) != 1:
                     logger.warning(
                         f'Length mismatch in guess for {arg},'
@@ -857,7 +873,7 @@ class SystemAssembler(ABC):
                     guess_value = guess_value[0]
 
                 if arg not in self._scalar_arguments:
-                    guess_value = np.repeat(guess_value, self.spanwise_stations)
+                    guess_value = np.repeat(guess_value, self._spanwise_stations)
 
             # Scale
             scaling_factor = free_args_scaling[idx]
@@ -911,12 +927,12 @@ class CasadiSystem(SystemAssembler):
         # Create symbols
         self.free_args_sym, self.scales_free_args_sym = self._create_symbols(
             self.free_args,
-            self.spanwise_stations,
+            self._spanwise_stations,
             self.scale_suffix,
         )
         self.const_sym, self.scales_const_sym = self._create_symbols(
             self.constraints,
-            self.spanwise_stations,
+            self._spanwise_stations,
             self.scale_suffix,
         )
 
@@ -949,7 +965,7 @@ class CasadiSystem(SystemAssembler):
                     eos_obj,
                     pair_id,
                     out_props,
-                    self.spanwise_stations,
+                    self._spanwise_stations,
                 )
 
                 # This is to keep references
@@ -1143,7 +1159,7 @@ class CasadiSystem(SystemAssembler):
         """
         Convert system to casadi
         """
-        jax_sys = JaxSystem(self.spanwise_stations)
+        jax_sys = JaxSystem(self._spanwise_stations)
         jax_sys.from_dict(self.to_dict())
         return jax_sys
 
@@ -1261,7 +1277,7 @@ class JaxSystem(SystemAssembler):
 
         codegen = f"""
 def {func_name}(equations, {', '.join(self._declared_arguments)}):
-    {residuals_name} = jnp.zeros({(self.num_equations, self.spanwise_stations)})
+    {residuals_name} = jnp.zeros({(self.num_equations, self._spanwise_stations)})
 
     {eq_name_unpacker} = equations
     {eq_stack}

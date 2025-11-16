@@ -17,17 +17,14 @@ class RadiusRatio(EquationBase):
         return oth_radiusRatio1 - geo_rmid1 / geo_rmid0
 
 
-class Solidity(EquationBase):
-    def residual(self, geo_solidity0, geo_pitch0, geo_chord0):
-        return geo_pitch0 * geo_solidity0 - geo_chord0
-
-
 class HeightRatio(EquationBase):
     def residual(self, geo_height0, geo_height1, oth_heightRatio1):
         return oth_heightRatio1 - geo_height1 / geo_height0
 
 
 class RepeatedStage(EquationBase):
+    """0 - [Stator] - 1 = 2 - [Rotor] - 3"""
+
     def residual(self, kin_alpha0, kin_alpha3, kin_Vm0, kin_Vm1, kin_Vm2, kin_Vm3):
         r1 = kin_alpha0 - kin_alpha3
         r2 = kin_Vm3 - kin_Vm2
@@ -38,6 +35,7 @@ class RepeatedStage(EquationBase):
 
 class DegreeOfReaction(EquationBase):
     """
+    0 - [Stator] - 1 = 2 - [Rotor] - 3
     This assumes the stator is on nodes 0,1 and the stator on 2,3 is the rotor.
     The degree of reaction is an `oth` property of node 3
     """
@@ -89,3 +87,8 @@ class BladeCount(EquationBase):
         r2 = geo_n_blades0 * oth_ch_massflow0 - oth_massflow0
 
         return r1, r2
+
+
+class Solidity(EquationBase):
+    def residual(self, geo_solidity0, geo_pitch0, geo_chord0):
+        return geo_pitch0 * geo_solidity0 - geo_chord0

@@ -266,9 +266,11 @@ class ScalarsRegistry(BaseRegistry[str, None]):
     well defined with some arguments that act as scalars
     but are just constant-valued vectors (e.g. cumulative
     massflow).
+
     Instead, if the problem is being solved FOR one of these variables,
     having them appear in the system at only at one
     spanwise station is problematic.
+
     For example, kin_omega0 (node 0) is unknown, but it appears
     only as kin_omega0[0] e.g. in SpeedLinker, because physically
     the user wants to make it constant. The root problem is apparently

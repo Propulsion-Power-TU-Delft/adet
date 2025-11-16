@@ -37,7 +37,7 @@ class VariableContainer:
             self._spanwise_stations = spanwise_stations | 1
             logger.warning(
                 f'Rounding up the spanwise_stations {spanwise_stations}'
-                f'to the nearest odd number ({self._spanwise_stations})'
+                f' to the nearest odd number ({self._spanwise_stations})'
             )
         else:
             self._spanwise_stations = spanwise_stations

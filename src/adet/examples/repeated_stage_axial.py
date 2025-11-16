@@ -15,12 +15,10 @@ It shows how to:
 # Standard library
 from copy import deepcopy
 import logging
-from math import nan
 
 # External libraries
 import matplotlib.pyplot as plt
 import jax
-import numpy as np
 from pint import Quantity
 
 # Network build
@@ -61,8 +59,8 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 # === CONFIGURATION
 # Simulation settings
-NUM_SPAN = 3  # Number of spanwise stations
-NUM_STAGES = 1  # Number of turbine stages (stator-rotor pairs)
+NUM_SPAN = 10  # Number of spanwise stations
+NUM_STAGES = 5  # Number of turbine stages (stator-rotor pairs)
 SCALED = True  # Use scaled equations for better numerical conditioning
 PLOTS = True  # Show plots at end
 PRINTS = True  # Print node information
@@ -114,14 +112,14 @@ _gss_reg.set_fallback_value(1.0)
 
 # === SHAFT DEFINITIONS
 # Static shaft for stators (no rotation)
-static_shaft = Shaft(
+casing = Shaft(
     0.0,
     is_constrained=True,
 )
 
 # Rotating shaft for rotors (angular velocity to be determined)
 rotating_shaft = Shaft(
-    Quantity(nan, 'rpm'),
+    Quantity(-1, 'rpm'),
     is_constrained=False,
 )
 
@@ -136,10 +134,10 @@ inlet = Inlet(
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
             'rmid': 0.5,  # Mid-span radius [m]
-            'height': 0.1,  # Blade height [m]
+            'height': 0.15,  # Blade height [m]
         },
         'tot': {
-            'T': 900,  # Total temperature [K]
+            'T': 1300,  # Total temperature [K]
             'p': 20e5,  # Total pressure [Pa]
         },
     }
@@ -155,13 +153,12 @@ stator = BladeRow(
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
             'rmid': 0.5,
-            'chord': 0.1,  # Blade chord length [m]
+            'chord': 0.15,  # Blade chord length [m]
             'n_blades': 30,  # Number of blades
         },
     },
-    shaft=static_shaft,
+    shaft=casing,
     extra_equations={
-        # Simplified loss model (0% entropy rise)
         PercentageEntropyLoss(0.0): (0, 1),
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
@@ -175,15 +172,15 @@ rotor = BladeRow(
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
             'rmid': 0.5,
-            'chord': 0.1,
+            'chord': 0.15,
             'n_blades': 30,
         },
     },
-    rotating_shaft,
+    shaft=rotating_shaft,
     extra_equations={
+        PercentageEntropyLoss(0.0): (0, 1),
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
-        PercentageEntropyLoss(0.0): (0, 1),
         # Work and flow coefficients defined only on rotor
         WorkCoefficient(): (0, 1),
         FlowCoefficient(): 1,
@@ -247,31 +244,34 @@ sol = solve_problem(rootfinder_single_span, x0, kn)
 sol_dict = ntw.system.solution_to_dict(sol)
 
 # Build system with loss models and multi_span distribution
-sys_loss = ntw.system.copy()
-sys_loss.spanwise_stations = NUM_SPAN
-sys_loss.remove_equation_type(LossModel)
+sys_span = ntw.system.copy()
+sys_span.spanwise_stations = NUM_SPAN
 
+sys_span.remove_equation_type(RepeatedStage)
 for nodes in nodes_by_stage:
     stator_nodes = (nodes[0], nodes[1])
     rotor_nodes = (nodes[2], nodes[3])
-    sys_loss.add_equation(DentonProfileLoss(real_model), stator_nodes)
-    sys_loss.add_equation(DentonProfileLoss(real_model), rotor_nodes)
-    sys_loss.boundary_conditions[nodes[-1]]['oth'].pop('reactDegree')
-    # sys_loss.boundary_conditions[nodes[1]]['kin'].pop('alpha')
+
     # Rotational speed is now fixed by midspan, add it to OUTLET rotor node
-    sys_loss.boundary_conditions[nodes[-1]]['kin']['omega'] = sol_dict[
-        f'kin_omega{nodes[-1]}'
+    sys_span.boundary_conditions[nodes[3]]['kin']['omega'] = sol_dict[
+        f'kin_omega{nodes[3]}'
+    ]
+    sys_span.boundary_conditions[nodes[1]]['geo']['height'] = sol_dict[
+        f'geo_height{nodes[1]}'
+    ]
+    sys_span.boundary_conditions[nodes[3]]['geo']['height'] = sol_dict[
+        f'geo_height{nodes[3]}'
     ]
 
-sys_loss.build(SCALED)
+sys_span.build(SCALED)
 
-rootfinder_full = sys_loss.make_rootfinder('nlpsol')
-x0_full = sys_loss.get_initial_guess(sol_dict)
-kn_full = sys_loss.get_scaled_constraints()
+rootfinder_full = sys_span.make_rootfinder('nlpsol')
+x0_full = sys_span.get_initial_guess(sol_dict)
+kn_full = sys_span.get_scaled_constraints()
 sol_full = solve_problem(rootfinder_full, x0_full, kn_full)
 
 
-ntw.system = sys_loss
+ntw.system = sys_span
 # Write solution back to FlowNodes
 ntw.system.write_solution_to_nodes(sol_full)
 
@@ -315,15 +315,15 @@ if PLOTS:
     for n0_idx, n1_idx in grouper(num_nodes, 2, incomplete='ignore'):
         n0 = ntw.system.nodes[n0_idx]
         n1 = ntw.system.nodes[n1_idx]
-        ax_chord = n1.geo.get('chord').to_base_units().magnitude[0]
+        ax_chord = n1.geo.get('chord_ax').to_base_units().magnitude[0]
         lines = plot_from_nodes(
             n0,
             n1,
             False,
             offset,
-            color=COLORMAP((n1_idx - 1) / ntw.num_components),
+            color=COLORMAP((n1_idx - 1) // ntw.num_components),
         )
-        offset += ax_chord * 1.15
+        offset += ax_chord * 1.1
 
     # Draw centerline
     ax.plot([0.0, offset], [0.0, 0.0], color='k', linestyle='dashdot', linewidth=2.5)
@@ -338,7 +338,13 @@ if PLOTS:
     # as well as entropy change
     from CoolProp import PT_INPUTS
 
-    PT_EOS = CasadiEoS('PT_EoS', real_model.eos_object, PT_INPUTS, ['smass'], NUM_SPAN)
+    PT_EOS = CasadiEoS(
+        'PT_EoS',
+        real_model.eos_object,
+        PT_INPUTS,
+        ['smass'],
+        ntw.system.spanwise_stations,
+    )
     fig, ax = plt.subplots(1, 2, figsize=(10, 5))
 
     for idx, (n0_idx, n1_idx) in enumerate(blade_rows):
