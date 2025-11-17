@@ -143,6 +143,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'V': 'm/s',
         'Vt': 'm/s',
         'Vm': 'm/s',
+        'VmRatio': 'm/s',
         'W': 'm/s',
         'Wt': 'm/s',
         'Wm': 'm/s',
@@ -150,7 +151,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'omega': 'rad/s',
         'beta': 'rad',
         'alpha': 'rad',
-        # Meridional Geometry
+        # Geometry
         'meridional_angle': 'rad',
         'height': 'm',
         'heightRatio': 'dimensionless',
@@ -167,6 +168,10 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'stagger': 'rad',
         'metal_angle': 'rad',
         'solidity': 'dimensionless',
+        'te_thick': 'meters',
+        'disp_thick': 'meters',
+        'mom_thick': 'meters',
+        'te_by_pitch': 'dimensionless',
     }
 
 

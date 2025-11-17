@@ -1,3 +1,5 @@
+from typing import Literal
+from numpy.typing import NDArray
 from sympy import Symbol
 from pint.facets.plain import PlainQuantity
 import numpy as np
@@ -32,103 +34,48 @@ def safe_min_clip(x, min_value):
     return x
 
 
-def fin_diff(f, x):
+def make_casadi_interpolant(
+    x: NDArray,
+    y: NDArray,
+    data: NDArray,
+    name: str = 'GenericInterpolant',
+    method: str | Literal['linear', 'bspline'] = 'linear',
+):
+    # NOTE::
+    # The flat data should move along the x first
+    # and then the y
+    # [[1,2,3], [4,5,6]]    -> ravel('C') -> [1,2,3,4,5,6]
+    # [[1,4], [2,5], [3,6]] -> ravel('F') -> [1,2,3,4,5,6]
+
+    if len(x) == data.shape[0] and len(y) == data.shape[1]:
+        data_flat = data.ravel('F')
+    elif len(x) == data.shape[1] and len(y) == data.shape[0]:
+        data_flat = data.ravel('C')
+    else:
+        raise ValueError('Size mismatch for interpolation')
+
+    return cs.interpolant(name, method, [x, y], data_flat)
+
+
+def fin_diff(f, x, edge_order: Literal['first', 'second'] = 'second'):
     """
-    Centered finite difference derivative along the span, fwd and
-    bwd on the edges
+    Centered finite difference df/dx derivative along the span,
+    fwd and bwd on the edges
     """
     first_delta_x = safe_min_clip(x[1] - x[0], 1e-8)
-    first_der = (-3 * f[0] + 4 * f[1] - f[2]) / (2 * first_delta_x)
-
-    end_delta_x = safe_min_clip(x[-1] - x[-2], 1e-8)
-    last_der = (f[-3] - 4 * f[-2] + 3 * f[-1]) / (2 * end_delta_x)
-
     inner_delta_x = safe_min_clip(x[2:] - x[:-2], 1e-8)
+    final_delta_x = safe_min_clip(x[-1] - x[-2], 1e-8)
+
+    if edge_order == 'first':
+        first_der = (f[1] - f[0]) / first_delta_x
+        final_der = (f[-1] - f[-2]) / final_delta_x
+    else:
+        first_der = (-3 * f[0] + 4 * f[1] - f[2]) / (2 * first_delta_x)
+        final_der = (f[-3] - 4 * f[-2] + 3 * f[-1]) / (2 * final_delta_x)
+
     internal_der = (f[2:] - f[:-2]) / inner_delta_x
 
-    return cs.vertcat(first_der, internal_der, last_der)
-
-
-def findpro(x, vec):
-    """findpro returns the position of the element of vec whose value is nearest to x.
-    In case you have a matrix, you need to select a row as input"""
-
-    N = len(vec)
-    diff = np.zeros(N)
-
-    for i in range(N):
-        diff[i] = np.abs(vec[i] - x)
-
-    pos = np.nonzero(diff == np.min(diff))
-
-    if len(pos) != 1:
-        pos = pos[0]
-
-    return pos
-
-
-def weight(x, vec):
-    """
-    Weight returns the positions of the two elements of vec whose values are nearest
-    to x, together with the correspondent weights. Weight properly works only if the
-    elements of vec are in increasing or decreasing order, not sparse (e.g. functions
-    parametrized on y). The closer is the value of vec wrt x, the higher is its weight
-    """
-
-    N = len(vec)
-
-    if N == 1:  # correction for simple x-z charts (not parametrized on y)
-        pos1 = 0
-        w1 = 1
-        pos2 = 0
-        w2 = 0
-    else:
-        diff = np.zeros(N)
-
-        if vec[0] < vec[1]:
-            ord = 'increasing'
-        else:
-            ord = 'decreasing'
-
-        for i in range(N):
-            diff[i] = np.abs(vec[i] - x)
-
-        pos1 = np.argmin(diff)
-        pos2 = 0
-
-        if (x > vec[pos1]) and (ord == 'increasing'):
-            pos2 = pos1 + 1
-        elif (x > vec[pos1]) and (ord == 'decreasing'):
-            pos2 = pos1 - 1
-        elif (x < vec[pos1]) and (ord == 'increasing'):
-            pos2 = pos1 - 1
-        elif (x < vec[pos1]) and (ord == 'decreasing'):
-            pos2 = pos1 + 1
-
-        if (pos2 >= 0) and (pos2 <= N - 1) and (x != vec[pos1]):
-            w1 = 1 - (diff[pos1] / np.abs(vec[pos2] - vec[pos1]))
-            w2 = 1 - w1
-        else:
-            w1 = 1
-            pos2 = 0
-            w2 = 0
-
-    return pos1, pos2, w1, w2
-
-
-def w_extrap(x, y, xq, yq, zq):
-    """
-    w_extrap receives as input 2 vectors xq, yq, 1 matrix zq and 2 values x, y
-    within which you whish to enter the chart. It returns the value z corresponding
-    to the weighted average between the curves nearest to y,
-    evaluated at point x (or nearest to it)
-    """
-
-    pos1, pos2, w1, w2 = weight(y, yq)
-    pos_x = findpro(x, xq)
-    z = w1 * zq[pos1, pos_x][0] + w2 * zq[pos2, pos_x][0]
-
-    return z
+    return cs.vertcat(first_der, internal_der, final_der)
 
 
 class TransfiniteInterpolator:
@@ -234,7 +181,7 @@ class TransfiniteInterpolator:
             plt.show()
 
 
-if __name__ == '__main__':
+def test_transfinite():
     # Example curves
     theta = np.linspace(0, np.pi, 50)
     curve0 = np.array([theta, np.sin(theta)])  # bottom curve
@@ -243,3 +190,5 @@ if __name__ == '__main__':
     tfi = TransfiniteInterpolator(curve0, curve1, nu=30, nv=15)
     grid = tfi.generate_grid()
     tfi.plot()
+
+    return grid

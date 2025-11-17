@@ -424,6 +424,8 @@ class SystemAssembler(ABC):
         for node_idx, node in enumerate(self.nodes):
             for arg_no_idx, value in node.get_constraints().items():
                 arg = arg_no_idx + str(node_idx)
+                if arg not in self._declared_arguments:
+                    logger.warning(f'Unused constraint {arg}')
                 constraint_names.append(arg)
                 constr_value = value.to_base_units().magnitude
 
@@ -1030,7 +1032,12 @@ class CasadiSystem(SystemAssembler):
             kwmap = self._arg_maps[eq]  # Convert to abs args
             args = [self._all_symbols[kwmap[k]] for k in eq.arguments]
 
-            overridden_eq = override_operators(eq.residual, 'numpy', cs)
+            # NOTE: No need to override the operators for now,
+            # just use numpy operations in a way compatible with
+            # casadi symbolics
+
+            # overridden_eq = override_operators(eq.residual, 'numpy', cs)
+            overridden_eq = eq.residual
             residuals.append(overridden_eq(*args))
 
         # Divide each resigual expression by its scaling symbol

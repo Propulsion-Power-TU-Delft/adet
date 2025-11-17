@@ -22,11 +22,12 @@ from adet.tools.plotting import plot_velocity_triangles
 
 logger = logging.getLogger(__name__)
 
+_def_units = DefaultUnitsRegistry()
+
 
 class VariableContainer:
     # Define valid types for that container, if any
     valid_types: ClassVar[tuple[str, ...] | None] = None
-    _def_units = DefaultUnitsRegistry()
 
     def __init__(self, spanwise_stations: int = 1):
         self._variables: dict[str, PlainQuantity] = {}
@@ -131,7 +132,7 @@ class VariableContainer:
         is_fixed: bool,
     ) -> None:
         if units is None:
-            units = self._def_units[var_type]
+            units = _def_units[var_type]
 
         if magnitude is None:
             magnitude = np.full(self._spanwise_stations, np.nan)
@@ -267,22 +268,22 @@ class VariableContainer:
         )
 
 
-KinematicVariable = Literal[
-    'V',
-    'Vm',
-    'Vt',
-    'W',
-    'Wt',
-    'Wm',
-    'U',
-    'beta',
-    'alpha',
-    'omega',
-]
+# KinematicVariable = Literal[
+#     'V',
+#     'Vm',
+#     'Vt',
+#     'W',
+#     'Wt',
+#     'Wm',
+#     'U',
+#     'beta',
+#     'alpha',
+#     'omega',
+# ]
 
 
 class KinematicContainer(VariableContainer):
-    valid_types = get_args(KinematicVariable)
+    # valid_types = get_args(KinematicVariable)
 
     def plot(self, geo, fontsize):
         return plot_velocity_triangles(self, geo, fontsize)

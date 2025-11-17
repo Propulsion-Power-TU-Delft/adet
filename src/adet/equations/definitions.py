@@ -8,8 +8,8 @@ import numpy as np
 
 
 class AngleDeflection(EquationBase):
-    def residual(self, kin_beta0, kin_beta1, oth_deflection1):
-        return kin_beta1 - kin_beta0 - oth_deflection1
+    def residual(self, kin_beta0, kin_beta1, kin_deflection1):
+        return kin_beta1 - kin_beta0 - kin_deflection1
 
 
 class RadiusRatio(EquationBase):
@@ -55,23 +55,23 @@ class DegreeOfReaction(EquationBase):
 
 
 class MeridionalVelocityRatio(EquationBase):
-    def residual(self, kin_Vm0, kin_Vm1, oth_VmRatio1):
-        return oth_VmRatio1 - kin_Vm1 / kin_Vm0
+    def residual(self, kin_Vm0, kin_Vm1, kin_VmRatio1):
+        return kin_VmRatio1 - kin_Vm1 / kin_Vm0
 
 
 class CumMassFlow(EquationBase):
     """Cumulative massflow"""
 
     def residual(self, oth_cum_massflow0, oth_massflow0):
-        return oth_cum_massflow0 - np.sum(oth_massflow0)
+        return oth_cum_massflow0 - (oth_massflow0**0).T @ oth_massflow0
 
 
 class BladeCount(EquationBase):
     """
     Define pitch as circumference / n_blades and the massflow per blade channel
 
-    Note
-    ----
+    Note:
+    -----
     I deliberately did not include a mechanism for imposing an integer
     number of blades. It should be done by the loading criteria
     e.g. If the user imposes no loading criteria and just specifies radius and
@@ -94,6 +94,6 @@ class Solidity(EquationBase):
         return geo_pitch0 * geo_solidity0 - geo_chord0
 
 
-class AxialChord(EquationBase):
-    def residual(self, geo_chord_ax0, geo_chord0, geo_stagger0):
-        return geo_chord_ax0 - geo_chord0 * np.cos(geo_stagger0)
+class BladeThicknes(EquationBase):
+    def residual(self, geo_te_thick0, geo_te_by_pitch0, geo_pitch0):
+        return geo_te_thick0 - geo_te_by_pitch0 * geo_pitch0
