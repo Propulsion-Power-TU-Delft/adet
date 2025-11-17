@@ -18,7 +18,6 @@ import logging
 
 # External libraries
 import matplotlib.pyplot as plt
-import numpy as np
 from pint import Quantity
 
 # Network build
@@ -154,6 +153,7 @@ stator = BladeRow(
             'rmid': 0.5,
             'chord': 0.15,  # Blade chord length [m]
             'n_blades': 30,  # Number of blades
+            'te_by_pitch': 0.02,
         },
     },
     shaft=casing,
@@ -174,6 +174,7 @@ rotor = BladeRow(
             'rmid': 0.5,
             'chord': 0.15,
             'n_blades': 30,
+            'te_by_pitch': 0.02,
         },
     },
     shaft=rotating_shaft,

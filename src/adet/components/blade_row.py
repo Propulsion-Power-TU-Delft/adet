@@ -8,20 +8,22 @@ import numpy as np
 # Equation objects
 from adet.equations.definitions import (
     AngleDeflection,
-    AxialChord,
     BladeCount,
+    BladeThicknes,
     HeightRatio,
     MeridionalVelocityRatio,
     Solidity,
 )
 from adet.equations.fundamental import EulerEquation, MassConservation
-from adet.equations.geometrical import ParabolicCamberline
 from adet.equations import EquationBase
+from adet.equations.geometrical import GeometricThroat
 from adet.equations.linkers import SpeedLinker, ComponentLinker
 from adet.losses import LossModel
 
 # Dependencies and tooling
-from adet.losses.mixing import MixingBalances, RowMixerLink
+from adet.losses.mixing import MixingBalances, MixingGeometry
+from adet.equations.linkers import RowMixerLink
+
 from adet.node import FlowNode
 from adet.components import BaseComponent, Shaft
 from adet.geometry import BezierCurve, StraightLine
@@ -43,8 +45,11 @@ class BladeRow(BaseComponent):
         (HeightRatio, (0, 1)),
         (AngleDeflection, (0, 1)),
         (MeridionalVelocityRatio, (0, 1)),
+        # Geometry
         (Solidity, 1),
         (BladeCount, 1),
+        (BladeThicknes, 1),
+        (GeometricThroat, 1),
     ]
 
     linker_equations = [ComponentLinker]
@@ -111,6 +116,10 @@ class {CLASS_NAME}(EquationBase):
 class DownstreamMixer(BaseComponent):
     base_equations = [
         (MixingBalances, (0, 1)),
+        (MixingGeometry, (0, 1)),
+        # (BoundaryLayerProperties, 0),
+        (SpeedLinker, (0, 1)),
+        (SpeedLinker, (0, 0)),
     ]
 
     linker_equations = [

@@ -42,7 +42,7 @@ class BaseComponent(ABC):
         extra_equations: dict[
             EquationBase,
             int | tuple[int, ...],
-        ],
+        ] = {},
     ):
         self.name = name
         self.boundary_conditions = defaultdict(dict)

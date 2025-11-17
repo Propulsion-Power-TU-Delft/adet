@@ -5,6 +5,7 @@ coefficients used in TurboMachinery
 
 from adet.equations import EquationBase
 import numpy as np
+import casadi as cs
 
 
 class TotalTotalPressureRatio(EquationBase):
@@ -99,10 +100,15 @@ class SizeParameter(EquationBase):
 
 
 class AbsoluteMachNumber(EquationBase):
-    def residual(self, oth_mach0, kin_V0, stc_speed_sound0):
-        return oth_mach0 * stc_speed_sound0 - kin_V0
+    def residual(self, kin_mach0, kin_V0, stc_speed_sound0):
+        return kin_mach0 * stc_speed_sound0 - kin_V0
 
 
 class RelativeMachNumber(EquationBase):
-    def residual(self, oth_relmach0, kin_W0, stc_speed_sound0):
-        return oth_relmach0 * stc_speed_sound0 - kin_W0
+    skip_unit_check = True
+    manual_units = ('dimensionless',)
+
+    def residual(self, kin_relmach0, kin_W0, stc_speed_sound0):
+        # Choking criterion
+        choke = cs.if_else(kin_relmach0 > 1.0, 1.0, kin_relmach0)
+        return choke * stc_speed_sound0 - kin_W0

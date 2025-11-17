@@ -5,6 +5,11 @@ import matplotlib.pyplot as plt
 from adet.tools.interpolation import safe_min_clip
 
 
+class GeometricThroat(EquationBase):
+    def residual(self, geo_throat0, geo_metal_angle0, geo_pitch0):
+        return geo_pitch0 * np.cos(geo_metal_angle0) - geo_throat0
+
+
 class MeridionalUniform(EquationBase):
     # = * = * = * = * = * = * = * = * = * = * = * = * = * = *
     # BOUNTY:                                               =
@@ -59,7 +64,9 @@ class MinimalCamberLine(EquationBase):
     """
     Minimal camberline. Consider stagger as average
     angle between inlet and outlet and the camberline
-    is just equal to the chord
+    is just equal to the chord.
+    This is the most numerically stable geometry, and can
+    be used for initiating stiffer solutions
     """
 
     def residual(
@@ -81,7 +88,10 @@ class MinimalCamberLine(EquationBase):
 
 
 class TwoSegmentCamberline(EquationBase):
-    """Camberline made up of two segments aligned with the metal angle"""
+    """
+    Camberline made up of two segments aligned with the metal angle that
+    meet at half of the axial chord
+    """
 
     def _compute_lines(self, inlet_angle, outlet_angle, chord_ax):
         tan0 = np.tan(inlet_angle)

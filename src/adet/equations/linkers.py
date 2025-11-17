@@ -44,9 +44,6 @@ class ComponentLinker(EquationBase):
         geo_height1,
         geo_meridional_angle0,
         geo_meridional_angle1,
-        # Others
-        oth_massflow0,
-        oth_massflow1,
     ):
         # 1. no entropy generation, no work exchange -> Same thermo state
         r1 = tot_hmass0 - tot_hmass1
@@ -63,6 +60,41 @@ class ComponentLinker(EquationBase):
         r7 = geo_meridional_angle0 - geo_meridional_angle1
 
         return r1, r2, r3, r4, r5, r6, r7
+
+
+class RowMixerLink(EquationBase):
+    """
+    Data passthrough between blade outlet and mixing object, to be used in addition to
+    ComponentLinker. It mainly gives access to the geometrical properties
+    of the blade row to the mixing object
+    """
+
+    def residual(
+        self,
+        # Reference frame
+        kin_omega0,
+        kin_omega1,
+        # Geometry
+        geo_pitch0,
+        geo_pitch1,
+        geo_throat0,
+        geo_throat1,
+        geo_te_thick0,
+        geo_te_thick1,
+        # Boundary layer
+        oth_disp_thick0,
+        oth_disp_thick1,
+        oth_mom_thick0,
+        oth_mom_thick1,
+    ):
+        r1 = geo_throat0 - geo_throat1
+        r2 = geo_te_thick0 - geo_te_thick1
+        r3 = geo_te_thick0 - geo_te_thick1
+        r4 = oth_mom_thick0 - geo_te_thick1
+        r5 = oth_disp_thick0 - geo_te_thick1
+        r6 = kin_omega0 - kin_omega1
+
+        return r1, r2, r3, r4, r5, r6
 
 
 class VariableAdder(EquationBase):

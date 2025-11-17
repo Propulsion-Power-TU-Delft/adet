@@ -18,7 +18,7 @@ from adet.fluid.casadi_eos import CasadiEoS
 from adet.fluid.settings import FluidSettings
 
 # Objects Configuration => MODIFY CONFIG FILE TO SET BOUNDARY CONDITIONS
-from adet.config_main import real_model, inlet, row0, row1
+from adet.config_main import real_model, inlet, row0, row0_mixer, row1
 
 # Tooling and utils
 from adet.losses.base_loss import LossModel
@@ -65,7 +65,7 @@ ntw = ComponentNetwork(
     settings,  # Fluid settings
     inlet,  # Inlet conditions
     CasadiSystem(spanwise_stations=NUM_SPAN),  # Backend
-    *[row0, row1],
+    *[row0],  # , row1],
 )
 
 # Add global constraints for ideal gas and
@@ -97,39 +97,8 @@ kn_is = ntw.system.get_scaled_constraints()
 
 sol_is = solve_problem(rootfinder_is, x0_is, kn_is)
 
-sol_is_dict = ntw.system.write_solution_to_nodes(sol_is)
-
-# === Add losses and increase spanwise stations
-sys_loss = ntw.system.copy()
-sys_loss.spanwise_stations = NUM_SPAN * 3
-sys_loss.remove_equation_type(LossModel)
-sys_loss.add_equation(DentonProfileLoss(real_model), (0, 1))
-sys_loss.add_equation(DentonProfileLoss(real_model), (2, 3))
-sys_loss.build(SCALED)
-rootfinder_loss = sys_loss.make_rootfinder('nlpsol')
-
-x0_loss = sys_loss.get_initial_guess(sol_is_dict)
-kn_loss = sys_loss.get_scaled_constraints()
-sol_loss = solve_problem(rootfinder_loss, x0_loss, kn_loss)
-sol_loss_dict = sys_loss.write_solution_to_nodes(sol_loss)
-
-# === Switch to parabolic camberline
-sys_camber = sys_loss.copy()
-sys_camber.spanwise_stations = NUM_SPAN * 9
-sys_camber.remove_equation_type(TwoSegmentCamberline, MinimalCamberLine)
-sys_camber.add_equation(ParabolicCamberline(), (0, 1))
-sys_camber.add_equation(ParabolicCamberline(), (2, 3))
-sys_camber.build(SCALED)
-rootfinder_camber = sys_camber.make_rootfinder('nlpsol')
-
-x0_camber = sys_camber.get_initial_guess(sol_loss_dict)
-kn_camber = sys_camber.get_scaled_constraints()
-sol_camber = solve_problem(rootfinder_camber, x0_camber, kn_camber)
-
 # Write solution to network (just for post processing)
-ntw.system = sys_camber
-sol = sol_camber
-ntw.system.write_solution_to_nodes(sol)
+ntw.system.write_solution_to_nodes(sol_is)
 
 # === POST-PROCESS ===
 nodes = {}

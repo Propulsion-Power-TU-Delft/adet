@@ -3,6 +3,7 @@
 from pint import Quantity
 
 # Equations
+from adet.components.blade_row import DownstreamMixer
 from adet.equations.geometrical import (
     MinimalCamberLine,
     ParabolicCamberline,
@@ -12,6 +13,7 @@ from adet.equations.nondimensional import WorkCoefficient
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 
 # Tooling & Components
+from adet.losses.mixing import BoundaryLayerProperties
 from adet.losses.profile import DentonProfileLoss
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.registries import DefaultUnitsRegistry, ScalingRegistry, GuessRegistry
@@ -43,8 +45,6 @@ _dfu_reg.from_dict(
         'specificSpeed': 'dimensionless',
         'STratio': 'dimensionless',
         'VmRatio': 'dimensionless',
-        'Vt_mid': 'm/s',  # For vortex distributions
-        'alpha_mid': 'rad',  # For vortex distributions
         'sizeParameter': 'meters',
         'n_blades': 'dimensionless',
         # Profile losses
@@ -52,6 +52,8 @@ _dfu_reg.from_dict(
         'xi_by_camb_len_A': 'meters',
         'xi_by_camb_len_B': 'meters',
         'k_prof': 'dimensionless',
+        'mom_by_te_thick': 'dimensionless',
+        'disp_by_mom_thick': 'dimensionless',
     }
 )
 
@@ -97,6 +99,7 @@ row0 = BladeRow(
     {
         'kin': {
             # 'alpha': Quantity(70, 'deg'),
+            'mach': 0.7,
         },
         'geo': {
             # Meridional
@@ -106,13 +109,15 @@ row0 = BladeRow(
             'chord_ax': 0.15,
             'n_blades': 25,
             # 'solidity': 0.4,
+            'te_by_pitch': 0.02,  # TE thickness by pitch
         },
         'tot': {
-            # 'p': 6e5, # Impose either here or at inlet
+            # 'p': 5e5,  # Impose either here or at inlet
         },
         'oth': {
             'heightRatio': 1.1,
-            'mach': 0.3,
+            'mom_by_te_thick': 0.075,
+            'disp_by_mom_thick': 2,
         },
     },
     shaft=static_shaft,
@@ -125,8 +130,14 @@ row0 = BladeRow(
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
         PercentageEntropyLoss(0.0): (0, 1),
+        BoundaryLayerProperties(): 1,
         # DentonProfileLoss(real_model): (0, 1),
     },
+)
+
+row0_mixer = DownstreamMixer(
+    'row0_mixer',
+    {},
 )
 
 row1 = BladeRow(
