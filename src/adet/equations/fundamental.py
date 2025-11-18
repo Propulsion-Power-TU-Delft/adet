@@ -11,6 +11,12 @@ class EulerEquation(EquationBase):
         return (tot_hmass1 - tot_hmass0) - (kin_U1 * kin_Vt1 - kin_U0 * kin_Vt0)
 
 
+# NOTE:
+# This formulation of mass conservation fails when there is
+# some blockage or blade thickness because the area simply considers
+# a series of annuli
+
+
 class MassConservation(EquationBase):
     def residual(self, oth_massflow0, oth_massflow1):
         return oth_massflow0 - oth_massflow1
@@ -22,8 +28,30 @@ class MassAreaRelation(EquationBase):
         \\dot_{m} = \\rho_0 V_{m0} A_0
     """
 
-    def residual(self, kin_Vm0, geo_area0, stc_rhomass0, oth_massflow0):
-        return oth_massflow0 - stc_rhomass0 * kin_Vm0 * geo_area0
+    def residual(self, kin_Vm0, geo_eff_area0, stc_rhomass0, oth_massflow0):
+        return oth_massflow0 - stc_rhomass0 * kin_Vm0 * geo_eff_area0
+
+
+class ZeroBlockage(EquationBase):
+    """Use the annuli's area as the passage area"""
+
+    def residual(self, geo_area0, geo_eff_area0):
+        return geo_eff_area0 - geo_area0
+
+
+class BladeBlockage(EquationBase):
+    def residual(
+        self,
+        geo_hh0,
+        geo_area0,
+        geo_eff_area0,
+        geo_n_blades0,
+        geo_bld_thick0,
+        geo_metal_angle0,
+    ):
+        return (
+            geo_eff_area0 - geo_area0
+        ) + geo_hh0 * geo_n_blades0 * geo_bld_thick0 / np.cos(geo_metal_angle0)
 
 
 class TotalStaticMatching(EquationBase):
@@ -136,6 +164,8 @@ class Kinematics(EquationBase):
         kin_U0,
         kin_alpha0,
         kin_beta0,
+        kin_omega0,
+        geo_rr0,
     ):
         # Only if Vm and Vt are zero the denominator
         # nullifies, but Vm > 0 always, thus the
@@ -146,13 +176,13 @@ class Kinematics(EquationBase):
         r3 = kin_Vm0 - kin_Wm0
         r4 = kin_Vt0 - (kin_Wt0 + kin_U0)
 
-        # atan2 ensures that the angles are between
-        # - pi / 2 and pi / 2
+        # atan2 ensures that the angles are between - pi / 2 and pi / 2
         r5 = kin_alpha0 - np.atan2(kin_Vt0, kin_Vm0)
         r6 = kin_beta0 - np.atan2(kin_Wt0, kin_Wm0)
-
-        # Alternative formulation
+        # - Alternative formulation
         # r5 = kin_Wm0 - kin_W0 * np.cos(kin_beta0)
         # r6 = kin_Vm0 - kin_V0 * np.cos(kin_alpha0)
 
-        return r1, r2, r3, r4, r5, r6
+        r7 = kin_omega0 * geo_rr0 - kin_U0
+
+        return r1, r2, r3, r4, r5, r6, r7

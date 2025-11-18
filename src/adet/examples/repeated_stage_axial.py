@@ -144,7 +144,13 @@ inlet = Inlet(
 # Stator blade row definition
 stator = BladeRow(
     'Stator',
-    {
+    shaft=casing,
+    in_constraints={
+        'geo': {
+            'thick_by_pitch': 0.04,
+        },
+    },
+    out_constraints={
         'kin': {
             'alpha': Quantity(70, 'deg'),  # Exit flow angle
         },
@@ -153,10 +159,9 @@ stator = BladeRow(
             'rmid': 0.5,
             'chord': 0.15,  # Blade chord length [m]
             'n_blades': 30,  # Number of blades
-            'te_by_pitch': 0.02,
+            'thick_by_pitch': 0.02,
         },
     },
-    shaft=casing,
     extra_equations={
         PercentageEntropyLoss(0.0): (0, 1),
         MinimalCamberLine(): (0, 1),
@@ -168,16 +173,21 @@ stator = BladeRow(
 # Rotor blade row definition
 rotor = BladeRow(
     'Rotor',
-    {
+    shaft=rotating_shaft,
+    in_constraints={
+        'geo': {
+            'thick_by_pitch': 0.04,
+        },
+    },
+    out_constraints={
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
             'rmid': 0.5,
             'chord': 0.15,
             'n_blades': 30,
-            'te_by_pitch': 0.02,
+            'thick_by_pitch': 0.02,
         },
     },
-    shaft=rotating_shaft,
     extra_equations={
         PercentageEntropyLoss(0.0): (0, 1),
         MinimalCamberLine(): (0, 1),

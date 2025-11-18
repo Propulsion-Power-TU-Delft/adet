@@ -1,18 +1,16 @@
-from itertools import pairwise
 from typing import Generic, Sequence, TypeVar
 
 from adet.assembly import SystemAssembler
 from adet.components import BaseComponent
 from adet.components.connections import Inlet
-from adet.equations.nondimensional import AbsoluteMachNumber, RelativeMachNumber
 from adet.fluid.settings import FluidSettings
 
-from adet.equations.fundamental import MassAreaRelation, Kinematics, TotalStaticMatching
 from adet.equations.geometrical import MeridionalUniform
-
+from adet.equations.fundamental import MassAreaRelation, Kinematics, TotalStaticMatching
+from adet.equations.nondimensional import AbsoluteMachNumber, RelativeMachNumber
 from adet.equations.definitions import CumMassFlow
+from adet.equations.special import VariableAdder
 
-from adet.equations.linkers import VariableAdder
 from adet.tools.printing import print_header
 
 
@@ -26,7 +24,9 @@ _SINGLE_NODE_EQUATIONS = [
     Kinematics,
     MeridionalUniform,
     TotalStaticMatching,
-    # Courtesy definitions (the system is well posed w/o)
+    # *** Courtesy definitions
+    # -> the system is well posed w/o them
+    # if they are not mentioned in other equations
     CumMassFlow,
     AbsoluteMachNumber,
     RelativeMachNumber,
@@ -70,19 +70,29 @@ class ComponentNetwork(Generic[T]):
 
     def _read_components(self, components: Sequence[BaseComponent]):
         for position, comp in enumerate(components):
-            component_inlet_index = 2 * position
-            component_outlet_index = 2 * position + 1
+            inlet_node_idx = 2 * position
+            outlet_node_idx = 2 * position + 1
+
+            for var in comp.constant_variables:
+                self.system.add_invariants(
+                    (f'{var + str(inlet_node_idx)}', f'{var + str(outlet_node_idx)}')
+                )
 
             self.system.add_boundary_conditions(
-                comp.boundary_conditions,
-                component_outlet_index,
+                comp.in_constraints,
+                inlet_node_idx,
+            )
+
+            self.system.add_boundary_conditions(
+                comp.out_constraints,
+                outlet_node_idx,
             )
 
             for equation, node_pos in comp._equations.items():
                 if isinstance(node_pos, int):
-                    traslated_pos = component_inlet_index + node_pos
+                    traslated_pos = inlet_node_idx + node_pos
                 else:
-                    traslated_pos = [component_inlet_index + pos for pos in node_pos]
+                    traslated_pos = [inlet_node_idx + pos for pos in node_pos]
 
                 self.system.add_equation(equation, traslated_pos)
 
@@ -96,7 +106,7 @@ class ComponentNetwork(Generic[T]):
         # ~~~~~~~~~~~~
         #        ___________________________________
         #          |         |          _________
-        #          |         |  linker |         |
+        #          |         |  invar. |         |
         #          |         |    ^    |         |
         #   V      |  ROW 0  |    |    |  ROW 1  |
         #  -->   0 |         | 1 === 2 |         | 3   <- NODES
@@ -110,12 +120,18 @@ class ComponentNetwork(Generic[T]):
         # * components couples : (0, 1), (2, 3), ...
         # * link couples : (1, 2), ...
 
+        # Add invariants from one node to the next
         if len(self.components) > 1:
             for comp_index, component in enumerate(self.components[1:], 1):
-                in_node = 2 * comp_index  # Of the current component
-                out_node = in_node - 1  # Of the previous component
-                for eq in component.linker_equations:
-                    self.system.add_equation(eq(), (out_node, in_node))
+                inlet_node_idx = 2 * comp_index  # Of the current component
+                outlet_node_idx = inlet_node_idx - 1  # Of the previous component
+                for var in component.from_previous_node:
+                    self.system.add_invariants(
+                        (
+                            f'{var + str(inlet_node_idx)}',
+                            f'{var + str(outlet_node_idx)}',
+                        )
+                    )
 
     def print_structure(self):
         component_repr = '@ = node\n\nInlet == @0'

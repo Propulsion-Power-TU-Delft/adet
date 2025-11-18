@@ -5,11 +5,6 @@ import matplotlib.pyplot as plt
 from adet.tools.interpolation import safe_min_clip
 
 
-class GeometricThroat(EquationBase):
-    def residual(self, geo_throat0, geo_metal_angle0, geo_pitch0):
-        return geo_pitch0 * np.cos(geo_metal_angle0) - geo_throat0
-
-
 class MeridionalUniform(EquationBase):
     # = * = * = * = * = * = * = * = * = * = * = * = * = * = *
     # BOUNTY:                                               =

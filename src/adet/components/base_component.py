@@ -27,15 +27,30 @@ class BaseComponent(ABC):
             ]
         ]
     ]
+    """
+    Base equations that link the inlet and outlet nodes
+    of a component
+    """
 
-    # These describe extra links between the outlet
-    # inlet node of the component and the previous one
-    linker_equations: ClassVar[list[Type[EquationBase]]]
+    from_previous_node: ClassVar[list[str]] = []
+    """
+    Variables that are inherited from the previous node
+    """
+
+    constant_variables: ClassVar[list[str]] = []
+    """
+    Variables that are treated as invariant between inlet
+    and outlet
+    """
 
     def __init__(
         self,
         name: str,
-        boundary_conditions: dict[
+        in_constraints: dict[
+            str,
+            dict[str, Any],
+        ],
+        out_constraints: dict[
             str,
             dict[str, Any],
         ],
@@ -45,8 +60,12 @@ class BaseComponent(ABC):
         ] = {},
     ):
         self.name = name
-        self.boundary_conditions = defaultdict(dict)
-        self.boundary_conditions.update(boundary_conditions)
+
+        self.in_constraints = defaultdict(dict)
+        self.in_constraints.update(in_constraints)
+
+        self.out_constraints = defaultdict(dict)
+        self.out_constraints.update(out_constraints)
 
         # Careful, This makes equations non-reusable, because when
         # added to a system the instance is used for dictionary keys
@@ -63,15 +82,17 @@ class BaseComponent(ABC):
         if not hasattr(cls, 'base_equations'):
             raise TypeError(f'{cls.__name__} must define `base_equations`')
 
-        if not hasattr(cls, 'linker_equations'):
-            raise TypeError(
-                f'{cls.__name__} must define `linker_equations` for component interface'
-            )
-
         cls._verify_base_equation_format()
+
+        # if not hasattr(cls, 'from_previous_node'):
+        #     raise TypeError(
+        #         f'{cls.__name__} must define `from_previous_node` '
+        #         f'for component interface'
+        #     )
 
     @classmethod
     def _verify_base_equation_format(cls):
+        """Verify that the base equations are entered in the correct format"""
         # Check types
         if not isinstance(cls.base_equations, list):
             raise TypeError('Equations must be supplied as a list')

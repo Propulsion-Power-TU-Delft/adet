@@ -159,6 +159,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'rr': 'm',
         'rmid': 'm',
         'area': 'm**2',
+        'eff_area': 'm**2',
         # Blade parameters
         'chord': 'm',
         'chord_ax': 'm',
@@ -168,16 +169,16 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'stagger': 'rad',
         'metal_angle': 'rad',
         'solidity': 'dimensionless',
-        'te_thick': 'meters',
+        'bld_thick': 'meters',
         'disp_thick': 'meters',
         'mom_thick': 'meters',
-        'te_by_pitch': 'dimensionless',
+        'thick_by_pitch': 'dimensionless',
     }
 
 
 class GuessRegistry(BaseRegistry[str, float]):
     """
-    Registry to store guesses based on variable type
+    Registry to store guesses based on variable type, in SI units
     """
 
     DEFAULTS = {
@@ -205,14 +206,19 @@ class GuessRegistry(BaseRegistry[str, float]):
         'ch_massflow': 1.0,
         # GEOMETRY
         'area': 0.1,
+        'eff_area': 0.1,
         'meridional_angle': 0.1,
+        'metal_angle': 0.1,
         'hh': 0.1,
         'height': 0.1,
         'rr': 0.1,
         'rmid': 0.1,
         'chord': 0.1,
         'chord_ax': 0.1,
+        'camb_len': 0.1,
         'pitch': 0.1,
+        'bld_thick': 0.005,
+        'n_blades': 20.0,
         'throat': 0.1,
         'stagger': 0.1,
     }
@@ -323,6 +329,7 @@ class VariableBoundsRegistry(
         'alpha': (-1.5, 1.5),
         'beta': (-1.5, 1.5),
         'area': (0.0, 1.0),
+        'eff_area': (0.0, 1.0),
         'rr': (1e-4, 1.0),
         'rmid': (1e-4, 1.0),
         'hh': (1e-5, 1.0),

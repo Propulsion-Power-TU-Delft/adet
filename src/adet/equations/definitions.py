@@ -66,7 +66,7 @@ class CumMassFlow(EquationBase):
         return oth_cum_massflow0 - (oth_massflow0**0).T @ oth_massflow0
 
 
-class BladeCount(EquationBase):
+class BladePitchCount(EquationBase):
     """
     Define pitch as circumference / n_blades and the massflow per blade channel
 
@@ -81,7 +81,12 @@ class BladeCount(EquationBase):
     """
 
     def residual(
-        self, geo_pitch0, geo_n_blades0, geo_rr0, oth_ch_massflow0, oth_massflow0
+        self,
+        geo_pitch0,
+        geo_n_blades0,
+        geo_rr0,
+        oth_ch_massflow0,
+        oth_massflow0,
     ):
         r1 = geo_pitch0 * geo_n_blades0 - 2 * np.pi * geo_rr0
         r2 = geo_n_blades0 * oth_ch_massflow0 - oth_massflow0
@@ -94,6 +99,28 @@ class Solidity(EquationBase):
         return geo_pitch0 * geo_solidity0 - geo_chord0
 
 
-class BladeThicknes(EquationBase):
-    def residual(self, geo_te_thick0, geo_te_by_pitch0, geo_pitch0):
-        return geo_te_thick0 - geo_te_by_pitch0 * geo_pitch0
+class BladeThicknesRatio(EquationBase):
+    def residual(self, geo_bld_thick0, geo_thick_by_pitch0, geo_pitch0):
+        return geo_bld_thick0 - geo_thick_by_pitch0 * geo_pitch0
+
+
+class BoundaryLayerRatios(EquationBase):
+    """Boundary layer properties ratios definitions
+    based on trailing edge thickness"""
+
+    def residual(
+        self,
+        # Geometry
+        geo_pitch0,
+        geo_bld_thick0,
+        geo_thick_by_pitch0,
+        # Boundary layer
+        oth_disp_thick0,
+        oth_disp_by_mom_thick0,
+        oth_mom_thick0,
+        oth_mom_by_bld_thick0,
+    ):
+        r1 = oth_disp_thick0 - oth_disp_by_mom_thick0 * oth_mom_thick0
+        r2 = oth_mom_thick0 - oth_mom_by_bld_thick0 * geo_bld_thick0
+
+        return r1, r2

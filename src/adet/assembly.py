@@ -8,6 +8,7 @@ data.
 from abc import ABC, abstractmethod
 from collections import defaultdict, OrderedDict
 from copy import deepcopy
+from itertools import combinations
 import logging
 from typing import Callable, Self, Sequence, Type, Literal, Any
 
@@ -96,6 +97,8 @@ class SystemAssembler(ABC):
 
         self._scalar_arguments: tuple[str, ...] = tuple()
 
+        self._invariants: list[set[str]] = []
+
         self._global_constraints: defaultdict[
             NodeStatesNames, dict[str, ArrayLike | PlainQuantity]
         ] = defaultdict(dict)
@@ -177,6 +180,7 @@ class SystemAssembler(ABC):
             'boundary_conditions',
             '_fluid_settings',
             '_global_constraints',
+            '_invariants',
         ]
 
         out_dict = {}
@@ -320,6 +324,20 @@ class SystemAssembler(ABC):
             logger.warning(
                 f'No equation {equation_class} found to remove in {nodal_position}'
             )
+
+    def add_invariants(self, *invariants: tuple[str, ...]):
+        """
+        Each tuple in the list represent a set of variables that are treated
+        as equal by the system. This is achieved by adding trivial residual
+        equation to the system.
+        Adding ('a', 'b', 'c') adds the equations
+        a - b = 0
+        a - c = 0
+        b - c = 0
+        """
+        for vars in invariants:
+            if set(vars) not in self._invariants:
+                self._invariants.append(set(vars))
 
     def build(self, scaled: bool):
         """
@@ -1017,6 +1035,24 @@ class CasadiSystem(SystemAssembler):
 
         self._all_symbols = {**all_args_products, **casadi_eos_symbols}
 
+    def _build_invariant_expressions(self) -> list[cs.MX]:
+        invariant_expressions = []
+        for args in self._invariants:
+            for arg_couples in combinations(args, 2):
+                # If both argument do not appears in the equations, skip to next couple
+                # if one of them is unused by other eqns. it is useless to add it
+                if not set(arg_couples).issubset(self._all_symbols):
+                    continue
+
+                sym0 = self._all_symbols[arg_couples[0]]
+                sym1 = self._all_symbols[arg_couples[1]]
+
+                # NOTE: We don't care about scaling, they
+                # are just identities, either on scaled or unscaled vars
+                invariant_expressions.append(sym1 - sym0)
+
+        return invariant_expressions
+
     def _build_residual_expressions(self):
         # Build scaling symbols for all equations
         self._eq_scales_sym = [
@@ -1040,7 +1076,7 @@ class CasadiSystem(SystemAssembler):
             overridden_eq = eq.residual
             residuals.append(overridden_eq(*args))
 
-        # Divide each resigual expression by its scaling symbol
+        # Divide each residual expression by its scaling symbol
         self._res_expr_scaled = list(
             map(
                 lambda X, Y: X / Y,
@@ -1048,6 +1084,9 @@ class CasadiSystem(SystemAssembler):
                 self._eq_scales_sym,
             )
         )
+
+        self._res_expr_scaled += self._build_invariant_expressions()
+
         num_vars = max(cs.vertcat(*self.free_args_sym).shape)
         num_residuals = max(cs.vertcat(*self._res_expr_scaled).shape)
         logger.info(

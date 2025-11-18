@@ -13,7 +13,7 @@ from adet.equations.nondimensional import WorkCoefficient
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 
 # Tooling & Components
-from adet.losses.mixing import BoundaryLayerProperties
+from adet.equations.definitions import BoundaryLayerRatios
 from adet.losses.profile import DentonProfileLoss
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.registries import DefaultUnitsRegistry, ScalingRegistry, GuessRegistry
@@ -52,7 +52,7 @@ _dfu_reg.from_dict(
         'xi_by_camb_len_A': 'meters',
         'xi_by_camb_len_B': 'meters',
         'k_prof': 'dimensionless',
-        'mom_by_te_thick': 'dimensionless',
+        'mom_by_bld_thick': 'dimensionless',
         'disp_by_mom_thick': 'dimensionless',
     }
 )
@@ -77,7 +77,8 @@ inlet = Inlet(
     {
         'kin': {
             'alpha': Quantity(0, 'deg'),
-            'Vm': Quantity(80, 'm/s'),
+            'mach': 0.1,
+            # 'Vm': Quantity(80, 'm/s'),
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
@@ -85,21 +86,24 @@ inlet = Inlet(
             'height': 0.2,
         },
         'tot': {
-            'p': 6e5,  # impose at outlet
+            'p': 6e5,
             'T': 700,
-        },
-        'oth': {
-            # 'cum_massflow': 90,
         },
     }
 )
 
 row0 = BladeRow(
-    'Stator',
-    {
+    name='Stator',
+    shaft=static_shaft,
+    in_constraints={
+        'geo': {
+            'thick_by_pitch': 0.04,
+        },
+    },
+    out_constraints={
         'kin': {
-            # 'alpha': Quantity(70, 'deg'),
-            'mach': 0.7,
+            'alpha': Quantity(60, 'deg'),
+            # 'mach': 0.2,
         },
         'geo': {
             # Meridional
@@ -108,19 +112,17 @@ row0 = BladeRow(
             # Blade
             'chord_ax': 0.15,
             'n_blades': 25,
-            # 'solidity': 0.4,
-            'te_by_pitch': 0.02,  # TE thickness by pitch
+            'thick_by_pitch': 0.02,  # Blade thickness by pitch
         },
         'tot': {
             # 'p': 5e5,  # Impose either here or at inlet
         },
         'oth': {
             'heightRatio': 1.1,
-            'mom_by_te_thick': 0.075,
+            'mom_by_bld_thick': 0.075,
             'disp_by_mom_thick': 2,
         },
     },
-    shaft=static_shaft,
     extra_equations={
         # Camberline model
         MinimalCamberLine(): (0, 1),
@@ -130,18 +132,31 @@ row0 = BladeRow(
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
         PercentageEntropyLoss(0.0): (0, 1),
-        BoundaryLayerProperties(): 1,
         # DentonProfileLoss(real_model): (0, 1),
+        # |> Boundary layer properties for mixing
+        # BoundaryLayerRatios(): 1,
     },
 )
 
 row0_mixer = DownstreamMixer(
     'row0_mixer',
-    {},
+    in_constraints={
+        'geo': {
+            'bld_thick': 0.0025,
+            'pitch': 0.126,
+        },
+        'oth': {
+            'disp_thick': 0.0004,
+            'mom_thick': 0.0002,
+        },
+    },
+    out_constraints={},
 )
 
 row1 = BladeRow(
     'Rotor',
+    rotating_shaft,
+    {},
     {
         'kin': {
             # 'beta': Quantity(0, 'deg'),
@@ -163,7 +178,6 @@ row1 = BladeRow(
             'workCoeff': 2.4,
         },
     },
-    shaft=rotating_shaft,
     extra_equations={
         # Camberline model
         MinimalCamberLine(): (0, 1),

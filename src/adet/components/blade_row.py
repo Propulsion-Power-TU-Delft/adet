@@ -8,21 +8,22 @@ import numpy as np
 # Equation objects
 from adet.equations.definitions import (
     AngleDeflection,
-    BladeCount,
-    BladeThicknes,
+    BladePitchCount,
+    BladeThicknesRatio,
     HeightRatio,
     MeridionalVelocityRatio,
     Solidity,
 )
-from adet.equations.fundamental import EulerEquation, MassConservation
+from adet.equations.fundamental import (
+    BladeBlockage,
+    EulerEquation,
+    MassConservation,
+)
 from adet.equations import EquationBase
-from adet.equations.geometrical import GeometricThroat
-from adet.equations.linkers import SpeedLinker, ComponentLinker
 from adet.losses import LossModel
 
 # Dependencies and tooling
 from adet.losses.mixing import MixingBalances, MixingGeometry
-from adet.equations.linkers import RowMixerLink
 
 from adet.node import FlowNode
 from adet.components import BaseComponent, Shaft
@@ -38,30 +39,48 @@ class BladeRow(BaseComponent):
         # |> Fundamental equations - do not remove
         (EulerEquation, (0, 1)),
         (MassConservation, (0, 1)),
-        # |> Link inlet and outlet omega
-        (SpeedLinker, (1, 1)),
-        (SpeedLinker, (1, 0)),
+        # Blade Geometry
+        (BladePitchCount, 0),
+        (BladePitchCount, 1),
+        # Blockage parameters
+        (BladeBlockage, 0),
+        (BladeBlockage, 1),
         # *** Common definitions
+        (BladeThicknesRatio, 0),
+        (BladeThicknesRatio, 1),
+        (Solidity, 1),
         (HeightRatio, (0, 1)),
         (AngleDeflection, (0, 1)),
         (MeridionalVelocityRatio, (0, 1)),
-        # Geometry
-        (Solidity, 1),
-        (BladeCount, 1),
-        (BladeThicknes, 1),
-        (GeometricThroat, 1),
     ]
 
-    linker_equations = [ComponentLinker]
+    from_previous_node = [
+        'kin_Vt',
+        'kin_Vm',
+        'tot_hmass',
+        'stc_smass',
+        'geo_rmid',
+        'geo_height',
+        'geo_meridional_angle',
+    ]
+
+    constant_variables = [
+        'kin_omega',
+        'geo_n_blades',
+    ]
 
     def __init__(
         self,
         name: str,
-        boundary_conditions: dict[
+        shaft: Shaft,
+        in_constraints: dict[
             str,
             dict[str, Any],
         ],
-        shaft: Shaft,
+        out_constraints: dict[
+            str,
+            dict[str, Any],
+        ],
         extra_equations: dict[
             EquationBase,
             int | tuple[int, ...],
@@ -72,9 +91,9 @@ class BladeRow(BaseComponent):
         Class that represents a blade row, compressor/turbine,
         stator/rotor
         """
-        super().__init__(name, boundary_conditions, extra_equations)
+        super().__init__(name, in_constraints, out_constraints, extra_equations)
         if shaft.is_constrained:
-            self.boundary_conditions['kin']['omega'] = shaft.omega
+            self.out_constraints['kin']['omega'] = shaft.omega
 
         # NOTE: Loss models are being added just as equations now
         # self._loss_models = loss_models
@@ -90,7 +109,7 @@ class BladeRow(BaseComponent):
     def _add_loss_parameters(self):
         raise NotImplementedError
         for model in self._loss_models:
-            self.boundary_conditions['oth'].update(model.parameters)
+            self.out_boundary_conditions['oth'].update(model.parameters)
             local_indices = {get_index(arg) for arg in model.arguments}
             self._equations[model] = tuple(local_indices)
 
@@ -117,14 +136,16 @@ class DownstreamMixer(BaseComponent):
     base_equations = [
         (MixingBalances, (0, 1)),
         (MixingGeometry, (0, 1)),
-        # (BoundaryLayerProperties, 0),
-        (SpeedLinker, (0, 1)),
-        (SpeedLinker, (0, 0)),
     ]
 
-    linker_equations = [
-        ComponentLinker,
-        RowMixerLink,
+    from_previous_node = [
+        'kin_omega',
+        # Geometry
+        'geo_pitch',
+        'geo_bld_thick',
+        # Boundary layer
+        'oth_disp_thick',
+        'oth_mom_thick',
     ]
 
 
