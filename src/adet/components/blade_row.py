@@ -18,11 +18,13 @@ from adet.equations.fundamental import (
     BladeBlockage,
     EulerEquation,
     MassConservation,
+    ZeroBlockage,
 )
 from adet.equations import EquationBase
 from adet.losses import LossModel
 
 # Dependencies and tooling
+from adet.losses.basic import ZeroDeviation
 from adet.losses.mixing import MixingBalances
 from adet.node import FlowNode
 from adet.components import BaseComponent, Shaft
@@ -32,10 +34,13 @@ from adet.tools.strings import get_index
 logger = logging.getLogger(__name__)
 
 ABSOLUTE_LINK = [
+    # Absolute triangle
     'kin_Vt',
     'kin_Vm',
+    # No work & no entropy
     'tot_hmass',
     'stc_smass',
+    # Geometry
     'geo_rmid',
     'geo_height',
     'geo_meridional_angle',
@@ -143,7 +148,17 @@ class {CLASS_NAME}(EquationBase):
 
 class DownstreamMixer(BaseComponent):
     base_equations = [
+        # *** Fundamental
         (MixingBalances, (0, 1)),
+        (MassConservation, (0, 1)),
+        # *** Blockage
+        (BladeBlockage, 0),  # Blade blockage at the start
+        (ZeroBlockage, 1),  # No blockg mixed out
+        # *** Deviation
+        (ZeroDeviation, 0),  # metal = kine angle @ blade
+        # *** Definition of channel massflow and n_blades
+        (BladePitchCount, 0),
+        (BladePitchCount, 1),
     ]
 
     # Keep the absolute triangle
@@ -164,6 +179,7 @@ class DownstreamMixer(BaseComponent):
         # Keep geometry
         'geo_rmid',
         'geo_height',
+        'geo_n_blades',
         'geo_meridional_angle',
     ]
 

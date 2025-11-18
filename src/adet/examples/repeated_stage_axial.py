@@ -24,6 +24,7 @@ from pint import Quantity
 from adet.assembly import CasadiSystem, solve_problem
 from adet.components import ComponentNetwork, BladeRow, Shaft, Inlet
 from adet.equations.definitions import DegreeOfReaction, RepeatedStage
+from adet.equations.fundamental import ZeroBlockage
 from adet.equations.geometrical import ParabolicCamberline, MinimalCamberLine
 from adet.fluid.casadi_eos import CasadiEoS
 from adet.fluid.settings import FluidSettings, ExternalFluidModel, IdealGasModel
@@ -58,7 +59,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 # === CONFIGURATION
 # Simulation settings
 NUM_SPAN = 1  # Number of spanwise stations
-NUM_STAGES = 5  # Number of turbine stages (stator-rotor pairs)
+NUM_STAGES = 1  # Number of turbine stages (stator-rotor pairs)
 SCALED = True  # Use scaled equations for better numerical conditioning
 PLOTS = True  # Show plots at end
 PRINTS = True  # Print node information
@@ -218,6 +219,7 @@ ntw.system.add_global_constraints(
     {
         'oth': {
             # Ideal gas properties (reference)
+            'disp_thick': 0.0,  # Ignore boundary layer blockage
             'cpmassid': 1004.0,  # Specific heat at constant pressure [J/kg/K]
             'cvmassid': 717.0,  # Specific heat at constant volume [J/kg/K]
             'T_ref': 1.0,

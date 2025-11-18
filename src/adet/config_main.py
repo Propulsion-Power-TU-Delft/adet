@@ -108,10 +108,7 @@ row0_mixer = DownstreamMixer(
     },
     out_constraints={},
     extra_equations={
-        BladeBlockage(): 0,
-        ZeroDeviation(): 0,
-        BladePitchCount(): 0,
-        ZeroBlockage(): 1,
+        # Add blockage from blades in 0
     },
 )
 
