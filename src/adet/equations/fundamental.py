@@ -11,12 +11,6 @@ class EulerEquation(EquationBase):
         return (tot_hmass1 - tot_hmass0) - (kin_U1 * kin_Vt1 - kin_U0 * kin_Vt0)
 
 
-# NOTE:
-# This formulation of mass conservation fails when there is
-# some blockage or blade thickness because the area simply considers
-# a series of annuli
-
-
 class MassConservation(EquationBase):
     def residual(self, oth_massflow0, oth_massflow1):
         return oth_massflow0 - oth_massflow1
@@ -49,9 +43,10 @@ class BladeBlockage(EquationBase):
         geo_bld_thick0,
         geo_metal_angle0,
     ):
-        return (
-            geo_eff_area0 - geo_area0
-        ) + geo_hh0 * geo_n_blades0 * geo_bld_thick0 / np.cos(geo_metal_angle0)
+        return geo_eff_area0 - (
+            geo_area0
+            - geo_hh0 * geo_n_blades0 * geo_bld_thick0 / np.cos(geo_metal_angle0)
+        )
 
 
 class TotalStaticMatching(EquationBase):
@@ -136,12 +131,6 @@ class FreeVortexDistribution(EquationBase):
         return geo_rr0 * kin_Vt0 - geo_rmid0 * oth_Vt_mid0
 
 
-class MidspanAngle(EquationBase):
-    def residual(self, kin_alpha0, oth_alpha_mid0):
-        n_span = max(kin_alpha0.shape)
-        return oth_alpha_mid0 - kin_alpha0[n_span // 2]
-
-
 class ForcedVortexDistribution(EquationBase):
     def residual(self, geo_rr0, kin_Vt0, geo_rmid0, oth_Vtmid0):
         return kin_Vt0 / geo_rr0 - oth_Vtmid0 / geo_rmid0
@@ -183,6 +172,9 @@ class Kinematics(EquationBase):
         # r5 = kin_Wm0 - kin_W0 * np.cos(kin_beta0)
         # r6 = kin_Vm0 - kin_V0 * np.cos(kin_alpha0)
 
+        # Glad to have you back here peripheral velocity relation.
+        # Sorry for your brief adventure outside of Kinematics,
+        # you really do belong here.
         r7 = kin_omega0 * geo_rr0 - kin_U0
 
         return r1, r2, r3, r4, r5, r6, r7

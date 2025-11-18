@@ -23,8 +23,7 @@ from adet.equations import EquationBase
 from adet.losses import LossModel
 
 # Dependencies and tooling
-from adet.losses.mixing import MixingBalances, MixingGeometry
-
+from adet.losses.mixing import MixingBalances
 from adet.node import FlowNode
 from adet.components import BaseComponent, Shaft
 from adet.geometry import BezierCurve, StraightLine
@@ -32,20 +31,38 @@ from adet.tools.strings import get_index
 
 logger = logging.getLogger(__name__)
 
+ABSOLUTE_LINK = [
+    'kin_Vt',
+    'kin_Vm',
+    'tot_hmass',
+    'stc_smass',
+    'geo_rmid',
+    'geo_height',
+    'geo_meridional_angle',
+]
+"""
+This preserves the absolute triangles,
+energy and geometry. Therefore it is a
+full variable transfer except for the
+rotating frame (omega)
+"""
+
 
 class BladeRow(BaseComponent):
     base_equations = [
         # ***
         # |> Fundamental equations - do not remove
-        (EulerEquation, (0, 1)),
+        # * Conservation laws, legally required, they're laws.
+        (EulerEquation, (0, 1)),  # Adiabatic and steady
         (MassConservation, (0, 1)),
-        # Blade Geometry
-        (BladePitchCount, 0),
-        (BladePitchCount, 1),
-        # Blockage parameters
+        # * Blockage parameters - Thickness needed
         (BladeBlockage, 0),
         (BladeBlockage, 1),
-        # *** Common definitions
+        # * Pitch and channel massflow
+        (BladePitchCount, 0),
+        (BladePitchCount, 1),
+        # ***
+        # |> Common definitions
         (BladeThicknesRatio, 0),
         (BladeThicknesRatio, 1),
         (Solidity, 1),
@@ -54,15 +71,7 @@ class BladeRow(BaseComponent):
         (MeridionalVelocityRatio, (0, 1)),
     ]
 
-    from_previous_node = [
-        'kin_Vt',
-        'kin_Vm',
-        'tot_hmass',
-        'stc_smass',
-        'geo_rmid',
-        'geo_height',
-        'geo_meridional_angle',
-    ]
+    from_previous_node = ABSOLUTE_LINK
 
     constant_variables = [
         'kin_omega',
@@ -135,10 +144,11 @@ class {CLASS_NAME}(EquationBase):
 class DownstreamMixer(BaseComponent):
     base_equations = [
         (MixingBalances, (0, 1)),
-        (MixingGeometry, (0, 1)),
     ]
 
-    from_previous_node = [
+    # Keep the absolute triangle
+    from_previous_node = ABSOLUTE_LINK + [
+        # Stay in the same MRF as blade row
         'kin_omega',
         # Geometry
         'geo_pitch',
@@ -146,6 +156,15 @@ class DownstreamMixer(BaseComponent):
         # Boundary layer
         'oth_disp_thick',
         'oth_mom_thick',
+    ]
+
+    constant_variables = [
+        # Keep reference frame alive
+        'kin_omega',
+        # Keep geometry
+        'geo_rmid',
+        'geo_height',
+        'geo_meridional_angle',
     ]
 
 

@@ -65,7 +65,7 @@ ntw = ComponentNetwork(
     settings,  # Fluid settings
     inlet,  # Inlet conditions
     CasadiSystem(spanwise_stations=NUM_SPAN),  # Backend
-    *[row0],  # , row1],
+    *[row0_mixer],  # , row1],
 )
 
 # Add global constraints for ideal gas and

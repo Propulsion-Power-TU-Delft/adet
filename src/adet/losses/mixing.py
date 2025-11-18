@@ -28,16 +28,16 @@ class MixingBalances(EquationBase):
     def residual(
         self,
         # Thermo
-        stc_rhomass0,
-        stc_rhomass1,
         stc_p0,
         stc_p1,
-        tot_p0,
+        stc_rhomass0,
+        stc_rhomass1,
+        tot_p0,  # For sieverding
         tot_hmass0,
         tot_hmass1,
         stc_smass0,
         stc_smass1,
-        # Kine
+        # Kinematics
         kin_W0,
         kin_W1,
         kin_beta0,
@@ -85,9 +85,6 @@ class MixingBalances(EquationBase):
         )
         mom_out = mass_out * kin_W1 * np.cos(deviation) + stc_p1 * out_passage
 
-        # NOTE: Right now the RelativeMach equations imposes a maximum
-        # 1.0 outlet Mach Number at the row outlet (throat at the outlet)
-
         # Mass conservation
         r1 = mass_in - mass_out
         # Momentum balance
@@ -98,22 +95,3 @@ class MixingBalances(EquationBase):
         r4 = stc_smass0 - stc_smass1
 
         return r1, r2, r3, r4
-
-
-class MixingGeometry(EquationBase):
-    """Geometry over the mixing annulus, unchanged"""
-
-    def residual(
-        self,
-        geo_rmid0,
-        geo_rmid1,
-        geo_height0,
-        geo_height1,
-        geo_meridional_angle0,
-        geo_meridional_angle1,
-    ):
-        r1 = geo_rmid1 - geo_rmid0
-        r2 = geo_height1 - geo_height0
-        r3 = geo_meridional_angle1 - geo_meridional_angle0
-
-        return r1, r2, r3

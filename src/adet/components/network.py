@@ -19,7 +19,7 @@ T = TypeVar('T', bound=SystemAssembler)
 # Equations that are to be defined at each single node
 # of the network
 _SINGLE_NODE_EQUATIONS = [
-    # FOUNDATIONAL EQs - DO NOT REMOVE!
+    # *** FOUNDATIONAL EQs - DO NOT REMOVE!
     MassAreaRelation,
     Kinematics,
     MeridionalUniform,
