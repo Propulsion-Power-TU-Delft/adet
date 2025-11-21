@@ -80,7 +80,7 @@ class BladeRow(BaseComponent):
 
     constant_variables = [
         'kin_omega',
-        'geo_n_blades',
+        'geo_num_blades',
     ]
 
     def __init__(
@@ -156,7 +156,7 @@ class DownstreamMixer(BaseComponent):
         (ZeroBlockage, 1),  # No blockg mixed out
         # *** Deviation
         (ZeroDeviation, 0),  # metal = kine angle @ blade
-        # *** Definition of channel massflow and n_blades
+        # *** Definition of channel massflow and num_blades
         (BladePitchCount, 0),
         (BladePitchCount, 1),
     ]
@@ -179,7 +179,7 @@ class DownstreamMixer(BaseComponent):
         # Keep geometry
         'geo_rmid',
         'geo_height',
-        'geo_n_blades',
+        'geo_num_blades',
         'geo_meridional_angle',
     ]
 

@@ -35,6 +35,9 @@ _dfu_reg = DefaultUnitsRegistry()
 _scl_reg = ScalingRegistry()
 _gss_reg = GuessRegistry()
 
+# Set fallback values for scales and guesses to 1.0
+_scl_reg.set_fallback_value(1.0)
+_gss_reg.set_fallback_value(1.0)
 # Add units for custom variables
 _dfu_reg.from_dict(
     {
@@ -47,7 +50,7 @@ _dfu_reg.from_dict(
         'STratio': 'dimensionless',
         'VmRatio': 'dimensionless',
         'sizeParameter': 'meters',
-        'n_blades': 'dimensionless',
+        'num_blades': 'dimensionless',
         # Profile losses
         'Cd_profile': 'dimensionless',
         'xi_by_camb_len_A': 'meters',
@@ -57,10 +60,6 @@ _dfu_reg.from_dict(
         'disp_by_mom_thick': 'dimensionless',
     }
 )
-
-# Set fallback values for scales and guesses to 1.0
-_scl_reg.set_fallback_value(1.0)
-_gss_reg.set_fallback_value(1.0)
 
 
 # *** Shafts
@@ -131,7 +130,7 @@ row0 = BladeRow(
             'rmid': 0.5,
             # Blade
             'chord_ax': 0.15,
-            'n_blades': 25,
+            'num_blades': 25,
             'thick_by_pitch': 0.02,  # Blade thickness by pitch
         },
         'tot': {
@@ -174,7 +173,7 @@ row1 = BladeRow(
             'rmid': 0.5,
             # Blade
             'chord_ax': 0.15,
-            'n_blades': 25,
+            'num_blades': 25,
         },
         'tot': {
             # 'p': 6e5, # Impose either here or at inlet

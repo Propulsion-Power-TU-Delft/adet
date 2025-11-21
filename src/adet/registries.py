@@ -151,6 +151,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'omega': 'rad/s',
         'beta': 'rad',
         'alpha': 'rad',
+        'deflection': 'rad',
         # Geometry
         'meridional_angle': 'rad',
         'height': 'm',
@@ -169,6 +170,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'stagger': 'rad',
         'metal_angle': 'rad',
         'solidity': 'dimensionless',
+        'num_blades': 'dimensionless',
         'bld_thick': 'meters',
         'disp_thick': 'meters',
         'mom_thick': 'meters',
@@ -218,7 +220,7 @@ class GuessRegistry(BaseRegistry[str, float]):
         'camb_len': 0.1,
         'pitch': 0.1,
         'bld_thick': 0.005,
-        'n_blades': 20.0,
+        'num_blades': 20.0,
         'throat': 0.1,
         'stagger': 0.1,
     }
@@ -235,6 +237,7 @@ SCALING_FACTORS: dict[str, float] = {
     'J / (kg * K)': 1e3,
     'J / kg / m': 5e5,  # Radial equilibrium
     'kg / s': 5e1,
+    'meter * rad / s': 1e2,  # Tangential velocity
     'rad / s': 1e3,
     'rad': 0.5,
     'm': 1e-1,
@@ -298,7 +301,7 @@ class ScalarsRegistry(BaseRegistry[str, None]):
         'heightRatio': None,
         'cum_massflow': None,
         'meridional_angle': None,
-        'n_blades': None,
+        'num_blades': None,
     }
 
 

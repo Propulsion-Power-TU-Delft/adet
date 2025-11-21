@@ -215,7 +215,7 @@ class DentonProfileLoss(LossModel):
         geo_chord_ax1,
         geo_camb_len1,
         geo_stagger1,
-        geo_n_blades1,
+        geo_num_blades1,
     ):
         xi_by_camb_len, W_distr_ss, W_distr_ps = self._build_velocity_profile(
             oth_xi_by_camb_len_A1, oth_xi_by_camb_len_B1, oth_k_prof1, kin_W0, kin_W1
