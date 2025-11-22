@@ -39,7 +39,7 @@ def extract_tsv_data(file_path, as_columns=False):
         data = lines[1:]
         csv_data = csv.reader(data, delimiter='\t', quoting=csv.QUOTE_NONNUMERIC)
 
-        DataTuple = namedtuple('RowData', fields)
+        RowData = namedtuple('RowData', fields)
 
         if as_columns:
             # Return single namedtuple with each field as a list
@@ -47,12 +47,12 @@ def extract_tsv_data(file_path, as_columns=False):
             for entry in csv_data:
                 for idx, field in enumerate(fields):
                     columns[field].append(entry[idx])
-            return DataTuple(**columns)
+            return RowData(**columns)
         else:
             # Return list of namedtuples
             result = []
             for entry in csv_data:
-                result.append(DataTuple(*entry))
+                result.append(RowData(*entry))
             return result
 
 
@@ -60,7 +60,7 @@ def extract_tsv_data(file_path, as_columns=False):
 spanwise_data = {}
 for row in ROWS:
     spanwise_data[row] = extract_tsv_data(
-        data_folder / f'spanwise_geometry_{row}_cold.tsv', as_columns=True
+        data_folder / f'{row}_spanwise_cold.tsv', as_columns=True
     )
 
 integral_data = {}
@@ -71,8 +71,8 @@ for data_entry in extract_tsv_data(
     integral_data[data_entry[0]] = data_entry
 
 
-def get_closest_spanwise_stations(
-    mean_radius: float, height: float, spanwise_data_tuple, num_stations: int
+def interpolate_spanwise_data(
+    spanwise_data, mean_radius: float, height: float, num_stations: int
 ):
     """Find the closest spanwise stations based on mean radius and channel height.
 
@@ -88,8 +88,9 @@ def get_closest_spanwise_stations(
         of num_stations.
     """
     # Get the radii from spanwise data
-    radii = np.array(spanwise_data_tuple.radius_inlet)
+    radii = np.array(spanwise_data.radius_inlet)
 
+    # Cell-centered radius definitions
     hub_radius = mean_radius - height / 2.0 + height / num_stations / 2
     tip_radius = mean_radius + height / 2.0 - height / num_stations / 2
 
@@ -99,14 +100,17 @@ def get_closest_spanwise_stations(
     if num_stations == 1:
         target_radii = np.array([mean_radius])
 
-    # Find closest station for each target radius
-    indices = []
-    for target_r in target_radii:
-        distances = np.abs(radii - target_r)
-        closest_idx = np.argmin(distances)
-        indices.append(closest_idx)
+    # Interpolate data from closest radius
+    interp_data = {}
+    for field in spanwise_data._fields:
+        interp_values = np.interp(
+            target_radii,
+            radii,
+            getattr(spanwise_data, field),
+        )
+        interp_data[field] = interp_values
 
-    return indices
+    return interp_data
 
 
 # Define blade rows using imported data
@@ -126,19 +130,29 @@ def create_blade_row(row_name: str, shaft_connection: Shaft, spanwise_stations: 
     """
     # Get data for this row
     integral = integral_data[row_name]
-    spanwise = jax.tree.map(
-        lambda x: np.array(x),
-        spanwise_data[row_name],
-        is_leaf=lambda x: isinstance(x, list),
+    spanwise = spanwise_data[row_name]
+
+    rmid_inlet = integral_data[row_name].rmid_inlet
+    height_inlet = integral_data[row_name].rmid_inlet
+
+    rmid_outlet = integral_data[row_name].rmid_outlet
+    height_outlet = integral_data[row_name].rmid_outlet
+
+    inlet_data = interpolate_spanwise_data(
+        spanwise,
+        rmid_inlet,
+        height_inlet,
+        spanwise_stations,
     )
 
-    # Get spanwise indices
-    indices_inlet = get_closest_spanwise_stations(
-        integral.rmid_inlet, integral.height_inlet, spanwise, spanwise_stations
+    outlet_data = interpolate_spanwise_data(
+        spanwise,
+        rmid_outlet,
+        height_outlet,
+        spanwise_stations,
     )
-    indices_outlet = get_closest_spanwise_stations(
-        integral.rmid_outlet, integral.height_outlet, spanwise, spanwise_stations
-    )
+
+    # WARN: Missing axial chord
 
     # Create blade row with constraints
     return BladeRow(
@@ -146,34 +160,28 @@ def create_blade_row(row_name: str, shaft_connection: Shaft, spanwise_stations: 
         shaft=shaft_connection,
         in_constraints={
             'geo': {
-                'rmid': integral.rmid_inlet,
-                'height': integral.height_inlet,
-                'meridional_angle': Quantity(0, 'deg'),
-                'bld_thick': spanwise.bld_thick_inlet[indices_inlet],
-                'metal_angle': Quantity(
-                    spanwise.metal_angle_inlet[indices_inlet], 'deg'
-                ),
+                'rmid': rmid_inlet,
+                'height': height_inlet,
+                'meridional_angle': 0.0,
+                'bld_thick': inlet_data['bld_thick_inlet'],
+                'metal_angle': inlet_data['metal_angle_inlet'],
             },
         },
         out_constraints={
             'geo': {
-                'rmid': integral.rmid_outlet,
-                'height': integral.height_outlet,
-                'meridional_angle': Quantity(0, 'deg'),
-                'chord_ax': spanwise.chord_axial[indices_outlet],
-                'bld_thick': spanwise.bld_thick_outlet[indices_outlet],
-                # 'stagger': Quantity(spanwise.stagger[indices_outlet], 'deg'),
-                'metal_angle': Quantity(
-                    spanwise.metal_angle_outlet[indices_outlet], 'deg'
-                ),
+                'rmid': rmid_outlet,
+                'height': height_outlet,
+                'meridional_angle': 0.0,
+                'bld_thick': outlet_data['bld_thick_outlet'],
+                'metal_angle': outlet_data['metal_angle_outlet'],
+                'chord_ax': outlet_data['chord_axial'],
                 'num_blades': integral.num_blades,
             },
         },
         extra_equations={
             # Camberline model (minimal for now)
             MinimalCamberLine(): (0, 1),
-            # Zero deviation at inlet and outlet
-            ZeroDeviation(): 0,  # Remove this upstream of igv
+            # Follow the blade geometry
             ZeroDeviation(): 1,
             # Zero loss for now (isentropic)
             PercentageEntropyLoss(0.0): (0, 1),
@@ -182,7 +190,7 @@ def create_blade_row(row_name: str, shaft_connection: Shaft, spanwise_stations: 
 
 
 # === CONFIGURATION ===
-NUM_SPAN = 1
+NUM_SPAN = 3
 SCALED = True
 PLOTS = True
 PRINTS = True
@@ -249,31 +257,14 @@ inlet = Inlet(
     }
 )
 
-# IGV (Inlet Guide Vane) - stationary
 igv = create_blade_row('IGV', casing, NUM_SPAN)
-
-# Rotor 1
 r1 = create_blade_row('R1', shaft, NUM_SPAN)
-
-# Stator 1
 s1 = create_blade_row('S1', casing, NUM_SPAN)
-
-# Rotor 2
 r2 = create_blade_row('R2', shaft, NUM_SPAN)
-
-# Stator 2
 s2 = create_blade_row('S2', casing, NUM_SPAN)
-
-# Rotor 3
 r3 = create_blade_row('R3', shaft, NUM_SPAN)
-
-# Stator 3
 s3 = create_blade_row('S3', casing, NUM_SPAN)
-
-# Rotor 4
 r4 = create_blade_row('R4', shaft, NUM_SPAN)
-
-# Stator 4
 s4 = create_blade_row('S4', casing, NUM_SPAN)
 
 # === CREATE NETWORK ===
@@ -282,7 +273,7 @@ ntw = ComponentNetwork(
     inlet,  # Inlet conditions
     CasadiSystem(spanwise_stations=NUM_SPAN),  # Backend
     igv,
-    r1,
+    # r1,
     # s1,
     # r2,
     # s2,
@@ -291,7 +282,6 @@ ntw = ComponentNetwork(
     # r4,
     # s4,
 )
-ntw.system.remove_equation(ZeroDeviation, 0)
 # === GLOBAL CONSTRAINTS ===
 ntw.system.add_global_constraints(
     {

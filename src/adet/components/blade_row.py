@@ -40,10 +40,10 @@ ABSOLUTE_LINK = [
     # No work & no entropy
     'tot_hmass',
     'stc_smass',
-    # Geometry
-    'geo_rmid',
-    'geo_height',
-    'geo_meridional_angle',
+    # Geometry -- CAREFUL ONLY USE IN DESIGN MODE
+    # 'geo_rmid',
+    # 'geo_height',
+    # 'geo_meridional_angle',
 ]
 """
 This preserves the absolute triangles,
