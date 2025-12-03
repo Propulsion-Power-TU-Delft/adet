@@ -5,6 +5,8 @@ import logging
 from typing import ClassVar, TypeAlias, Type, Any
 
 from adet.equations import EquationBase
+from adet.equations.base_equation import UniqueEquation
+from adet.tools.iter import ensure_iterable
 
 BaseEquationsFormat: TypeAlias = list[
     tuple[
@@ -58,12 +60,21 @@ class BaseComponent(ABC):
             EquationBase,
             int | tuple[int, ...],
         ] = {},
+        from_previous_node: list[str] = [],
+        constant_variables: list[str] = [],
     ):
         self.name = name
 
+        self._from_previous_node = self.__class__.from_previous_node.copy()
+        self._constant_variables = self.__class__.constant_variables.copy()
+        if from_previous_node:
+            self._from_previous_node += from_previous_node
+        if constant_variables:
+            self._constant_variables += constant_variables
+
+        # Update the constraint dictionaries
         self.in_constraints = defaultdict(dict)
         self.in_constraints.update(in_constraints)
-
         self.out_constraints = defaultdict(dict)
         self.out_constraints.update(out_constraints)
 
@@ -73,7 +84,46 @@ class BaseComponent(ABC):
             equation(): position for equation, position in self.base_equations
         }
 
-        self._equations = {**base_equation_instances, **extra_equations}
+        # Superseed base equations of the component with user
+        # defined ones
+        self._equations = self._merge_unique_equations(
+            base_equation_instances, extra_equations
+        )
+
+        # This checks that the user has not defined multiple
+        # incompatible unique equations
+        self._check_duplicate_equations()
+
+    def _merge_unique_equations(
+        self,
+        base_eqs: dict[EquationBase, int | tuple[int, ...]],
+        user_eqs: dict[EquationBase, int | tuple[int, ...]],
+    ):
+        base_eqs_orig = base_eqs.copy()
+
+        # > Loop over the base equations
+        for base_eq, base_pos in base_eqs_orig.items():
+            # > If one of the base equations is a unique eq.
+            if isinstance(base_eq, UniqueEquation):
+                base_eq_parent = base_eq.__class__.__base__
+                base_pos = set(ensure_iterable(base_pos))
+
+                # >  Check that there are no user equations
+                # that superseed that unique equation
+                for user_eq, user_pos in user_eqs.items():
+                    user_pos = set(ensure_iterable(user_pos))
+                    user_eq_parent = user_eq.__class__.__base__
+                    # > If there are
+                    # > And they are in the same position
+                    if user_eq_parent == base_eq_parent and user_pos == base_pos:
+                        logger.warning(
+                            f'Overwriting {base_eq.__class__} with {user_eq.__class__} '
+                            f'in position {user_pos}'
+                        )
+                        # > Remove the equation instance from the base
+                        base_eqs.pop(base_eq)
+
+        return {**base_eqs, **user_eqs}
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -120,3 +170,23 @@ class BaseComponent(ABC):
                     )
 
         logger.debug(f'Base equations format in {cls.__name__} verifiedx')
+
+    def _check_duplicate_equations(self):
+        unique_types_seen = {}
+        for eq, eq_pos in self._equations.items():
+            if not isinstance(eq, UniqueEquation):
+                pass
+            else:
+                eq_pos = ensure_iterable(eq_pos)
+
+                eq_base_cls = eq.__class__.__base__
+
+                if eq_base_cls not in unique_types_seen:
+                    unique_types_seen[eq_base_cls] = set(eq_pos)
+                else:
+                    if set(eq_pos) != unique_types_seen[eq_base_cls]:
+                        pass
+                    else:
+                        raise KeyError(
+                            f'Duplicate equation type for {eq_base_cls} in {self}'
+                        )

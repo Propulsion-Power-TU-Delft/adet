@@ -1,4 +1,5 @@
 from adet.equations import EquationBase
+from adet.equations.base_equation import DeviationModel, IncidenceModel
 from adet.losses import LossModel
 
 
@@ -58,7 +59,7 @@ class FixedEnthalpyLoss(LossModel):
         return tot_hmass0 - (oth_htis0 + oth_ent_loss0)
 
 
-class ZeroDeviation(EquationBase):
+class ZeroDeviation(DeviationModel):
     """Impose equality between kinematic and geometric angles at a node"""
 
     def residual(self, geo_metal_angle0, kin_beta0):

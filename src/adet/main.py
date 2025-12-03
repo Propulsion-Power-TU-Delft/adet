@@ -65,7 +65,7 @@ ntw = ComponentNetwork(
     settings,  # Fluid settings
     inlet,  # Inlet conditions
     CasadiSystem(spanwise_stations=NUM_SPAN),  # Backend
-    *[row0_mixer],  # , row1],
+    row0,
 )
 
 # Add global constraints for ideal gas and
@@ -78,6 +78,7 @@ ntw.system.add_global_constraints(
             'cvmassid': 717.0,
             'T_ref': 1.0,
             'p_ref': 1.0,
+            'disp_thick': 0.0,  # First profile coord
             # Profile losses coefficients
             'Cd_profile': 0.002,
             'xi_by_camb_len_A': 0.375,  # First profile coord

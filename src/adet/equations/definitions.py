@@ -99,7 +99,7 @@ class Solidity(EquationBase):
         return geo_pitch0 * geo_solidity0 - geo_chord0
 
 
-class BladeThicknesRatio(EquationBase):
+class ThicknessToPitch(EquationBase):
     def residual(self, geo_bld_thick0, geo_thick_by_pitch0, geo_pitch0):
         return geo_bld_thick0 - geo_thick_by_pitch0 * geo_pitch0
 

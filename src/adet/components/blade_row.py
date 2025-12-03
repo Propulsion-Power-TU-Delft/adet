@@ -9,7 +9,7 @@ import numpy as np
 from adet.equations.definitions import (
     AngleDeflection,
     BladePitchCount,
-    BladeThicknesRatio,
+    ThicknessToPitch,
     HeightRatio,
     MeridionalVelocityRatio,
     Solidity,
@@ -21,7 +21,6 @@ from adet.equations.fundamental import (
     ZeroBlockage,
 )
 from adet.equations import EquationBase
-from adet.losses import LossModel
 
 # Dependencies and tooling
 from adet.losses.basic import ZeroDeviation
@@ -40,16 +39,22 @@ ABSOLUTE_LINK = [
     # No work & no entropy
     'tot_hmass',
     'stc_smass',
+]
+"""
+This preserves the absolute triangles,
+energy. Therefore it is a
+full variable transfer except for the
+rotating frame (omega)
+"""
+
+GEOM_LINK = [
     # Geometry
     'geo_rmid',
     'geo_height',
     'geo_meridional_angle',
 ]
 """
-This preserves the absolute triangles,
-energy and geometry. Therefore it is a
-full variable transfer except for the
-rotating frame (omega)
+This preserves meridional geometry, not included by default
 """
 
 
@@ -60,7 +65,7 @@ class BladeRow(BaseComponent):
         # * Conservation laws, legally required, they're laws.
         (EulerEquation, (0, 1)),  # Adiabatic and steady
         (MassConservation, (0, 1)),
-        # * Blockage parameters - Thickness needed
+        # * Blockage parameters - Thickness needed by default
         (BladeBlockage, 0),
         (BladeBlockage, 1),
         # * Pitch and channel massflow
@@ -68,8 +73,8 @@ class BladeRow(BaseComponent):
         (BladePitchCount, 1),
         # ***
         # |> Common definitions
-        (BladeThicknesRatio, 0),
-        (BladeThicknesRatio, 1),
+        (ThicknessToPitch, 0),
+        (ThicknessToPitch, 1),
         (Solidity, 1),
         (HeightRatio, (0, 1)),
         (AngleDeflection, (0, 1)),
@@ -99,7 +104,8 @@ class BladeRow(BaseComponent):
             EquationBase,
             int | tuple[int, ...],
         ] = {},
-        loss_models: list[LossModel] = [],
+        from_previous_node: list[str] = [],
+        constant_variables: list[str] = [],
     ):
         """
         Class that represents a blade row, compressor/turbine,
@@ -108,42 +114,6 @@ class BladeRow(BaseComponent):
         super().__init__(name, in_constraints, out_constraints, extra_equations)
         if shaft.is_constrained:
             self.out_constraints['kin']['omega'] = shaft.omega
-
-        # NOTE: Loss models are being added just as equations now
-        # self._loss_models = loss_models
-        # self._add_loss_parameters()
-        # self._build_loss_matcher()
-
-    # TODO: Fix this for multiple formulations interacting
-    # Total pressure, enthalpy, entropy, etc.
-    # This below is unused for now, loss models are just added as equations
-    # The code below was a minimal example but currently it's out of
-    # order and missing major features.
-
-    def _add_loss_parameters(self):
-        raise NotImplementedError
-        for model in self._loss_models:
-            self.out_boundary_conditions['oth'].update(model.parameters)
-            local_indices = {get_index(arg) for arg in model.arguments}
-            self._equations[model] = tuple(local_indices)
-
-    def _build_loss_matcher(self):
-        raise NotImplementedError
-        model_variables = [f'{model.VALUE_VARIABLE}' for model in self._loss_models]
-        CLASS_NAME = 'EntropyProduction'
-
-        code_gen = f"""
-class {CLASS_NAME}(EquationBase):
-    def residual(self, stc_smass1, stc_smass0, {', '.join(model_variables)}):
-        return stc_smass1 - stc_smass0 - {'- '.join(model_variables)}
-        """
-
-        # Execute the code in an isolated namespace
-        nspace: dict[str, Type[EquationBase]] = {}
-        exec(code_gen, None, nspace)
-        GenClass = nspace[CLASS_NAME]
-
-        self._equations[GenClass()] = (0, 1)
 
 
 class DownstreamMixer(BaseComponent):
@@ -162,16 +132,21 @@ class DownstreamMixer(BaseComponent):
     ]
 
     # Keep the absolute triangle
-    from_previous_node = ABSOLUTE_LINK + [
-        # Stay in the same MRF as blade row
-        'kin_omega',
-        # Geometry
-        'geo_pitch',
-        'geo_bld_thick',
-        # Boundary layer
-        'oth_disp_thick',
-        'oth_mom_thick',
-    ]
+    # energy, meridional geometry
+    from_previous_node = (
+        ABSOLUTE_LINK
+        + GEOM_LINK
+        + [
+            # Stay in the same MRF as blade row
+            'kin_omega',
+            # Geometry
+            'geo_pitch',
+            'geo_bld_thick',
+            # Boundary layer
+            'oth_disp_thick',
+            'oth_mom_thick',
+        ]
+    )
 
     constant_variables = [
         # Keep reference frame alive

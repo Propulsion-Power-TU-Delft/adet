@@ -3,6 +3,7 @@
 import numpy as np
 
 from adet.equations import EquationBase
+from adet.equations.base_equation import MeridAreaBlockage
 from adet.tools.interpolation import fin_diff
 
 
@@ -26,14 +27,14 @@ class MassAreaRelation(EquationBase):
         return oth_massflow0 - stc_rhomass0 * kin_Vm0 * geo_eff_area0
 
 
-class ZeroBlockage(EquationBase):
+class ZeroBlockage(MeridAreaBlockage):
     """Use the annuli's area as the passage area"""
 
     def residual(self, geo_area0, geo_eff_area0):
         return geo_eff_area0 - geo_area0
 
 
-class BladeBlockage(EquationBase):
+class BladeBlockage(MeridAreaBlockage):
     def residual(
         self,
         geo_hh0,
@@ -42,7 +43,7 @@ class BladeBlockage(EquationBase):
         geo_n_blades0,
         geo_bld_thick0,
         geo_metal_angle0,
-        # Boudndary Layer
+        # Boundary Layer
         oth_disp_thick0,
     ):
         return geo_eff_area0 - (

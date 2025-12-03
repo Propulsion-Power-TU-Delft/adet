@@ -1,9 +1,6 @@
 from itertools import zip_longest
-from typing import Any, Iterable, Iterator, Literal, TypeVar, overload
-
-T = TypeVar('T')  # Iterable type
-F = TypeVar('F')  # Fillvalue type
-
+from collections.abc import Iterable
+from typing import Any, Iterator, Literal, TypeVar, overload
 
 T = TypeVar('T')  # Iterable type
 F = TypeVar('F')  # Fillvalue type
@@ -80,3 +77,10 @@ def grouper(
             return zip(*iterators)
         case _:
             raise ValueError('Expected fill, strict, or ignore')
+
+
+def ensure_iterable(x: int | Iterable[int]):
+    if isinstance(x, Iterable):
+        return x
+    else:
+        return (x,)

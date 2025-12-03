@@ -297,3 +297,49 @@ class EquationBase(ABC):
 
     def __str__(self):
         return str(self.to_symbolic()) + ' = 0'
+
+
+class UniqueEquation(EquationBase):
+    """
+    Inherit this for all equations families which can be defined only
+    once per component
+    """
+
+    def __init__(
+        self,
+        scaling_factor: list[float] | None = None,
+        argument_aliases: dict[str, str] = {},
+    ):
+        if self.__class__.__base__ == UniqueEquation:
+            raise TypeError(f'Do not inherit directly from {self}')
+        super().__init__(scaling_factor, argument_aliases)
+
+
+class DeviationModel(UniqueEquation):
+    """Models for flow deviation"""
+
+    pass
+
+
+class IncidenceModel(UniqueEquation):
+    """Models for flow deviation"""
+
+    pass
+
+
+class CamberLineGeom(UniqueEquation):
+    """Definition of camberline blade geometry"""
+
+    pass
+
+
+class MeridAreaBlockage(UniqueEquation):
+    """Equations for meridional area blockages"""
+
+    pass
+
+
+class MeridionalGeom(UniqueEquation):
+    """Equaitons for meridional geometry definition"""
+
+    pass

@@ -1,11 +1,11 @@
-from adet.equations.base_equation import EquationBase
+from adet.equations.base_equation import CamberLineGeom, EquationBase, MeridionalGeom
 import numpy as np
 import matplotlib.pyplot as plt
 
 from adet.tools.interpolation import safe_min_clip
 
 
-class MeridionalUniform(EquationBase):
+class MeridionalUniform(MeridionalGeom):
     # = * = * = * = * = * = * = * = * = * = * = * = * = * = *
     # BOUNTY:                                               =
     # > Add differential equation for streamline curvature  *
@@ -55,7 +55,7 @@ class MeridionalUniform(EquationBase):
         return r1, r2, r3
 
 
-class MinimalCamberLine(EquationBase):
+class MinimalCamberLine(CamberLineGeom):
     """
     Minimal camberline. Consider stagger as average
     angle between inlet and outlet and the camberline
@@ -82,7 +82,7 @@ class MinimalCamberLine(EquationBase):
         return r1, r2, r3
 
 
-class TwoSegmentCamberline(EquationBase):
+class TwoSegmentCamberline(CamberLineGeom):
     """
     Camberline made up of two segments aligned with the metal angle that
     meet at half of the axial chord
@@ -144,7 +144,7 @@ if __name__ == '__main__':
     plt.show()
 
 
-class ParabolicCamberline(EquationBase):
+class ParabolicCamberline(CamberLineGeom):
     skip_unit_check = True
     manual_units = ('m', 'm', 'rad')
 

@@ -4,7 +4,7 @@ from pint import Quantity
 
 # Equations
 from adet.components.blade_row import DownstreamMixer
-from adet.equations.fundamental import BladeBlockage, ZeroBlockage
+from adet.equations.fundamental import ZeroBlockage
 from adet.equations.geometrical import (
     MinimalCamberLine,
     ParabolicCamberline,
@@ -14,8 +14,6 @@ from adet.equations.nondimensional import WorkCoefficient
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 
 # Tooling & Components
-from adet.equations.definitions import BladePitchCount, BoundaryLayerRatios
-from adet.losses.profile import DentonProfileLoss
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.registries import DefaultUnitsRegistry, ScalingRegistry, GuessRegistry
 from adet.fluid.settings import ExternalFluidModel, IdealGasModel
@@ -77,10 +75,9 @@ rotating_shaft = Shaft(
 inlet = Inlet(
     {
         'kin': {
-            'alpha': Quantity(50, 'deg'),
-            'mach': 0.1,
-            'omega': 0.0,
-            # 'Vm': Quantity(80, 'm/s'),
+            'alpha': Quantity(0, 'deg'),
+            # 'mach': 0.1,
+            'Vm': Quantity(80, 'm/s'),
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
@@ -92,24 +89,6 @@ inlet = Inlet(
             'T': 700,
         },
     }
-)
-
-row0_mixer = DownstreamMixer(
-    'row0_mixer',
-    in_constraints={
-        'geo': {
-            'bld_thick': 0.0025,
-            'pitch': 0.126,
-        },
-        'oth': {
-            'disp_thick': 0.0004,
-            'mom_thick': 0.0002,
-        },
-    },
-    out_constraints={},
-    extra_equations={
-        # Add blockage from blades in 0
-    },
 )
 
 row0 = BladeRow(
@@ -151,6 +130,8 @@ row0 = BladeRow(
         # |> Losses & Dev
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
+        ZeroBlockage(): 0,
+        ZeroBlockage(): 1,
         PercentageEntropyLoss(0.0): (0, 1),
         # DentonProfileLoss(real_model): (0, 1),
         # |> Boundary layer properties for mixing
@@ -158,6 +139,23 @@ row0 = BladeRow(
     },
 )
 
+row0_mixer = DownstreamMixer(
+    'row0_mixer',
+    in_constraints={
+        'geo': {
+            'bld_thick': 0.0025,
+            'pitch': 0.126,
+        },
+        'oth': {
+            'disp_thick': 0.0004,
+            'mom_thick': 0.0002,
+        },
+    },
+    out_constraints={},
+    extra_equations={
+        # Add blockage from blades in 0
+    },
+)
 
 row1 = BladeRow(
     'Rotor',
