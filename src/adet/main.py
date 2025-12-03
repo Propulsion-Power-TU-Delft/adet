@@ -197,9 +197,9 @@ if PLOTS:
         outlet_angle = nodes[1].geo.metal_angle[midspan_idx]  # pyright:ignore
         chord_ax = nodes[1].geo.chord_ax[midspan_idx]  # pyright:ignore
         pitch = nodes[1].geo.pitch[midspan_idx]  # pyright:ignore
-        n_blades = 3  # blades to plot
+        num_blades = 3  # blades to plot
 
-        for blade_num in range(n_blades):
+        for blade_num in range(num_blades):
             pbl.plot_camber_line(
                 ax_camber,
                 inlet_angle,

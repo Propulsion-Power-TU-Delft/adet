@@ -99,7 +99,7 @@ _dfu_reg.from_dict(
         'Vtmid': 'm/s',
         'Cd_profile': 'dimensionless',
         'sizeParameter': 'meters',
-        'n_blades': 'dimensionless',
+        'num_blades': 'dimensionless',
         'xi_by_camb_len_A': 'meters',
         'xi_by_camb_len_B': 'meters',
         'k_prof': '',
@@ -159,7 +159,7 @@ stator = BladeRow(
             'meridional_angle': Quantity(0, 'deg'),
             'rmid': 0.5,
             'chord': 0.15,  # Blade chord length [m]
-            'n_blades': 30,  # Number of blades
+            'num_blades': 30,  # Number of blades
             'thick_by_pitch': 0.02,
         },
     },
@@ -185,7 +185,7 @@ rotor = BladeRow(
             'meridional_angle': Quantity(0, 'deg'),
             'rmid': 0.5,
             'chord': 0.15,
-            'n_blades': 30,
+            'num_blades': 30,
             'thick_by_pitch': 0.02,
         },
     },
@@ -398,9 +398,9 @@ if PLOTS:
         pitch = n1.geo.pitch[midspan_idx]  # pyright:ignore
 
         # Draw 3 camberlines for all blade rows
-        n_blades = 3
+        num_blades = 3
 
-        for blade_num in range(n_blades):
+        for blade_num in range(num_blades):
             pbl.plot_camber_line(
                 ax_camber,
                 inlet_angle,
