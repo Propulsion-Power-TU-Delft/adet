@@ -944,10 +944,11 @@ class SystemAssembler(ABC):
         )
 
     def get_initial_guess(
-        self, manual_values: dict[str, NDArray], scaling: list[float]
+        self, manual_values: dict[str, NDArray] = {}
     ) -> list[NDArray]:
         """Generate initial guesses for free arguments"""
         guesses = []
+        scaling = self.free_args_scaling
 
         for idx, arg in enumerate(self.data.free_args):
             arg_type = get_arg_type(arg)

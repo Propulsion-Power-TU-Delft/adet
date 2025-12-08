@@ -81,7 +81,7 @@ class BladeRow(BaseComponent):
         (MeridionalVelocityRatio, (0, 1)),
     ]
 
-    from_previous_node = ABSOLUTE_LINK
+    from_previous_node = ABSOLUTE_LINK + GEOM_LINK
 
     constant_variables = [
         'kin_omega',
