@@ -44,7 +44,7 @@ T = TypeVar('T', bound=SystemAssembler)
 class SystemDiagnostics(Generic[T]):
     def __init__(self, system: T, constraints_stack):
         self._arguments = system.free_args
-        self._spanwise_stations = system._spanwise_stations
+        self._spanwise_stations = system.spanwise_stations
         self.const_stack = constraints_stack
 
         if isinstance(system, CasadiSystem):

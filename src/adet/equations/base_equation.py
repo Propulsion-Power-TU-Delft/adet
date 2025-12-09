@@ -1,8 +1,9 @@
 from inspect import getfullargspec
 from abc import ABC, abstractmethod
 import logging
+from multiprocessing import Value
 import re
-from typing import get_args, cast, Self
+from typing import ClassVar, get_args, cast, Self
 import ast
 import inspect
 import textwrap
@@ -29,38 +30,16 @@ class EquationBase(ABC):
     different names than the system-level variable names.
     """
 
-    skip_unit_check: bool = False
-    manual_units: tuple[str, ...] = ()
+    skip_unit_check: ClassVar[bool] = False
+    manual_units: ClassVar[tuple[str, ...]] = ()
 
-    def __init__(
-        self,
-        scaling_factor: list[float] | None = None,
-        argument_aliases: dict[str, str] = {},
-    ):
+    def __init__(self, scaling_factor: list[float] | None = None):
         """
         Parameters
         ----------
         scaling_factor : list[float] | None
             Custom scaling factors for equations
-        argument_aliases : dict[str, str] | None
-            Mapping from residual function argument names to system variable names.
-            Format: {residual_arg_name: system_var_name}
-
-        Example
-        -------
-            For an ideal gas equation that should work on intermediate state:
-            >>> argument_aliases = {
-            >>> 'stc_p0': 'stc_p_ss0_0', # pressure at suction side position 0
-            >>> 'stc_T0': 'stc_T_ss0_0', # temperature at suction side position 0
-            >>> 'stc_rhomass0': 'stc_rhomass_ss0_0',
-            >>> ...
-            >>> }
-
-            The residual function is defined with standard args
-            (stc_p0, stc_T0, ...), but when added to the system,
-            these are mapped to alternative variable names.
         """
-        self._argument_aliases = argument_aliases
 
         # Read arguments from residual signature
         residual_args = getfullargspec(self.residual).args[1:]
@@ -193,19 +172,8 @@ class EquationBase(ABC):
         validated_arguments = []
 
         for residual_arg in all_arguments:
-            # Check if this argument has an alias
-            if residual_arg in self._argument_aliases:
-                system_var_name = self._argument_aliases[residual_arg]
-                logger.debug(
-                    f'Aliasing {residual_arg} -> {system_var_name} '
-                    f'in {self.__class__.__name__}'
-                )
-            else:
-                # No alias, use the original name
-                system_var_name = residual_arg
-
             # Validate the SYSTEM variable name (the aliased one)
-            validated_system_var = self._validate_argument(system_var_name)
+            validated_system_var = self._validate_argument(residual_arg)
             validated_arguments.append(validated_system_var)
 
             # Map: system_var -> residual_arg (for calling residual with correct names)
@@ -299,20 +267,46 @@ class EquationBase(ABC):
         return str(self.to_symbolic()) + ' = 0'
 
 
-class UniqueEquation(EquationBase):
-    """
-    Inherit this for all equations families which can be defined only
-    once per component
-    """
+class IntermediateStateEquation(EquationBase):
+    request_intermediates: ClassVar[tuple[str]]
 
     def __init__(
         self,
+        num_intermediates: int = 10,
         scaling_factor: list[float] | None = None,
-        argument_aliases: dict[str, str] = {},
     ):
+        super().__init__(scaling_factor)
+
+    def set_parent_eos(self, todo):
+        # Set the parent eos
+        ...
+
+    def get_thermo(self, quantity: str, position: float):
+        if position > 1:
+            raise ValueError(f'Position `{position}` out of component')
+        # Continue...
+
+    def __init_subclass__(cls) -> None:
+        if not hasattr(cls, 'request_intermediates'):
+            raise ValueError(f'Please specify requested intermediates in {cls}')
+        return super().__init_subclass__()
+
+    # TODO: use the same update variables as the endpoint nodes
+    # IDEA -> Merge them in a single node
+    # (tot_hmass0, inter_tot_hmass|0->1, tot_hmass1)
+    # ( num_span * 1, n_span * N, num_span * 1 )
+
+
+class UniqueEquation(EquationBase):
+    """
+    Inherit this for all equations families which can be defined only
+    once per component, either on one or two of the component nodes
+    """
+
+    def __init__(self, scaling_factor: list[float] | None = None):
         if self.__class__.__base__ == UniqueEquation:
             raise TypeError(f'Do not inherit directly from {self}')
-        super().__init__(scaling_factor, argument_aliases)
+        super().__init__(scaling_factor)
 
 
 class DeviationModel(UniqueEquation):

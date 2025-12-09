@@ -73,10 +73,34 @@ class RectVelocityIncompressible(LossModel):
 #            xi_by_camb_len1   xi_by_camb_len2
 
 
+# TODO:
+# Standardize the interface to these equations that utilize intermediate states
+# e.g. you can just instance the equation with N intermediate states and recover
+# them by just accessing an attribute, such as self.get_eos()
+# - How can I specify the update pairs
+# - Would be nice to reuse auto recognition of update variables
+
+# == * == * == * ==
+# Sick idea for workflow
+# ----------------------
+# - One or multiple equations (i-th), require a N_i of thermo qties along the component
+# - Get max(N_i) => Choose two `int` (intermediate) update variables for vec updates
+# - Add the intermediate variables as system free arguments
+#    - ! Need to impose first and last element as equal to in and out node
+#    - e.g. int_hmass#2->3|100 <== * Intermediate hmass (100 pts) between node 2 and 3
+#    - Prefix int gives special treatment (for node recognition)
+#    - Adjust the length of the initial guess based on the suffix
+# - HS_eos(int_hmass#2->3|100, int_smass#2->3|100) -> intermediate rhomass, p, ...
+# - Within each equation you can just call self.get_qty('rhomass', 0.25)
+#     - 0.25 is the relative measure of the position for that specific component
+#     - 0.25 over 4 points => int_p#2->3|100[round(0.25 * 4) = 1]
+# == * == * == * ==
+
+
 class DentonProfileLoss(LossModel):
     """
     Axial blade profile losses based on simplified pressure distribution.
-    It should be able to be used for axial compresstore and turbine blades,
+    It should be able to be used for axial compressors and turbine blades,
     so far it has been tested for turbines (check the integral signs mainly)
 
 

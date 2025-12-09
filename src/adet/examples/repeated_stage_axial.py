@@ -59,7 +59,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 # === CONFIGURATION
 # Simulation settings
 NUM_SPAN = 1  # Number of spanwise stations
-NUM_STAGES = 1  # Number of turbine stages (stator-rotor pairs)
+NUM_STAGES = 4  # Number of turbine stages (stator-rotor pairs)
 SCALED = True  # Use scaled equations for better numerical conditioning
 PLOTS = True  # Show plots at end
 PRINTS = True  # Print node information

@@ -99,16 +99,23 @@ class BaseComponent(ABC):
         base_eqs: dict[EquationBase, int | tuple[int, ...]],
         user_eqs: dict[EquationBase, int | tuple[int, ...]],
     ):
+        """
+        Intended behaviour: If the user does not specify a unique
+        equation, the one in the base is used (e.g. a camberline
+        parametrization), but if the user specifies it, the new
+        camberline equations should substitute the existing one.
+        """
         base_eqs_orig = base_eqs.copy()
 
         # > Loop over the base equations
         for base_eq, base_pos in base_eqs_orig.items():
             # > If one of the base equations is a unique eq.
             if isinstance(base_eq, UniqueEquation):
+                # > Get its parent class and position
                 base_eq_parent = base_eq.__class__.__base__
                 base_pos = set(ensure_iterable(base_pos))
 
-                # >  Check that there are no user equations
+                # > Check that there are no user equations
                 # that superseed that unique equation
                 for user_eq, user_pos in user_eqs.items():
                     user_pos = set(ensure_iterable(user_pos))
