@@ -1,5 +1,6 @@
 from typing import Callable, cast
 
+from adet.equations.base_equation import MultiStateEquation
 from adet.fluid.casadi_eos import CasadiEoS
 import CoolProp as cp
 import casadi as cs
@@ -73,31 +74,7 @@ class RectVelocityIncompressible(LossModel):
 #            xi_by_camb_len1   xi_by_camb_len2
 
 
-# TODO:
-# Standardize the interface to these equations that utilize intermediate states
-# e.g. you can just instance the equation with N intermediate states and recover
-# them by just accessing an attribute, such as self.get_eos()
-# - How can I specify the update pairs
-# - Would be nice to reuse auto recognition of update variables
-
-# == * == * == * ==
-# Sick idea for workflow
-# ----------------------
-# - One or multiple equations (i-th), require a N_i of thermo qties along the component
-# - Get max(N_i) => Choose two `int` (intermediate) update variables for vec updates
-# - Add the intermediate variables as system free arguments
-#    - ! Need to impose first and last element as equal to in and out node
-#    - e.g. int_hmass#2->3|100 <== * Intermediate hmass (100 pts) between node 2 and 3
-#    - Prefix int gives special treatment (for node recognition)
-#    - Adjust the length of the initial guess based on the suffix
-# - HS_eos(int_hmass#2->3|100, int_smass#2->3|100) -> intermediate rhomass, p, ...
-# - Within each equation you can just call self.get_qty('rhomass', 0.25)
-#     - 0.25 is the relative measure of the position for that specific component
-#     - 0.25 over 4 points => int_p#2->3|100[round(0.25 * 4) = 1]
-# == * == * == * ==
-
-
-class DentonProfileLoss(LossModel):
+class DentonProfileLoss(MultiStateEquation):
     """
     Axial blade profile losses based on simplified pressure distribution.
     It should be able to be used for axial compressors and turbine blades,
@@ -112,19 +89,18 @@ class DentonProfileLoss(LossModel):
 
     skip_unit_check = True
     manual_units = ('N', 'J / kg / K')
+    input_properties = ('hmass', 'smass')
+    output_properties = ('p', 'rhomass', 'T')
 
     def __init__(
         self,
-        fluid_model: ExternalFluidModel,
         scaling_factor: list[float] | None = None,
     ):
         """
         This requires intermediate state updates, meaning ad eos object has to be
         provided manually
         """
-        self._fluid_model = fluid_model
-        self._eos_callback = None
-        super().__init__(scaling_factor)
+        super().__init__(4, scaling_factor)
 
     @staticmethod
     def _build_velocity_profile(
@@ -135,7 +111,7 @@ class DentonProfileLoss(LossModel):
         along the camberline
         """
         # Positions
-        xi_by_camb_len = cs.horzcat(
+        xi_by_camb_len = cs.vertcat(
             0.0 * xi_by_camb_len_A,
             xi_by_camb_len_A,
             xi_by_camb_len_B,
@@ -161,61 +137,10 @@ class DentonProfileLoss(LossModel):
         W_mid_ps = cs.fmax(k_prof * kin_W0 - delta_W, kin_W0 / CLIP_RATIO)
 
         # Full velocity distribution
-        W_distr_ss = cs.horzcat(1.0 * kin_W0, W_mid_ss, W_mid_ss, kin_W1)  # Suction
-        W_distr_ps = cs.horzcat(0.0 * kin_W0, W_mid_ps, W_mid_ps, kin_W1)  # Pressure
+        W_distr_ss = cs.vertcat(1.0 * kin_W0, W_mid_ss, W_mid_ss, kin_W1)  # Suction
+        W_distr_ps = cs.vertcat(0.0 * kin_W0, W_mid_ps, W_mid_ps, kin_W1)  # Pressure
 
         return xi_by_camb_len, W_distr_ss, W_distr_ps
-
-    def _compute_thermo_distributions(self, rlt_hmass0, stc_smass0, W_distr):
-        """
-        Compute the pressure distribution from total enthalpy and entorpy
-        at the inlet
-
-        Note
-        ----
-        This approximates the flow as isentropic along the blade itself
-        and is valid only for axial machines where total relative enthalpy
-        is conserved
-        """
-        num_span = max(rlt_hmass0.shape)
-        NUM_STREAM = 4
-
-        if self._eos_callback is None:
-            _eos_callback = CasadiEoS(
-                f'Denton_HS_{id(self)}',
-                self._fluid_model.eos_object,
-                cp.HmassSmass_INPUTS,
-                ['p', 'rhomass', 'T'],
-                num_span,
-            )
-            # ! Manual typing annotation !
-            self._eos_callback = cast(
-                Callable[..., tuple[cs.DM, cs.DM, cs.DM]],
-                _eos_callback,
-            )
-
-        stc_hmass_dst = [rlt_hmass0 - W_distr[:, i] ** 2 / 2 for i in range(NUM_STREAM)]
-
-        # Extract p, T, and density distributions from abstract state
-        p_list, rho_list, T_list = [], [], []
-        for h in stc_hmass_dst:
-            p, rho, T = self._eos_callback(h, stc_smass0)
-            p_list.append(p)
-            rho_list.append(rho)
-            T_list.append(T)
-
-        p_cat = cs.horzcat(*p_list)
-        rho_cat = cs.horzcat(*rho_list)
-        T_cat = cs.horzcat(*T_list)
-
-        return p_cat, rho_cat, T_cat
-
-    @staticmethod
-    def _trapezoid(y, x):
-        """Trapezoidal rule"""
-        dx = x[:, 1:] - x[:, :-1]
-        integrand = (y[:, :-1] + y[:, 1:]) * dx / 2
-        return cs.sum2(integrand)
 
     def residual(
         self,
@@ -247,12 +172,8 @@ class DentonProfileLoss(LossModel):
 
         # NOTE: Idea, make smass1 also an input and distribute
         # entropy (linearly?) between inlet and outlet
-        p_ss, rho_ss, T_ss = self._compute_thermo_distributions(
-            rlt_hmass0, stc_smass0, W_distr_ss
-        )
-        p_ps, rho_ps, T_ps = self._compute_thermo_distributions(
-            rlt_hmass0, stc_smass0, W_distr_ps
-        )
+        p_ss, rho_ss, temp_ss = self.eos(rlt_hmass0 - W_distr_ss**2 / 2, stc_smass0)
+        p_ps, rho_ps, temp_ps = self.eos(rlt_hmass0 - W_distr_ps**2 / 2, stc_smass0)
 
         # xi is the curvilinear coordinate along the chord
         xi_dimensional = xi_by_camb_len * geo_camb_len1
@@ -260,18 +181,18 @@ class DentonProfileLoss(LossModel):
         # Trapezoidal integration (can't use np.trapezoidal for differentiability)
         # (trapezoidal rule is exact because everything is linear)
         # [Pa * m = N / m]
-        pressure_integral = self._trapezoid(p_ps - p_ss, xi_dimensional)
+        pressure_integral = self.trapezoid(p_ps - p_ss, xi_dimensional)
 
         # Entropy generation from 2D viscous dissipation
         # [ kg / m**3 ] * [ m**3 / s**3 ] / [K] * [m]
         # = [ kg * m / s**3 / K ] = [ N / s / K ]
-        entropy_integral_ps = self._trapezoid(
-            oth_Cd_profile1 * rho_ps * W_distr_ps**3 / T_ps,
+        entropy_integral_ps = self.trapezoid(
+            oth_Cd_profile1 * rho_ps * W_distr_ps**3 / temp_ps,
             xi_dimensional,
         )
 
-        entropy_integral_ss = self._trapezoid(
-            oth_Cd_profile1 * rho_ss * W_distr_ss**3 / T_ss,
+        entropy_integral_ss = self.trapezoid(
+            oth_Cd_profile1 * rho_ss * W_distr_ss**3 / temp_ss,
             xi_dimensional,
         )
 
@@ -365,5 +286,5 @@ if __name__ == '__main__':
         ax[1, 1].grid(True)
 
     # Let's check the integrals
-    pressure_int = dl._trapezoid(p_ps - p_ss, xi_by_camb_len * camb_len)
+    pressure_int = dl.trapezoid(p_ps - p_ss, xi_by_camb_len * camb_len)
     fig.show()

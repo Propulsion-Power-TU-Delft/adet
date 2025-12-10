@@ -1,5 +1,5 @@
 import numpy as np
-from adet.equations.base_equation import EquationOfState
+from adet.equations.base_equation import EquationBase
 
 
 def ideal_gas_residual(
@@ -24,7 +24,7 @@ def ideal_gas_residual(
     return r1, r2, r3, r4, r5
 
 
-class IdealStcEos(EquationOfState):
+class IdealStcEos(EquationBase):
     def residual(
         self,
         stc_p0,
@@ -55,7 +55,7 @@ class IdealStcEos(EquationOfState):
         return res
 
 
-class IdealTotEos(EquationOfState):
+class IdealTotEos(EquationBase):
     def residual(
         self,
         tot_p0,
@@ -87,7 +87,7 @@ class IdealTotEos(EquationOfState):
         return res
 
 
-class IdealRltEos(EquationOfState):
+class IdealRltEos(EquationBase):
     def residual(
         self,
         rlt_p0,

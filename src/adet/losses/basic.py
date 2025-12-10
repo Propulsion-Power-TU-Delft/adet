@@ -1,4 +1,3 @@
-from adet.equations import EquationBase
 from adet.equations.base_equation import DeviationModel, IncidenceModel
 from adet.losses import LossModel
 

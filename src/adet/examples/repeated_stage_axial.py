@@ -263,8 +263,8 @@ sys_mean_loss.remove_equation_type(LossModel)
 for nodes in nodes_by_stage:
     stator_nodes = (nodes[0], nodes[1])
     rotor_nodes = (nodes[2], nodes[3])
-    sys_mean_loss.add_equation(DentonProfileLoss(real_model), stator_nodes)
-    sys_mean_loss.add_equation(DentonProfileLoss(real_model), rotor_nodes)
+    sys_mean_loss.add_equation(DentonProfileLoss(), stator_nodes)
+    sys_mean_loss.add_equation(DentonProfileLoss(), rotor_nodes)
 
 sys_mean_loss.build(SCALED)
 rootfinder_mean_loss = sys_mean_loss.make_rootfinder('nlpsol')

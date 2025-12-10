@@ -1,11 +1,18 @@
 from itertools import chain
 import logging
-from typing import Any, Callable, cast
+from typing import Any, Callable, ClassVar, Generic, TypeVar, cast
 import casadi as cs
 import CoolProp as cp
 
 from adet.constants import COOLPROP_NAMES_MAP
-from adet.tools.coolprop_utils import DebugAbstractState, get_input_names
+from adet.fluid.settings import ExternalFluidModel
+from adet.tools.coolprop_utils import (
+    DebugAbstractState,
+    get_input_names,
+    pair_id_from_name,
+    pair_id_from_tuple,
+    pair_name_from_tuple,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -223,6 +230,44 @@ class CasadiEosJacobian(cs.Callback):
                     )
 
         return list(chain.from_iterable(result))
+
+
+M = TypeVar('M', bound=ExternalFluidModel)
+
+
+class CasadiEosFactory(Generic[M]):
+    instance_counter: ClassVar[int] = 0
+
+    def __init__(self, fluid_model: M) -> None:
+        self.fluid_model = fluid_model
+        self.__class__.instance_counter += 1
+
+    def make_eos(
+        self,
+        input_quantities: tuple[str, ...] | list[str],
+        output_quantities: tuple[str, ...] | list[str],
+        length: int,
+    ):
+        pair_name = pair_name_from_tuple(tuple(input_quantities))
+        pair_id = pair_id_from_name(pair_name)
+
+        eos_callback = CasadiEoS(
+            f'eos_{pair_name}_n{self.instance_counter}_l{length}',
+            self.fluid_model.eos_object,
+            pair_id,
+            output_quantities,
+            length,
+        )
+        # ! Manual typing annotation !
+        eos_callback = cast(
+            Callable[
+                [Any, Any],
+                Any | tuple[Any, ...],
+            ],
+            eos_callback,
+        )
+
+        return eos_callback
 
 
 # ------------------- USAGE EXAMPLE -------------------

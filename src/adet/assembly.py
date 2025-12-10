@@ -23,8 +23,9 @@ import casadi as cs
 import jax as jax
 import jax.numpy as jnp
 
+from adet.equations.base_equation import MultiStateEquation
 from adet.errors import ExistingEquationError
-from adet.fluid.casadi_eos import CasadiEoS
+from adet.fluid.casadi_eos import CasadiEoS, CasadiEosFactory
 from adet.fluid.settings import (
     AnalyticalFluidModel,
     EmptyFluidModel,
@@ -1064,13 +1065,18 @@ class CasadiSystem(SystemAssembler):
         fl_model = self.fluid_settings.model
 
         if not isinstance(fl_model, ExternalFluidModel):
-            return {}
-
-        eos_obj = fl_model.eos_object
+            raise NotImplementedError
 
         self._eos_callbacks = []
+        self._eos_factory = CasadiEosFactory(fl_model)
 
+        # Get discarded thermo args => They become eos outputs
         discarded_thermo = self._argument_resolver.get_discarded_thermo_args()
+
+        # Add factory to the intermediate state equations
+        for eq in self.equations:
+            if isinstance(eq, MultiStateEquation):
+                eq.factory_eos = self._eos_factory
 
         out_syms = {}
         for node_idx, discarded_vars in discarded_thermo.items():
@@ -1079,15 +1085,8 @@ class CasadiSystem(SystemAssembler):
             for state_name, out_props in discarded_vars.items():
                 pair_tuple = node_inp_pairs[state_name]
 
-                pair_name = pair_name_from_tuple(pair_tuple)
-                pair_id = pair_id_from_name(pair_name)
-
-                casadi_eos_cb = CasadiEoS(
-                    f'casadi_eos_{state_name}{node_idx}',
-                    eos_obj,
-                    pair_id,
-                    out_props,
-                    self.spanwise_stations,
+                casadi_eos_cb = self._eos_factory.make_eos(
+                    pair_tuple, out_props, self.spanwise_stations
                 )
 
                 # This is to keep references
@@ -1095,17 +1094,19 @@ class CasadiSystem(SystemAssembler):
 
                 sorted_pair_tuple = pair_based_sorting(*pair_tuple)
 
+                # Symbolic representation of the input pair properties
                 symbolic_pair = [
                     all_args_products[f'{state_name}_{var}{node_idx}']
                     for var in sorted_pair_tuple
                 ]
 
-                # Symbolic representation of the casadi_eos
+                # Symbolic representation of the output properties
                 out_props_syms = casadi_eos_cb(*symbolic_pair)
 
                 if not isinstance(out_props_syms, tuple):
                     out_props_syms = [out_props_syms]
 
+                # Make a dictionary of symbols that are ouputs from the eos callbacks
                 for pr_name, pr_sym in zip(out_props, out_props_syms):
                     out_syms[f'{state_name}_{pr_name}{node_idx}'] = pr_sym
 

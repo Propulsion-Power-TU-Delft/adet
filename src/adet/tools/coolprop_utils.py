@@ -59,6 +59,9 @@ def pair_name_from_tuple(update_variables: tuple[str, ...]):
 
 
 def pair_id_from_name(input_pair_name: str) -> int:
+    """
+    Get the pair id from its name, e.g. HmassSmass -> 26
+    """
     input_pairs = {
         attr[: -len(cp_INPUTS_SUFFIX)]: getattr(cp, attr)
         for attr in dir(cp)
@@ -66,6 +69,11 @@ def pair_id_from_name(input_pair_name: str) -> int:
     }
 
     return input_pairs[input_pair_name]
+
+
+def pair_id_from_tuple(update_variables: tuple[str, ...]):
+    pair_name = pair_name_from_tuple(update_variables)
+    return pair_id_from_name(pair_name)
 
 
 def make_lookup_table(

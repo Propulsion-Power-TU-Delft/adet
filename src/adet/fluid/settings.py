@@ -1,12 +1,14 @@
 from abc import abstractmethod
 from dataclasses import dataclass
 import logging
-from typing import TYPE_CHECKING, Generic, Any, TypeVar
+from typing import TYPE_CHECKING, Generic, TypeVar
 
 
 if TYPE_CHECKING:
     from adet.equations.base_equation import EquationBase
 
+
+T = TypeVar('T')
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +47,6 @@ class IdealGasModel(AnalyticalFluidModel):
         return IdealStcEos(), IdealTotEos(), IdealRltEos()
 
 
-T = TypeVar('T')
-
-
 @dataclass
 class ExternalFluidModel(FluidModel, Generic[T]):
     eos_object: T
@@ -63,7 +62,7 @@ class ExternalFluidModel(FluidModel, Generic[T]):
         new_obj = cls.__new__(cls)
         memo[id(self)] = new_obj
 
-        # Just copy the same object
+        # Just copy the same object because
         # Abstract state has problems being deepcopied
         new_obj.eos_object = self.eos_object
 

@@ -1,16 +1,19 @@
 from inspect import getfullargspec
 from abc import ABC, abstractmethod
 import logging
-from multiprocessing import Value
 import re
-from typing import ClassVar, get_args, cast, Self
+from typing import ClassVar, get_args, cast, Self, Callable
 import ast
 import inspect
 import textwrap
 
 import sympy as sp
 import numpy as np
+import casadi as cs
+import CoolProp as cp
 
+from adet.fluid.casadi_eos import CasadiEoS, CasadiEosFactory
+from adet.fluid.settings import ExternalFluidModel, FluidModel
 from adet.tools.strings import verify_string_pattern, get_arg_state
 from adet.tools.context import override_operators, suppress_output
 from adet.constants import NodeStatesNames
@@ -267,34 +270,66 @@ class EquationBase(ABC):
         return str(self.to_symbolic()) + ' = 0'
 
 
-class IntermediateStateEquation(EquationBase):
-    request_intermediates: ClassVar[tuple[str]]
+# TODO:
+# Standardize the interface to these equations that utilize intermediate states
+# e.g. you can just instance the equation with N intermediate states and recover
+# them by just accessing an attribute, such as self.get_eos()
+# - How can I specify the update pairs
+# - Would be nice to reuse auto recognition of update variables
+
+
+class MultiStateEquation(EquationBase):
+    input_properties: ClassVar[tuple[str, ...]]
+    output_properties: ClassVar[tuple[str, ...]]
+    _factory_eos: None | CasadiEosFactory = None
 
     def __init__(
         self,
-        num_intermediates: int = 10,
+        num_intermediates: int,
         scaling_factor: list[float] | None = None,
     ):
+        self.num_intermediates = num_intermediates
+        self._eos = None
         super().__init__(scaling_factor)
 
-    def set_parent_eos(self, todo):
-        # Set the parent eos
-        ...
-
-    def get_thermo(self, quantity: str, position: float):
-        if position > 1:
-            raise ValueError(f'Position `{position}` out of component')
-        # Continue...
-
     def __init_subclass__(cls) -> None:
-        if not hasattr(cls, 'request_intermediates'):
-            raise ValueError(f'Please specify requested intermediates in {cls}')
+        if not hasattr(cls, 'input_properties'):
+            raise ValueError(f'Please specify input properties in {cls}')
+        if not hasattr(cls, 'output_properties'):
+            raise ValueError(f'Please specify output_properties in {cls}')
         return super().__init_subclass__()
 
-    # TODO: use the same update variables as the endpoint nodes
-    # IDEA -> Merge them in a single node
-    # (tot_hmass0, inter_tot_hmass|0->1, tot_hmass1)
-    # ( num_span * 1, n_span * N, num_span * 1 )
+    @property
+    def factory_eos(self):
+        cls = self.__class__
+        if cls._factory_eos is None:
+            raise AttributeError('Attribute {eos_factory} is not set')
+
+        return cls._factory_eos
+
+    @factory_eos.setter
+    def factory_eos(self, factory: CasadiEosFactory):
+        self.__class__._factory_eos = factory
+
+    @property
+    def eos(self):
+        cls = self.__class__
+        if not self._eos:
+            self._eos = self.factory_eos.make_eos(
+                cls.input_properties,
+                cls.output_properties,
+                self.num_intermediates,
+            )
+
+        return self._eos
+
+    # *** Common numerical method to act on the intermediate states ***
+    @staticmethod
+    def trapezoid(y, x):
+        """Trapezoidal rule"""
+        dx = x[1:, :] - x[:-1, :]
+        integrand = (y[:-1, :] + y[1:, :]) * dx / 2
+        return cs.sum1(integrand)
 
 
 class UniqueEquation(EquationBase):
