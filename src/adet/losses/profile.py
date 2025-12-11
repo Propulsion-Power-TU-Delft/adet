@@ -9,6 +9,7 @@ import numpy as np
 from adet.fluid.settings import ExternalFluidModel
 from adet.losses.base_loss import LossModel
 from adet.tools.coolprop_utils import DebugAbstractState
+from adet.tools.numerical import trapezoid1, trapezoid2
 
 
 # Greitzer model
@@ -89,18 +90,8 @@ class DentonProfileLoss(MultiStateEquation):
 
     skip_unit_check = True
     manual_units = ('N', 'J / kg / K')
-    input_properties = ('hmass', 'smass')
-    output_properties = ('p', 'rhomass', 'T')
-
-    def __init__(
-        self,
-        scaling_factor: list[float] | None = None,
-    ):
-        """
-        This requires intermediate state updates, meaning ad eos object has to be
-        provided manually
-        """
-        super().__init__(4, scaling_factor)
+    input_quantities = ('hmass', 'smass')
+    output_quantities = ('p', 'rhomass', 'T')
 
     @staticmethod
     def _build_velocity_profile(
@@ -111,7 +102,7 @@ class DentonProfileLoss(MultiStateEquation):
         along the camberline
         """
         # Positions
-        xi_by_camb_len = cs.vertcat(
+        xi_by_camb_len = cs.horzcat(
             0.0 * xi_by_camb_len_A,
             xi_by_camb_len_A,
             xi_by_camb_len_B,
@@ -137,8 +128,8 @@ class DentonProfileLoss(MultiStateEquation):
         W_mid_ps = cs.fmax(k_prof * kin_W0 - delta_W, kin_W0 / CLIP_RATIO)
 
         # Full velocity distribution
-        W_distr_ss = cs.vertcat(1.0 * kin_W0, W_mid_ss, W_mid_ss, kin_W1)  # Suction
-        W_distr_ps = cs.vertcat(0.0 * kin_W0, W_mid_ps, W_mid_ps, kin_W1)  # Pressure
+        W_distr_ss = cs.horzcat(1.0 * kin_W0, W_mid_ss, W_mid_ss, kin_W1)  # Suction
+        W_distr_ps = cs.horzcat(0.0 * kin_W0, W_mid_ps, W_mid_ps, kin_W1)  # Pressure
 
         return xi_by_camb_len, W_distr_ss, W_distr_ps
 
@@ -172,8 +163,11 @@ class DentonProfileLoss(MultiStateEquation):
 
         # NOTE: Idea, make smass1 also an input and distribute
         # entropy (linearly?) between inlet and outlet
-        p_ss, rho_ss, temp_ss = self.eos(rlt_hmass0 - W_distr_ss**2 / 2, stc_smass0)
-        p_ps, rho_ps, temp_ps = self.eos(rlt_hmass0 - W_distr_ps**2 / 2, stc_smass0)
+        rlt_hmass_rep = cs.repmat(rlt_hmass0, 1, W_distr_ps.shape[1])
+        smass_rep = cs.repmat(stc_smass0, 1, W_distr_ps.shape[1])
+
+        p_ss, rho_ss, temp_ss = self.eos(rlt_hmass_rep - W_distr_ss**2 / 2, smass_rep)
+        p_ps, rho_ps, temp_ps = self.eos(rlt_hmass_rep - W_distr_ps**2 / 2, smass_rep)
 
         # xi is the curvilinear coordinate along the chord
         xi_dimensional = xi_by_camb_len * geo_camb_len1
@@ -181,17 +175,17 @@ class DentonProfileLoss(MultiStateEquation):
         # Trapezoidal integration (can't use np.trapezoidal for differentiability)
         # (trapezoidal rule is exact because everything is linear)
         # [Pa * m = N / m]
-        pressure_integral = self.trapezoid(p_ps - p_ss, xi_dimensional)
+        delta_p = p_ps - p_ss
+        pressure_integral = trapezoid2(delta_p, xi_dimensional)
 
         # Entropy generation from 2D viscous dissipation
         # [ kg / m**3 ] * [ m**3 / s**3 ] / [K] * [m]
         # = [ kg * m / s**3 / K ] = [ N / s / K ]
-        entropy_integral_ps = self.trapezoid(
+        entropy_integral_ps = trapezoid2(
             oth_Cd_profile1 * rho_ps * W_distr_ps**3 / temp_ps,
             xi_dimensional,
         )
-
-        entropy_integral_ss = self.trapezoid(
+        entropy_integral_ss = trapezoid2(
             oth_Cd_profile1 * rho_ss * W_distr_ss**3 / temp_ss,
             xi_dimensional,
         )

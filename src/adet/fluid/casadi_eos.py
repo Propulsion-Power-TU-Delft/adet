@@ -1,6 +1,6 @@
 from itertools import chain
 import logging
-from typing import Any, Callable, ClassVar, Generic, TypeVar, cast
+from typing import Any, Callable, ClassVar, Generic, TypeVar, cast, overload
 import casadi as cs
 import CoolProp as cp
 
@@ -138,6 +138,15 @@ class CasadiEoS(cs.Callback):
 
         return results
 
+    @overload
+    def __call__(self, var0: cs.MX, var1: cs.MX) -> tuple[cs.MX, ...] | cs.MX: ...
+
+    @overload
+    def __call__(self, var0: cs.DM, var1: cs.DM) -> tuple[cs.DM, ...] | cs.DM: ...
+
+    def __call__(self, var0: Any, var1: Any) -> tuple[Any, ...] | Any:
+        return super().__call__(var0, var1)
+
     def has_jacobian(self):
         return True
 
@@ -257,14 +266,6 @@ class CasadiEosFactory(Generic[M]):
             pair_id,
             output_quantities,
             length,
-        )
-        # ! Manual typing annotation !
-        eos_callback = cast(
-            Callable[
-                [Any, Any],
-                Any | tuple[Any, ...],
-            ],
-            eos_callback,
         )
 
         return eos_callback

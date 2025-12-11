@@ -333,7 +333,7 @@ class ConstraintManager:
             for arg_no_idx, value in node.get_constraints().items():
                 arg = arg_no_idx + str(node_idx)
                 if arg not in self.data.declared_arguments:
-                    logger.warning(f'Unused constraint {arg}')
+                    logger.debug(f'Unused constraint {arg}')
                 constraint_names.append(arg)
                 constr_value = value.to_base_units().magnitude
 
@@ -1007,11 +1007,6 @@ class SystemAssembler(ABC):
 
 
 class CasadiSystem(SystemAssembler):
-    """
-    Build a system using CasADi, good for CPU computations
-    and code generation. Good direct integration with numpy
-    """
-
     def __init__(
         self, spanwise_stations: int = 1, *, scale_suffix: str = '__SCALER'
     ) -> None:
@@ -1020,7 +1015,7 @@ class CasadiSystem(SystemAssembler):
 
     def build(self, scaled: bool = True, throw: bool = True):
         super().build(scaled)
-        logger.info('Building CasADi backend')
+        logger.info('Building CasADi backend...')
         self._build_base_symbols()
         self._build_composed_symbols()
         self._build_residual_expressions()
@@ -1076,7 +1071,11 @@ class CasadiSystem(SystemAssembler):
         # Add factory to the intermediate state equations
         for eq in self.equations:
             if isinstance(eq, MultiStateEquation):
-                eq.factory_eos = self._eos_factory
+                eq.eos = self._eos_factory.make_eos(
+                    eq.input_quantities,
+                    eq.output_quantities,
+                    self.spanwise_stations,
+                )
 
         out_syms = {}
         for node_idx, discarded_vars in discarded_thermo.items():
@@ -1089,7 +1088,7 @@ class CasadiSystem(SystemAssembler):
                     pair_tuple, out_props, self.spanwise_stations
                 )
 
-                # This is to keep references
+                # This is to keep references alive
                 self._eos_callbacks.append(casadi_eos_cb)
 
                 sorted_pair_tuple = pair_based_sorting(*pair_tuple)

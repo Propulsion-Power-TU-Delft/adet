@@ -279,57 +279,31 @@ class EquationBase(ABC):
 
 
 class MultiStateEquation(EquationBase):
-    input_properties: ClassVar[tuple[str, ...]]
-    output_properties: ClassVar[tuple[str, ...]]
-    _factory_eos: None | CasadiEosFactory = None
-
-    def __init__(
-        self,
-        num_intermediates: int,
-        scaling_factor: list[float] | None = None,
-    ):
-        self.num_intermediates = num_intermediates
-        self._eos = None
-        super().__init__(scaling_factor)
+    input_quantities: ClassVar[tuple[str, ...]]
+    output_quantities: ClassVar[tuple[str, ...]]
+    _eos: None | CasadiEoS = None
 
     def __init_subclass__(cls) -> None:
-        if not hasattr(cls, 'input_properties'):
-            raise ValueError(f'Please specify input properties in {cls}')
-        if not hasattr(cls, 'output_properties'):
-            raise ValueError(f'Please specify output_properties in {cls}')
+        if not hasattr(cls, 'input_quantities'):
+            raise ValueError(f'Please specify input quantities in {cls}')
+        if not hasattr(cls, 'output_quantities'):
+            raise ValueError(f'Please specify output_quantities in {cls}')
         return super().__init_subclass__()
-
-    @property
-    def factory_eos(self):
-        cls = self.__class__
-        if cls._factory_eos is None:
-            raise AttributeError('Attribute {eos_factory} is not set')
-
-        return cls._factory_eos
-
-    @factory_eos.setter
-    def factory_eos(self, factory: CasadiEosFactory):
-        self.__class__._factory_eos = factory
 
     @property
     def eos(self):
         cls = self.__class__
-        if not self._eos:
-            self._eos = self.factory_eos.make_eos(
-                cls.input_properties,
-                cls.output_properties,
-                self.num_intermediates,
-            )
+        if cls._eos is None:
+            raise AttributeError(f'Missing equation of state for {cls}')
 
-        return self._eos
+        return cls._eos
 
-    # *** Common numerical method to act on the intermediate states ***
-    @staticmethod
-    def trapezoid(y, x):
-        """Trapezoidal rule"""
-        dx = x[1:, :] - x[:-1, :]
-        integrand = (y[:-1, :] + y[1:, :]) * dx / 2
-        return cs.sum1(integrand)
+    @eos.setter
+    def eos(self, eos: CasadiEoS):
+        cls = self.__class__
+        if cls._eos is not None:
+            logger.warning(f'Overwriting EoS for {cls}')
+        cls._eos = eos
 
 
 class UniqueEquation(EquationBase):

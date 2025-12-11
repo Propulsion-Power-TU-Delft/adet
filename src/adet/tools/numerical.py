@@ -5,6 +5,7 @@ Numerical methods implementation
 import logging
 from typing import Callable
 from collections import namedtuple
+import casadi as cs
 
 import jax.numpy as jnp
 import jax
@@ -104,6 +105,20 @@ def newton_method(
         logger.info('The Newton-Raphson solver converged successfully')
 
     return solution
+
+
+def trapezoid1(y, x):
+    """Trapezoidal rule"""
+    dx = x[1:, :] - x[:-1, :]
+    integrand = (y[:-1, :] + y[1:, :]) * dx / 2
+    return cs.sum1(integrand)
+
+
+def trapezoid2(y, x):
+    """Trapezoidal rule"""
+    dx = x[:, 1:] - x[:, :-1]
+    integrand = (y[:, :-1] + y[:, 1:]) * dx / 2
+    return cs.sum2(integrand)
 
 
 def derivative(x0, func, eps, argnum):
