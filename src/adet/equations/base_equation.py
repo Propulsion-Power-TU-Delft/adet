@@ -2,18 +2,15 @@ from inspect import getfullargspec
 from abc import ABC, abstractmethod
 import logging
 import re
-from typing import ClassVar, get_args, cast, Self, Callable
+from typing import ClassVar, get_args, cast, Self
 import ast
 import inspect
 import textwrap
 
 import sympy as sp
 import numpy as np
-import casadi as cs
-import CoolProp as cp
 
-from adet.fluid.casadi_eos import CasadiEoS, CasadiEosFactory
-from adet.fluid.settings import ExternalFluidModel, FluidModel
+from adet.fluid.casadi_eos import CasadiEos
 from adet.tools.strings import verify_string_pattern, get_arg_state
 from adet.tools.context import override_operators, suppress_output
 from adet.constants import NodeStatesNames
@@ -281,7 +278,7 @@ class EquationBase(ABC):
 class MultiStateEquation(EquationBase):
     input_quantities: ClassVar[tuple[str, ...]]
     output_quantities: ClassVar[tuple[str, ...]]
-    _eos: None | CasadiEoS = None
+    _eos: None | CasadiEos = None
 
     def __init_subclass__(cls) -> None:
         if not hasattr(cls, 'input_quantities'):
@@ -299,7 +296,7 @@ class MultiStateEquation(EquationBase):
         return cls._eos
 
     @eos.setter
-    def eos(self, eos: CasadiEoS):
+    def eos(self, eos: CasadiEos):
         cls = self.__class__
         if cls._eos is not None:
             logger.warning(f'Overwriting EoS for {cls}')

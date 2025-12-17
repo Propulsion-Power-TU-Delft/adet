@@ -25,7 +25,7 @@ import jax.numpy as jnp
 
 from adet.equations.base_equation import MultiStateEquation
 from adet.errors import ExistingEquationError
-from adet.fluid.casadi_eos import CasadiEoS, CasadiEosFactory
+from adet.fluid.casadi_eos import CasadiEosFactory
 from adet.fluid.settings import (
     AnalyticalFluidModel,
     EmptyFluidModel,

@@ -26,7 +26,7 @@ from adet.components import ComponentNetwork, BladeRow, Shaft, Inlet
 from adet.equations.definitions import DegreeOfReaction, RepeatedStage
 from adet.equations.fundamental import ZeroBlockage
 from adet.equations.geometrical import ParabolicCamberline, MinimalCamberLine
-from adet.fluid.casadi_eos import CasadiEoS
+from adet.fluid.casadi_eos import CasadiEos
 from adet.fluid.settings import FluidSettings, ExternalFluidModel, IdealGasModel
 
 # Losses
@@ -210,7 +210,7 @@ ntw = ComponentNetwork(
     settings,  # Fluid settings
     inlet,  # Inlet conditions
     CasadiSystem(spanwise_stations=1),  # Backend (single spanwise station)
-    *rows,
+    rows,
 )
 
 # === GLOBAL CONSTRAINTS
@@ -427,7 +427,7 @@ if PLOTS:
     # as well as entropy change
     from CoolProp import PT_INPUTS
 
-    PT_EOS = CasadiEoS(
+    PT_EOS = CasadiEos(
         'PT_EoS',
         real_model.eos_object,
         PT_INPUTS,

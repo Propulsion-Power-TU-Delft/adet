@@ -111,12 +111,12 @@ row0 = BladeRow(
             'chord_ax': 0.15,
             'num_blades': 25,
             'thick_by_pitch': 0.02,  # Blade thickness by pitch
+            'heightRatio': 1.1,
         },
         'tot': {
             # 'p': 5e5,  # Impose either here or at inlet
         },
         'oth': {
-            'heightRatio': 1.1,
             'mom_by_bld_thick': 0.075,
             'disp_by_mom_thick': 2,
         },

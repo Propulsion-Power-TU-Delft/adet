@@ -1,7 +1,7 @@
 from typing import Callable, cast
 
 from adet.equations.base_equation import MultiStateEquation
-from adet.fluid.casadi_eos import CasadiEoS
+from adet.fluid.casadi_eos import CasadiEos
 import CoolProp as cp
 import casadi as cs
 import numpy as np
@@ -80,12 +80,6 @@ class DentonProfileLoss(MultiStateEquation):
     Axial blade profile losses based on simplified pressure distribution.
     It should be able to be used for axial compressors and turbine blades,
     so far it has been tested for turbines (check the integral signs mainly)
-
-
-    Warning
-    -------
-    - This function is ONLY compatible with CasADi
-    - This assumes an external gas model
     """
 
     skip_unit_check = True
@@ -163,11 +157,8 @@ class DentonProfileLoss(MultiStateEquation):
 
         # NOTE: Idea, make smass1 also an input and distribute
         # entropy (linearly?) between inlet and outlet
-        rlt_hmass_rep = cs.repmat(rlt_hmass0, 1, W_distr_ps.shape[1])
-        smass_rep = cs.repmat(stc_smass0, 1, W_distr_ps.shape[1])
-
-        p_ss, rho_ss, temp_ss = self.eos(rlt_hmass_rep - W_distr_ss**2 / 2, smass_rep)
-        p_ps, rho_ps, temp_ps = self.eos(rlt_hmass_rep - W_distr_ps**2 / 2, smass_rep)
+        p_ss, rho_ss, temp_ss = self.eos(rlt_hmass0 - W_distr_ss**2 / 2, stc_smass0)
+        p_ps, rho_ps, temp_ps = self.eos(rlt_hmass0 - W_distr_ps**2 / 2, stc_smass0)
 
         # xi is the curvilinear coordinate along the chord
         xi_dimensional = xi_by_camb_len * geo_camb_len1

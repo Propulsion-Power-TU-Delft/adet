@@ -69,7 +69,7 @@ def get_dummy_jac_shape(v0: cs.MX, v1: cs.MX):
     return dummy_func.jacobian()
 
 
-class CasadiEoS(cs.Callback):
+class CasadiEos(cs.Callback):
     def __init__(
         self,
         name: str,
@@ -260,7 +260,7 @@ class CasadiEosFactory(Generic[M]):
         pair_name = pair_name_from_tuple(tuple(input_quantities))
         pair_id = pair_id_from_name(pair_name)
 
-        eos_callback = CasadiEoS(
+        eos_callback = CasadiEos(
             f'eos_{pair_name}_n{self.instance_counter}_l{length}',
             self.fluid_model.eos_object,
             pair_id,
@@ -288,7 +288,7 @@ if __name__ == '__main__':
     OPTS = {'enable_fd': True}
 
     # Example
-    callback = CasadiEoS('PT_eos', eos, cp.PT_INPUTS, PROPERTIES, NUM_SPAN)
+    callback = CasadiEos('PT_eos', eos, cp.PT_INPUTS, PROPERTIES, NUM_SPAN)
 
     # Type annotation
     callback = cast(

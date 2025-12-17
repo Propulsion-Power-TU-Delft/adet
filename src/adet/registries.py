@@ -143,7 +143,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'V': 'm/s',
         'Vt': 'm/s',
         'Vm': 'm/s',
-        'VmRatio': 'm/s',
+        'VmRatio': 'dimensionless',
         'W': 'm/s',
         'Wt': 'm/s',
         'Wm': 'm/s',

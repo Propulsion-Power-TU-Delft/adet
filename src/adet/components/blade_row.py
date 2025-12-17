@@ -28,7 +28,6 @@ from adet.losses.mixing import MixingBalances
 from adet.node import FlowNode
 from adet.components import BaseComponent, Shaft
 from adet.geometry import BezierCurve, StraightLine
-from adet.tools.strings import get_index
 
 logger = logging.getLogger(__name__)
 
@@ -60,25 +59,23 @@ This preserves meridional geometry, not included by default
 
 class BladeRow(BaseComponent):
     base_equations = [
-        # ***
-        # |> Fundamental equations - do not remove
-        # * Conservation laws, legally required, they're laws.
+        # *** Fundamental equations - do not remove
         (EulerEquation, (0, 1)),  # Adiabatic and steady
         (MassConservation, (0, 1)),
-        # * Blockage parameters - Thickness needed by default
-        (BladeBlockage, 0),
-        (BladeBlockage, 1),
-        # * Pitch and channel massflow
-        (BladePitchCount, 0),
-        (BladePitchCount, 1),
-        # ***
-        # |> Common definitions
-        (ThicknessToPitch, 0),
-        (ThicknessToPitch, 1),
-        (Solidity, 1),
+        # *** Blockage
+        (ZeroBlockage, 0),
+        (ZeroBlockage, 1),
+        # *** Common definitions
         (HeightRatio, (0, 1)),
         (AngleDeflection, (0, 1)),
         (MeridionalVelocityRatio, (0, 1)),
+        # *** Blade count, pitch, channel massflow
+        # -- TODO: Make this user-enabled
+        # (BladePitchCount, 0),
+        # (BladePitchCount, 1),
+        # (ThicknessToPitch, 0),
+        # (ThicknessToPitch, 1),
+        # (Solidity, 1),
     ]
 
     from_previous_node = ABSOLUTE_LINK + GEOM_LINK

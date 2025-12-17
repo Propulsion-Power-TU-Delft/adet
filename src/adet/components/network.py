@@ -43,7 +43,7 @@ class ComponentNetwork(Generic[T]):
         fluid_settings: FluidSettings,
         inlet: Inlet,
         backend: T,
-        *components: BaseComponent,
+        components: Sequence[BaseComponent],
     ) -> None:
         """
         Network of turbomachinery components

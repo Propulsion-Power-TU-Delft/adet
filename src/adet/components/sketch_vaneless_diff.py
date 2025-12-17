@@ -8,7 +8,7 @@ import casadi as cs
 import numpy as np
 import matplotlib.pyplot as plt
 
-from adet.fluid.casadi_eos import CasadiEoS
+from adet.fluid.casadi_eos import CasadiEos
 from adet.tools.coolprop_utils import DebugAbstractState
 
 
@@ -20,7 +20,7 @@ def solve_diffuser_problem(
     s2 = casadi_eos.smass()
     rho2 = casadi_eos.rhomass()
 
-    get_density_PS = CasadiEoS(
+    get_density_PS = CasadiEos(
         'casadi_eos', casadi_eos, cp.PSmass_INPUTS, ['rhomass'], 1
     )
 

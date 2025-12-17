@@ -14,7 +14,7 @@ from adet.equations.geometrical import (
     ParabolicCamberline,
     TwoSegmentCamberline,
 )
-from adet.fluid.casadi_eos import CasadiEoS
+from adet.fluid.casadi_eos import CasadiEos
 from adet.fluid.settings import FluidSettings
 
 # Objects Configuration => MODIFY CONFIG FILE TO SET BOUNDARY CONDITIONS
@@ -42,7 +42,6 @@ setup_logger(
 # the logging filter I set up for it
 logging.getLogger('jax').setLevel(logging.WARNING)
 
-
 # === SETTINGS
 NUM_SPAN = 1
 SCALED = True
@@ -65,7 +64,7 @@ ntw = ComponentNetwork(
     settings,  # Fluid settings
     inlet,  # Inlet conditions
     CasadiSystem(spanwise_stations=NUM_SPAN),  # Backend
-    row0,
+    [row0],
 )
 
 # Add global constraints for ideal gas and
@@ -118,7 +117,7 @@ if PRINTS:
     ntw.print_structure()
 
 
-PT_EOS = CasadiEoS(
+PT_EOS = CasadiEos(
     'PT_EOS',
     real_model.eos_object,
     9,

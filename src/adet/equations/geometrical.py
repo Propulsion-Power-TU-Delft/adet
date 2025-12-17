@@ -72,7 +72,6 @@ class MinimalCamberLine(CamberLineGeom):
         geo_stagger1,
         geo_chord_ax1,
         geo_camb_len1,
-        geo_pitch1,
     ):
         stagger_computed = (geo_metal_angle1 + geo_metal_angle0) / 2
 
@@ -80,6 +79,11 @@ class MinimalCamberLine(CamberLineGeom):
         r2 = geo_stagger1 - stagger_computed
         r3 = geo_chord1 * np.cos(geo_stagger1) - geo_chord_ax1
         return r1, r2, r3
+
+
+class NoCamberline(CamberLineGeom):
+    def residual(self, geo_metal_angle0, geo_metal_angle1):
+        return ()
 
 
 class TwoSegmentCamberline(CamberLineGeom):
