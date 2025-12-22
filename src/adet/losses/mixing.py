@@ -15,7 +15,6 @@ class MixingBalances(EquationBase):
     1 = Mixed out conditions
     """
 
-    skip_unit_check = True
     manual_units = ('N / m', 'J / kg', 'J / kg / K')
 
     def _get_base_pressure_interpolant(self, blade_type: Literal['conv', 'conv-div']):

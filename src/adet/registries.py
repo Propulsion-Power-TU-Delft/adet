@@ -3,6 +3,7 @@ Implement registries with a singleton pattern
 """
 
 import logging
+import re
 from pint import UnitRegistry
 from typing import Generic, TypeVar, Mapping
 
@@ -59,27 +60,52 @@ class BaseRegistry(Generic[K, V]):
         # These are intentionally left untyped
         self.set(key, value)
 
+    def _find_regex_match(self, key: K, values: dict[K, V]) -> V | None:
+        """Find a value by matching key against regex patterns in the registry."""
+        if not isinstance(key, str):
+            return None
+
+        for pattern, value in values.items():
+            if not isinstance(pattern, str):
+                continue
+            try:
+                if re.fullmatch(pattern, key):
+                    return value
+            except re.error:
+                # Not a valid regex pattern, skip
+                continue
+        return None
+
     def get(self, key: K) -> V:
         # Return the forced value if assigned
         if self._forced_value:
             return self._forced_value
 
-        # Raise if there is no key
-        if key not in self._all_values:
-            if self._fallback_value:
-                return self._fallback_value
+        # Try exact match first
+        if key in self._all_values:
+            # User values take precedence over defaults
+            if key in self._user_values:
+                return self._user_values[key]
+            return self._defaults[key]
 
-            class_name = self.__class__.__name__
-            raise KeyError(
-                f'Missing key `{key}` for {class_name}, '
-                f"add it using: `{class_name}()['{key}'] = <value>`"
-            )
+        # Try regex matching: user patterns first, then defaults
+        regex_match = self._find_regex_match(key, self._user_values)
+        if regex_match is not None:
+            return regex_match
 
-        # User values take precedence over defaults
-        if key in self._user_values:
-            return self._user_values[key]
+        regex_match = self._find_regex_match(key, self._defaults)
+        if regex_match is not None:
+            return regex_match
 
-        return self._defaults[key]
+        # No match found - check fallback or raise error
+        if self._fallback_value:
+            return self._fallback_value
+
+        class_name = self.__class__.__name__
+        raise KeyError(
+            f'Missing key `{key}` for {class_name}, '
+            f"add it using: `{class_name}()['{key}'] = <value>`"
+        )
 
     def __getitem__(self, key):
         # These are intentionally left untyped
@@ -109,7 +135,15 @@ class BaseRegistry(Generic[K, V]):
         cls._instance._forced_value = None
 
     def __contains__(self, key: K) -> bool:
-        return key in self._all_values
+        # Check exact match first
+        if key in self._all_values:
+            return True
+        # Check regex patterns
+        if self._find_regex_match(key, self._user_values) is not None:
+            return True
+        if self._find_regex_match(key, self._defaults) is not None:
+            return True
+        return False
 
 
 class DefaultUnitsRegistry(BaseRegistry[str, str]):
@@ -124,22 +158,16 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'T': 'K',
         'T_ref': 'K',
         'rhomass': 'kg / m**3',
-        'hmass': 'J / kg',
-        'tot_hmass_is': 'J / kg',
-        'delta_ht': 'J / kg',
+        '.*hmass.*': 'J / kg',
         'umass': 'J / kg',
         'smass': 'J / (kg * K)',
-        'cpmass': 'J / (kg * K)',
-        'cpmassid': 'J / (kg * K)',
-        'cvmass': 'J / (kg * K)',
-        'cvmassid': 'J / (kg * K)',
+        'cpmass.*': 'J / (kg * K)',
+        'cvmass.*': 'J / (kg * K)',
         'speed_sound': 'm/s',
         # Others
-        'massflow': 'kg / s',
-        'cum_massflow': 'kg / s',
-        'ch_massflow': 'kg / s',
-        'mach': '',
-        'relmach': '',
+        '.*massflow': 'kg / s',
+        'mach': 'dimensionless',
+        'relmach': 'dimensionless',
         'reactDegree': 'dimensionless',
         # Kinematics
         'V': 'm/s',
@@ -161,11 +189,9 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'hh': 'm',
         'rr': 'm',
         'rmid': 'm',
-        'area': 'm**2',
-        'eff_area': 'm**2',
+        '.*area': 'm**2',
         # Blade parameters
-        'chord': 'm',
-        'chord_ax': 'm',
+        'chord.*': 'm',
         'camb_len': 'm',
         'pitch': 'm',
         'throat': 'm',
@@ -173,9 +199,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'metal_angle': 'rad',
         'solidity': 'dimensionless',
         'num_blades': 'dimensionless',
-        'bld_thick': 'meters',
-        'disp_thick': 'meters',
-        'mom_thick': 'meters',
+        '.*_thick': 'meters',
         'thick_by_pitch': 'dimensionless',
     }
 
@@ -347,5 +371,20 @@ class VariableBoundsRegistry(
 
 
 if __name__ == '__main__':
+    # Example: Test regex matching
     reg = DefaultUnitsRegistry()
-    reg['test']
+
+    # Add a regex pattern to match all variables containing 'hmass'
+    reg['.*hmass.*'] = 'J / kg'
+
+    # Test exact match (should still work)
+    print(f'hmass: {reg["hmass"]}')  # Exact match from DEFAULTS
+
+    # Test regex match
+    print(f'tot_hmass: {reg["tot_hmass"]}')  # Should match .*hmass.* pattern
+    print(
+        f'delta_hmass_custom: {reg["delta_hmass_custom"]}'
+    )  # Should match .*hmass.* pattern
+
+    # Test contains
+    print(f"'custom_hmass_var' in reg: {'custom_hmass_var' in reg}")  # Should be True

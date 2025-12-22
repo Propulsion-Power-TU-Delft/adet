@@ -1,4 +1,4 @@
-from adet.equations.base_equation import EquationBase, MultiStateEquation
+from adet.equations.base_equation import EquationBase, EquationBase
 from .base_loss import LossModel
 import numpy as np
 import CoolProp as cp
@@ -28,10 +28,9 @@ class EndWallVelocities(EquationBase):
         return r1, r2
 
 
-class IsentropicTotEnthalpy(MultiStateEquation):
+class IsentropicTotEnthalpy(EquationBase):
     input_pair = cp.PSmass_INPUTS
     output_quantities = ('hmass',)
-    skip_unit_check = True
     manual_units = ('J / kg',)
 
     def residual(self, oth_tot_hmass_is1, tot_p1, stc_smass0):

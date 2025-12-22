@@ -30,8 +30,10 @@ class EquationBase(ABC):
     different names than the system-level variable names.
     """
 
-    skip_unit_check: ClassVar[bool] = False
     manual_units: ClassVar[tuple[str, ...]] = ()
+    input_pair: ClassVar[int] = 0
+    output_quantities: ClassVar[tuple[str, ...]] = ()
+    _eos: None | CasadiEos = None
 
     def __init__(self, scaling_factor: list[float] | None = None):
         """
@@ -55,12 +57,8 @@ class EquationBase(ABC):
         self._num_equations: int | None = None
 
         # If the unit are not checked, make sure the user added units correclty
-        if self.skip_unit_check:
+        if self.manual_units:
             eq_name = self.__class__.__name__
-            if not self.manual_units:
-                raise AttributeError(
-                    f'Missing manual units for unchecked equation {eq_name}'
-                )
             if self.num_equations != len(self.manual_units):
                 raise ValueError(
                     f'Mismatch in equation `{eq_name}` between manual '
@@ -252,33 +250,15 @@ class EquationBase(ABC):
         except Exception:
             raise
 
-    def __str__(self):
-        return str(self.to_symbolic()) + ' = 0'
-
-
-# TODO:
-# Standardize the interface to these equations that utilize intermediate states
-# e.g. you can just instance the equation with N intermediate states and recover
-# them by just accessing an attribute, such as self.get_eos()
-# - How can I specify the update pairs
-# - Would be nice to reuse auto recognition of update variables
-
-
-class MultiStateEquation(EquationBase):
-    input_pair: ClassVar[int]
-    output_quantities: ClassVar[tuple[str, ...]]
-    _eos: None | CasadiEos = None
-
     def __init_subclass__(cls) -> None:
-        if not hasattr(cls, 'input_pair'):
-            raise ValueError(f'Please specify input pair in {cls}')
-        if not hasattr(cls, 'output_quantities'):
-            raise ValueError(f'Please specify output_quantities in {cls}')
-        if not cls.skip_unit_check:
+        if bool(cls.output_quantities) != bool(cls.input_pair):
             raise ValueError(
-                'Multi state equations require manual unit inputs,'
-                ' use `skip_unit_check`'
+                f'Please specify both input_pair and output_quantities in {cls}'
             )
+
+        if cls.input_pair and not cls.manual_units:
+            raise ValueError('Multi state equations requires manual unit inputs')
+
         return super().__init_subclass__()
 
     @property
@@ -296,6 +276,9 @@ class MultiStateEquation(EquationBase):
             logger.warning(f'Overwriting EoS for {cls}')
         cls._eos = eos
 
+    def __str__(self):
+        return str(self.to_symbolic()) + ' = 0'
+
 
 class UniqueEquation(EquationBase):
     """
@@ -310,30 +293,20 @@ class UniqueEquation(EquationBase):
 
 
 class DeviationModel(UniqueEquation):
-    """Models for flow deviation"""
-
     pass
 
 
 class IncidenceModel(UniqueEquation):
-    """Models for flow deviation"""
-
     pass
 
 
 class CamberLineGeom(UniqueEquation):
-    """Definition of camberline blade geometry"""
-
     pass
 
 
 class MeridAreaBlockage(UniqueEquation):
-    """Equations for meridional area blockages"""
-
     pass
 
 
 class MeridionalGeom(UniqueEquation):
-    """Equaitons for meridional geometry definition"""
-
     pass

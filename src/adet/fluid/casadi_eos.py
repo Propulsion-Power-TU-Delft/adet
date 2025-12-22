@@ -6,12 +6,7 @@ import CoolProp as cp
 
 from adet.constants import COOLPROP_NAMES_MAP
 from adet.fluid.settings import ExternalFluidModel
-from adet.tools.coolprop_utils import (
-    DebugAbstractState,
-    get_input_names,
-    pair_id_from_name,
-    pair_name_from_tuple,
-)
+from adet.tools.coolprop_utils import DebugAbstractState, get_input_names
 
 
 logger = logging.getLogger(__name__)

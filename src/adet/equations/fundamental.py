@@ -107,7 +107,6 @@ class SimpleRadialEquilibrium(EquationBase):
     zero streamline curvature is assumed
     """
 
-    skip_unit_check = True
     manual_units = ('J / kg / m',)
 
     def residual(self, geo_rr0, stc_p0, kin_Vt0, stc_rhomass0):
@@ -118,7 +117,6 @@ class SimpleRadialEquilibrium(EquationBase):
 class NisRe(EquationBase):
     """Non-ISentropic Radial Equilibrium"""
 
-    skip_unit_check = True
     manual_units = ('J / kg / m',)
 
     def residual(self, geo_rr0, kin_Vt0, kin_Vm0, tot_hmass0, stc_T0, stc_smass0):

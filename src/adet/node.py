@@ -33,7 +33,7 @@ class FlowNode(GasPropertiesMixin):
     def __init__(
         self,
         settings: FluidSettings,
-        spanwise_stations: int = 1,
+        num_span: int = 1,
         node_name: Optional[str] = None,
     ):
         """
@@ -57,14 +57,14 @@ class FlowNode(GasPropertiesMixin):
             # Use the instance number of the node as identifier
             self.identifier = str(self.__class__.instance_counter)
 
-        self.kin = KinematicContainer(spanwise_stations)
+        self.kin = KinematicContainer(num_span)
 
-        self.stc = ThermostateContainer(spanwise_stations, settings)
-        self.tot = ThermostateContainer(spanwise_stations, settings)
-        self.rlt = ThermostateContainer(spanwise_stations, settings)
+        self.stc = ThermostateContainer(num_span, settings)
+        self.tot = ThermostateContainer(num_span, settings)
+        self.rlt = ThermostateContainer(num_span, settings)
 
-        self.geo = VariableContainer(spanwise_stations)
-        self.oth = VariableContainer(spanwise_stations)
+        self.geo = VariableContainer(num_span)
+        self.oth = VariableContainer(num_span)
 
     def write_to_node(self, args_to_write: dict[str, ArrayLike], fixed: bool) -> None:
         for arg, value in args_to_write.items():

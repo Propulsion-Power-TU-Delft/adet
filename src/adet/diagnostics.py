@@ -44,7 +44,7 @@ T = TypeVar('T', bound=SystemAssembler)
 class SystemDiagnostics(Generic[T]):
     def __init__(self, system: T, constraints_stack):
         self._arguments = system.free_args
-        self._spanwise_stations = system.spanwise_stations
+        self._num_span = system.num_span
         self.const_stack = constraints_stack
 
         if isinstance(system, CasadiSystem):
@@ -132,7 +132,7 @@ class SystemDiagnostics(Generic[T]):
 
         logger.debug('Sorting arguments by linearity...')
 
-        probe_var = np.ones(len(self._arguments) * self._spanwise_stations)
+        probe_var = np.ones(len(self._arguments) * self._num_span)
 
         hessians = self._hes_func(probe_var)
 
@@ -149,7 +149,7 @@ class SystemDiagnostics(Generic[T]):
 
         nonlin_args = set()
         for idx in nonlin_arg_indices:
-            nonlin_args.add(args[idx // self._spanwise_stations])
+            nonlin_args.add(args[idx // self._num_span])
 
         lin_args = sorted(set(args) - nonlin_args)
 

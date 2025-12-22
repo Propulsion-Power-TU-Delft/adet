@@ -209,7 +209,7 @@ rows = list(map(deepcopy, NUM_STAGES * stage_obj))
 ntw = ComponentNetwork(
     settings,  # Fluid settings
     inlet,  # Inlet conditions
-    CasadiSystem(spanwise_stations=1),  # Backend (single spanwise station)
+    CasadiSystem(num_span=1),  # Backend (single spanwise station)
     rows,
 )
 
@@ -275,7 +275,7 @@ sol_mean_loss_dict = sys_mean_loss.solution_to_dict(sol_mean_loss)
 
 # === SOLVE STAGE 3: Multi-span with Denton losses and minimal camberline ===
 sys_span_loss = sys_mean_loss.copy()
-sys_span_loss.spanwise_stations = NUM_SPAN
+sys_span_loss.num_span = NUM_SPAN
 sys_span_loss.remove_equation_type(RepeatedStage)
 
 for nodes in nodes_by_stage:
@@ -317,7 +317,7 @@ sol_camber_dict = sys_camber.solution_to_dict(sol_camber)
 # === SOLVE STAGE 5: High-resolution multi-span ===
 
 sys_highres = sys_camber.copy()
-sys_highres.spanwise_stations = NUM_SPAN * 5
+sys_highres.num_span = NUM_SPAN * 5
 
 
 sys_highres.build(SCALED)
@@ -391,7 +391,7 @@ if PLOTS:
         )
 
         # Plot camberlines at midspan (3 blades for all rows)
-        midspan_idx = ntw.system.spanwise_stations // 2
+        midspan_idx = ntw.system.num_span // 2
         inlet_angle = n0.geo.metal_angle[midspan_idx]  # pyright:ignore
         outlet_angle = n1.geo.metal_angle[midspan_idx]  # pyright:ignore
         chord_ax = n1.geo.chord_ax[midspan_idx]  # pyright:ignore
@@ -432,7 +432,7 @@ if PLOTS:
         real_model.eos_object,
         PT_INPUTS,
         ['smass'],
-        ntw.system.spanwise_stations,
+        ntw.system.num_span,
     )
     fig, ax = plt.subplots(1, 2, figsize=(10, 5))
 

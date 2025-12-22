@@ -58,9 +58,9 @@ class FixedEnthalpyLoss(LossModel):
         super().__init__()
         self.enth_gen = enthalpy_generated
 
-    def residual(self, tot_hmass0, oth_tot_hmass_is0, oth_delta_ht0):
+    def residual(self, tot_hmass0, oth_tot_hmass_is0, oth_delta_tot_hmass0):
         # Actual enthalpy = outlet isentropic + generated
-        return tot_hmass0 - (oth_tot_hmass_is0 - oth_delta_ht0)
+        return tot_hmass0 - (oth_tot_hmass_is0 - oth_delta_tot_hmass0)
 
 
 class ZeroDeviation(DeviationModel):

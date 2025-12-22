@@ -105,7 +105,6 @@ class AbsoluteMachNumber(EquationBase):
 
 
 class RelativeMachNumber(EquationBase):
-    skip_unit_check = True
     manual_units = ('dimensionless',)
 
     def residual(self, kin_relmach0, kin_W0, stc_speed_sound0):

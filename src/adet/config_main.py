@@ -125,7 +125,7 @@ row0 = BladeRow(
         'oth': {
             'mom_by_bld_thick': 0.075,
             'disp_by_mom_thick': 2,
-            'delta_ht': 100,
+            'delta_tot_hmass': 100,
         },
     },
     extra_equations={
@@ -136,8 +136,6 @@ row0 = BladeRow(
         # |> Losses & Dev
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
-        ZeroBlockage(): 0,
-        ZeroBlockage(): 1,
         FixedEnthalpyLoss(100.0): 1,
         IsentropicTotEnthalpy(): (0, 1),
         # PercTotalPressureLoss(0.05): (0, 1),

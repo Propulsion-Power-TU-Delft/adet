@@ -78,7 +78,7 @@ fluid_settings = FluidSettings(
 ntw = ComponentNetwork(
     fluid_settings=fluid_settings,
     inlet=inlet,
-    backend=CasadiSystem(spanwise_stations=1),
+    backend=CasadiSystem(num_span=1),
     components=[rotor],
 )
 

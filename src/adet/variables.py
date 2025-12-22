@@ -29,19 +29,19 @@ class VariableContainer:
     # Define valid types for that container, if any
     valid_types: ClassVar[tuple[str, ...] | None] = None
 
-    def __init__(self, spanwise_stations: int = 1):
+    def __init__(self, num_span: int = 1):
         self._variables: dict[str, PlainQuantity] = {}
         self._constraints: dict[str, PlainQuantity] = {}
 
-        if spanwise_stations % 2 == 0:
+        if num_span % 2 == 0:
             # Round to the closest odd number
-            self._spanwise_stations = spanwise_stations | 1
+            self._num_span = num_span | 1
             logger.warning(
-                f'Rounding up the spanwise_stations {spanwise_stations}'
-                f' to the nearest odd number ({self._spanwise_stations})'
+                f'Rounding up the num_span {num_span}'
+                f' to the nearest odd number ({self._num_span})'
             )
         else:
-            self._spanwise_stations = spanwise_stations
+            self._num_span = num_span
 
     @property
     def constraints(self) -> dict[str, PlainQuantity]:
@@ -97,14 +97,14 @@ class VariableContainer:
         new_value = np.atleast_1d(magnitude)
         new_length = len(np.array(new_value))
 
-        if new_length != self._spanwise_stations:
+        if new_length != self._num_span:
             if new_length == 1:
                 logger.debug('Found single span magnitude, expanding to correct length')
-                mag_validated = np.ones(self._spanwise_stations) * new_value[0]
+                mag_validated = np.ones(self._num_span) * new_value[0]
             else:
                 raise ValueError(
                     f'Variable length mismatch: spanwise stations '
-                    f'{self._spanwise_stations} != variable length {new_length}'
+                    f'{self._num_span} != variable length {new_length}'
                 )
         else:
             mag_validated = np.asarray(magnitude, DTYPE)
@@ -135,7 +135,7 @@ class VariableContainer:
             units = _def_units[var_type]
 
         if magnitude is None:
-            magnitude = np.full(self._spanwise_stations, np.nan)
+            magnitude = np.full(self._num_span, np.nan)
 
         self._validate_var_type(var_type)
         mag_validated = self._validate_magnitude(magnitude)
@@ -304,8 +304,8 @@ ThermoVariable = Literal[
 class ThermostateContainer(VariableContainer):
     valid_types = get_args(ThermoVariable)
 
-    def __init__(self, spanwise_stations: int, fluid_settings: FluidSettings):
-        super().__init__(spanwise_stations)
+    def __init__(self, num_span: int, fluid_settings: FluidSettings):
+        super().__init__(num_span)
         self._sett = fluid_settings
 
     def _build_priorities(self) -> dict[str, int]:
@@ -375,7 +375,7 @@ if __name__ == '__main__':
     magnitude_a = 1 + 1 / 2 * np.random.ranf(n_span)
     magnitude_b = 300 + 50 * np.random.ranf(n_span)
 
-    vc = VariableContainer(spanwise_stations=n_span)
+    vc = VariableContainer(num_span=n_span)
 
     vc.add_constraint('p', magnitude_a, 'bar')
     vc.add_variable('T', magnitude_b)

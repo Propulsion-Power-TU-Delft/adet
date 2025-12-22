@@ -63,7 +63,7 @@ settings = FluidSettings(
 ntw = ComponentNetwork(
     settings,  # Fluid settings
     inlet,  # Inlet conditions
-    CasadiSystem(spanwise_stations=NUM_SPAN),  # Backend
+    CasadiSystem(num_span=NUM_SPAN),  # Backend
     [row0],
 )
 
@@ -122,7 +122,7 @@ PT_EOS = CasadiEos(
     real_model.eos_object,
     9,
     ['rhomass', 'smass'],
-    ntw.system.spanwise_stations,
+    ntw.system.num_span,
 )
 
 
@@ -191,7 +191,7 @@ if PLOTS:
         )
 
         # Plot camberlines at midspan (3 blades for rotor, 1 for stator)
-        midspan_idx = ntw.system.spanwise_stations // 2
+        midspan_idx = ntw.system.num_span // 2
         inlet_angle = nodes[0].geo.metal_angle[midspan_idx]  # pyright:ignore
         outlet_angle = nodes[1].geo.metal_angle[midspan_idx]  # pyright:ignore
         chord_ax = nodes[1].geo.chord_ax[midspan_idx]  # pyright:ignore

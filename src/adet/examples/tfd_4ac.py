@@ -117,13 +117,13 @@ def interpolate_spanwise_data(
 # Each BladeRow needs inlet/outlet constraints matching the spanwise and integral data
 
 
-def create_blade_row(row_name: str, shaft_connection: Shaft, spanwise_stations: int):
+def create_blade_row(row_name: str, shaft_connection: Shaft, num_span: int):
     """Create a BladeRow using integral and spanwise data.
 
     Args:
         row_name: Name of the blade row (e.g., 'IGV', 'R1', 'S1')
         shaft_connection: Shaft object (casing for stators, shaft for rotors)
-        spanwise_stations: Number of spanwise stations to use
+        num_span: Number of spanwise stations to use
 
     Returns:
         BladeRow object with constraints from data
@@ -142,14 +142,14 @@ def create_blade_row(row_name: str, shaft_connection: Shaft, spanwise_stations: 
         spanwise,
         rmid_inlet,
         height_inlet,
-        spanwise_stations,
+        num_span,
     )
 
     outlet_data = interpolate_spanwise_data(
         spanwise,
         rmid_outlet,
         height_outlet,
-        spanwise_stations,
+        num_span,
     )
 
     # WARN: Missing axial chord
@@ -271,7 +271,7 @@ s4 = create_blade_row('S4', casing, NUM_SPAN)
 ntw = ComponentNetwork(
     settings,  # Fluid settings
     inlet,  # Inlet conditions
-    CasadiSystem(spanwise_stations=NUM_SPAN),  # Backend
+    CasadiSystem(num_span=NUM_SPAN),  # Backend
     igv,
     # r1,
     # s1,

@@ -1,6 +1,6 @@
 from typing import Callable, cast
 
-from adet.equations.base_equation import MultiStateEquation
+from adet.equations.base_equation import EquationBase
 from adet.fluid.casadi_eos import CasadiEos
 import CoolProp as cp
 import casadi as cs
@@ -9,7 +9,7 @@ import numpy as np
 from adet.fluid.settings import ExternalFluidModel
 from adet.losses.base_loss import LossModel
 from adet.tools.coolprop_utils import DebugAbstractState
-from adet.tools.numerical import trapezoid1, trapezoid2
+from adet.tools.numerical import trapezoid2
 
 
 # Greitzer model
@@ -75,14 +75,13 @@ class RectVelocityIncompressible(LossModel):
 #            xi_by_camb_len1   xi_by_camb_len2
 
 
-class DentonProfileLoss(MultiStateEquation):
+class DentonProfileLoss(EquationBase):
     """
     Axial blade profile losses based on simplified pressure distribution.
     It should be able to be used for axial compressors and turbine blades,
     so far it has been tested for turbines (check the integral signs mainly)
     """
 
-    skip_unit_check = True
     manual_units = ('N', 'J / kg / K')
     input_pair = cp.HmassSmass_INPUTS
     output_quantities = ('p', 'rhomass', 'T')
@@ -198,78 +197,3 @@ class DentonProfileLoss(MultiStateEquation):
         r2 = stc_smass1 - stc_smass0 - entropy_integral * geo_hh1 / oth_ch_massflow1
 
         return r1, r2
-
-
-if __name__ == '__main__':
-    import matplotlib.pyplot as plt
-    import casadi as cs
-    import numpy as np
-
-    # NOTE: You can mix and match cs.DM and
-    # numpy array, but remember casadi is consistent
-    # with shape manipulation and extraction, and every
-    # array is AT LEAST 2D
-    N_SPAN = 5
-    eos = DebugAbstractState('HEOS', 'Air')
-    model = ExternalFluidModel(eos)
-
-    # Define example values
-    W0 = np.linspace(100, 300, N_SPAN)
-    W1 = np.linspace(175, 400, N_SPAN)
-
-    Vt0 = np.linspace(40, 50, N_SPAN)
-    Vt1 = np.linspace(40, 50, N_SPAN)
-
-    xi_by_camb_len_A = cs.linspace(0.375, 0.375, N_SPAN)
-    xi_by_camb_len_B = np.linspace(0.675, 0.675, N_SPAN)
-
-    dummy_hh = cs.DM.ones(N_SPAN) * 0.05  # pyright:ignore
-    dummy_ht = cs.DM.ones(N_SPAN) * 5e5  # pyright:ignore
-
-    dummy_st = np.ones(N_SPAN) * 4000
-    dummy_mass_flow = np.ones(N_SPAN) * 10
-
-    Cd = 0.002 * np.ones(N_SPAN)
-    chord_ax = 0.1 * np.ones(N_SPAN)
-    camb_len = 0.15 * np.ones(N_SPAN)
-    pitch = 0.2 * np.ones(N_SPAN)
-    k_prof = 0.6 * np.ones(N_SPAN)
-
-    # *** Tests ***
-    dl = DentonProfileLoss(model)
-
-    # Plots to check pressure and velocity distributions
-    # => First station should clip to W_1 / 5
-    xi_by_camb_len, W_ss, W_ps = dl._build_velocity_profile(
-        xi_by_camb_len_A, xi_by_camb_len_B, k_prof, W0, W1
-    )
-    p_ss, rho_ss, T_ss = dl._compute_thermo_distributions(dummy_ht, dummy_st, W_ss)
-    p_ps, rho_ps, T_ps = dl._compute_thermo_distributions(dummy_ht, dummy_st, W_ps)
-    fig, ax = plt.subplots(2, 2, figsize=(10, 10))
-    cmap = plt.get_cmap('viridis')
-    for i in range(N_SPAN):
-        color = cmap(i / (N_SPAN))
-        ax[0, 0].plot(np.array(xi_by_camb_len)[i], np.array(W_ss)[i], color=color)
-        ax[0, 0].plot(np.array(xi_by_camb_len)[i], np.array(W_ps)[i], color=color)
-        ax[0, 0].set_title('Velocities')
-
-        ax[0, 1].plot(np.array(xi_by_camb_len)[i], np.array(p_ss)[i], color=color)
-        ax[0, 1].plot(np.array(xi_by_camb_len)[i], np.array(p_ps)[i], color=color)
-        ax[0, 1].set_title('Pressures')
-
-        ax[1, 0].plot(np.array(xi_by_camb_len)[i], np.array(rho_ss)[i], color=color)
-        ax[1, 0].plot(np.array(xi_by_camb_len)[i], np.array(rho_ps)[i], color=color)
-        ax[1, 0].set_title('Densities')
-
-        ax[1, 1].plot(np.array(xi_by_camb_len)[i], np.array(T_ss)[i], color=color)
-        ax[1, 1].plot(np.array(xi_by_camb_len)[i], np.array(T_ps)[i], color=color)
-        ax[1, 1].set_title('Temperatures')
-
-        ax[0, 0].grid(True)
-        ax[0, 1].grid(True)
-        ax[1, 0].grid(True)
-        ax[1, 1].grid(True)
-
-    # Let's check the integrals
-    pressure_int = dl.trapezoid(p_ps - p_ss, xi_by_camb_len * camb_len)
-    fig.show()

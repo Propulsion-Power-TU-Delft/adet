@@ -23,7 +23,7 @@ class HeatExchangerProblem(EquationBase):
         return r0, r1, r2, r3, r4, r5
 
 
-system = CasadiSystem(spanwise_stations=1)
+system = CasadiSystem(num_span=1)
 system.add_equation(HeatExchangerProblem(), 0)
 
 # Set everything to dimensionless

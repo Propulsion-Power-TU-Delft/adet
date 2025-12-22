@@ -43,7 +43,7 @@ def plot_velocity_triangles(kine, geo, fontsize):
     Vt = kine.Vt
     Vm = kine.Vm
     rr = geo.rr
-    num_span = geo._spanwise_stations
+    num_span = geo._num_span
 
     colors_v = [cmap_v((i + 1) / num_span) for i in range(num_span)]
     colors_w = [cmap_w((i + 1) / num_span) for i in range(num_span)]
@@ -65,7 +65,7 @@ def plot_velocity_triangles(kine, geo, fontsize):
     # Set the limits of the plot
     ax.set_xlim(0, max(Vm) * 1.05)
 
-    tang_stack = np.stack([np.zeros(kine._spanwise_stations), Wt, Vt])
+    tang_stack = np.stack([np.zeros(kine._num_span), Wt, Vt])
     ax.set_ylim(-10 + np.min(tang_stack), 10 + np.max(tang_stack))
 
     ax.grid(alpha=0.3)

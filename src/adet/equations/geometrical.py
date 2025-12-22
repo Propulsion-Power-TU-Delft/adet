@@ -28,15 +28,15 @@ class MeridionalUniform(MeridionalGeom):
         #  |  \       ==  rr[n] + hh[n] / 2
         #   mer_angle
 
-        spanwise_stations = max(geo_rr0.shape)
-        if spanwise_stations == 1:
+        num_span = max(geo_rr0.shape)
+        if num_span == 1:
             r1 = geo_rr0 - geo_rmid0
         else:
-            unit_space = np.linspace(0, 1, spanwise_stations)
+            unit_space = np.linspace(0, 1, num_span)
 
             # Segment between innermost and outermost stations
-            # quasi_height = (spanwise_stations - 1) * geo_hh0
-            quasi_height = (spanwise_stations - 1) * geo_hh0
+            # quasi_height = (num_span - 1) * geo_hh0
+            quasi_height = (num_span - 1) * geo_hh0
             r_hub = geo_rmid0 - quasi_height / 2 * np.cos(geo_meridional_angle0)
 
             r1 = geo_rr0 - (
@@ -45,7 +45,7 @@ class MeridionalUniform(MeridionalGeom):
 
         # The power enforces hh to be positive, otherwise a negative
         # height, massflow, etc. is techincally a valid solution
-        r2 = geo_hh0 - geo_height0 / spanwise_stations
+        r2 = geo_hh0 - geo_height0 / num_span
 
         # Circular annuli at various spanwise
         r3 = geo_area0 - np.pi * (
@@ -79,11 +79,6 @@ class MinimalCamberLine(CamberLineGeom):
         r2 = geo_stagger1 - stagger_computed
         r3 = geo_chord1 * np.cos(geo_stagger1) - geo_chord_ax1
         return r1, r2, r3
-
-
-class NoCamberline(CamberLineGeom):
-    def residual(self, geo_metal_angle0, geo_metal_angle1):
-        return ()
 
 
 class TwoSegmentCamberline(CamberLineGeom):
@@ -149,7 +144,6 @@ if __name__ == '__main__':
 
 
 class ParabolicCamberline(CamberLineGeom):
-    skip_unit_check = True
     manual_units = ('m', 'm', 'rad')
 
     @staticmethod
