@@ -36,6 +36,7 @@ from adet.registries import GuessRegistry, ScalingRegistry, ScalarsRegistry
 from adet.tools.coolprop_utils import (
     pair_based_sorting,
     pair_id_from_name,
+    pair_id_from_tuple,
     pair_name_from_tuple,
 )
 from adet.tools.strings import get_arg_state, rm_digits, get_index, get_arg_type
@@ -1072,9 +1073,10 @@ class CasadiSystem(SystemAssembler):
         for eq in self.equations:
             if isinstance(eq, MultiStateEquation):
                 eq.eos = self._eos_factory.make_eos(
-                    eq.input_quantities,
+                    eq.input_pair,
                     eq.output_quantities,
                     self.spanwise_stations,
+                    f'multi_{eq.__class__.__name__}',
                 )
 
         out_syms = {}
@@ -1083,9 +1085,10 @@ class CasadiSystem(SystemAssembler):
 
             for state_name, out_props in discarded_vars.items():
                 pair_tuple = node_inp_pairs[state_name]
+                pair_id = pair_id_from_tuple(pair_tuple)
 
                 casadi_eos_cb = self._eos_factory.make_eos(
-                    pair_tuple, out_props, self.spanwise_stations
+                    pair_id, out_props, self.spanwise_stations, f'node{node_idx}'
                 )
 
                 # This is to keep references alive
@@ -1138,6 +1141,10 @@ class CasadiSystem(SystemAssembler):
         self._all_symbols = {**all_args_products, **casadi_eos_symbols}
 
     def _build_invariant_expressions(self) -> list[cs.MX]:
+        """
+        Build expressions for constant quantities, either across nodes
+        or across components
+        """
         invariant_expressions = []
         for args in self._invariants:
             for arg_couples in combinations(args, 2):

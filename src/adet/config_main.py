@@ -11,9 +11,15 @@ from adet.equations.geometrical import (
     TwoSegmentCamberline,
 )
 from adet.equations.nondimensional import WorkCoefficient
-from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
+from adet.losses.basic import (
+    FixedEnthalpyLoss,
+    PercTotalPressureLoss,
+    PercentageEntropyLoss,
+    ZeroDeviation,
+)
 
 # Tooling & Components
+from adet.losses.compressors import IsentropicTotEnthalpy
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.registries import DefaultUnitsRegistry, ScalingRegistry, GuessRegistry
 from adet.fluid.settings import ExternalFluidModel, IdealGasModel
@@ -92,7 +98,7 @@ inlet = Inlet(
 
 row0 = BladeRow(
     name='Stator',
-    shaft=static_shaft,
+    shaft=rotating_shaft,
     in_constraints={
         'geo': {
             'thick_by_pitch': 0.04,
@@ -119,6 +125,7 @@ row0 = BladeRow(
         'oth': {
             'mom_by_bld_thick': 0.075,
             'disp_by_mom_thick': 2,
+            'delta_ht': 100,
         },
     },
     extra_equations={
@@ -131,8 +138,9 @@ row0 = BladeRow(
         ZeroDeviation(): 1,
         ZeroBlockage(): 0,
         ZeroBlockage(): 1,
-        PercentageEntropyLoss(0.0): (0, 1),
-        # DentonProfileLoss(real_model): (0, 1),
+        FixedEnthalpyLoss(100.0): 1,
+        IsentropicTotEnthalpy(): (0, 1),
+        # PercTotalPressureLoss(0.05): (0, 1),
         # |> Boundary layer properties for mixing
         # BoundaryLayerRatios(): 1,
     },

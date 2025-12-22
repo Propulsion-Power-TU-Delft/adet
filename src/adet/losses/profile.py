@@ -84,7 +84,7 @@ class DentonProfileLoss(MultiStateEquation):
 
     skip_unit_check = True
     manual_units = ('N', 'J / kg / K')
-    input_quantities = ('hmass', 'smass')
+    input_pair = cp.HmassSmass_INPUTS
     output_quantities = ('p', 'rhomass', 'T')
 
     @staticmethod

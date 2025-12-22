@@ -10,7 +10,6 @@ from adet.tools.coolprop_utils import (
     DebugAbstractState,
     get_input_names,
     pair_id_from_name,
-    pair_id_from_tuple,
     pair_name_from_tuple,
 )
 
@@ -249,21 +248,20 @@ class CasadiEosFactory(Generic[M]):
 
     def __init__(self, fluid_model: M) -> None:
         self.fluid_model = fluid_model
-        self.__class__.instance_counter += 1
 
     def make_eos(
         self,
-        input_quantities: tuple[str, ...] | list[str],
+        input_pair: int,
         output_quantities: tuple[str, ...] | list[str],
         length: int,
+        eos_id: int | str = '',
     ):
-        pair_name = pair_name_from_tuple(tuple(input_quantities))
-        pair_id = pair_id_from_name(pair_name)
+        pair_name = ''.join(get_input_names(input_pair))
 
         eos_callback = CasadiEos(
-            f'eos_{pair_name}_n{self.instance_counter}_l{length}',
+            f'eos_{pair_name}_{eos_id}_l{length}',
             self.fluid_model.eos_object,
-            pair_id,
+            input_pair,
             output_quantities,
             length,
         )

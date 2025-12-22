@@ -125,6 +125,8 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'T_ref': 'K',
         'rhomass': 'kg / m**3',
         'hmass': 'J / kg',
+        'tot_hmass_is': 'J / kg',
+        'delta_ht': 'J / kg',
         'umass': 'J / kg',
         'smass': 'J / (kg * K)',
         'cpmass': 'J / (kg * K)',
@@ -302,6 +304,8 @@ class ScalarsRegistry(BaseRegistry[str, None]):
         'cum_massflow': None,
         'meridional_angle': None,
         'num_blades': None,
+        'W_hub': None,
+        'W_shroud': None,
     }
 
 

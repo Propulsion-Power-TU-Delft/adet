@@ -71,11 +71,11 @@ class BladeRow(BaseComponent):
         (MeridionalVelocityRatio, (0, 1)),
         # *** Blade count, pitch, channel massflow
         # -- TODO: Make this user-enabled
-        # (BladePitchCount, 0),
-        # (BladePitchCount, 1),
-        # (ThicknessToPitch, 0),
-        # (ThicknessToPitch, 1),
-        # (Solidity, 1),
+        (BladePitchCount, 0),
+        (BladePitchCount, 1),
+        (ThicknessToPitch, 0),
+        (ThicknessToPitch, 1),
+        (Solidity, 1),
     ]
 
     from_previous_node = ABSOLUTE_LINK + GEOM_LINK

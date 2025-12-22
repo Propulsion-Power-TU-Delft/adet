@@ -153,34 +153,22 @@ class EquationBase(ABC):
         return num_ret
 
     def _read_and_validate_arguments(self, all_arguments: list[str]):
-        """
-        Retrieve all the arguments of the residual function and
-        apply aliasing if present.
-
-        The aliasing system works as follows:
-        1. Residual function has standard argument names (e.g., stc_p0, stc_T0)
-        2. If aliases are provided, these are mapped to system variable names
-           (e.g., stc_p_ss0_0, stc_T_ss0_0)
-        3. The validated_arguments list contains the SYSTEM names (aliased)
-        4. The _kwarg_map stores: {system_name: residual_arg_name}
-        5. The _inverse_alias_map stores: {residual_arg_name: system_name}
-        """
         # The 1 is removed because it is the self instance
         # Careful if residual is changed to a static method
-        self._alias_map = {}
-        self._inverse_alias_map = {}  # For looking up system names from residual args
         validated_arguments = []
+        seen_indices = []
 
         for residual_arg in all_arguments:
             # Validate the SYSTEM variable name (the aliased one)
-            validated_system_var = self._validate_argument(residual_arg)
+            validated_system_var, arg_index = self._validate_argument(residual_arg)
+            seen_indices.append(arg_index)
             validated_arguments.append(validated_system_var)
 
-            # Map: system_var -> residual_arg (for calling residual with correct names)
-            self._alias_map[validated_system_var] = residual_arg
-
-            # Map: residual_arg -> system_var (for inverse lookup)
-            self._inverse_alias_map[residual_arg] = validated_system_var
+        if min(seen_indices) > 0:
+            raise ValueError(
+                f'Minimum relative argument in `{self.__class__.__name__}` '
+                f'is greater than 0, bad equation formatting'
+            )
 
         return tuple(validated_arguments)
 
@@ -195,11 +183,12 @@ class EquationBase(ABC):
         # Check for trailing digits (node index)
         # We allow digits anywhere in the name (e.g., 'ss0' in 'stc_p_ss0_0')
         # Only the trailing digits are interpreted as the node index
-        arg_index = re.findall(r'\d+$', full_argument)
+        arg_index = re.findall(r'\d+$', full_argument)[0]
 
         if not arg_index:
             logger.info(f'No index found, assigning relative node 0 to {full_argument}')
-            full_argument += '0'
+            arg_index = '0'
+            full_argument += arg_index
 
         if verify_string_pattern(full_argument, TEMPLATE_PATTERN) is False:
             logger.warning(
@@ -217,7 +206,7 @@ class EquationBase(ABC):
                 f'{VALID_STATES}'
             )
 
-        return full_argument
+        return full_argument, int(arg_index)
 
     def to_symbolic(self) -> sp.Expr | str:
         """
@@ -276,15 +265,20 @@ class EquationBase(ABC):
 
 
 class MultiStateEquation(EquationBase):
-    input_quantities: ClassVar[tuple[str, ...]]
+    input_pair: ClassVar[int]
     output_quantities: ClassVar[tuple[str, ...]]
     _eos: None | CasadiEos = None
 
     def __init_subclass__(cls) -> None:
-        if not hasattr(cls, 'input_quantities'):
-            raise ValueError(f'Please specify input quantities in {cls}')
+        if not hasattr(cls, 'input_pair'):
+            raise ValueError(f'Please specify input pair in {cls}')
         if not hasattr(cls, 'output_quantities'):
             raise ValueError(f'Please specify output_quantities in {cls}')
+        if not cls.skip_unit_check:
+            raise ValueError(
+                'Multi state equations require manual unit inputs,'
+                ' use `skip_unit_check`'
+            )
         return super().__init_subclass__()
 
     @property
