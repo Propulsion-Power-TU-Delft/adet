@@ -16,8 +16,10 @@ from adet.equations.definitions import (
 )
 from adet.equations.fundamental import (
     BladeBlockage,
+    EnergyConservation,
     EulerEquation,
     MassConservation,
+    MomentumConservation,
     ZeroBlockage,
 )
 from adet.equations import EquationBase
@@ -111,6 +113,51 @@ class BladeRow(BaseComponent):
         super().__init__(name, in_constraints, out_constraints, extra_equations)
         if shaft.is_constrained:
             self.out_constraints['kin']['omega'] = shaft.omega
+
+
+class VanelessDiffuser(BaseComponent):
+    base_equations = [
+        (EnergyConservation, (0, 1)),
+        (MomentumConservation, (0, 1)),
+        (ZeroDeviation, 0),
+        (ZeroDeviation, 1),
+        (ZeroBlockage, 1),
+        (ZeroBlockage, 1),
+        # Extra definitions
+        (MeridionalVelocityRatio, (0, 1)),
+        (HeightRatio, (0, 1)),
+    ]
+
+    from_previous_node = ABSOLUTE_LINK + GEOM_LINK
+
+    def __init__(
+        self,
+        name: str,
+        in_constraints: dict[
+            str,
+            dict[str, Any],
+        ],
+        out_constraints: dict[
+            str,
+            dict[str, Any],
+        ],
+        extra_equations: dict[
+            EquationBase,
+            int | tuple[int, ...],
+        ] = {},
+        from_previous_node: list[str] = [],
+        constant_variables: list[str] = [],
+    ):
+        super().__init__(
+            name,
+            in_constraints,
+            out_constraints,
+            extra_equations,
+            from_previous_node,
+            constant_variables,
+        )
+        self.out_constraints['kin']['omega'] = 0
+        self.in_constraints['kin']['omega'] = 0
 
 
 class DownstreamMixer(BaseComponent):

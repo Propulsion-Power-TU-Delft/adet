@@ -12,6 +12,16 @@ class EulerEquation(EquationBase):
         return (tot_hmass1 - tot_hmass0) - (kin_U1 * kin_Vt1 - kin_U0 * kin_Vt0)
 
 
+class MomentumConservation(EquationBase):
+    def residual(self, geo_rr0, geo_rr1, kin_Vt0, kin_Vt1):
+        return geo_rr0 * kin_Vt0 - geo_rr1 * kin_Vt1
+
+
+class EnergyConservation(EquationBase):
+    def residual(self, tot_hmass0, tot_hmass1):
+        return tot_hmass0 - tot_hmass1
+
+
 class MassConservation(EquationBase):
     def residual(self, oth_massflow0, oth_massflow1):
         return oth_massflow0 - oth_massflow1

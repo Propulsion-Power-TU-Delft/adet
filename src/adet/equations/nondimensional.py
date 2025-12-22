@@ -110,4 +110,4 @@ class RelativeMachNumber(EquationBase):
     def residual(self, kin_relmach0, kin_W0, stc_speed_sound0):
         # Choking criterion
         choke = cs.if_else(kin_relmach0 > 1.0, 1.0, kin_relmach0)
-        return choke * stc_speed_sound0 - kin_W0
+        return kin_relmach0 * stc_speed_sound0 - kin_W0

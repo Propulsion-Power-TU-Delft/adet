@@ -48,9 +48,11 @@ class BaseRegistry(Generic[K, V]):
         return cls._instance
 
     def set_fallback_value(self, value: V):
+        """Set a value that is used in the event of a key miss"""
         self._fallback_value = value
 
     def set_forced_value(self, value: V):
+        """Set a value that overriddes all defaults and user-defined values"""
         self._forced_value = value
 
     def set(self, key: K, value: V) -> None:
@@ -169,11 +171,12 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'mach': 'dimensionless',
         'relmach': 'dimensionless',
         'reactDegree': 'dimensionless',
+        '.*Coeff': 'dimensionless',
+        '.*Ratio': 'dimensionless',
         # Kinematics
         'V': 'm/s',
         'Vt': 'm/s',
         'Vm': 'm/s',
-        'VmRatio': 'dimensionless',
         'W': 'm/s',
         'Wt': 'm/s',
         'Wm': 'm/s',
@@ -185,7 +188,6 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         # Geometry
         'meridional_angle': 'rad',
         'height': 'm',
-        'heightRatio': 'dimensionless',
         'hh': 'm',
         'rr': 'm',
         'rmid': 'm',
