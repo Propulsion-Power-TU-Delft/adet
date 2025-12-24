@@ -4,8 +4,8 @@ from collections import defaultdict
 import logging
 from typing import ClassVar, TypeAlias, Type, Any
 
-from adet.equations import EquationBase
-from adet.equations.base_equation import UniqueEquation
+from adet.equations import EquationBase, UniqueEquation
+from adet.losses import LossModel
 from adet.tools.iter import ensure_iterable
 
 BaseEquationsFormat: TypeAlias = list[
@@ -93,6 +93,7 @@ class BaseComponent(ABC):
         # This checks that the user has not defined multiple
         # incompatible unique equations
         self._check_duplicate_equations()
+        self._check_loss_model()
 
     def _merge_unique_equations(
         self,
@@ -197,3 +198,15 @@ class BaseComponent(ABC):
                         raise KeyError(
                             f'Duplicate equation type for {eq_base_cls} in {self}'
                         )
+
+    def _check_loss_model(self):
+        loss_model_seen = False
+        for eq in self._equations:
+            if isinstance(eq, LossModel):
+                loss_model_seen = True
+                break
+
+        if not loss_model_seen:
+            raise AttributeError(
+                f'No loss model found for `{self.name}` component instance'
+            )

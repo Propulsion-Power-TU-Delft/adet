@@ -80,7 +80,9 @@ vaneless_diff = VanelessDiffuser(
             'heightRatio': 1.0,
         },
     },
-    extra_equations={TotalPressureLoss(0.0): (0, 1)},
+    extra_equations={
+        # TotalPressureLoss(0.0): (0, 1),
+    },
 )
 
 
