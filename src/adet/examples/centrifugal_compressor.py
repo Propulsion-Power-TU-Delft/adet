@@ -12,7 +12,7 @@ from adet.equations.nondimensional import (
     WorkCoefficient,
 )
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
-from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
+from adet.losses.basic import PercentageEntropyLoss, TotalPressureLoss, ZeroDeviation
 from adet.registries import DefaultUnitsRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
 
@@ -73,27 +73,14 @@ rotor = BladeRow(
 
 vaneless_diff = VanelessDiffuser(
     'diffuser',
-    shaft=casing,
-    in_constraints={
-        'geo': {
-            'thick_by_pitch': 0.0,
-        },
-    },
+    in_constraints={},
     out_constraints={
         'geo': {
-            'meridional_angle': Quantity(90, 'deg'),
-            'rmid': Quantity(0.2159, 'm'),
-            'num_blades': 10,  # This is just a dummy input
-            'thick_by_pitch': 0.0,
+            'rmid': Quantity(0.25, 'm'),
+            'heightRatio': 1.0,
         },
     },
-    extra_equations={
-        ZeroDeviation(): 0,  # = No incidence
-        ZeroDeviation(): 1,  # = No deviation
-        MinimalCamberLine(): (0, 1),
-        StaticTotalPressRatio(): (0, 1),
-        PercentageEntropyLoss(0.0): (0, 1),  # Isentropic
-    },
+    extra_equations={TotalPressureLoss(0.0): (0, 1)},
 )
 
 
@@ -111,7 +98,7 @@ ntw = ComponentNetwork(
     fluid_settings=fluid_settings,
     inlet=inlet,
     backend=CasadiSystem(num_span=1),
-    components=[rotor],
+    components=[rotor, vaneless_diff],
 )
 
 # Set custom units and defaults
@@ -125,7 +112,7 @@ _dfu_reg.from_dict(
 )
 
 ntw.system.build()
-rootfinder = ntw.system.make_rootfinder('nlpsol')
+rootfinder = ntw.system.make_rootfinder('ipopt')
 
 x0 = ntw.system.get_initial_guess()
 kn = ntw.system.get_scaled_constraints()

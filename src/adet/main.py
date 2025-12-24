@@ -90,7 +90,12 @@ ntw.system.add_global_constraints(
 ntw.system.build(SCALED)
 
 
-rootfinder_is = ntw.system.make_rootfinder('nlpsol')
+rootfinder_is = ntw.system.make_rootfinder(
+    'ipopt',
+    nlp_opts={
+        'ipopt.tol': 1e-15,
+    },
+)
 
 x0_is = ntw.system.get_initial_guess()
 kn_is = ntw.system.get_scaled_constraints()
@@ -218,6 +223,7 @@ if PLOTS:
 
     plt.tight_layout()
 
+print(f'Num updates = {settings.model.eos_object.num_updates}')
 if PLOTS:
     plt.show()
 else:

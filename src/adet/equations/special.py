@@ -10,7 +10,7 @@ from adet.equations import EquationBase
 # DONE
 
 
-class VariableAdder(EquationBase):
+class ThermoVarsAdder(EquationBase):
     """
     This is a `ghost` equation, but don't get scared!
     It essentially forces to add variables

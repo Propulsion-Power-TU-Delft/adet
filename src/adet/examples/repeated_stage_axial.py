@@ -250,11 +250,15 @@ for stage in range(ntw.num_components // 2):
 # === SOLVE STAGE 1: Meanline isentropic with minimal camberline ===
 # This determines the rotational speed at midspan (single spanwise station)
 ntw.system.build(SCALED)
-rootfinder_mean_is = ntw.system.make_rootfinder('nlpsol')
+rootfinder_mean_is = ntw.system.make_rootfinder(
+    'ipopt',
+    nlp_opts={'ipopt.tol': 1e-1},
+)
 x0_mean_is = ntw.system.get_initial_guess()
 kn_mean_is = ntw.system.get_scaled_constraints()
 sol_mean_is = solve_problem(rootfinder_mean_is, x0_mean_is, kn_mean_is)
 sol_mean_is_dict = ntw.system.solution_to_dict(sol_mean_is)
+
 
 # === SOLVE STAGE 2: Meanline with Denton losses (midspan only) ===
 sys_mean_loss = ntw.system.copy()
@@ -267,7 +271,7 @@ for nodes in nodes_by_stage:
     sys_mean_loss.add_equation(DentonProfileLoss(), rotor_nodes)
 
 sys_mean_loss.build(SCALED)
-rootfinder_mean_loss = sys_mean_loss.make_rootfinder('nlpsol')
+rootfinder_mean_loss = sys_mean_loss.make_rootfinder('kinsol')
 x0_mean_loss = sys_mean_loss.get_initial_guess(sol_mean_is_dict)
 kn_mean_loss = sys_mean_loss.get_scaled_constraints()
 sol_mean_loss = solve_problem(rootfinder_mean_loss, x0_mean_loss, kn_mean_loss)
@@ -292,7 +296,7 @@ for nodes in nodes_by_stage:
     ]
 
 sys_span_loss.build(SCALED)
-rootfinder_span_loss = sys_span_loss.make_rootfinder('nlpsol')
+rootfinder_span_loss = sys_span_loss.make_rootfinder('kinsol')
 x0_span_loss = sys_span_loss.get_initial_guess(sol_mean_loss_dict)
 kn_span_loss = sys_span_loss.get_scaled_constraints()
 sol_span_loss = solve_problem(rootfinder_span_loss, x0_span_loss, kn_span_loss)
@@ -308,7 +312,7 @@ for nodes in nodes_by_stage:
     sys_camber.add_equation(ParabolicCamberline(), rotor_nodes)
 
 sys_camber.build(SCALED)
-rootfinder_camber = sys_camber.make_rootfinder('nlpsol')
+rootfinder_camber = sys_camber.make_rootfinder('kinsol')
 x0_camber = sys_camber.get_initial_guess(sol_span_loss_dict)
 kn_camber = sys_camber.get_scaled_constraints()
 sol_camber = solve_problem(rootfinder_camber, x0_camber, kn_camber)
@@ -321,7 +325,7 @@ sys_highres.num_span = NUM_SPAN * 5
 
 
 sys_highres.build(SCALED)
-rootfinder_highres = sys_highres.make_rootfinder('nlpsol')
+rootfinder_highres = sys_highres.make_rootfinder('kinsol')
 # Use interpolated solution as initial guess
 x0_highres = sys_highres.get_initial_guess(sol_camber_dict)
 kn_highres = sys_highres.get_scaled_constraints()

@@ -9,7 +9,7 @@ from adet.equations.geometrical import MeridionalUniform
 from adet.equations.fundamental import MassAreaRelation, Kinematics, TotalStaticMatching
 from adet.equations.nondimensional import AbsoluteMachNumber, RelativeMachNumber
 from adet.equations.definitions import CumMassFlow
-from adet.equations.special import VariableAdder
+from adet.equations.special import ThermoVarsAdder
 
 from adet.tools.printing import print_header
 
@@ -30,7 +30,7 @@ _SINGLE_NODE_EQUATIONS = [
     CumMassFlow,
     AbsoluteMachNumber,
     RelativeMachNumber,
-    VariableAdder,
+    ThermoVarsAdder,
 ]
 
 

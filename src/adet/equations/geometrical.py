@@ -25,7 +25,7 @@ class MeridionalUniform(MeridionalGeom):
         #           \
         #  |\        +  <- rr[n]
         #  |_\        \
-        #  |  \       ==  rr[n] + hh[n] / 2
+        #  |  \       ==  rr[n] - hh[n] / 2
         #   mer_angle
 
         num_span = max(geo_rr0.shape)
@@ -35,7 +35,6 @@ class MeridionalUniform(MeridionalGeom):
             unit_space = np.linspace(0, 1, num_span)
 
             # Segment between innermost and outermost stations
-            # quasi_height = (num_span - 1) * geo_hh0
             quasi_height = (num_span - 1) * geo_hh0
             r_hub = geo_rmid0 - quasi_height / 2 * np.cos(geo_meridional_angle0)
 

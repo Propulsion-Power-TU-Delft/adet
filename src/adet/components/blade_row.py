@@ -117,15 +117,20 @@ class BladeRow(BaseComponent):
 
 class VanelessDiffuser(BaseComponent):
     base_equations = [
+        # Fundamental equations
         (EnergyConservation, (0, 1)),
         (MomentumConservation, (0, 1)),
-        (ZeroDeviation, 0),
-        (ZeroDeviation, 1),
-        (ZeroBlockage, 1),
+        (MassConservation, (0, 1)),
+        # No blades
+        (ZeroBlockage, 0),
         (ZeroBlockage, 1),
         # Extra definitions
-        (MeridionalVelocityRatio, (0, 1)),
         (HeightRatio, (0, 1)),
+    ]
+
+    constant_variables = [
+        'kin_omega',
+        'geo_meridional_angle',
     ]
 
     from_previous_node = ABSOLUTE_LINK + GEOM_LINK
@@ -156,7 +161,6 @@ class VanelessDiffuser(BaseComponent):
             from_previous_node,
             constant_variables,
         )
-        self.out_constraints['kin']['omega'] = 0
         self.in_constraints['kin']['omega'] = 0
 
 

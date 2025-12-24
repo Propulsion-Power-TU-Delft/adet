@@ -1242,7 +1242,10 @@ class CasadiSystem(SystemAssembler):
         )
 
     def make_rootfinder(
-        self, root_method: Literal['newton', 'nlpsol'], opts={}
+        self,
+        root_method: Literal['newton', 'ipopt', 'kinsol'],
+        opts={},
+        nlp_opts={},
     ) -> Callable[[ArrayLike, ArrayLike], cs.DM]:
         """
         Create a rootfinder callable object that takes as a first input the
@@ -1280,23 +1283,36 @@ class CasadiSystem(SystemAssembler):
                     },
                 )
 
-            case 'nlpsol':
+            case 'ipopt':
                 # IPOPT solver
                 rootfinder = cs.rootfinder(
-                    'nlpsol_rootfinder',
+                    'ipopt_rootfinder',
                     'nlpsol',
                     rootfind_problem,
                     {
                         'error_on_fail': True,
                         'nlpsol': 'ipopt',
                         'nlpsol_options': {
+                            # Reasonable defaults for IPOPT, overwritten by user
                             'ipopt.print_level': 0,
                             'ipopt.max_iter': 100,
+                            'ipopt.tol': 1e-3,
                             # Need the limited-memory, approx (quasi-newton)
                             # the eos does not have an hessian
                             'ipopt.hessian_approximation': 'limited-memory',
+                            **nlp_opts,
                         },
                         **opts,
+                    },
+                )
+            case 'kinsol':
+                # IPOPT solver
+                rootfinder = cs.rootfinder(
+                    'kinsol_rootfinder',
+                    'kinsol',
+                    rootfind_problem,
+                    {
+                        'error_on_fail': True,
                     },
                 )
         return rootfinder

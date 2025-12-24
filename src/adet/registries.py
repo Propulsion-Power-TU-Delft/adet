@@ -270,6 +270,7 @@ SCALING_FACTORS: dict[str, float] = {
     'rad': 0.5,
     'm': 1e-1,
     'm**2': 1e-2,
+    'm**2 / s': 10.0,
     'kg / m**3': 2.0,
     'dimensionless': 1.0,
 }
