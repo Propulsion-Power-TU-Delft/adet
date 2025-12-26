@@ -43,7 +43,7 @@ setup_logger(
 logging.getLogger('jax').setLevel(logging.WARNING)
 
 # === SETTINGS
-NUM_SPAN = 1
+NUM_SPAN = 3
 SCALED = True
 PLOTS = True
 PRINTS = True

@@ -2,17 +2,20 @@ from typing import Generic, Sequence, TypeVar
 
 from adet.assembly import SystemAssembler
 from adet.components import BaseComponent
-from adet.components.connections import Inlet
 from adet.fluid.settings import FluidSettings
+from adet.components.connections import Inlet
 
-from adet.equations.geometrical import MeridionalUniform
-from adet.equations.fundamental import MassAreaRelation, Kinematics, TotalStaticMatching
-from adet.equations.nondimensional import AbsoluteMachNumber, RelativeMachNumber
-from adet.equations.definitions import CumMassFlow
 from adet.equations.special import ThermoVarsAdder
+from adet.equations.geometrical import MeridionalUniform
+from adet.equations.nondimensional import AbsoluteMachNumber, RelativeMachNumber
+from adet.equations.fundamental import (
+    Kinematics,
+    CumMassFlow,
+    MassAreaRelation,
+    TotalStaticMatching,
+)
 
 from adet.tools.printing import print_header
-
 
 T = TypeVar('T', bound=SystemAssembler)
 
@@ -45,9 +48,7 @@ class ComponentNetwork(Generic[T]):
         backend: T,
         components: Sequence[BaseComponent],
     ) -> None:
-        """
-        Network of turbomachinery components
-        """
+        """Network of turbomachinery components"""
         print_header()
 
         self.system = backend
@@ -61,6 +62,9 @@ class ComponentNetwork(Generic[T]):
 
         # Add inlet boundary conditions
         self.system.add_boundary_conditions(inlet.boundary_conditions, 0)
+        if inlet.uniform:
+            if inlet.boundary_conditions.get('oth', {}).get('cum_massflow'):
+                self.system.add_spanwise_constants('kin_Vm0')
 
         # Read components
         self._read_components(components)

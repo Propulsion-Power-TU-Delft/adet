@@ -35,7 +35,7 @@ class RepeatedStage(EquationBase):
 
 class DegreeOfReaction(EquationBase):
     """
-    0 - [Stator] - 1 = 2 - [Rotor] - 3
+    0 - [Stator] - 1 === 2 - [Rotor] - 3
     This assumes the stator is on nodes 0,1 and the stator on 2,3 is the rotor.
     The degree of reaction is an `oth` property of node 3
     """
@@ -56,17 +56,10 @@ class DegreeOfReaction(EquationBase):
 
 class MeridionalVelocityRatio(EquationBase):
     def residual(self, kin_Vm0, kin_Vm1, kin_VmRatio1):
-        return kin_VmRatio1 - kin_Vm1 / kin_Vm0
+        return kin_Vm0 * kin_VmRatio1 - kin_Vm1
 
 
-class CumMassFlow(EquationBase):
-    """Cumulative massflow"""
-
-    def residual(self, oth_cum_massflow0, oth_massflow0):
-        return oth_cum_massflow0 - (oth_massflow0**0).T @ oth_massflow0
-
-
-class BladePitchCount(EquationBase):
+class BladePitch(EquationBase):
     """
     Define pitch as circumference / num_blades and the massflow per blade channel
 

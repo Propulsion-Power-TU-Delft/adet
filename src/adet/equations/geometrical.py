@@ -1,4 +1,4 @@
-from adet.equations.base_equation import CamberLineGeom, EquationBase, MeridionalGeom
+from adet.equations.base_equation import CamberLineGeom, MeridionalGeom
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -42,8 +42,6 @@ class MeridionalUniform(MeridionalGeom):
                 r_hub + unit_space * quasi_height * np.cos(geo_meridional_angle0)
             )
 
-        # The power enforces hh to be positive, otherwise a negative
-        # height, massflow, etc. is techincally a valid solution
         r2 = geo_hh0 - geo_height0 / num_span
 
         # Circular annuli at various spanwise

@@ -182,6 +182,8 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'W': 'm/s',
         'Wt': 'm/s',
         'Wm': 'm/s',
+        'W_hub': 'm/s',
+        'W_shroud': 'm/s',
         'U': 'm/s',
         'omega': 'rad/s',
         'beta': 'rad',

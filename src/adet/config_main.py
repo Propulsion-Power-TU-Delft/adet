@@ -15,11 +15,11 @@ from adet.losses.basic import (
     FixedEnthalpyLoss,
     PercTotalPressureLoss,
     PercentageEntropyLoss,
+    PlaceHolderLoss,
     ZeroDeviation,
 )
 
 # Tooling & Components
-from adet.losses.compressors import IsentropicTotEnthalpy
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.registries import DefaultUnitsRegistry, ScalingRegistry, GuessRegistry
 from adet.fluid.settings import ExternalFluidModel, IdealGasModel
@@ -136,9 +136,7 @@ row0 = BladeRow(
         # |> Losses & Dev
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
-        FixedEnthalpyLoss(100.0): 1,
-        IsentropicTotEnthalpy(): (0, 1),
-        # PercTotalPressureLoss(0.05): (0, 1),
+        PercTotalPressureLoss(0.05): (0, 1),
         # |> Boundary layer properties for mixing
         # BoundaryLayerRatios(): 1,
     },
@@ -157,9 +155,7 @@ row0_mixer = DownstreamMixer(
         },
     },
     out_constraints={},
-    extra_equations={
-        # Add blockage from blades in 0
-    },
+    extra_equations={PlaceHolderLoss(): (0, 1)},
 )
 
 row1 = BladeRow(

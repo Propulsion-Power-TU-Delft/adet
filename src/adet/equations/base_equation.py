@@ -31,6 +31,7 @@ class EquationBase(ABC):
     """
 
     manual_units: ClassVar[tuple[str, ...]] = ()
+    # EoS accessories
     input_pair: ClassVar[int] = 0
     output_quantities: ClassVar[tuple[str, ...]] = ()
     _eos: None | CasadiEos = None
@@ -113,7 +114,7 @@ class EquationBase(ABC):
         dummy_args = np.full((num_args, 1), np.nan)
         dummy_res = self.residual(*dummy_args)
 
-        if hasattr(dummy_res, '__len__'):
+        if isinstance(dummy_res, tuple):
             num_equations = len(dummy_res)
         else:
             num_equations = 1
@@ -171,9 +172,6 @@ class EquationBase(ABC):
         return tuple(validated_arguments)
 
     def _validate_argument(self, full_argument: str):
-        # Updated pattern to allow digits in variable names (for intermediate states)
-        # and multiple trailing digits for node indices
-        # Example matches: stc_p0, stc_p_ss0_0, stc_rhomass_ps2_1
         VALID_STATES = get_args(NodeStatesNames)
         states_id_re = '|'.join(VALID_STATES)
         TEMPLATE_PATTERN = rf'^({states_id_re})_[a-zA-Z0-9_]*\d+$'

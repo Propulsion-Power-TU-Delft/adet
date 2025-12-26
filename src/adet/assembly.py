@@ -84,6 +84,7 @@ class SystemSharedData:
             NodeStatesNames, dict[str, ArrayLike | PlainQuantity]
         ] = defaultdict(dict)
         self.invariants: list[set[str]] = []
+        self.spanwise_constants: set[str] = set()
 
         # Units and scaling
         self.arguments_units: dict[str, str] = {}
@@ -286,9 +287,13 @@ class ConstraintManager:
         Each tuple represents a set of variables treated as equal by the system.
         Adding ('a', 'b', 'c') adds the equations: a-b=0, a-c=0, b-c=0
         """
-        for vars in invariants:
-            if set(vars) not in self.data.invariants:
-                self.data.invariants.append(set(vars))
+        for args in invariants:
+            if set(args) not in self.data.invariants:
+                self.data.invariants.append(set(args))
+
+    def add_spanwise_constants(self, *arguments: str):
+        for arg in arguments:
+            self.data.spanwise_constants.add(arg)
 
     def write_to_nodes(self):
         """Write the stored boundary conditions to the nodes"""
@@ -705,6 +710,10 @@ class SystemAssembler(ABC):
     def _invariants(self):
         return self.data.invariants
 
+    @property
+    def _spanwise_constants(self):
+        return self.data.spanwise_constants
+
     def reset(self) -> None:
         old_settings = self.data.fluid_settings
         self.__init__(self.data.num_span)
@@ -790,6 +799,12 @@ class SystemAssembler(ABC):
         b - c = 0
         """
         self._constraint_manager.add_invariants(*invariants)
+
+    def add_spanwise_constants(self, *arguments: str):
+        """
+        Add arguments that are constant along the span
+        """
+        self._constraint_manager.add_spanwise_constants(*arguments)
 
     def build(self, scaled: bool):
         """
@@ -1154,6 +1169,22 @@ class CasadiSystem(SystemAssembler):
 
         return invariant_expressions
 
+    def _build_spanwise_constants(self) -> list[cs.MX]:
+        spanwise_expressions = []
+        for arg in self._spanwise_constants:
+            if arg not in self._all_symbols:
+                continue
+
+            arg_sym = self._all_symbols[arg]
+
+            if max(arg_sym.shape) == 1:
+                continue
+            else:
+                expression = arg_sym[1:] - arg_sym[:-1]
+                spanwise_expressions.append(expression)
+
+        return spanwise_expressions
+
     def _build_residual_expressions(self):
         # Build scaling symbols for all equations
         self._eq_scales_sym = [
@@ -1187,6 +1218,7 @@ class CasadiSystem(SystemAssembler):
         )
 
         self._res_expr_scaled += self._build_invariant_expressions()
+        self._res_expr_scaled += self._build_spanwise_constants()
 
         num_vars = max(cs.vertcat(*self.free_args_sym).shape)
         num_residuals = max(cs.vertcat(*self._res_expr_scaled).shape)

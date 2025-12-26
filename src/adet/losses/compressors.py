@@ -9,21 +9,27 @@ class EndWallVelocities(EquationBase):
 
     def residual(
         self,
-        kin_Wt1,
-        kin_Wm1,
-        geo_meridional_angle1,
-        kin_omega1,
-        geo_rr1,
-        geo_height1,
-        kin_W_hub1,
-        kin_W_shroud1,
+        kin_Wt0,
+        kin_Wm0,
+        geo_meridional_angle0,
+        kin_omega0,
+        geo_rr0,
+        geo_height0,
+        kin_W_hub0,
+        kin_W_shroud0,
     ):
-        deltaW = kin_omega1 * geo_height1 * np.cos(geo_meridional_angle1) / 2
-        Wt_hub = kin_Wt1 - deltaW
-        Wt_shroud = kin_Wt1 + deltaW
+        num_span = max(kin_Wt0.shape)
+        if num_span == 1:
+            midspan = 0
+        else:
+            midspan = num_span // 2
 
-        r1 = kin_W_hub1 - np.sqrt(kin_Wm1**2 + Wt_hub**2)
-        r2 = kin_W_shroud1 - np.sqrt(kin_Wm1**2 + Wt_shroud**2)
+        deltaW = kin_omega0 * geo_height0 * np.cos(geo_meridional_angle0) / 2
+        Wt_hub = kin_Wt0[midspan] - deltaW
+        Wt_shroud = kin_Wt0[midspan] + deltaW
+
+        r1 = kin_W_hub0 - np.sqrt(kin_Wm0[midspan] ** 2 + Wt_hub**2)
+        r2 = kin_W_shroud0 - np.sqrt(kin_Wm0[midspan] ** 2 + Wt_shroud**2)
 
         return r1, r2
 

@@ -27,6 +27,13 @@ class MassConservation(EquationBase):
         return oth_massflow0 - oth_massflow1
 
 
+class CumMassFlow(EquationBase):
+    """Cumulative massflow"""
+
+    def residual(self, oth_cum_massflow0, oth_massflow0):
+        return oth_cum_massflow0 - (oth_massflow0**0).T @ oth_massflow0
+
+
 class MassAreaRelation(EquationBase):
     """
     .. math::

@@ -7,6 +7,7 @@ from pint.facets.plain import PlainQuantity
 @dataclass
 class Inlet:
     boundary_conditions: dict[str, dict[str, Any]]
+    uniform: bool = True
 
 
 @dataclass

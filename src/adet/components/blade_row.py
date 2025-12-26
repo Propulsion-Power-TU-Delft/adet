@@ -8,7 +8,7 @@ import numpy as np
 # Equation objects
 from adet.equations.definitions import (
     AngleDeflection,
-    BladePitchCount,
+    BladePitch,
     ThicknessToPitch,
     HeightRatio,
     MeridionalVelocityRatio,
@@ -64,7 +64,7 @@ class BladeRow(BaseComponent):
         # *** Fundamental equations - do not remove
         (EulerEquation, (0, 1)),  # Adiabatic and steady
         (MassConservation, (0, 1)),
-        # *** Blockage
+        # *** Blockage - Zero by default
         (ZeroBlockage, 0),
         (ZeroBlockage, 1),
         # *** Common definitions
@@ -73,8 +73,8 @@ class BladeRow(BaseComponent):
         (MeridionalVelocityRatio, (0, 1)),
         # *** Blade count, pitch, channel massflow
         # -- TODO: Make this user-enabled
-        (BladePitchCount, 0),
-        (BladePitchCount, 1),
+        (BladePitch, 0),
+        (BladePitch, 1),
         (ThicknessToPitch, 0),
         (ThicknessToPitch, 1),
         (Solidity, 1),
@@ -178,8 +178,8 @@ class DownstreamMixer(BaseComponent):
         # *** Deviation
         (ZeroDeviation, 0),  # metal = kine angle @ blade
         # *** Definition of channel massflow and num_blades
-        (BladePitchCount, 0),
-        (BladePitchCount, 1),
+        (BladePitch, 0),
+        (BladePitch, 1),
     ]
 
     # Keep the absolute triangle

@@ -20,7 +20,7 @@ from adet.losses.basic import (
     ZeroDeviation,
 )
 
-from adet.losses.compressors import TotalTotalCompressionEfficiency
+from adet.losses.compressors import EndWallVelocities, TotalTotalCompressionEfficiency
 from adet.registries import GuessRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
 
@@ -46,7 +46,8 @@ inlet = Inlet(
         'oth': {
             'cum_massflow': 4.989512,
         },
-    }
+    },
+    uniform=True,
 )
 
 rotor = BladeRow(
@@ -67,18 +68,21 @@ rotor = BladeRow(
             'rmid': Quantity(0.2159, 'm'),
             'height': Quantity(0.01524, 'm'),
             'metal_angle': Quantity(-30, 'deg'),
+            # *** Blades specs
+            'thick_by_pitch': 0.025,
             'chord_ax': Quantity(0.133879895, 'm'),
             'num_blades': 15,
-            'thick_by_pitch': 0.025,
         },
-        'oth': {'eta_tt': 0.85},
+        # 'oth': {'eta_tt': 0.87},
     },
     extra_equations={
         ZeroDeviation(): 0,  # = No incidence
         ZeroDeviation(): 1,  # = No deviation
         MinimalCamberLine(): (0, 1),
+        PercentageEntropyLoss(0.0): (0, 1),
         TotalTotalCompressionEfficiency(): (0, 1),
-        # ---
+        # ***
+        EndWallVelocities(): 0,
         PlaceHolderLoss(): (0, 1),  # Isentropic
         StaticTotalPressRatio(): (0, 1),
         StaticStaticPressRatio(): (0, 1),
@@ -97,7 +101,6 @@ vaneless_diff = VanelessDiffuser(
         },
     },
     extra_equations={
-        # PlaceHolderLoss(): (0, 1),
         PercTotalPressureLoss(0.0): (0, 1),  # Isentropic
     },
 )
@@ -116,10 +119,9 @@ fluid_settings = FluidSettings(
 ntw = ComponentNetwork(
     fluid_settings=fluid_settings,
     inlet=inlet,
-    backend=CasadiSystem(num_span=1),
+    backend=CasadiSystem(num_span=3),
     components=[rotor],
 )
-
 
 ntw.build()
 
@@ -154,6 +156,7 @@ for idx, n in enumerate(ntw.system.nodes):
     n.kin.plot(n.geo, 14)
     plt.title(f'Node number {idx}')
 
-# print(f'TotalTotalEfficiency of the stage is {ntw.system.nodes[3].oth.eta_tt}')
-# plt.show()
-plt.close('all')
+print(ntw.components[0].outlet_node)
+
+plt.show()
+# plt.close('all')
