@@ -163,6 +163,9 @@ class VanelessDiffuser(BaseComponent):
         )
         self.in_constraints['kin']['omega'] = 0
 
+        # WARN: Hypothesis => I am settings null chord axial = exactly radial diffuser
+        self.out_constraints['geo']['chord_ax'] = 0
+
 
 class DownstreamMixer(BaseComponent):
     base_equations = [
@@ -436,7 +439,7 @@ def geometry_main(geo_inputs, color):
 if __name__ == '__main__':
     from adet.tools.interpolation import TransfiniteInterpolator
 
-    geo = RowGeometry(0.4, 1.0, 0.3, 0.05, 0.0, np.pi / 2, 0.45)
+    geo = RowGeometry(0.4, 1.0, 0.3, 0.2, np.pi / 2, np.pi / 2, 0.1)
 
     tip_curve = np.vstack(
         [

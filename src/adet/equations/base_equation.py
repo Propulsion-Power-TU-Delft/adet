@@ -181,12 +181,14 @@ class EquationBase(ABC):
         # Check for trailing digits (node index)
         # We allow digits anywhere in the name (e.g., 'ss0' in 'stc_p_ss0_0')
         # Only the trailing digits are interpreted as the node index
-        arg_index = re.findall(r'\d+$', full_argument)[0]
+        arg_index = re.findall(r'\d+$', full_argument)
 
         if not arg_index:
             logger.info(f'No index found, assigning relative node 0 to {full_argument}')
             arg_index = '0'
             full_argument += arg_index
+        else:
+            arg_index = arg_index[0]
 
         if verify_string_pattern(full_argument, TEMPLATE_PATTERN) is False:
             logger.warning(

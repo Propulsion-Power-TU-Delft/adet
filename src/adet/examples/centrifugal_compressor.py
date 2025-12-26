@@ -7,14 +7,25 @@ from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.geometrical import MinimalCamberLine
 from adet.equations.nondimensional import (
+    StaticStaticPressRatio,
     StaticTotalPressRatio,
     TotalTotalPressureRatio,
     WorkCoefficient,
 )
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
-from adet.losses.basic import PercentageEntropyLoss, TotalPressureLoss, ZeroDeviation
-from adet.registries import DefaultUnitsRegistry
+from adet.losses.basic import (
+    PercTotalPressureLoss,
+    PercentageEntropyLoss,
+    PlaceHolderLoss,
+    ZeroDeviation,
+)
+
+from adet.losses.compressors import TotalTotalCompressionEfficiency
+from adet.registries import GuessRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
+
+_greg = GuessRegistry()
+_greg.set_fallback_value(1.0)
 
 shaft = Shaft(
     omega=Quantity(21789, 'rpm'),
@@ -60,14 +71,19 @@ rotor = BladeRow(
             'num_blades': 15,
             'thick_by_pitch': 0.025,
         },
+        'oth': {'eta_tt': 0.85},
     },
     extra_equations={
         ZeroDeviation(): 0,  # = No incidence
         ZeroDeviation(): 1,  # = No deviation
         MinimalCamberLine(): (0, 1),
+        TotalTotalCompressionEfficiency(): (0, 1),
+        # ---
+        PlaceHolderLoss(): (0, 1),  # Isentropic
         StaticTotalPressRatio(): (0, 1),
+        StaticStaticPressRatio(): (0, 1),
+        TotalTotalPressureRatio(): (0, 1),
         WorkCoefficient(): (0, 1),
-        PercentageEntropyLoss(0.0): (0, 1),  # Isentropic
     },
 )
 
@@ -76,12 +92,13 @@ vaneless_diff = VanelessDiffuser(
     in_constraints={},
     out_constraints={
         'geo': {
-            'rmid': Quantity(0.25, 'm'),
+            'rmid': Quantity(0.3055659, 'm'),
             'heightRatio': 1.0,
         },
     },
     extra_equations={
-        # TotalPressureLoss(0.0): (0, 1),
+        # PlaceHolderLoss(): (0, 1),
+        PercTotalPressureLoss(0.0): (0, 1),  # Isentropic
     },
 )
 
@@ -100,20 +117,12 @@ ntw = ComponentNetwork(
     fluid_settings=fluid_settings,
     inlet=inlet,
     backend=CasadiSystem(num_span=1),
-    components=[rotor, vaneless_diff],
+    components=[rotor],
 )
 
-# Set custom units and defaults
-_dfu_reg = DefaultUnitsRegistry()
 
-# Add units for custom variables
-_dfu_reg.from_dict(
-    {
-        'STratio': 'dimensionless',
-    }
-)
+ntw.build()
 
-ntw.system.build()
 rootfinder = ntw.system.make_rootfinder('ipopt')
 
 x0 = ntw.system.get_initial_guess()
@@ -125,15 +134,26 @@ ntw.system.write_solution_to_nodes(solution)
 
 fig, ax = plt.subplots()
 ax.set_aspect('equal')
-lines = plot_from_nodes(
-    ntw.system.nodes[0],
-    ntw.system.nodes[1],
-    False,
-    0.0,
-    ax=ax,
-)
 
-for n in ntw.system.nodes:
+offset = 0.0
+for c in ntw.components:
+    if not c.inlet_node or not c.outlet_node:
+        raise ValueError('missing nodes')
+
+    lines = plot_from_nodes(
+        c.inlet_node,
+        c.outlet_node,
+        False,
+        offset,
+        ax=ax,
+    )
+
+    offset += c.outlet_node.geo.chord_ax[0]
+
+for idx, n in enumerate(ntw.system.nodes):
     n.kin.plot(n.geo, 14)
+    plt.title(f'Node number {idx}')
 
-plt.show()
+# print(f'TotalTotalEfficiency of the stage is {ntw.system.nodes[3].oth.eta_tt}')
+# plt.show()
+plt.close('all')

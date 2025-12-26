@@ -14,8 +14,8 @@ class TotalTotalPressureRatio(EquationBase):
         \\beta_{tt} = \\frac{p_{t1}}{p_{t,0}}
     """
 
-    def residual(self, tot_p0, tot_p1, oth_TTratio1):
-        return oth_TTratio1 - tot_p1 / tot_p0
+    def residual(self, tot_p0, tot_p1, oth_beta_tt1):
+        return tot_p0 * oth_beta_tt1 - tot_p1
 
 
 class StaticTotalPressRatio(EquationBase):
@@ -24,8 +24,18 @@ class StaticTotalPressRatio(EquationBase):
         \\beta_{tt} = \\frac{p_{t1}}{p_{t,0}}
     """
 
-    def residual(self, tot_p0, stc_p1, oth_STratio1):
-        return tot_p0 * oth_STratio1 - stc_p1
+    def residual(self, tot_p0, stc_p1, oth_beta_ts1):
+        return tot_p0 * oth_beta_ts1 - stc_p1
+
+
+class StaticStaticPressRatio(EquationBase):
+    """
+    .. math::
+        \\beta_{tt} = \\frac{p_{t1}}{p_{t,0}}
+    """
+
+    def residual(self, stc_p0, stc_p1, oth_beta_ss1):
+        return stc_p0 * oth_beta_ss1 - stc_p1
 
 
 class DensityRatio(EquationBase):

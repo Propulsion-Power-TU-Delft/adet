@@ -6,6 +6,7 @@ from typing import ClassVar, TypeAlias, Type, Any
 
 from adet.equations import EquationBase, UniqueEquation
 from adet.losses import LossModel
+from adet.node import FlowNode
 from adet.tools.iter import ensure_iterable
 
 BaseEquationsFormat: TypeAlias = list[
@@ -89,6 +90,9 @@ class BaseComponent(ABC):
         self._equations = self._merge_unique_equations(
             base_equation_instances, extra_equations
         )
+
+        self.inlet_node: FlowNode | None = None
+        self.outlet_node: FlowNode | None = None
 
         # This checks that the user has not defined multiple
         # incompatible unique equations

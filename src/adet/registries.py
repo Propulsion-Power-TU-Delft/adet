@@ -173,6 +173,8 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'reactDegree': 'dimensionless',
         '.*Coeff': 'dimensionless',
         '.*Ratio': 'dimensionless',
+        'eta_tt': 'dimensionless',
+        'beta_.*': 'dimensionless',
         # Kinematics
         'V': 'm/s',
         'Vt': 'm/s',

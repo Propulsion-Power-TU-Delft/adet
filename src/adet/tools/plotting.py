@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # )
 
 
-def plot_velocity_triangles(kine, geo, fontsize):
+def plot_velocity_triangles(kin, geo, fontsize):
     plot_settings = {'angles': 'xy', 'scale_units': 'xy', 'scale': 1}
     fig, ax = plt.subplots()
     fontsize = 14
@@ -37,11 +37,11 @@ def plot_velocity_triangles(kine, geo, fontsize):
     cmap_w = plt.get_cmap('Blues')
     cmap_u = plt.get_cmap('Purples')
 
-    Wt = kine.Wt
-    Wm = kine.Wm
-    U = kine.U
-    Vt = kine.Vt
-    Vm = kine.Vm
+    Wt = kin.Wt
+    Wm = kin.Wm
+    U = kin.U
+    Vt = kin.Vt
+    Vm = kin.Vm
     rr = geo.rr
     num_span = geo._num_span
 
@@ -65,7 +65,7 @@ def plot_velocity_triangles(kine, geo, fontsize):
     # Set the limits of the plot
     ax.set_xlim(0, max(Vm) * 1.05)
 
-    tang_stack = np.stack([np.zeros(kine._num_span), Wt, Vt])
+    tang_stack = np.stack([np.zeros(kin._num_span), Wt, Vt])
     ax.set_ylim(-10 + np.min(tang_stack), 10 + np.max(tang_stack))
 
     ax.grid(alpha=0.3)

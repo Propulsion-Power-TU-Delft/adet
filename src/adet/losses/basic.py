@@ -32,6 +32,16 @@ class TotalPressureLoss(LossModel):
         return (rlt_p0 - rlt_p1) - (rlt_p0 - stc_p0) * self.loss_coeff
 
 
+class PlaceHolderLoss(LossModel):
+    """
+    Use when defining efficiency through eta_tt for example instead of direct
+    row-based loss coefficients
+    """
+
+    def residual(self, stc_smass0, stc_smass1):
+        return ()
+
+
 class PercentageEntropyLoss(LossModel):
     """
     Percentage increase of entropy w.r.t. the inlet conditions

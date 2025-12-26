@@ -1,4 +1,4 @@
-from adet.equations.base_equation import EquationBase, EquationBase
+from adet.equations.base_equation import EquationBase
 from .base_loss import LossModel
 import numpy as np
 import CoolProp as cp
@@ -28,13 +28,22 @@ class EndWallVelocities(EquationBase):
         return r1, r2
 
 
-class IsentropicTotEnthalpy(EquationBase):
+class TotalTotalCompressionEfficiency(EquationBase):
     input_pair = cp.PSmass_INPUTS
     output_quantities = ('hmass',)
     manual_units = ('J / kg',)
 
-    def residual(self, oth_tot_hmass_is1, tot_p1, stc_smass0):
-        return oth_tot_hmass_is1 - self.eos(tot_p1, stc_smass0)
+    def residual(
+        self,
+        tot_p1,
+        stc_smass0,
+        tot_hmass0,
+        tot_hmass1,
+        oth_eta_tt1,
+    ):
+        return oth_eta_tt1 * (tot_hmass1 - tot_hmass0) - (
+            self.eos(tot_p1, stc_smass0) - tot_hmass0
+        )
 
 
 class CoppageBladeLoading(LossModel):

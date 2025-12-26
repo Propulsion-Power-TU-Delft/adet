@@ -133,6 +133,17 @@ class ComponentNetwork(Generic[T]):
                         )
                     )
 
+    def build(self, scaled: bool = True):
+        self.system.build(scaled)
+
+        # Write nodes on components for easier access
+        for comp_index, component in enumerate(self.components):
+            inlet_node_idx = 2 * comp_index  # Of the current component
+            outlet_node_idx = inlet_node_idx + 1  # Of the previous component
+
+            component.inlet_node = self.system.nodes[inlet_node_idx]
+            component.outlet_node = self.system.nodes[outlet_node_idx]
+
     def print_structure(self):
         component_repr = '@ = node\n\nInlet == @0'
 
