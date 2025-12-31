@@ -78,3 +78,24 @@ class ZeroDeviation(DeviationModel):
 
     def residual(self, geo_metal_angle0, kin_beta0):
         return kin_beta0 - geo_metal_angle0
+
+
+class ZeroMidspanDeviation(DeviationModel):
+    def residual(
+        self,
+        kin_beta0,
+        kin_beta_midspan0,
+        geo_metal_angle0,
+        geo_metal_angle_midspan0,
+    ):
+        num_span = max(kin_beta0.shape)
+        if num_span == 1:
+            midspan = 0
+        else:
+            midspan = num_span // 2
+
+        r1 = kin_beta_midspan0 - kin_beta0[midspan]
+        r2 = geo_metal_angle_midspan0 - geo_metal_angle0[midspan]
+        r3 = kin_beta_midspan0 - geo_metal_angle_midspan0
+
+        return r1, r2, r3

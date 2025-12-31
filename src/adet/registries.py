@@ -160,7 +160,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'T': 'K',
         'T_ref': 'K',
         'rhomass': 'kg / m**3',
-        '.*hmass.*': 'J / kg',
+        '.*hmass.*': 'J / kg',  # Includes delta_hmass
         'umass': 'J / kg',
         'smass': 'J / (kg * K)',
         'cpmass.*': 'J / (kg * K)',
@@ -172,9 +172,8 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'relmach': 'dimensionless',
         'reactDegree': 'dimensionless',
         '.*Coeff': 'dimensionless',
-        '.*Ratio': 'dimensionless',
-        'eta_tt': 'dimensionless',
-        'beta_.*': 'dimensionless',
+        '.*Ratio.*': 'dimensionless',
+        'eta_[s-t]{2}': 'dimensionless',  # eta_tt, eta_ts
         # Kinematics
         'V': 'm/s',
         'Vt': 'm/s',
@@ -187,6 +186,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'U': 'm/s',
         'omega': 'rad/s',
         'beta': 'rad',
+        'beta_midspan': 'rad',
         'alpha': 'rad',
         'deflection': 'rad',
         # Geometry
@@ -203,6 +203,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'throat': 'm',
         'stagger': 'rad',
         'metal_angle': 'rad',
+        'metal_angle_.*': 'rad',
         'solidity': 'dimensionless',
         'num_blades': 'dimensionless',
         '.*_thick': 'meters',
@@ -303,7 +304,7 @@ class ScalingRegistry(BaseRegistry[PlainUnit, float]):
         return super().get(units)
 
 
-class ScalarsRegistry(BaseRegistry[str, None]):
+class ScalarsRegistry(BaseRegistry[str, int]):
     """
     Quantities that should be always be treated as scalars,
 
@@ -327,16 +328,17 @@ class ScalarsRegistry(BaseRegistry[str, None]):
     """
 
     DEFAULTS = {
-        'omega': None,
-        'rmid': None,
-        'rmidRatio': None,  # Not used
-        'height': None,
-        'heightRatio': None,
-        'cum_massflow': None,
-        'meridional_angle': None,
-        'num_blades': None,
-        'W_hub': None,
-        'W_shroud': None,
+        'omega': -1,
+        'rmid': -1,
+        'rmidRatio': -1,
+        '.*_midspan': -1,
+        'height': -1,
+        'heightRatio': -1,
+        'cum_massflow': -1,
+        'meridional_angle': -1,
+        'num_blades': -1,
+        'W_hub': -1,
+        'W_shroud': -1,
     }
 
 

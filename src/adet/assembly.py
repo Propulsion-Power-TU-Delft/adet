@@ -226,6 +226,7 @@ class EquationRegistry:
         """
         system_arguments = []
         scalar_arguments = []
+        self.data._arg_maps = {}
 
         logger.debug('Reading all the equation arguments...')
 
@@ -443,13 +444,12 @@ class UnitScalingManager:
             }
 
             self.data.arguments_units.update(
-                jax.tree.map(get_units_string, node_arguments)
-            )
-            self.data.arguments_units.update(
                 {arg: get_units_string(var) for arg, var in node_arguments.items()}
             )
 
     def check_equations_units(self):
+        self.data.equations_units = []
+
         """Check units for all equations"""
         for eq, kwmap in self.data._arg_maps.items():
             self.data.equations_units.append(self._get_eq_units(eq, kwmap))

@@ -18,17 +18,24 @@ from adet.losses.basic import (
     PercentageEntropyLoss,
     PlaceHolderLoss,
     ZeroDeviation,
+    ZeroMidspanDeviation,
 )
 
-from adet.losses.compressors import EndWallVelocities, TotalTotalCompressionEfficiency
+from adet.losses.compressors import (
+    EndWallVelocities,
+    IsentropicTotalEnthalpy,
+    TotalTotalCompressionEfficiency,
+)
 from adet.registries import GuessRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
 
 _greg = GuessRegistry()
 _greg.set_fallback_value(1.0)
 
+NUM_SPAN = 3
+
 shaft = Shaft(
-    omega=Quantity(21789, 'rpm'),
+    omega=Quantity(21000, 'rpm'),
     is_constrained=True,
 )
 
@@ -73,17 +80,22 @@ rotor = BladeRow(
             'chord_ax': Quantity(0.133879895, 'm'),
             'num_blades': 15,
         },
-        # 'oth': {'eta_tt': 0.87},
+        'oth': {
+            # 'eta_tt': 0.87,
+        },
     },
     extra_equations={
         ZeroDeviation(): 0,  # = No incidence
-        ZeroDeviation(): 1,  # = No deviation
+        # ZeroMidspanDeviation(): 1,  # = No deviation
+        ZeroDeviation(): 1,
         MinimalCamberLine(): (0, 1),
         PercentageEntropyLoss(0.0): (0, 1),
-        TotalTotalCompressionEfficiency(): (0, 1),
+        # Enthalpy losses
+        # TotalTotalCompressionEfficiency(): (0, 1),
+        # IsentropicTotalEnthalpy(): (0, 1),
         # ***
         EndWallVelocities(): 0,
-        PlaceHolderLoss(): (0, 1),  # Isentropic
+        PlaceHolderLoss(): (0, 1),
         StaticTotalPressRatio(): (0, 1),
         StaticStaticPressRatio(): (0, 1),
         TotalTotalPressureRatio(): (0, 1),
@@ -119,17 +131,16 @@ fluid_settings = FluidSettings(
 ntw = ComponentNetwork(
     fluid_settings=fluid_settings,
     inlet=inlet,
-    backend=CasadiSystem(num_span=3),
-    components=[rotor],
+    backend=CasadiSystem(num_span=NUM_SPAN),
+    components=[rotor, vaneless_diff],
 )
+
 
 ntw.build()
 
-rootfinder = ntw.system.make_rootfinder('ipopt')
-
 x0 = ntw.system.get_initial_guess()
 kn = ntw.system.get_scaled_constraints()
-
+rootfinder = ntw.system.make_rootfinder('ipopt')
 solution = solve_problem(rootfinder, x0, kn)
 
 ntw.system.write_solution_to_nodes(solution)
@@ -158,5 +169,5 @@ for idx, n in enumerate(ntw.system.nodes):
 
 print(ntw.components[0].outlet_node)
 
-plt.show()
-# plt.close('all')
+# plt.show()
+plt.close('all')

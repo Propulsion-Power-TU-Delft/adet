@@ -34,21 +34,21 @@ class EndWallVelocities(EquationBase):
         return r1, r2
 
 
-class TotalTotalCompressionEfficiency(EquationBase):
+class IsentropicTotalEnthalpy(EquationBase):
     input_pair = cp.PSmass_INPUTS
     output_quantities = ('hmass',)
     manual_units = ('J / kg',)
 
+    def residual(self, oth_tot_hmass_is1, stc_smass0, tot_p1):
+        return oth_tot_hmass_is1 - self.eos(tot_p1, stc_smass0)
+
+
+class TotalTotalCompressionEfficiency(EquationBase):
     def residual(
-        self,
-        tot_p1,
-        stc_smass0,
-        tot_hmass0,
-        tot_hmass1,
-        oth_eta_tt1,
+        self, tot_p1, stc_smass0, tot_hmass0, tot_hmass1, oth_eta_tt1, oth_tot_hmass_is1
     ):
-        return oth_eta_tt1 * (tot_hmass1 - tot_hmass0) - (
-            self.eos(tot_p1, stc_smass0) - tot_hmass0
+        return oth_eta_tt1 - (oth_tot_hmass_is1 - tot_hmass0) / (
+            tot_hmass1 - tot_hmass0
         )
 
 
@@ -57,30 +57,54 @@ class CoppageBladeLoading(LossModel):
         self,
         tot_hmass0,
         tot_hmass1,
-        kin_W1,
-        kin_W_shroud1,
-        kin_U1,
-        geo_n_blades,
+        #
+        geo_rmid0,
+        geo_rmid1,
+        geo_height0,
+        geo_meridional_angle0,
         Ratio_D1sD2,
-        Df,
-        K,
+        #
+        kin_U1,
+        kin_W1,
+        kin_W_shroud0,
+        geo_num_blades1,
+        oth_delta_hmass_loading,
+        oth_K_loading,  # 0.75
     ):
         work = tot_hmass1 - tot_hmass0
+        r_shroud0 = geo_rmid0 + geo_height0 * np.cos(geo_meridional_angle0) / 2
+
         Df = (
             1
-            - kin_W1 / kin_W_shroud1
-            + K
+            - kin_W1 / kin_W_shroud0
+            + oth_K_loading
             * (abs(work) / kin_U1 ^ 2)
-            * (kin_W1 / kin_W_shroud1)
-            / (((geo_n_blades / np.pi) * (1 - Ratio_D1sD2)) + (2 * Ratio_D1sD2))
+            * (kin_W1 / kin_W_shroud0)
+            / (
+                ((geo_num_blades1 / np.pi) * (1 - r_shroud0 / geo_rmid1))
+                + (2 * Ratio_D1sD2)
+            )
         )
-        Dht_bl = 0.05 * (Df * kin_U1) ^ 2
+        return oth_delta_hmass_loading - 0.05 * (Df * kin_U1) ^ 2
 
 
 class ClearanceJansen(LossModel):
-    def residual(self, R1s, R1h, R2, rho_out, rho_in, eps, H2, vt2, N_blades, vm1):
+    def residual(
+        self,
+        R1s,
+        R1h,
+        R2,
+        rho_out,
+        rho_in,
+        eps,
+        H2,
+        vt2,
+        N_blades,
+        vm1,
+        oth_delta_hmass_clearance1,
+    ):
         K = abs((R1s ^ 2 - R1h ^ 2) / ((R2 - R1s) * (1 + rho_out / rho_in)))
-        Dht_cl = (
+        return oth_delta_hmass_clearance1 - (
             0.6
             * eps
             / H2
@@ -89,7 +113,7 @@ class ClearanceJansen(LossModel):
         )
 
 
-class SkinFrictionJansesn(LossModel):
+class SkinFrictionJansen(LossModel):
     def residual(
         self,
         R1,
