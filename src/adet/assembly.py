@@ -32,12 +32,17 @@ from adet.fluid.settings import (
     ExternalFluidModel,
     FluidSettings,
 )
-from adet.registries import GuessRegistry, ScalingRegistry, ScalarsRegistry
+from adet.registries import (
+    GuessRegistry,
+    ScalingRegistry,
+    ScalarsRegistry,
+    VariableBoundsRegistry,
+)
 from adet.tools.coolprop_utils import pair_based_sorting, pair_id_from_tuple
 from adet.tools.strings import get_arg_state, rm_digits, get_index, get_arg_type
 from adet.node import FlowNode
 from adet.constants import NodeStatesNames, ArrayLike
-from adet.tools.context import override_operators, suppress_output
+from adet.tools.context import dummy_context, override_operators, output_suppression
 
 
 logger = logging.getLogger(__name__)
@@ -49,6 +54,7 @@ def get_units_string(var):
 
 _scale_reg = ScalingRegistry()
 _scalars_reg = ScalarsRegistry()
+_bounds_reg = VariableBoundsRegistry()
 _guess_reg = GuessRegistry()
 
 
@@ -1277,27 +1283,26 @@ class CasadiSystem(SystemAssembler):
         self,
         root_method: Literal['newton', 'ipopt', 'kinsol'],
         opts={},
-        nlp_opts={},
     ) -> Callable[[ArrayLike, ArrayLike], cs.DM]:
         """
         Create a rootfinder callable object that takes as a first input the
         initial guess and as second input the values of the constraints and
         returns the solution.
         """
-        res_func_casadi = self.make_residual_function()
+        res_func = self.make_residual_function()
 
         free_args_symbols = cs.vertcat(*self.free_args_sym)
         constraints_symbols = cs.vertcat(*self.const_sym)
 
-        res_expr_partial = res_func_casadi(
+        res_expr_partial = res_func(
             free_args_symbols,
             constraints_symbols,
         )
 
         rootfind_problem = {
             'x': free_args_symbols,
-            'g': res_expr_partial,
             'p': constraints_symbols,
+            'g': res_expr_partial,
         }
 
         # TODO: remove hardcoded options
@@ -1317,28 +1322,24 @@ class CasadiSystem(SystemAssembler):
 
             case 'ipopt':
                 # IPOPT solver
-                rootfinder = cs.rootfinder(
+                rootfinder = cs.nlpsol(
                     'ipopt_rootfinder',
-                    'nlpsol',
+                    'ipopt',
                     rootfind_problem,
                     {
                         'error_on_fail': True,
-                        'nlpsol': 'ipopt',
-                        'nlpsol_options': {
-                            # Reasonable defaults for IPOPT, overwritten by user
-                            'ipopt.print_level': 0,
-                            'ipopt.max_iter': 100,
-                            'ipopt.tol': 1e-3,
-                            # Need the limited-memory, approx (quasi-newton)
-                            # the eos does not have an hessian
-                            'ipopt.hessian_approximation': 'limited-memory',
-                            **nlp_opts,
-                        },
+                        # Reasonable defaults for IPOPT, overwritten by user
+                        'ipopt.print_level': 5,
+                        'ipopt.max_iter': 1000,
+                        'ipopt.tol': 1e-3,
+                        # Need the limited-memory, approx (quasi-newton)
+                        # the eos does not have an hessian
+                        'ipopt.hessian_approximation': 'limited-memory',
                         **opts,
                     },
                 )
             case 'kinsol':
-                # IPOPT solver
+                # kinsol rootfinder
                 rootfinder = cs.rootfinder(
                     'kinsol_rootfinder',
                     'kinsol',
@@ -1348,6 +1349,25 @@ class CasadiSystem(SystemAssembler):
                     },
                 )
         return rootfinder
+
+    def get_arguments_bounds(self):
+        lbx = []
+        ubx = []
+        for arg, scaling in zip(self.free_args_sym, self.free_args_scaling):
+            arg_type = get_arg_type(arg.name())
+
+            if arg_type not in _bounds_reg:
+                lower_bound = -1e20
+                upper_bound = 1e20
+            else:
+                lower_bound, upper_bound = _bounds_reg.get(arg_type)
+
+            arg_size = max(arg.shape)
+
+            lbx += arg_size * [lower_bound / scaling]
+            ubx += arg_size * [upper_bound / scaling]
+
+        return cs.vertcat(*lbx), cs.vertcat(*ubx)
 
     def to_jax(self):
         """
@@ -1544,14 +1564,38 @@ def {func_name}(equations, {', '.join(self._declared_arguments)}):
         return cas_sys
 
 
-def solve_problem(rootfinder: Any, guess: list[NDArray], knowns: list[NDArray]):
+def solve_root_roblem(
+    rootfinder: Any,
+    guess: list[NDArray],
+    knowns: list[NDArray],
+    arg_bounds: tuple[cs.DM, cs.DM] | None = None,
+    suppress_output: bool = True,
+):
+    if suppress_output:
+        output_manipulator = output_suppression
+    else:
+        output_manipulator = dummy_context
     """Simple utility function for solving rootfinding problems"""
-    with suppress_output():
+
+    with output_manipulator():
         logger.info('Solving the system...')
 
         guess_cat = np.concatenate(guess)
         knowns_cat = np.concatenate(knowns)
 
-        sol = np.array(rootfinder(guess_cat, knowns_cat))
+        extra_args = {}
+        if rootfinder.n_in() > 2:
+            extra_args.update({'lbg': 0, 'ubg': 0})
+            if arg_bounds:
+                extra_args['lbx'], extra_args['ubx'] = arg_bounds
 
-        return sol
+        sol = rootfinder(
+            x0=guess_cat,
+            p=knowns_cat,
+            **extra_args,
+        )
+
+        if rootfinder.n_in() > 2:
+            sol = sol['x']
+
+        return np.array(sol)

@@ -1,9 +1,7 @@
-"""
-Implement registries with a singleton pattern
-"""
+"""Implement registries with a singleton pattern"""
 
-import logging
 import re
+import logging
 from pint import UnitRegistry
 from typing import Generic, TypeVar, Mapping
 
@@ -352,11 +350,10 @@ class VariableBoundsRegistry(
     DEFAULTS = {
         # THERMODYNAMICS
         'p': (1e4, 50e5),
-        'hmass': (1e3, 1e7),
-        'umass': (1e3, 1e7),
+        'hmass': (1e3, 1e9),
+        'umass': (1e3, 1e9),
         'rhomass': (1e-3, 50.0),
         'T': (40.0, 1800.0),
-        'smass': (-1e5, 1e5),
         # KINEMATICS
         'V': (10.0, 500.0),
         'Vm': (10.0, 500.0),
@@ -368,14 +365,13 @@ class VariableBoundsRegistry(
         'omega': (-10000.0, 10000.0),
         'alpha': (-1.5, 1.5),
         'beta': (-1.5, 1.5),
-        'area': (0.0, 1.0),
-        'eff_area': (0.0, 1.0),
+        '.*area': (0.0, 1.0),
         'rr': (1e-4, 1.0),
         'rmid': (1e-4, 1.0),
         'hh': (1e-5, 1.0),
         'height': (1e-5, 1.0),
         # OTHERS
-        'massflow': (1e-3, 100.0),
+        '.*massflow': (1e-3, 100.0),
     }
 
 

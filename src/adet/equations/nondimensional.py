@@ -28,6 +28,18 @@ class StaticTotalPressRatio(EquationBase):
         return tot_p0 * oth_pRatio_ts1 - stc_p1
 
 
+class MidspanTotalTotalPressRatio(EquationBase):
+    def residual(self, tot_p0, tot_p1, oth_pRatio_tt_midspan1):
+        num_span = max(tot_p0.shape)
+
+        if num_span == 1:
+            midspan = 0
+        else:
+            midspan = num_span // 2
+
+        return tot_p0[midspan] * oth_pRatio_tt_midspan1 - tot_p1[midspan]
+
+
 class StaticStaticPressRatio(EquationBase):
     """
     .. math::

@@ -12,7 +12,7 @@ import numpy as np
 
 from adet.fluid.casadi_eos import CasadiEos
 from adet.tools.strings import verify_string_pattern, get_arg_state
-from adet.tools.context import override_operators, suppress_output
+from adet.tools.context import override_operators, output_suppression
 from adet.constants import NodeStatesNames
 
 
@@ -93,7 +93,7 @@ class EquationBase(ABC):
             try:
                 # Avoid printing if fails
                 # in particular CoolProp stuff
-                with suppress_output():
+                with output_suppression():
                     self._num_equations = self._count_equations_arg_inj()
             except Exception:
                 self._num_equations = self._count_equations_ast()

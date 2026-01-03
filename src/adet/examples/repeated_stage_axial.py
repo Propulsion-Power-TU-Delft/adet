@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 from pint import Quantity
 
 # Network build
-from adet.assembly import CasadiSystem, solve_problem
+from adet.assembly import CasadiSystem, solve_root_roblem
 from adet.components import ComponentNetwork, BladeRow, Shaft, Inlet
 from adet.equations.definitions import DegreeOfReaction, RepeatedStage
 from adet.equations.fundamental import ZeroBlockage
@@ -256,7 +256,7 @@ rootfinder_mean_is = ntw.system.make_rootfinder(
 )
 x0_mean_is = ntw.system.get_initial_guess()
 kn_mean_is = ntw.system.get_scaled_constraints()
-sol_mean_is = solve_problem(rootfinder_mean_is, x0_mean_is, kn_mean_is)
+sol_mean_is = solve_root_roblem(rootfinder_mean_is, x0_mean_is, kn_mean_is)
 sol_mean_is_dict = ntw.system.solution_to_dict(sol_mean_is)
 
 
@@ -274,7 +274,7 @@ sys_mean_loss.build(SCALED)
 rootfinder_mean_loss = sys_mean_loss.make_rootfinder('kinsol')
 x0_mean_loss = sys_mean_loss.get_initial_guess(sol_mean_is_dict)
 kn_mean_loss = sys_mean_loss.get_scaled_constraints()
-sol_mean_loss = solve_problem(rootfinder_mean_loss, x0_mean_loss, kn_mean_loss)
+sol_mean_loss = solve_root_roblem(rootfinder_mean_loss, x0_mean_loss, kn_mean_loss)
 sol_mean_loss_dict = sys_mean_loss.solution_to_dict(sol_mean_loss)
 
 # === SOLVE STAGE 3: Multi-span with Denton losses and minimal camberline ===
@@ -299,7 +299,7 @@ sys_span_loss.build(SCALED)
 rootfinder_span_loss = sys_span_loss.make_rootfinder('kinsol')
 x0_span_loss = sys_span_loss.get_initial_guess(sol_mean_loss_dict)
 kn_span_loss = sys_span_loss.get_scaled_constraints()
-sol_span_loss = solve_problem(rootfinder_span_loss, x0_span_loss, kn_span_loss)
+sol_span_loss = solve_root_roblem(rootfinder_span_loss, x0_span_loss, kn_span_loss)
 sol_span_loss_dict = sys_span_loss.solution_to_dict(sol_span_loss)
 
 # === SOLVE STAGE 4: Multi-span with Denton losses and parabolic camberline ===
@@ -315,7 +315,7 @@ sys_camber.build(SCALED)
 rootfinder_camber = sys_camber.make_rootfinder('kinsol')
 x0_camber = sys_camber.get_initial_guess(sol_span_loss_dict)
 kn_camber = sys_camber.get_scaled_constraints()
-sol_camber = solve_problem(rootfinder_camber, x0_camber, kn_camber)
+sol_camber = solve_root_roblem(rootfinder_camber, x0_camber, kn_camber)
 sol_camber_dict = sys_camber.solution_to_dict(sol_camber)
 
 # === SOLVE STAGE 5: High-resolution multi-span ===
@@ -329,7 +329,7 @@ rootfinder_highres = sys_highres.make_rootfinder('kinsol')
 # Use interpolated solution as initial guess
 x0_highres = sys_highres.get_initial_guess(sol_camber_dict)
 kn_highres = sys_highres.get_scaled_constraints()
-sol_highres = solve_problem(rootfinder_highres, x0_highres, kn_highres)
+sol_highres = solve_root_roblem(rootfinder_highres, x0_highres, kn_highres)
 
 # Write solution back to FlowNodes
 ntw.system = sys_highres

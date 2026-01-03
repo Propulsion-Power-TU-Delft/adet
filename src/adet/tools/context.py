@@ -58,7 +58,7 @@ def override_operators(
 
 
 @contextmanager
-def suppress_output():
+def output_suppression():
     with open(os.devnull, 'w') as devnull:
         old_stdout = sys.stdout
         old_stderr = sys.stderr
@@ -69,3 +69,11 @@ def suppress_output():
         finally:
             sys.stdout = old_stdout
             sys.stderr = old_stderr
+
+
+@contextmanager
+def dummy_context():
+    try:
+        yield
+    finally:
+        pass
