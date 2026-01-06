@@ -8,8 +8,6 @@ from typing import Literal, TypeAlias
 from adet.equations import EquationBase
 
 
-# NOTE: Implemented for entropy generation for now
-# need some also to implement other cases
 LossType: TypeAlias = Literal['delta_smass', 'delta_tot_p', 'delta_tot_hmass']
 
 

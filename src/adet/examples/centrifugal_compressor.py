@@ -32,7 +32,7 @@ from adet.losses.basic import (
     ZeroMidspanDeviation,
 )
 
-from adet.losses.compressors import BackstromSlip
+from adet.losses.compressors import BackstromSlip, CoppageBladeLoading
 from adet.registries import GuessRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
@@ -116,11 +116,12 @@ rotor = BladeRow(
         'oth': {
             'eta_tt': 0.87,  # Total total efficiency
             'slip_factCoeff': 5.0,
+            'bl_loadingCoeff': 0.75,
         },
     },
     extra_equations={
         # ZeroDeviation(): 1,
-        BackstromSlip(): 1,
+        BackstromSlip(): (0, 1),
         MinimalCamberLine(): (0, 1),
         PlaceHolderLoss(): (0, 1),  # T
         # *** Enthalpy based efficiency
@@ -130,9 +131,8 @@ rotor = BladeRow(
         # BladeBlockage(): 0,
         # BladeBlockage(): 1,
         # *** Definitions
-        # AreaAveragePressure(): 1,
-        # PressureToAverage(): 1,
         EndWallVelocities(): 0,
+        CoppageBladeLoading(): (0, 1),
         StaticTotalPressRatio(): (0, 1),
         StaticStaticPressRatio(): (0, 1),
         TotalTotalPressureRatio(): (0, 1),
@@ -171,7 +171,10 @@ kn = ntw.system.get_scaled_constraints()
 bnd = ntw.system.get_arguments_bounds()
 
 # IPOPT is very robust, KINSOL faster but fails more easily
-rootfinder = ntw.system.make_rootfinder('ipopt')
+rootfinder = ntw.system.make_rootfinder(
+    'ipopt',
+    opts={'error_on_fail': False},
+)
 solution = solve_root_roblem(
     rootfinder,
     x0,

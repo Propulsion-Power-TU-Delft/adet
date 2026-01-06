@@ -32,6 +32,10 @@ def is_casadi_type(x):
     return isinstance(x, (cs.DM, cs.MX, cs.SX))
 
 
+def safe_abs(x):
+    return (x**2) ** 0.5
+
+
 def safe_min_clip(x, min_value):
     """
     Lower clipping of the absolute vaue of x

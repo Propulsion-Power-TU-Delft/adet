@@ -1,27 +1,37 @@
 import numpy as np
+
+from adet.equations.utils import safe_abs
+from adet.losses.base_loss import LossModel
 from adet.equations.base_equation import DeviationModel
-from .base_loss import LossModel
 
 
 class BackstromSlip(DeviationModel):
     def residual(
         self,
-        oth_slip_factor0,
-        oth_slip_factCoeff0,
-        geo_solidity0,
-        geo_metal_angle0,
-        kin_U0,
-        kin_beta0,
-        kin_Vt0,
-        kin_Vm0,
+        oth_slip_factor1,
+        oth_slip_factCoeff1,
+        geo_rr0,
+        geo_rr1,
+        geo_num_blades1,
+        geo_metal_angle1,
+        kin_U1,
+        kin_beta1,
+        kin_Vt1,
+        kin_Vm1,
     ):
-        r1 = oth_slip_factor0 - 1 / (
-            1 + oth_slip_factCoeff0 * geo_solidity0 * np.cos(geo_metal_angle0) ** 0.5
+        radius_ratio = geo_rr0 / geo_rr1
+        solidity = (
+            (1 - radius_ratio)
+            * geo_num_blades1
+            / (2 * np.pi * np.cos(geo_metal_angle1))
+        )
+        r1 = oth_slip_factor1 - 1 / (
+            1 + oth_slip_factCoeff1 * solidity * np.cos(geo_metal_angle1) ** 1.5
         )  # Slip factor always positive
 
-        V_slip = kin_U0 * oth_slip_factor0  # Sign depends on U
+        V_slip = kin_U1 * oth_slip_factor1  # Sign depends on U
 
-        r2 = kin_beta0 - np.arctan(np.tan(geo_metal_angle0) - V_slip / kin_Vm0)
+        r2 = kin_beta1 - np.arctan(np.tan(geo_metal_angle1) - V_slip / kin_Vm1)
 
         return r1, r2
 
@@ -29,37 +39,35 @@ class BackstromSlip(DeviationModel):
 class CoppageBladeLoading(LossModel):
     def residual(
         self,
+        # Enthalpies for work
         tot_hmass0,
         tot_hmass1,
-        #
+        # Geometry
         geo_rmid0,
         geo_rmid1,
         geo_height0,
         geo_meridional_angle0,
-        Ratio_D1sD2,
-        #
+        # Kinematics
         kin_U1,
         kin_W1,
         kin_W_shroud0,
         geo_num_blades1,
-        oth_delta_hmass_loading,
-        oth_K_loading,  # 0.75
+        # Coefficients
+        oth_delta_hmass_loading1,
+        oth_bl_loadingCoeff1,  # 0.75
     ):
-        work = tot_hmass1 - tot_hmass0
-        r_shroud0 = geo_rmid0 + geo_height0 * np.cos(geo_meridional_angle0) / 2
-
-        Df = (
+        work_abs = safe_abs(tot_hmass1 - tot_hmass0)
+        r0s_by_r1 = (geo_rmid0 + geo_height0 / 2) / geo_rmid1
+        diff_coeff = (
             1
             - kin_W1 / kin_W_shroud0
-            + oth_K_loading
-            * (abs(work) / kin_U1 ^ 2)
+            + oth_bl_loadingCoeff1
+            * (work_abs / kin_U1**2)
             * (kin_W1 / kin_W_shroud0)
-            / (
-                ((geo_num_blades1 / np.pi) * (1 - r_shroud0 / geo_rmid1))
-                + (2 * Ratio_D1sD2)
-            )
+            / (((geo_num_blades1 / np.pi) * (1 - r0s_by_r1)) + (2 * r0s_by_r1))
         )
-        return oth_delta_hmass_loading - 0.05 * (Df * kin_U1) ^ 2
+
+        return oth_delta_hmass_loading1 - 0.05 * (diff_coeff * kin_U1) ** 2
 
 
 class ClearanceJansen(LossModel):

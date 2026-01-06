@@ -13,18 +13,12 @@ def split_by_uppercase(arg: str):
     return re.findall(r'[A-Z][a-z]*', arg)
 
 
-def rm_digits(argument: str) -> str:
+def rm_end_digits(argument: str) -> str:
     """
     Remove digits from the argument
     """
     # \D = NOT digits
-    variable_string = re.findall(r'^\D+', argument)
-    if len(variable_string) > 1:
-        raise ValueError(
-            f'Badly formatted argument: {variable_string}. Please provide'
-            f'the indices at the end e.g. `kine_V0`.'
-        )
-
+    variable_string = re.split(r'\d+$', argument)
     return variable_string[0]
 
 
@@ -61,7 +55,7 @@ def get_arg_type(argument: str, prefix_length: int = 4) -> str:
     """
     Isolate the var type, removing digits and prefixes
     """
-    var_type = rm_digits(argument)[prefix_length:]
+    var_type = rm_end_digits(argument)[prefix_length:]
     return var_type
 
 

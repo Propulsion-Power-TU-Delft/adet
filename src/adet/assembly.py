@@ -39,7 +39,7 @@ from adet.registries import (
     VariableBoundsRegistry,
 )
 from adet.tools.coolprop_utils import pair_based_sorting, pair_id_from_tuple
-from adet.tools.strings import get_arg_state, rm_digits, get_index, get_arg_type
+from adet.tools.strings import get_arg_state, rm_end_digits, get_index, get_arg_type
 from adet.node import FlowNode
 from adet.constants import NodeStatesNames, ArrayLike
 from adet.tools.context import dummy_context, override_operators, output_suppression
@@ -250,7 +250,7 @@ class EquationRegistry:
                 arg_abs_idx = index_map[arg_rel_idx]
 
                 arg_type = get_arg_type(arg)
-                arg_no_digit = rm_digits(arg)
+                arg_no_digit = rm_end_digits(arg)
 
                 system_arg = arg_no_digit + str(eq_position[arg_rel_idx])
                 system_arguments.append(system_arg)
@@ -579,7 +579,7 @@ class SolutionDispatcher:
 
         for arg in set(arguments):
             node = self.data.nodes[get_index(arg)]
-            node_by_args[node].append(rm_digits(arg))
+            node_by_args[node].append(rm_end_digits(arg))
 
         return node_by_args
 
@@ -1334,7 +1334,7 @@ class CasadiSystem(SystemAssembler):
                         # Reasonable defaults for IPOPT, overwritten by user
                         'ipopt.print_level': 5,
                         'ipopt.max_iter': 10000,
-                        'ipopt.tol': 1e-3,
+                        'ipopt.tol': 1e-8,
                         # Need the limited-memory, approx (quasi-newton)
                         # the eos does not have an hessian
                         'ipopt.hessian_approximation': 'limited-memory',
