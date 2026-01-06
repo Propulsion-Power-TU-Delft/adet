@@ -1,6 +1,7 @@
 """
 Multistage Turbine Example
 ==========================
+
 This example demonstrates a complete multistage turbomachinery analysis using ADeT.
 It shows how to:
 - Configure fluid models (real gas via CoolProp)
@@ -252,7 +253,7 @@ for stage in range(ntw.num_components // 2):
 ntw.system.build(SCALED)
 rootfinder_mean_is = ntw.system.make_rootfinder(
     'ipopt',
-    nlp_opts={'ipopt.tol': 1e-1},
+    opts={'ipopt.tol': 1e-1},
 )
 x0_mean_is = ntw.system.get_initial_guess()
 kn_mean_is = ntw.system.get_scaled_constraints()
@@ -344,7 +345,9 @@ if PLOTS:
 
     # Plot velocity triangles for each node
     for i, n in enumerate(ntw.system.nodes):
-        n.kin.plot(n.geo, FONTSIZE)
+        _, ax = plt.subplots()
+        ax.set_aspect('equal')
+        n.kin.plot(n.geo, FONTSIZE, ax)
         plt.title(f'Node number {i}')
 
     plt.tick_params(labelsize=FONTSIZE / 1.5 // 1)

@@ -1,15 +1,10 @@
-from typing import Callable, cast
-
 from adet.equations.base_equation import EquationBase
-from adet.fluid.casadi_eos import CasadiEos
 import CoolProp as cp
 import casadi as cs
 import numpy as np
 
-from adet.fluid.settings import ExternalFluidModel
 from adet.losses.base_loss import LossModel
-from adet.tools.coolprop_utils import DebugAbstractState
-from adet.tools.numerical import trapezoid2
+from adet.equations.utils import trapezoid2
 
 
 # Greitzer model

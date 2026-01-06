@@ -8,9 +8,15 @@ from adet.components.blade_row import VanelessDiffuser, plot_from_nodes
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 
+from adet.equations.definitions import (
+    AreaAveragePressure,
+    PressureToAverage,
+    EndWallVelocities,
+)
 from adet.equations.fundamental import BladeBlockage
 from adet.equations.geometrical import MinimalCamberLine
 from adet.equations.nondimensional import (
+    MidspanTotalTotalPressRatio,
     WorkCoefficient,
     StaticTotalPressRatio,
     StaticStaticPressRatio,
@@ -19,11 +25,14 @@ from adet.equations.nondimensional import (
     TotalTotalCompressionEfficiency,
 )
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
-from adet.losses.basic import PercTotalPressureLoss, PlaceHolderLoss, ZeroDeviation
-
-from adet.losses.compressors import (
-    EndWallVelocities,
+from adet.losses.basic import (
+    PercTotalPressureLoss,
+    PlaceHolderLoss,
+    ZeroDeviation,
+    ZeroMidspanDeviation,
 )
+
+from adet.losses.compressors import BackstromSlip
 from adet.registries import GuessRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
@@ -105,11 +114,13 @@ rotor = BladeRow(
             'num_blades': 15,
         },
         'oth': {
-            'eta_tt': 0.86,  # Total total efficiency
+            'eta_tt': 0.87,  # Total total efficiency
+            'slip_factCoeff': 5.0,
         },
     },
     extra_equations={
-        ZeroDeviation(): 1,  # No outlet deviation
+        # ZeroDeviation(): 1,
+        BackstromSlip(): 1,
         MinimalCamberLine(): (0, 1),
         PlaceHolderLoss(): (0, 1),  # T
         # *** Enthalpy based efficiency
@@ -119,6 +130,8 @@ rotor = BladeRow(
         # BladeBlockage(): 0,
         # BladeBlockage(): 1,
         # *** Definitions
+        # AreaAveragePressure(): 1,
+        # PressureToAverage(): 1,
         EndWallVelocities(): 0,
         StaticTotalPressRatio(): (0, 1),
         StaticStaticPressRatio(): (0, 1),
@@ -148,6 +161,8 @@ ntw = ComponentNetwork(
     backend=CasadiSystem(num_span=NUM_SPAN),
     components=[rotor, vaneless_diff],
 )
+
+# ntw.system.add_spanwise_constants('stc_p1')
 
 ntw.build()
 

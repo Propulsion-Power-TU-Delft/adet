@@ -3,8 +3,8 @@
 import numpy as np
 
 from adet.equations import EquationBase
+from adet.equations.utils import safe_sum, fin_diff
 from adet.equations.base_equation import MeridAreaBlockage
-from adet.tools.interpolation import fin_diff
 
 
 class EulerEquation(EquationBase):
@@ -31,7 +31,7 @@ class CumMassFlow(EquationBase):
     """Cumulative massflow"""
 
     def residual(self, oth_cum_massflow0, oth_massflow0):
-        return oth_cum_massflow0 - (oth_massflow0**0).T @ oth_massflow0
+        return oth_cum_massflow0 - safe_sum(oth_massflow0)
 
 
 class MassAreaRelation(EquationBase):

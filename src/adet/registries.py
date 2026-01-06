@@ -154,6 +154,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
     DEFAULTS = {
         # Thermodynamics
         'p': 'Pa',
+        'p_.*': 'Pa',
         'p_ref': 'Pa',
         'T': 'K',
         'T_ref': 'K',
@@ -203,6 +204,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'metal_angle': 'rad',
         'metal_angle_.*': 'rad',
         'solidity': 'dimensionless',
+        'slip_factor': 'dimensionless',
         'num_blades': 'dimensionless',
         '.*_thick': 'meters',
         'thick_by_pitch': 'dimensionless',
@@ -337,6 +339,7 @@ class ScalarsRegistry(BaseRegistry[str, int]):
         'num_blades': -1,
         'W_hub': -1,
         'W_shroud': -1,
+        '.*AreaAve': -1,
     }
 
 

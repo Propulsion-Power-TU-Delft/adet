@@ -1,35 +1,27 @@
-from adet.equations.base_equation import EquationBase
-from .base_loss import LossModel
 import numpy as np
-import CoolProp as cp
+from adet.equations.base_equation import DeviationModel
+from .base_loss import LossModel
 
 
-class EndWallVelocities(EquationBase):
-    """Computation of the velocities at the endwall, also for single span cases"""
-
+class BackstromSlip(DeviationModel):
     def residual(
         self,
-        kin_Wt0,
-        kin_Wm0,
-        geo_meridional_angle0,
-        kin_omega0,
-        geo_rr0,
-        geo_height0,
-        kin_W_hub0,
-        kin_W_shroud0,
+        oth_slip_factor0,
+        oth_slip_factCoeff0,
+        geo_solidity0,
+        geo_metal_angle0,
+        kin_U0,
+        kin_beta0,
+        kin_Vt0,
+        kin_Vm0,
     ):
-        num_span = max(kin_Wt0.shape)
-        if num_span == 1:
-            midspan = 0
-        else:
-            midspan = num_span // 2
+        r1 = oth_slip_factor0 - 1 / (
+            1 + oth_slip_factCoeff0 * geo_solidity0 * np.cos(geo_metal_angle0) ** 0.5
+        )  # Slip factor always positive
 
-        deltaW = kin_omega0 * geo_height0 * np.cos(geo_meridional_angle0) / 2
-        Wt_hub = kin_Wt0[midspan] - deltaW
-        Wt_shroud = kin_Wt0[midspan] + deltaW
+        V_slip = kin_U0 * oth_slip_factor0  # Sign depends on U
 
-        r1 = kin_W_hub0 - np.sqrt(kin_Wm0[midspan] ** 2 + Wt_hub**2)
-        r2 = kin_W_shroud0 - np.sqrt(kin_Wm0[midspan] ** 2 + Wt_shroud**2)
+        r2 = kin_beta0 - np.arctan(np.tan(geo_metal_angle0) - V_slip / kin_Vm0)
 
         return r1, r2
 

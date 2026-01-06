@@ -4,6 +4,7 @@ the single quantities
 """
 
 from adet.equations.base_equation import EquationBase
+from adet.equations.utils import safe_sum
 import numpy as np
 
 
@@ -20,6 +21,16 @@ class RadiusRatio(EquationBase):
 class HeightRatio(EquationBase):
     def residual(self, geo_height0, geo_height1, geo_heightRatio1):
         return geo_heightRatio1 - geo_height1 / geo_height0
+
+
+class AreaAveragePressure(EquationBase):
+    def residual(self, oth_p_AreaAve0, stc_p0, geo_area0):
+        return safe_sum(geo_area0) * oth_p_AreaAve0 - safe_sum(geo_area0 * stc_p0)
+
+
+class PressureToAverage(EquationBase):
+    def residual(self, oth_p_AreaAve0, stc_p0):
+        return stc_p0 - oth_p_AreaAve0
 
 
 class RepeatedStage(EquationBase):
@@ -57,6 +68,36 @@ class DegreeOfReaction(EquationBase):
 class MeridionalVelocityRatio(EquationBase):
     def residual(self, kin_Vm0, kin_Vm1, kin_VmRatio1):
         return kin_Vm0 * kin_VmRatio1 - kin_Vm1
+
+
+class EndWallVelocities(EquationBase):
+    """Computation of the velocities at the endwall, also for single span cases"""
+
+    def residual(
+        self,
+        kin_Wt0,
+        kin_Wm0,
+        geo_meridional_angle0,
+        kin_omega0,
+        geo_rr0,
+        geo_height0,
+        kin_W_hub0,
+        kin_W_shroud0,
+    ):
+        num_span = max(kin_Wt0.shape)
+        if num_span == 1:
+            midspan = 0
+        else:
+            midspan = num_span // 2
+
+        deltaW = kin_omega0 * geo_height0 * np.cos(geo_meridional_angle0) / 2
+        Wt_hub = kin_Wt0[midspan] - deltaW
+        Wt_shroud = kin_Wt0[midspan] + deltaW
+
+        r1 = kin_W_hub0 - np.sqrt(kin_Wm0[midspan] ** 2 + Wt_hub**2)
+        r2 = kin_W_shroud0 - np.sqrt(kin_Wm0[midspan] ** 2 + Wt_shroud**2)
+
+        return r1, r2
 
 
 class BladePitch(EquationBase):

@@ -1333,7 +1333,7 @@ class CasadiSystem(SystemAssembler):
                         'error_on_fail': True,
                         # Reasonable defaults for IPOPT, overwritten by user
                         'ipopt.print_level': 5,
-                        'ipopt.max_iter': 1000,
+                        'ipopt.max_iter': 10000,
                         'ipopt.tol': 1e-3,
                         # Need the limited-memory, approx (quasi-newton)
                         # the eos does not have an hessian
@@ -1598,7 +1598,7 @@ def solve_root_roblem(
             **extra_args,
         )
 
-        if rootfinder.n_in() > 2:
+        if isinstance(sol, dict):
             sol = sol['x']
 
         return np.array(sol)

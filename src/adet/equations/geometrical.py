@@ -2,7 +2,7 @@ from adet.equations.base_equation import CamberLineGeom, MeridionalGeom
 import numpy as np
 import matplotlib.pyplot as plt
 
-from adet.tools.interpolation import safe_min_clip
+from adet.equations.utils import safe_min_clip
 
 
 class MeridionalUniform(MeridionalGeom):
