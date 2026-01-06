@@ -1,42 +1,40 @@
 import logging
 from pint import Quantity
 import matplotlib.pyplot as plt
+
 from adet.assembly import CasadiSystem, solve_root_roblem
 from adet.components import BladeRow
 from adet.components.blade_row import VanelessDiffuser, plot_from_nodes
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
+
+from adet.equations.fundamental import BladeBlockage
 from adet.equations.geometrical import MinimalCamberLine
 from adet.equations.nondimensional import (
-    MidspanTotalTotalPressRatio,
-    StaticStaticPressRatio,
-    StaticTotalPressRatio,
-    TotalTotalPressureRatio,
     WorkCoefficient,
-)
-from adet.fluid.settings import ExternalFluidModel, FluidSettings
-from adet.losses.basic import (
-    PercTotalPressureLoss,
-    PercentageEntropyLoss,
-    PlaceHolderLoss,
-    ZeroDeviation,
-    ZeroMidspanDeviation,
-)
-
-from adet.losses.compressors import (
-    EndWallVelocities,
+    StaticTotalPressRatio,
+    StaticStaticPressRatio,
+    TotalTotalPressureRatio,
     IsentropicTotalEnthalpy,
     TotalTotalCompressionEfficiency,
 )
-from adet.registries import GuessRegistry, VariableBoundsRegistry
+from adet.fluid.settings import ExternalFluidModel, FluidSettings
+from adet.losses.basic import PercTotalPressureLoss, PlaceHolderLoss, ZeroDeviation
+
+from adet.losses.compressors import (
+    EndWallVelocities,
+)
+from adet.registries import GuessRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 
-_greg = GuessRegistry()
-_breg = VariableBoundsRegistry()
-_greg.set_fallback_value(1.0)
+logger = logging.Logger(__name__)
+setup_logger(logger)
 
-NUM_SPAN = 5
+# This makes the missing guesses default to 1
+GuessRegistry().set_fallback_value(1.0)
+
+NUM_SPAN = 3
 
 # +++ Shafts
 shaft = Shaft(
@@ -51,17 +49,15 @@ casing = Shaft(
 
 # +++ Fluid settings
 fluid_model = ExternalFluidModel(
-    DebugAbstractState('HEOS', 'Air'),
+    DebugAbstractState('HEOS', 'Air'),  # This just counts the number of updates
 )
 
 fluid_settings = FluidSettings(
     model=fluid_model,
-    update_variables=('p', 'T'),  # Thermodynamic solver variables
+    update_variables=('p', 'T'),  # Thermodynamic iteration variables
     update_length=2,  # Single phase => Two update vars
 )
 
-logger = logging.Logger(__name__)
-setup_logger(logger)
 
 # +++ Boundary conditions
 inlet = Inlet(
@@ -77,7 +73,7 @@ inlet = Inlet(
             'cum_massflow': 4.989512,
         },
     },
-    uniform=True,
+    uniform=True,  # Uniform meridional velocity
 )
 
 
@@ -104,27 +100,26 @@ rotor = BladeRow(
             'height': Quantity(0.01524, 'm'),
             # *** Blades specs
             'metal_angle': Quantity(-30, 'deg'),
-            'thick_by_pitch': 0.025,
+            'thick_by_pitch': 0.025,  # Thickness by pitch ratio
             'chord_ax': Quantity(0.133879895, 'm'),
             'num_blades': 15,
         },
         'oth': {
-            # 'eta_tt': 0.85,
-            # 'pRatio_tt_midspan': 4.85,
+            'eta_tt': 0.86,  # Total total efficiency
         },
     },
     extra_equations={
-        ZeroMidspanDeviation(): 1,  # = No deviation at midspan
-        # ZeroDeviation(): 1,
+        ZeroDeviation(): 1,  # No outlet deviation
         MinimalCamberLine(): (0, 1),
-        PercentageEntropyLoss(0.0): (0, 1),  # Fully isentropic
-        PlaceHolderLoss(): (0, 1),  # PLACEHOLDER
-        # *** Enthalpy based losses
+        PlaceHolderLoss(): (0, 1),  # T
+        # *** Enthalpy based efficiency
         IsentropicTotalEnthalpy(): (0, 1),
         TotalTotalCompressionEfficiency(): (0, 1),
+        # *** You can drop these in to use actual blade blockage
+        # BladeBlockage(): 0,
+        # BladeBlockage(): 1,
         # *** Definitions
         EndWallVelocities(): 0,
-        MidspanTotalTotalPressRatio(): (0, 1),
         StaticTotalPressRatio(): (0, 1),
         StaticStaticPressRatio(): (0, 1),
         TotalTotalPressureRatio(): (0, 1),
@@ -151,10 +146,8 @@ ntw = ComponentNetwork(
     fluid_settings=fluid_settings,
     inlet=inlet,
     backend=CasadiSystem(num_span=NUM_SPAN),
-    components=[rotor],
+    components=[rotor, vaneless_diff],
 )
-
-ntw.system.add_spanwise_constants('stc_p1')
 
 ntw.build()
 
@@ -174,9 +167,24 @@ solution = solve_root_roblem(
 
 ntw.system.write_solution_to_nodes(solution)
 
+fig, axs = plt.subplots(2, 2, figsize=(8, 15))
+for cmp_idx, cmp in enumerate(ntw.components):
+    if cmp.inlet_node is None or cmp.outlet_node is None:
+        raise ValueError('Missing nodes')
+
+    node_idx = 0
+    for n in (cmp.inlet_node, cmp.outlet_node):
+        ax = axs[cmp_idx][node_idx]
+
+        ax.set_title(f'Node number {2 * cmp_idx + node_idx}')
+        ax.set_aspect('equal')
+        n.kin.plot(n.geo, 8, ax)
+
+        node_idx += 1
+
+
 fig, ax = plt.subplots()
 ax.set_aspect('equal')
-
 offset = 0.0
 for c in ntw.components:
     if not c.inlet_node or not c.outlet_node:
@@ -187,14 +195,9 @@ for c in ntw.components:
         c.outlet_node,
         False,
         offset,
-        ax=ax,
     )
 
     offset += c.outlet_node.geo.chord_ax[0]
-
-for idx, n in enumerate(ntw.system.nodes):
-    n.kin.plot(n.geo, 14)
-    plt.title(f'Node number {idx}')
 
 print(ntw.components[0].outlet_node)
 

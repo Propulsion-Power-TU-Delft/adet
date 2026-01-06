@@ -34,24 +34,6 @@ class EndWallVelocities(EquationBase):
         return r1, r2
 
 
-class IsentropicTotalEnthalpy(EquationBase):
-    input_pair = cp.PSmass_INPUTS
-    output_quantities = ('hmass',)
-    manual_units = ('J / kg',)
-
-    def residual(self, oth_tot_hmass_is1, stc_smass0, tot_p1):
-        return oth_tot_hmass_is1 - self.eos(tot_p1, stc_smass0)
-
-
-class TotalTotalCompressionEfficiency(EquationBase):
-    def residual(
-        self, tot_p1, stc_smass0, tot_hmass0, tot_hmass1, oth_eta_tt1, oth_tot_hmass_is1
-    ):
-        return oth_eta_tt1 - (oth_tot_hmass_is1 - tot_hmass0) / (
-            tot_hmass1 - tot_hmass0
-        )
-
-
 class CoppageBladeLoading(LossModel):
     def residual(
         self,

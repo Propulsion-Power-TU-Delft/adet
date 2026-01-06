@@ -1,5 +1,6 @@
 import logging
 
+from matplotlib.axes import Axes
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
 import numpy as np
@@ -18,10 +19,8 @@ logger = logging.getLogger(__name__)
 # )
 
 
-def plot_velocity_triangles(kin, geo, fontsize):
+def plot_velocity_triangles(kin, geo, fontsize, ax: Axes):
     plot_settings = {'angles': 'xy', 'scale_units': 'xy', 'scale': 1}
-    fig, ax = plt.subplots()
-    fontsize = 14
     ticksize = fontsize / 1.5 // 1
     fontdict = {'fontsize': fontsize}
 
@@ -29,7 +28,6 @@ def plot_velocity_triangles(kin, geo, fontsize):
     ax.set_xlabel(r'Axial coordinate [mm]', fontdict)
 
     ax.tick_params(labelsize=ticksize)
-    ax.set_aspect('equal')
     ax.grid()
 
     # Define a colormap for each quiver
@@ -59,8 +57,6 @@ def plot_velocity_triangles(kin, geo, fontsize):
     ax.quiver(  # V
         np.zeros(num_span), np.zeros(num_span), Vm, Vt, color=colors_v, **plot_settings
     )
-
-    ax.axis('equal')
 
     # Set the limits of the plot
     ax.set_xlim(0, max(Vm) * 1.05)
@@ -103,5 +99,3 @@ def plot_velocity_triangles(kin, geo, fontsize):
         'Tangential Component [m/s]',
         fontdict=fontdict,
     )
-
-    return fig, ax

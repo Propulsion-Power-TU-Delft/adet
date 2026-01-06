@@ -614,7 +614,7 @@ class SystemAssembler(ABC):
     def __init__(self, num_span: int) -> None:
         # Initialize shared context
         self.data = SystemSharedData()
-        self.data.num_span = num_span
+        self.num_span = num_span
 
         # Initialize managers
         self._equation_registry = EquationRegistry(self.data)
@@ -630,11 +630,8 @@ class SystemAssembler(ABC):
     @num_span.setter
     def num_span(self, num_span):
         if num_span % 2 == 0:
-            # Round to the closest odd number
-            self.data.num_span = num_span | 1
-            logger.warning(
-                f'Rounding up the num_span {num_span}'
-                f' to the nearest odd number ({self.data.num_span})'
+            raise ValueError(
+                f'Provide an odd number of spanwise station, currently = {num_span}'
             )
         else:
             self.data.num_span = num_span
@@ -1231,6 +1228,12 @@ class CasadiSystem(SystemAssembler):
         logger.info(
             f'System info: {num_vars} total variables, {num_residuals} total equations'
         )
+
+        if num_vars != num_residuals:
+            input(
+                f'*** WARNING: Mismatch in number of equations {num_residuals}'
+                f' and variables {num_vars}, press ENTER to continue anyway'
+            )
 
     def make_residual_function(self):
         """

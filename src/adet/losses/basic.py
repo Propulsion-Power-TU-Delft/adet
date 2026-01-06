@@ -35,7 +35,8 @@ class TotalPressureLoss(LossModel):
 class PlaceHolderLoss(LossModel):
     """
     Use when defining efficiency through eta_tt for example instead of direct
-    row-based loss coefficients
+    row-based loss coefficients. This is because I made components raise
+    errors when they are missing loss models, since I always forget them
     """
 
     def residual(self, stc_smass0, stc_smass1):

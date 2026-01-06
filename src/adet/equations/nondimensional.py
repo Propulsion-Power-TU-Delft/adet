@@ -6,6 +6,7 @@ coefficients used in TurboMachinery
 from adet.equations import EquationBase
 import numpy as np
 import casadi as cs
+import CoolProp as cp
 
 
 class TotalTotalPressureRatio(EquationBase):
@@ -38,6 +39,30 @@ class MidspanTotalTotalPressRatio(EquationBase):
             midspan = num_span // 2
 
         return tot_p0[midspan] * oth_pRatio_tt_midspan1 - tot_p1[midspan]
+
+
+class IsentropicTotalEnthalpy(EquationBase):
+    input_pair = cp.PSmass_INPUTS
+    output_quantities = ('hmass',)
+    manual_units = ('J / kg',)
+
+    def residual(self, oth_tot_hmass_is1, stc_smass0, tot_p1):
+        return oth_tot_hmass_is1 - self.eos(tot_p1, stc_smass0)
+
+
+class TotalTotalCompressionEfficiency(EquationBase):
+    def residual(
+        self,
+        tot_p1,
+        stc_smass0,
+        tot_hmass0,
+        tot_hmass1,
+        oth_eta_tt1,
+        oth_tot_hmass_is1,
+    ):
+        return oth_eta_tt1 - (oth_tot_hmass_is1 - tot_hmass0) / (
+            tot_hmass1 - tot_hmass0
+        )
 
 
 class StaticStaticPressRatio(EquationBase):

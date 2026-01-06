@@ -163,7 +163,7 @@ class VanelessDiffuser(BaseComponent):
         )
         self.in_constraints['kin']['omega'] = 0
 
-        # WARN: Hypothesis => I am settings null chord axial = exactly radial diffuser
+        # WARN: Hypothesis => Null axial chord = exactly radial diffuser
         self.out_constraints['geo']['chord_ax'] = 0
 
 
