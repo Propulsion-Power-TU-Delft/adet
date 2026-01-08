@@ -14,26 +14,36 @@ class BackstromSlip(DeviationModel):
         geo_rr1,
         geo_num_blades1,
         geo_metal_angle1,
+        oth_eff_solidity1,
         kin_U1,
-        kin_beta1,
-        kin_Vt1,
-        kin_Vm1,
+        kin_Wm1,
+        kin_Wt1,
     ):
         radius_ratio = geo_rr0 / geo_rr1
-        solidity = (
+        r0 = oth_eff_solidity1 - (
             (1 - radius_ratio)
             * geo_num_blades1
             / (2 * np.pi * np.cos(geo_metal_angle1))
         )
-        r1 = oth_slip_factor1 - 1 / (
-            1 + oth_slip_factCoeff1 * solidity * np.cos(geo_metal_angle1) ** 1.5
-        )  # Slip factor always positive
 
-        V_slip = kin_U1 * oth_slip_factor1  # Sign depends on U
+        r1 = oth_slip_factor1 - (
+            1
+            - 1
+            / (
+                1
+                + oth_slip_factCoeff1
+                * oth_eff_solidity1
+                * np.cos(geo_metal_angle1) ** 0.5
+            )
+        )
 
-        r2 = kin_beta1 - np.arctan(np.tan(geo_metal_angle1) - V_slip / kin_Vm1)
+        slip_velocity = kin_U1 * (1 - oth_slip_factor1)  # Sign depends on U
 
-        return r1, r2
+        Wt1_noslip = kin_Wm1 * np.tan(geo_metal_angle1)
+
+        r2 = kin_Wt1 - (Wt1_noslip - slip_velocity)
+
+        return r0, r1, r2
 
 
 class CoppageBladeLoading(LossModel):

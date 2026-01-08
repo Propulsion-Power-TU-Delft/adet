@@ -1,12 +1,8 @@
-import jax
-import casadi as cs
 import numpy as np
 
 from adet.assembly import CasadiSystem, EquationBase
 from adet.diagnostics import SystemDiagnostics
 from adet.registries import DefaultUnitsRegistry
-
-jax.config.update('jax_enable_x64', True)
 
 
 class HeatExchangerProblem(EquationBase):
@@ -47,7 +43,7 @@ BOUND_COND = {
 }
 
 system.add_boundary_conditions(BOUND_COND, 0)
-system.build(scaled=False)  # Don't scale everything is dimensionless
+system.build(scaled=False)  # Don't scale, everything is dimensionless
 
 exact_sol = {
     'oth_To0': 4.0,
@@ -91,7 +87,3 @@ def sensitivities_printer(sigma):
         for entry in row:
             print_str += f'{entry:.3f}  '
         print(print_str)
-
-
-# root_problem = {'x': system.free_args_sym, 'g'
-# G_newt = cs.rootfinder('rtfn', 'nlpsol', {'nlpsol': 'ipopt'})

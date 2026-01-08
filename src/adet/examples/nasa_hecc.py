@@ -8,15 +8,9 @@ from adet.components.blade_row import VanelessDiffuser, plot_from_nodes
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 
-from adet.equations.definitions import (
-    AreaAveragePressure,
-    PressureToAverage,
-    EndWallVelocities,
-)
-from adet.equations.fundamental import BladeBlockage
-from adet.equations.geometrical import MinimalCamberLine
+from adet.equations.definitions import EndWallVelocities
+from adet.equations.geometrical import MinimalCamberLine, MeridionalVariable
 from adet.equations.nondimensional import (
-    MidspanTotalTotalPressRatio,
     WorkCoefficient,
     StaticTotalPressRatio,
     StaticStaticPressRatio,
@@ -27,13 +21,13 @@ from adet.equations.nondimensional import (
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
 from adet.losses.basic import (
     PercTotalPressureLoss,
+    PercentageEntropyLoss,
     PlaceHolderLoss,
     ZeroDeviation,
-    ZeroMidspanDeviation,
 )
 
 from adet.losses.compressors import BackstromSlip, CoppageBladeLoading
-from adet.registries import GuessRegistry
+from adet.registries import GuessRegistry, VariableBoundsRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 
@@ -41,7 +35,13 @@ logger = logging.Logger(__name__)
 setup_logger(logger)
 
 # This makes the missing guesses default to 1
-GuessRegistry().set_fallback_value(1.0)
+_greg = GuessRegistry()
+_limreg = VariableBoundsRegistry()
+
+_greg.set_fallback_value(1.0)
+_greg.set('beta', -0.5)
+_limreg.set('Vm', (1.0, 200.0))
+
 
 NUM_SPAN = 3
 
@@ -82,7 +82,6 @@ inlet = Inlet(
             'cum_massflow': 4.989512,
         },
     },
-    uniform=True,  # Uniform meridional velocity
 )
 
 
@@ -111,19 +110,21 @@ rotor = BladeRow(
             'metal_angle': Quantity(-30, 'deg'),
             'thick_by_pitch': 0.025,  # Thickness by pitch ratio
             'chord_ax': Quantity(0.133879895, 'm'),
-            'num_blades': 15,
+            'num_blades': 30,
         },
         'oth': {
-            'eta_tt': 0.87,  # Total total efficiency
+            # 'eta_tt': 0.87,  # Total total efficiency
             'slip_factCoeff': 5.0,
             'bl_loadingCoeff': 0.75,
         },
     },
     extra_equations={
-        # ZeroDeviation(): 1,
+        MeridionalVariable(): 1,
         BackstromSlip(): (0, 1),
+        # ZeroDeviation(): 1,
         MinimalCamberLine(): (0, 1),
-        PlaceHolderLoss(): (0, 1),  # T
+        # PlaceHolderLoss(): (0, 1),  # T
+        PercentageEntropyLoss(0.0): (0, 1),
         # *** Enthalpy based efficiency
         IsentropicTotalEnthalpy(): (0, 1),
         TotalTotalCompressionEfficiency(): (0, 1),
@@ -131,12 +132,12 @@ rotor = BladeRow(
         # BladeBlockage(): 0,
         # BladeBlockage(): 1,
         # *** Definitions
+        WorkCoefficient(): (0, 1),
         EndWallVelocities(): 0,
-        CoppageBladeLoading(): (0, 1),
+        # CoppageBladeLoading(): (0, 1),
         StaticTotalPressRatio(): (0, 1),
         StaticStaticPressRatio(): (0, 1),
         TotalTotalPressureRatio(): (0, 1),
-        WorkCoefficient(): (0, 1),
     },
 )
 
@@ -162,7 +163,9 @@ ntw = ComponentNetwork(
     components=[rotor, vaneless_diff],
 )
 
-# ntw.system.add_spanwise_constants('stc_p1')
+ntw.system.add_spanwise_constants('kin_Vm0')
+ntw.system.add_spanwise_constants('stc_p1')
+ntw.system.add_spanwise_constants('stc_p3')
 
 ntw.build()
 
@@ -172,15 +175,17 @@ bnd = ntw.system.get_arguments_bounds()
 
 # IPOPT is very robust, KINSOL faster but fails more easily
 rootfinder = ntw.system.make_rootfinder(
-    'ipopt',
-    opts={'error_on_fail': False},
+    'kinsol',
+    opts={
+        'error_on_fail': True,
+    },
 )
 solution = solve_root_roblem(
     rootfinder,
     x0,
     kn,
     bnd,
-    suppress_output=False,
+    suppress_output=True,
 )
 
 ntw.system.write_solution_to_nodes(solution)
@@ -217,7 +222,6 @@ for c in ntw.components:
 
     offset += c.outlet_node.geo.chord_ax[0]
 
-print(ntw.components[0].outlet_node)
 
-plt.show()
 # plt.close('all')
+plt.show()

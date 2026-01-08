@@ -1,8 +1,14 @@
 from typing import Literal
+
 import casadi as cs
 import numpy as np
-from pint.facets.plain import PlainQuantity
+
 from sympy import Symbol
+from pint.facets.plain import PlainQuantity
+
+
+def safe_abs(x):
+    return (x**2) ** 0.5
 
 
 def safe_sum(x):
@@ -12,6 +18,29 @@ def safe_sum(x):
 def safe_mean(x):
     size = max(x.shape)
     return safe_sum(x) / size
+
+
+def safe_min_clip(x, min_value):
+    """
+    Lower clipping of the absolute vaue of x
+    with respect to a minimum value.
+    Type safe for casadi, numpy and pint
+    """
+    if is_casadi_type(x):
+        # NOTE: If x is exactly 0 the normal sign function
+        # is problematic
+        x_sign = cs.if_else(x >= 0, 1, -1)
+        x = x_sign * cs.fmax(cs.fabs(x), min_value)
+    elif isinstance(x, PlainQuantity):
+        x_sign = np.sign(x.magnitude)
+        x = x_sign * np.clip(np.abs(x.magnitude), min_value, None) * x.units
+    elif isinstance(x, Symbol):
+        pass
+    else:
+        x_sign = np.sign(x)
+        x = x_sign * np.clip(np.abs(x), min_value, None)
+
+    return x
 
 
 def trapezoid1(y, x):
@@ -30,33 +59,6 @@ def trapezoid2(y, x):
 
 def is_casadi_type(x):
     return isinstance(x, (cs.DM, cs.MX, cs.SX))
-
-
-def safe_abs(x):
-    return (x**2) ** 0.5
-
-
-def safe_min_clip(x, min_value):
-    """
-    Lower clipping of the absolute vaue of x
-    with respect to a minimum value.
-    Type safe for casadi, numpy and pint
-    """
-    if is_casadi_type(x):
-        # OBS: If x is exactly 0 the normal sign function
-        # is problematic
-        x_sign = cs.if_else(x >= 0, 1, -1)
-        x = x_sign * cs.fmax(cs.fabs(x), min_value)
-    elif isinstance(x, PlainQuantity):
-        x_sign = np.sign(x.magnitude)
-        x = x_sign * np.clip(np.abs(x.magnitude), min_value, None) * x.units
-    elif isinstance(x, Symbol):
-        pass
-    else:
-        x_sign = np.sign(x)
-        x = x_sign * np.clip(np.abs(x), min_value, None)
-
-    return x
 
 
 def fin_diff(f, x, edge_order: Literal['first', 'second'] = 'second'):

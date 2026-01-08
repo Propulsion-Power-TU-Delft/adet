@@ -25,6 +25,7 @@ from adet.equations.fundamental import (
 from adet.equations import EquationBase
 
 # Dependencies and tooling
+from adet.equations.geometrical import MeridionalUniform, MeridionalVariable
 from adet.losses.basic import ZeroDeviation
 from adet.losses.mixing import MixingBalances
 from adet.node import FlowNode
@@ -50,13 +51,12 @@ rotating frame (omega)
 
 GEOM_LINK = [
     # Geometry
+    'geo_rr',
+    'geo_hh',
     'geo_rmid',
     'geo_height',
     'geo_meridional_angle',
 ]
-"""
-This preserves meridional geometry, not included by default
-"""
 
 
 class BladeRow(BaseComponent):
@@ -65,6 +65,8 @@ class BladeRow(BaseComponent):
         (EulerEquation, (0, 1)),  # Adiabatic and steady
         (MassConservation, (0, 1)),
         # *** Blockage - Zero by default
+        (MeridionalUniform, 0),
+        (MeridionalUniform, 1),
         (ZeroBlockage, 0),
         (ZeroBlockage, 1),
         # *** Common definitions
@@ -121,6 +123,8 @@ class VanelessDiffuser(BaseComponent):
         (EnergyConservation, (0, 1)),
         (MomentumConservation, (0, 1)),
         (MassConservation, (0, 1)),
+        (MeridionalVariable, 0),
+        (MeridionalVariable, 1),
         # No blades
         (ZeroBlockage, 0),
         (ZeroBlockage, 1),

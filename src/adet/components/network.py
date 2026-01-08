@@ -6,7 +6,6 @@ from adet.fluid.settings import FluidSettings
 from adet.components.connections import Inlet
 
 from adet.equations.special import ThermoVarsAdder
-from adet.equations.geometrical import MeridionalUniform
 from adet.equations.nondimensional import AbsoluteMachNumber, RelativeMachNumber
 from adet.equations.fundamental import (
     Kinematics,
@@ -25,7 +24,6 @@ _SINGLE_NODE_EQUATIONS = [
     # *** FOUNDATIONAL EQs - DO NOT REMOVE!
     MassAreaRelation,
     Kinematics,
-    MeridionalUniform,
     TotalStaticMatching,
     # *** Courtesy definitions
     # -> the system is well posed w/o them
@@ -62,9 +60,6 @@ class ComponentNetwork(Generic[T]):
 
         # Add inlet boundary conditions
         self.system.add_boundary_conditions(inlet.boundary_conditions, 0)
-        if inlet.uniform:
-            if inlet.boundary_conditions.get('oth', {}).get('cum_massflow'):
-                self.system.add_spanwise_constants('kin_Vm0')
 
         # Read components
         self._read_components(components)

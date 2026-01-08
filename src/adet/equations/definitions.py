@@ -28,11 +28,6 @@ class AreaAveragePressure(EquationBase):
         return safe_sum(geo_area0) * oth_p_AreaAve0 - safe_sum(geo_area0 * stc_p0)
 
 
-class PressureToAverage(EquationBase):
-    def residual(self, oth_p_AreaAve0, stc_p0):
-        return stc_p0 - oth_p_AreaAve0
-
-
 class RepeatedStage(EquationBase):
     """0 - [Stator] - 1 = 2 - [Rotor] - 3"""
 

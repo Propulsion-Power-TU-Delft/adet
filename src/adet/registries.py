@@ -175,6 +175,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'eta_[s-t]{2}': 'dimensionless',  # eta_tt, eta_ts
         # Kinematics
         'V': 'm/s',
+        'V_.*': 'm/s',
         'Vt': 'm/s',
         'Vm': 'm/s',
         'W': 'm/s',
@@ -185,7 +186,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'U': 'm/s',
         'omega': 'rad/s',
         'beta': 'rad',
-        'beta_midspan': 'rad',
+        'beta_.*': 'rad',
         'alpha': 'rad',
         'deflection': 'rad',
         # Geometry
@@ -203,7 +204,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'stagger': 'rad',
         'metal_angle': 'rad',
         'metal_angle_.*': 'rad',
-        'solidity': 'dimensionless',
+        '.*solidity': 'dimensionless',
         'slip_factor': 'dimensionless',
         'num_blades': 'dimensionless',
         '.*_thick': 'meters',
@@ -359,7 +360,7 @@ class VariableBoundsRegistry(
         'T': (20.0, 1800.0),
         # KINEMATICS
         'V': (10.0, 500.0),
-        'Vm': (1.0, 500.0),
+        'Vm': (1.0, 200.0),
         'Vt': (-500.0, 500.0),
         'W': (10.0, 500.0),
         'Wm': (1.0, 500.0),
@@ -375,6 +376,7 @@ class VariableBoundsRegistry(
         'height': (1e-5, 3.0),
         # OTHERS
         '.*massflow': (1e-3, 100.0),
+        'slip_factor': (0.0, 1.0),
     }
 
 

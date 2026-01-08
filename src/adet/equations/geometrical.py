@@ -2,16 +2,50 @@ from adet.equations.base_equation import CamberLineGeom, MeridionalGeom
 import numpy as np
 import matplotlib.pyplot as plt
 
-from adet.equations.utils import safe_min_clip
+from adet.equations.utils import safe_min_clip, safe_sum
+
+
+# NOTE:
+# ----------------------------------
+# +++ Meridional Geometry +++
+#          ==    rr[n] + hh[n] / 2
+#           \
+#  |\        +  <- rr[n]
+#  |_\        \
+#  |  \       ==  rr[n] - hh[n] / 2
+#   mer_angle
+# ----------------------------------
+
+
+class MeridionalVariable(MeridionalGeom):
+    def residual(
+        self,
+        geo_rr0,
+        geo_hh0,
+        geo_rmid0,
+        geo_area0,
+        geo_height0,
+        geo_meridional_angle0,
+    ):
+        _tip_radius = geo_rmid0 - (geo_height0 - geo_hh0[-1]) / 2 * np.cos(
+            geo_meridional_angle0
+        )
+
+        r1 = (
+            geo_rr0[:-1]
+            + (geo_hh0[:-1] + geo_hh0[1:]) / 2 * np.cos(geo_meridional_angle0)
+            - geo_rr0[1:]
+        )
+        r2 = geo_rr0[-1] - _tip_radius
+        r3 = safe_sum(geo_hh0) - geo_height0
+        r4 = geo_area0 - np.pi * (
+            (geo_rr0 + geo_hh0 / 2) ** 2 - (geo_rr0 - geo_hh0 / 2) ** 2
+        )
+
+        return r1, r2, r3, r4
 
 
 class MeridionalUniform(MeridionalGeom):
-    # = * = * = * = * = * = * = * = * = * = * = * = * = * = *
-    # BOUNTY:                                               =
-    # > Add differential equation for streamline curvature  *
-    # > instead of uniform distribution                     =
-    # = * = * = * = * = * = * = * = * = * = * = * = * = * = *
-
     def residual(
         self,
         geo_rr0,
@@ -21,13 +55,6 @@ class MeridionalUniform(MeridionalGeom):
         geo_meridional_angle0,
         geo_area0,
     ):
-        #          ==    rr[n] + hh[n] / 2
-        #           \
-        #  |\        +  <- rr[n]
-        #  |_\        \
-        #  |  \       ==  rr[n] - hh[n] / 2
-        #   mer_angle
-
         num_span = max(geo_rr0.shape)
         if num_span == 1:
             r1 = geo_rr0 - geo_rmid0
