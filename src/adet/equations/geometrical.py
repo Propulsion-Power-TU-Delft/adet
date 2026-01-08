@@ -1,4 +1,4 @@
-from adet.equations.base_equation import CamberLineGeom, MeridionalGeom
+from adet.equations.base_equation import CamberLineGeom, EquationBase, MeridionalGeom
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -38,11 +38,8 @@ class MeridionalVariable(MeridionalGeom):
         )
         r2 = geo_rr0[-1] - _tip_radius
         r3 = safe_sum(geo_hh0) - geo_height0
-        r4 = geo_area0 - np.pi * (
-            (geo_rr0 + geo_hh0 / 2) ** 2 - (geo_rr0 - geo_hh0 / 2) ** 2
-        )
 
-        return r1, r2, r3, r4
+        return r1, r2, r3
 
 
 class MeridionalUniform(MeridionalGeom):
@@ -71,12 +68,15 @@ class MeridionalUniform(MeridionalGeom):
 
         r2 = geo_hh0 - geo_height0 / num_span
 
+        return r1, r2
+
+
+class AnnulusAreas(EquationBase):
+    def residual(self, geo_area0, geo_rr0, geo_hh0):
         # Circular annuli at various spanwise
-        r3 = geo_area0 - np.pi * (
+        return geo_area0 - np.pi * (
             (geo_rr0 + geo_hh0 / 2) ** 2 - (geo_rr0 - geo_hh0 / 2) ** 2
         )
-
-        return r1, r2, r3
 
 
 class MinimalCamberLine(CamberLineGeom):

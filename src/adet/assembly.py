@@ -10,7 +10,7 @@ from collections import defaultdict, OrderedDict
 from copy import deepcopy
 from itertools import combinations
 import logging
-from typing import Callable, Self, Sequence, Type, Literal, Any
+from typing import Callable, Self, Sequence, Type, Literal, Any, cast
 
 from numpy.typing import NDArray
 from pint import Quantity
@@ -25,7 +25,7 @@ import jax.numpy as jnp
 
 from adet.equations.base_equation import EquationBase
 from adet.errors import ExistingEquationError
-from adet.fluid.casadi_eos import CasadiEosFactory
+from adet.fluid.casadi_eos import CasadiEos, CasadiEosFactory
 from adet.fluid.settings import (
     AnalyticalFluidModel,
     EmptyFluidModel,
@@ -38,7 +38,11 @@ from adet.registries import (
     ScalarsRegistry,
     VariableBoundsRegistry,
 )
-from adet.tools.coolprop_utils import pair_based_sorting, pair_id_from_tuple
+from adet.tools.coolprop_utils import (
+    pair_based_sorting,
+    pair_id_from_tuple,
+    pair_tuple_from_id,
+)
 from adet.tools.strings import get_arg_state, rm_end_digits, get_index, get_arg_type
 from adet.node import FlowNode
 from adet.constants import NodeStatesNames, ArrayLike
@@ -903,6 +907,7 @@ class SystemAssembler(ABC):
         the arguments in absolute indices
         """
         self._check_built()
+
         return self._solution_dispatcher.write_solution_to_nodes(
             solution_values, self.free_args_scaling
         )
@@ -1071,7 +1076,7 @@ class CasadiSystem(SystemAssembler):
         if not isinstance(fl_model, ExternalFluidModel):
             raise NotImplementedError
 
-        self._eos_callbacks = []
+        self._eos_callbacks: list[CasadiEos] = []
         self._eos_factory = CasadiEosFactory(fl_model)
 
         # Get discarded thermo args => They become eos outputs
@@ -1096,15 +1101,17 @@ class CasadiSystem(SystemAssembler):
             for state_name, out_props in discarded_vars.items():
                 pair_tuple = node_inp_pairs[state_name]
                 pair_id = pair_id_from_tuple(pair_tuple)
+                sorted_pair_tuple = pair_based_sorting(*pair_tuple)
 
                 casadi_eos_cb = self._eos_factory.make_eos(
-                    pair_id, out_props, self.num_span, f'node{node_idx}'
+                    pair_id,
+                    out_props,
+                    self.num_span,
+                    f'nodeCb_{state_name}_N{node_idx}',
                 )
 
                 # This is to keep references alive
                 self._eos_callbacks.append(casadi_eos_cb)
-
-                sorted_pair_tuple = pair_based_sorting(*pair_tuple)
 
                 # Symbolic representation of the input pair properties
                 symbolic_pair = [
@@ -1349,6 +1356,7 @@ class CasadiSystem(SystemAssembler):
                     rootfind_problem,
                     {
                         'error_on_fail': True,
+                        **opts,
                     },
                 )
         return rootfinder
@@ -1371,6 +1379,39 @@ class CasadiSystem(SystemAssembler):
             ubx += arg_size * [upper_bound / scaling]
 
         return cs.vertcat(*lbx), cs.vertcat(*ubx)
+
+    def write_solution_to_nodes(self, solution_values: NDArray):
+        solution_dict = super().write_solution_to_nodes(solution_values)
+
+        for eos_cb in self._eos_callbacks:
+            eos_name: str = eos_cb.name()
+            if not eos_name.startswith('nodeCb'):
+                continue
+
+            eos_name_fields = eos_name.split('_')
+
+            state_id = eos_name_fields[1]
+            state_id = cast(NodeStatesNames, state_id)
+
+            node_idx = get_index(eos_name_fields[2])
+            input_args = pair_tuple_from_id(eos_cb._input_pair)
+
+            state_obj = self.nodes[node_idx].fetch_state(state_id)
+
+            inputs = [
+                state_obj.get(arg).to_base_units().magnitude for arg in input_args
+            ]
+            output_values = eos_cb(*inputs)
+
+            thermo_dict = {}
+            for prop, val in zip(eos_cb._output_props, output_values):
+                thermo_dict[f'{state_id}_{prop}{node_idx}'] = val.toarray().flatten()
+
+            self.nodes[node_idx].write_to_node(thermo_dict, False)
+
+            solution_dict.update(thermo_dict)
+
+        return solution_dict
 
     def to_jax(self):
         """

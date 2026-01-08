@@ -99,6 +99,12 @@ class BaseComponent(ABC):
         self._check_duplicate_equations()
         self._check_loss_model()
 
+        # Post-init for child classes
+        self._post_init()
+
+    def _post_init(self):
+        pass
+
     def _merge_unique_equations(
         self,
         base_eqs: dict[EquationBase, int | tuple[int, ...]],

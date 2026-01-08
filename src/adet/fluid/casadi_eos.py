@@ -249,12 +249,15 @@ class CasadiEosFactory(Generic[M]):
         input_pair: int,
         output_quantities: tuple[str, ...] | list[str],
         length: int,
-        eos_id: int | str = '',
+        name: str = '',
     ):
         pair_name = ''.join(get_input_names(input_pair))
 
+        if not name:
+            name = f'eos_{pair_name}_l{length}'
+
         eos_callback = CasadiEos(
-            f'eos_{pair_name}_{eos_id}_l{length}',
+            name,
             self.fluid_model.eos_object,
             input_pair,
             output_quantities,

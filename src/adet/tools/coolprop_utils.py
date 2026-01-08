@@ -14,7 +14,7 @@ from numpy.typing import NDArray
 import matplotlib.pyplot as plt
 
 from adet.tools.interpolation import TransfiniteInterpolator
-from adet.constants import COOLPROP_NAMES_MAP, COOLPROP_PAIRS
+from adet.constants import COOLPROP_NAMES_MAP, COOLPROP_PAIRS, INVERSE_CP_NAMES_MAP
 
 cp_INPUTS_SUFFIX = '_INPUTS'
 
@@ -29,6 +29,7 @@ def get_input_names(input_pair: int) -> list[str]:
     ['P', 'T']
     """
     pair_name = COOLPROP_PAIRS[input_pair]
+    # Split based on capital letters
     return re.findall(r'[A-Z][a-z]*', pair_name)
 
 
@@ -74,6 +75,11 @@ def pair_id_from_name(input_pair_name: str) -> int:
 def pair_id_from_tuple(update_variables: tuple[str, ...]):
     pair_name = pair_name_from_tuple(update_variables)
     return pair_id_from_name(pair_name)
+
+
+def pair_tuple_from_id(input_pair: int) -> list[str]:
+    input_names = get_input_names(input_pair)
+    return [INVERSE_CP_NAMES_MAP[inp] for inp in input_names]
 
 
 def make_lookup_table(

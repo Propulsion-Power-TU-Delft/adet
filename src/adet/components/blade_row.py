@@ -51,9 +51,8 @@ rotating frame (omega)
 
 GEOM_LINK = [
     # Geometry
+    # 'geo_rmid',
     'geo_rr',
-    'geo_hh',
-    'geo_rmid',
     'geo_height',
     'geo_meridional_angle',
 ]
@@ -64,9 +63,10 @@ class BladeRow(BaseComponent):
         # *** Fundamental equations - do not remove
         (EulerEquation, (0, 1)),  # Adiabatic and steady
         (MassConservation, (0, 1)),
-        # *** Blockage - Zero by default
+        # *** Meridional streamtube distributions
         (MeridionalUniform, 0),
         (MeridionalUniform, 1),
+        # *** Blockage - Zero by default
         (ZeroBlockage, 0),
         (ZeroBlockage, 1),
         # *** Common definitions
@@ -123,6 +123,7 @@ class VanelessDiffuser(BaseComponent):
         (EnergyConservation, (0, 1)),
         (MomentumConservation, (0, 1)),
         (MassConservation, (0, 1)),
+        # Meridional Geometry
         (MeridionalVariable, 0),
         (MeridionalVariable, 1),
         # No blades
@@ -139,36 +140,10 @@ class VanelessDiffuser(BaseComponent):
 
     from_previous_node = ABSOLUTE_LINK + GEOM_LINK
 
-    def __init__(
-        self,
-        name: str,
-        in_constraints: dict[
-            str,
-            dict[str, Any],
-        ],
-        out_constraints: dict[
-            str,
-            dict[str, Any],
-        ],
-        extra_equations: dict[
-            EquationBase,
-            int | tuple[int, ...],
-        ] = {},
-        from_previous_node: list[str] = [],
-        constant_variables: list[str] = [],
-    ):
-        super().__init__(
-            name,
-            in_constraints,
-            out_constraints,
-            extra_equations,
-            from_previous_node,
-            constant_variables,
-        )
-        self.in_constraints['kin']['omega'] = 0
-
+    def _post_init(self):
         # WARN: Hypothesis => Null axial chord = exactly radial diffuser
         self.out_constraints['geo']['chord_ax'] = 0
+        self.in_constraints['kin']['omega'] = 0
 
 
 class DownstreamMixer(BaseComponent):

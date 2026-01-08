@@ -107,7 +107,7 @@ class VariableContainer:
                     f'{self._num_span} != variable length {new_length}'
                 )
         else:
-            mag_validated = np.asarray(magnitude, DTYPE)
+            mag_validated = np.asarray(magnitude, DTYPE).flatten()
 
         return mag_validated
 

@@ -6,6 +6,7 @@ from adet.fluid.settings import FluidSettings
 from adet.components.connections import Inlet
 
 from adet.equations.special import ThermoVarsAdder
+from adet.equations.geometrical import AnnulusAreas
 from adet.equations.nondimensional import AbsoluteMachNumber, RelativeMachNumber
 from adet.equations.fundamental import (
     Kinematics,
@@ -22,8 +23,9 @@ T = TypeVar('T', bound=SystemAssembler)
 # of the network
 _SINGLE_NODE_EQUATIONS = [
     # *** FOUNDATIONAL EQs - DO NOT REMOVE!
-    MassAreaRelation,
     Kinematics,
+    MassAreaRelation,
+    AnnulusAreas,
     TotalStaticMatching,
     # *** Courtesy definitions
     # -> the system is well posed w/o them

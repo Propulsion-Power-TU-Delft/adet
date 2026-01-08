@@ -15,6 +15,8 @@ COOLPROP_NAMES_MAP = {
     'rhomass': 'Dmass',
 }
 
+INVERSE_CP_NAMES_MAP = {v: k for k, v in COOLPROP_NAMES_MAP.items()}
+
 _SUFFIX = '_INPUTS'
 COOLPROP_PAIRS = {
     getattr(cp, key): key[: -len(_SUFFIX)] for key in dir(cp) if key.endswith(_SUFFIX)

@@ -40,7 +40,6 @@ _limreg = VariableBoundsRegistry()
 
 _greg.set_fallback_value(1.0)
 _greg.set('beta', -0.5)
-_limreg.set('Vm', (1.0, 200.0))
 
 
 NUM_SPAN = 3
@@ -175,17 +174,15 @@ bnd = ntw.system.get_arguments_bounds()
 
 # IPOPT is very robust, KINSOL faster but fails more easily
 rootfinder = ntw.system.make_rootfinder(
-    'kinsol',
-    opts={
-        'error_on_fail': True,
-    },
+    'ipopt',
+    opts={'error_on_fail': True},
 )
 solution = solve_root_roblem(
     rootfinder,
     x0,
     kn,
     bnd,
-    suppress_output=True,
+    suppress_output=False,
 )
 
 ntw.system.write_solution_to_nodes(solution)
@@ -221,6 +218,9 @@ for c in ntw.components:
     )
 
     offset += c.outlet_node.geo.chord_ax[0]
+
+for idx, n in enumerate(ntw.system.nodes):
+    globals()[f'n{idx}'] = n
 
 
 # plt.close('all')
