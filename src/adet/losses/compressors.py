@@ -80,6 +80,7 @@ class CoppageBladeLoading(LossModel):
         return oth_delta_hmass_loading1 - 0.05 * (diff_coeff * kin_U1) ** 2
 
 
+# TODO: These below are unfinished
 class ClearanceJansen(LossModel):
     def residual(
         self,

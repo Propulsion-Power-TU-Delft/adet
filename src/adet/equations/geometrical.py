@@ -6,15 +6,14 @@ from adet.equations.utils import safe_min_clip, safe_sum
 
 
 # NOTE:
-# ----------------------------------
-# +++ Meridional Geometry +++
+# Meridional Geometry
+#
 #          ==    rr[n] + hh[n] / 2
 #           \
 #  |\        +  <- rr[n]
 #  |_\        \
 #  |  \       ==  rr[n] - hh[n] / 2
 #   mer_angle
-# ----------------------------------
 
 
 class MeridionalVariable(MeridionalGeom):

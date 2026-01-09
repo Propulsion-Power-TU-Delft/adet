@@ -3,9 +3,11 @@ Simple quantity defintions, for defining differences or ratios rather than
 the single quantities
 """
 
-from adet.equations.base_equation import EquationBase
 from adet.equations.utils import safe_sum
+from adet.equations.base_equation import EquationBase
+
 import numpy as np
+import CoolProp as cp
 
 
 class AngleDeflection(EquationBase):
@@ -111,16 +113,27 @@ class BladePitch(EquationBase):
 
     def residual(
         self,
+        # Geometry
+        geo_rr0,
         geo_pitch0,
         geo_num_blades0,
-        geo_rr0,
-        oth_ch_massflow0,
+        # Massflow
         oth_massflow0,
+        oth_ch_massflow0,
     ):
         r1 = geo_pitch0 * geo_num_blades0 - 2 * np.pi * geo_rr0
         r2 = geo_num_blades0 * oth_ch_massflow0 - oth_massflow0
 
         return r1, r2
+
+
+class IsentropicTotalEnthalpy(EquationBase):
+    input_pair = cp.PSmass_INPUTS
+    output_quantities = ('hmass',)
+    manual_units = ('J / kg',)
+
+    def residual(self, oth_tot_hmass_is1, stc_smass0, tot_p1):
+        return oth_tot_hmass_is1 - self.eos(tot_p1, stc_smass0)
 
 
 class Solidity(EquationBase):

@@ -72,6 +72,43 @@ class BladeBlockage(MeridAreaBlockage):
         )
 
 
+class Kinematics(EquationBase):
+    def residual(
+        self,
+        kin_V0,
+        kin_Vm0,
+        kin_Vt0,
+        kin_W0,
+        kin_Wt0,
+        kin_Wm0,
+        kin_U0,
+        kin_alpha0,
+        kin_beta0,
+        kin_omega0,
+        geo_rr0,
+    ):
+        # Only if Vm and Vt are zero the denominator
+        # nullifies, but Vm > 0 always, thus the
+        # square root should pose no problems
+        r1 = kin_V0 - (kin_Vm0**2 + kin_Vt0**2) ** 0.5
+        r2 = kin_W0 - (kin_Wm0**2 + kin_Wt0**2) ** 0.5
+
+        r3 = kin_Vm0 - kin_Wm0
+        r4 = kin_Vt0 - (kin_Wt0 + kin_U0)
+
+        # atan2 ensures that the angles are between - pi / 2 and pi / 2
+        r5 = kin_alpha0 - np.atan2(kin_Vt0, kin_Vm0)
+        r6 = kin_beta0 - np.atan2(kin_Wt0, kin_Wm0)
+
+        # - OLD Alternative formulation
+        # r5 = kin_Wm0 - kin_W0 * np.cos(kin_beta0)
+        # r6 = kin_Vm0 - kin_V0 * np.cos(kin_alpha0)
+
+        r7 = kin_omega0 * geo_rr0 - kin_U0
+
+        return r1, r2, r3, r4, r5, r6, r7
+
+
 class TotalStaticMatching(EquationBase):
     """
     Match the total and static states imposing equal
@@ -160,42 +197,3 @@ class ForcedVortexDistribution(EquationBase):
 class GeneralWhirl(EquationBase):
     def residual(self, geo_rr0, kin_Vt0, gen_whirl_a, gen_whirl_b, gen_whirl_n):
         return kin_Vt0 - gen_whirl_a * geo_rr0**gen_whirl_n + gen_whirl_b / geo_rr0
-
-
-class Kinematics(EquationBase):
-    def residual(
-        self,
-        kin_V0,
-        kin_Vm0,
-        kin_Vt0,
-        kin_W0,
-        kin_Wt0,
-        kin_Wm0,
-        kin_U0,
-        kin_alpha0,
-        kin_beta0,
-        kin_omega0,
-        geo_rr0,
-    ):
-        # Only if Vm and Vt are zero the denominator
-        # nullifies, but Vm > 0 always, thus the
-        # square root should pose no problems
-        r1 = kin_V0 - (kin_Vm0**2 + kin_Vt0**2) ** 0.5
-        r2 = kin_W0 - (kin_Wm0**2 + kin_Wt0**2) ** 0.5
-
-        r3 = kin_Vm0 - kin_Wm0
-        r4 = kin_Vt0 - (kin_Wt0 + kin_U0)
-
-        # atan2 ensures that the angles are between - pi / 2 and pi / 2
-        r5 = kin_alpha0 - np.atan2(kin_Vt0, kin_Vm0)
-        r6 = kin_beta0 - np.atan2(kin_Wt0, kin_Wm0)
-        # - Alternative formulation
-        # r5 = kin_Wm0 - kin_W0 * np.cos(kin_beta0)
-        # r6 = kin_Vm0 - kin_V0 * np.cos(kin_alpha0)
-
-        # Glad to have you back here peripheral velocity relation.
-        # Sorry for your brief adventure outside of Kinematics,
-        # you really do belong here.
-        r7 = kin_omega0 * geo_rr0 - kin_U0
-
-        return r1, r2, r3, r4, r5, r6, r7

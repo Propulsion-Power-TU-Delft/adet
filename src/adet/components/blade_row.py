@@ -51,8 +51,8 @@ rotating frame (omega)
 
 GEOM_LINK = [
     # Geometry
-    # 'geo_rmid',
-    'geo_rr',
+    # 'geo_rr',
+    'geo_rmid',
     'geo_height',
     'geo_meridional_angle',
 ]
@@ -124,8 +124,8 @@ class VanelessDiffuser(BaseComponent):
         (MomentumConservation, (0, 1)),
         (MassConservation, (0, 1)),
         # Meridional Geometry
-        (MeridionalVariable, 0),
-        (MeridionalVariable, 1),
+        (MeridionalUniform, 0),
+        (MeridionalUniform, 1),
         # No blades
         (ZeroBlockage, 0),
         (ZeroBlockage, 1),
@@ -366,8 +366,8 @@ class RowGeometry:
 
 
 def plot_from_nodes(
-    n0: FlowNode,
-    n1: FlowNode,
+    n0: FlowNode | None,
+    n1: FlowNode | None,
     semi_cone_angle: bool = False,
     axial_offset: float = 0.0,
     color: tuple | str = 'k',
@@ -377,6 +377,9 @@ def plot_from_nodes(
     Utility plot function, for now the chord is
     just specified manually, to be deleted
     """
+
+    if n0 is None or n1 is None:
+        raise AttributeError('None nodes found')
 
     TO_READ = ('rmid', 'height', 'meridional_angle')
 

@@ -8,14 +8,13 @@ from adet.components.blade_row import VanelessDiffuser, plot_from_nodes
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 
-from adet.equations.definitions import EndWallVelocities
+from adet.equations.definitions import EndWallVelocities, IsentropicTotalEnthalpy
 from adet.equations.geometrical import MinimalCamberLine, MeridionalVariable
 from adet.equations.nondimensional import (
     WorkCoefficient,
     StaticTotalPressRatio,
     StaticStaticPressRatio,
     TotalTotalPressureRatio,
-    IsentropicTotalEnthalpy,
     TotalTotalCompressionEfficiency,
 )
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
@@ -42,7 +41,7 @@ _greg.set_fallback_value(1.0)
 _greg.set('beta', -0.5)
 
 
-NUM_SPAN = 3
+NUM_SPAN = 13
 
 # +++ Shafts
 shaft = Shaft(
@@ -159,7 +158,7 @@ ntw = ComponentNetwork(
     fluid_settings=fluid_settings,
     inlet=inlet,
     backend=CasadiSystem(num_span=NUM_SPAN),
-    components=[rotor, vaneless_diff],
+    components=[rotor],
 )
 
 ntw.system.add_spanwise_constants('kin_Vm0')
@@ -174,7 +173,7 @@ bnd = ntw.system.get_arguments_bounds()
 
 # IPOPT is very robust, KINSOL faster but fails more easily
 rootfinder = ntw.system.make_rootfinder(
-    'ipopt',
+    'kinsol',
     opts={'error_on_fail': True},
 )
 solution = solve_root_roblem(
