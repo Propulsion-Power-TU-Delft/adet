@@ -21,12 +21,12 @@ class MeridionalVariable(MeridionalGeom):
         self,
         geo_rr0,
         geo_hh0,
-        geo_rmid0,
+        geo_rr_midspan0,
         geo_area0,
         geo_height0,
         geo_meridional_angle0,
     ):
-        _tip_radius = geo_rmid0 - (geo_height0 - geo_hh0[-1]) / 2 * np.cos(
+        _tip_radius = geo_rr_midspan0 - (geo_height0 - geo_hh0[-1]) / 2 * np.cos(
             geo_meridional_angle0
         )
 
@@ -45,7 +45,7 @@ class MeridionalUniform(MeridionalGeom):
     def residual(
         self,
         geo_rr0,
-        geo_rmid0,
+        geo_rr_midspan0,
         geo_height0,
         geo_hh0,
         geo_meridional_angle0,
@@ -53,13 +53,13 @@ class MeridionalUniform(MeridionalGeom):
     ):
         num_span = max(geo_rr0.shape)
         if num_span == 1:
-            r1 = geo_rr0 - geo_rmid0
+            r1 = geo_rr0 - geo_rr_midspan0
         else:
             unit_space = np.linspace(0, 1, num_span)
 
             # Segment between innermost and outermost stations
             quasi_height = (num_span - 1) * geo_hh0
-            r_hub = geo_rmid0 - quasi_height / 2 * np.cos(geo_meridional_angle0)
+            r_hub = geo_rr_midspan0 - quasi_height / 2 * np.cos(geo_meridional_angle0)
 
             r1 = geo_rr0 - (
                 r_hub + unit_space * quasi_height * np.cos(geo_meridional_angle0)
@@ -76,6 +76,63 @@ class AnnulusAreas(EquationBase):
         return geo_area0 - np.pi * (
             (geo_rr0 + geo_hh0 / 2) ** 2 - (geo_rr0 - geo_hh0 / 2) ** 2
         )
+
+
+class EndwallProperties(EquationBase):
+    def residual(
+        self,
+        geo_height0,
+        geo_meridional_angle0,
+        kin_Wt0,
+        kin_Wm0,
+        kin_omega0,
+        # Scalars
+        kin_W_hub0,
+        kin_W_tip0,
+        geo_rr_hub0,
+        geo_rr_tip0,
+        geo_rr_midspan0,
+    ):
+        num_span = max(kin_Wt0.shape)
+        if num_span == 1:
+            midspan = 0
+        else:
+            midspan = num_span // 2
+
+        delta_radius = geo_height0 / 2 * np.cos(geo_meridional_angle0)
+        deltaU = kin_omega0 * delta_radius
+
+        r_hub = geo_rr_midspan0 - delta_radius
+        r_tip = geo_rr_midspan0 + delta_radius
+
+        r1 = geo_rr_hub0 - r_hub
+        r2 = geo_rr_tip0 - r_tip
+
+        Wt_hub = kin_Wt0[midspan] - deltaU
+        Wt_tip = kin_Wt0[midspan] + deltaU
+
+        r3 = kin_W_hub0 - (kin_Wm0[midspan] ** 2 + Wt_hub**2) ** 0.5
+        r4 = kin_W_tip0 - (kin_Wm0[midspan] ** 2 + Wt_tip**2) ** 0.5
+
+        return r1, r2, r3, r4
+
+
+class CompressorShapeFactor(EquationBase):
+    # shape factor  k = 1 - (Rh1/Rs1)^2
+    def residual(
+        self,
+        geo_height0,
+        geo_rr_hub0,
+        geo_rr_tip0,
+        geo_shapeKCoeff0,
+        geo_meridional_angle0,
+    ):
+        return geo_shapeKCoeff0 - (1 - geo_rr_hub0 / geo_rr_tip0) ** 2
+
+
+class LaxByOutradius(EquationBase):
+    def residual(self, geo_rr_midspan0, geo_chord_ax0, oth_chAx_outRad_Ratio0):
+        return geo_rr_midspan0 * oth_chAx_outRad_Ratio0 - geo_chord_ax0
 
 
 class MinimalCamberLine(CamberLineGeom):

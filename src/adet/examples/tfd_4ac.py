@@ -77,7 +77,7 @@ def interpolate_spanwise_data(
     """Find the closest spanwise stations based on mean radius and channel height.
 
     Args:
-        mean_radius: Mean radius at inlet from integral data (rmid_inlet)
+        mean_radius: Mean radius at inlet from integral data (rr_midspan_inlet)
         height: Channel height at inlet from integral data (height_inlet)
         spanwise_data_tuple: Named tuple with spanwise data columns
         num_stations: Number of spanwise stations to return (default: 5)
@@ -132,22 +132,22 @@ def create_blade_row(row_name: str, shaft_connection: Shaft, num_span: int):
     integral = integral_data[row_name]
     spanwise = spanwise_data[row_name]
 
-    rmid_inlet = integral_data[row_name].rmid_inlet
-    height_inlet = integral_data[row_name].rmid_inlet
+    rr_midspan_inlet = integral_data[row_name].rr_midspan_inlet
+    height_inlet = integral_data[row_name].rr_midspan_inlet
 
-    rmid_outlet = integral_data[row_name].rmid_outlet
-    height_outlet = integral_data[row_name].rmid_outlet
+    rr_midspan_outlet = integral_data[row_name].rr_midspan_outlet
+    height_outlet = integral_data[row_name].rr_midspan_outlet
 
     inlet_data = interpolate_spanwise_data(
         spanwise,
-        rmid_inlet,
+        rr_midspan_inlet,
         height_inlet,
         num_span,
     )
 
     outlet_data = interpolate_spanwise_data(
         spanwise,
-        rmid_outlet,
+        rr_midspan_outlet,
         height_outlet,
         num_span,
     )
@@ -160,7 +160,7 @@ def create_blade_row(row_name: str, shaft_connection: Shaft, num_span: int):
         shaft=shaft_connection,
         in_constraints={
             'geo': {
-                'rmid': rmid_inlet,
+                'rr_midspan': rr_midspan_inlet,
                 'height': height_inlet,
                 'meridional_angle': 0.0,
                 'bld_thick': inlet_data['bld_thick_inlet'],
@@ -169,7 +169,7 @@ def create_blade_row(row_name: str, shaft_connection: Shaft, num_span: int):
         },
         out_constraints={
             'geo': {
-                'rmid': rmid_outlet,
+                'rr_midspan': rr_midspan_outlet,
                 'height': height_outlet,
                 'meridional_angle': 0.0,
                 'bld_thick': outlet_data['bld_thick_outlet'],

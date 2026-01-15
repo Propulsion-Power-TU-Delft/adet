@@ -163,7 +163,7 @@ if PLOTS:
     max_Y = (
         1.1
         * (
-            ntw.system.nodes[-1].geo.get('rmid').magnitude
+            ntw.system.nodes[-1].geo.get('rr_midspan').magnitude
             + ntw.system.nodes[-1].geo.get('height').magnitude / 2
         )[0]
     )

@@ -1,3 +1,16 @@
+# Design problem:
+# Tt1 = 7.8 degC
+# pt1 = 0.45 barA
+# pt2 = 2.025 barA
+# m_flow = 1.5 kg/s
+#
+# shape factor k = 0.9 [ k = 1 - (Rh1/Rs1)^2 ]
+# swallowing capacity phi_t1 = 0.05
+# outlet flow angle alpha2 = 65 deg
+# pressure recovery factor diffuser Cp = 0.5
+# ratio axial length to impeller outlet radius Lax/R2 = 0.7
+
+
 import logging
 from pint import Quantity
 import matplotlib.pyplot as plt
@@ -8,26 +21,20 @@ from adet.components.blade_row import VanelessDiffuser, plot_from_nodes
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 
-from adet.equations.definitions import IsentropicTotalEnthalpy
-from adet.equations.fundamental import BladeBlockage
-from adet.equations.geometrical import MinimalCamberLine, MeridionalVariable
-from adet.equations.nondimensional import (
-    WorkCoefficient,
-    StaticTotalPressRatio,
-    StaticStaticPressRatio,
-    TotalTotalPressureRatio,
-    TotalTotalCompressionEfficiency,
+from adet.equations.geometrical import (
+    CompressorShapeFactor,
+    LaxByOutradius,
+    MinimalCamberLine,
 )
+from adet.equations.nondimensional import SwallowingCapacity, TotalTotalPressureRatio
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
 from adet.losses.basic import (
     PercTotalPressureLoss,
     PercentageEntropyLoss,
-    PlaceHolderLoss,
     ZeroDeviation,
 )
 
-from adet.losses.compressors import BackstromSlip, CoppageBladeLoading
-from adet.registries import GuessRegistry, VariableBoundsRegistry
+from adet.registries import GuessRegistry, ScalarsRegistry, VariableBoundsRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 
@@ -37,18 +44,17 @@ setup_logger(logger)
 # This makes the missing guesses default to 1
 _greg = GuessRegistry()
 _limreg = VariableBoundsRegistry()
-_limreg.set('Vm', (1.0, 300.0))
 
 _greg.set_fallback_value(1.0)
 _greg.set('beta', -0.5)
 
 
-NUM_SPAN = 7
+NUM_SPAN = 1
 
 # +++ Shafts
 shaft = Shaft(
-    omega=Quantity(21000, 'rpm'),
-    is_constrained=True,
+    omega=-1,
+    is_constrained=False,
 )
 
 casing = Shaft(
@@ -72,18 +78,20 @@ fluid_settings = FluidSettings(
 inlet = Inlet(
     {
         'tot': {
-            'p': 101352.9,
-            'T': 288.16,
+            'p': Quantity(0.45, 'bar'),
+            'T': Quantity(7.8, 'degC'),
         },
         'kin': {
+            'relmach': 0.3,  # TODO: Use tip relmach 1.4
             'alpha': 0.0,
         },
         'oth': {
-            'cum_massflow': 4.989512,
+            'cum_massflow': 1.5,
         },
     },
 )
 
+ScalarsRegistry().set('shapeKCoeff', -1)
 
 # +++ Components
 rotor = BladeRow(
@@ -93,49 +101,38 @@ rotor = BladeRow(
         'geo': {
             # *** Meridional geometry
             'meridional_angle': Quantity(0, 'deg'),
-            'rr_midspan': Quantity(0.07416165, 'm'),
-            'height': Quantity(0.0670433, 'm'),
-            # *** Blades specs
-            'metal_angle': Quantity(-44, 'deg'),
-            'thick_by_pitch': 0.0,
+            'thick_by_pitch': 0.02,
+            'shapeKCoeff': 0.9,
         },
     },
     out_constraints={
+        'kin': {
+            'alpha': Quantity(65, 'deg'),
+        },
+        'tot': {
+            'p': Quantity(2.045, 'bar'),
+        },
         'geo': {
             # *** Meridional geometry
             'meridional_angle': Quantity(90, 'deg'),
-            'rr_midspan': Quantity(0.2159, 'm'),
-            'height': Quantity(0.01524, 'm'),
-            # *** Blades specs
-            'metal_angle': Quantity(-30, 'deg'),
-            'thick_by_pitch': 0.0,  # Thickness by pitch ratio
-            'chord_ax': Quantity(0.133879895, 'm'),
+            'thick_by_pitch': 0.02,
             'num_blades': 30,
         },
         'oth': {
-            # 'eta_tt': 0.87,  # Total total efficiency
-            'slip_factCoeff': 5.0,
-            'bl_loadingCoeff': 0.75,
+            'chAx_outRad_Ratio': 0.7,
+            'swllCap': 0.05,
         },
     },
     extra_equations={
-        MeridionalVariable(): 1,
-        BackstromSlip(): (0, 1),
-        # ZeroDeviation(): 1,
+        LaxByOutradius(): 1,
         MinimalCamberLine(): (0, 1),
-        # PlaceHolderLoss(): (0, 1),  # T
+        SwallowingCapacity(): (0, 1),
+        CompressorShapeFactor(): 0,
+        ZeroDeviation(): 0,  # Zero incidence
+        ZeroDeviation(): 1,  # Zero Deviation
+        # MinimalCamberLine(): (0, 1),
         PercentageEntropyLoss(0.0): (0, 1),
-        # *** Enthalpy based efficiency
-        IsentropicTotalEnthalpy(): (0, 1),
-        TotalTotalCompressionEfficiency(): (0, 1),
-        # *** You can drop these in to use actual blade blockage
-        # BladeBlockage(): 0,
-        # BladeBlockage(): 1,
         # *** Definitions
-        WorkCoefficient(): (0, 1),
-        # CoppageBladeLoading(): (0, 1),
-        StaticTotalPressRatio(): (0, 1),
-        StaticStaticPressRatio(): (0, 1),
         TotalTotalPressureRatio(): (0, 1),
     },
 )
@@ -163,8 +160,6 @@ ntw = ComponentNetwork(
 )
 
 ntw.system.add_spanwise_constants('kin_Vm0')
-ntw.system.add_spanwise_constants('stc_p1')
-ntw.system.add_spanwise_constants('stc_p3')
 
 ntw.build()
 
@@ -172,8 +167,7 @@ x0 = ntw.system.get_initial_guess()
 kn = ntw.system.get_scaled_constraints()
 bnd = ntw.system.get_arguments_bounds()
 
-# IPOPT is more robust, takes variable limits into account -> For 'bi-stable' solutions
-# KINSOL is faster, sometimes converges on problems where ipopt struggles
+# IPOPT is very robust, KINSOL faster but fails more easily
 rootfinder = ntw.system.make_rootfinder(
     'kinsol',
     opts={'error_on_fail': True},

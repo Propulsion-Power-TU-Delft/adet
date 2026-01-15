@@ -170,6 +170,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'mach': 'dimensionless',
         'relmach': 'dimensionless',
         'reactDegree': 'dimensionless',
+        'swllCap': 'dimensionless',
         '.*Coeff': 'dimensionless',
         '.*Ratio.*': 'dimensionless',
         'eta_[s-t]{2}': 'dimensionless',  # eta_tt, eta_ts
@@ -179,6 +180,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'Vt': 'm/s',
         'Vm': 'm/s',
         'W': 'm/s',
+        'W_.*': 'm/s',
         'Wt': 'm/s',
         'Wm': 'm/s',
         'W_hub': 'm/s',
@@ -194,7 +196,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'height': 'm',
         'hh': 'm',
         'rr': 'm',
-        'rmid': 'm',
+        'rr_.*': 'm',
         '.*area': 'm**2',
         # Blade parameters
         'chord.*': 'm',
@@ -248,7 +250,7 @@ class GuessRegistry(BaseRegistry[str, float]):
         'hh': 0.1,
         'height': 0.1,
         'rr': 0.1,
-        'rmid': 0.1,
+        'rr_.*': 0.1,
         'chord': 0.1,
         'chord_ax': 0.1,
         'camb_len': 0.1,
@@ -330,17 +332,17 @@ class ScalarsRegistry(BaseRegistry[str, int]):
 
     DEFAULTS = {
         'omega': -1,
-        'rmid': -1,
-        'rmidRatio': -1,
         '.*_midspan': -1,
+        '.*_hub': -1,
+        '.*_tip': -1,
         'height': -1,
         'heightRatio': -1,
         'cum_massflow': -1,
         'meridional_angle': -1,
         'num_blades': -1,
-        'W_hub': -1,
-        'W_shroud': -1,
         '.*AreaAve': -1,
+        '_SCL_.*': -1,
+        #
     }
 
 
@@ -371,7 +373,7 @@ class VariableBoundsRegistry(
         'beta': (-1.57, 1.57),
         '.*area': (0.0, 1.0),
         'rr': (1e-4, 3.0),
-        'rmid': (1e-4, 3.0),
+        'rr_.*': (1e-4, 3.0),
         'hh': (1e-8, 1.0),
         'height': (1e-5, 3.0),
         # OTHERS

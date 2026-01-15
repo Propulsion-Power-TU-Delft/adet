@@ -133,7 +133,7 @@ inlet = Inlet(
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
-            'rmid': 0.5,  # Mid-span radius [m]
+            'rr_midspan': 0.5,  # Mid-span radius [m]
             'height': 0.15,  # Blade height [m]
         },
         'tot': {
@@ -158,7 +158,7 @@ stator = BladeRow(
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
-            'rmid': 0.5,
+            'rr_midspan': 0.5,
             'chord': 0.15,  # Blade chord length [m]
             'num_blades': 30,  # Number of blades
             'thick_by_pitch': 0.02,
@@ -184,7 +184,7 @@ rotor = BladeRow(
     out_constraints={
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
-            'rmid': 0.5,
+            'rr_midspan': 0.5,
             'chord': 0.15,
             'num_blades': 30,
             'thick_by_pitch': 0.02,
@@ -364,7 +364,7 @@ if PLOTS:
     max_Y = (
         1.1
         * (
-            ntw.system.nodes[-1].geo.get('rmid').magnitude
+            ntw.system.nodes[-1].geo.get('rr_midspan').magnitude
             + ntw.system.nodes[-1].geo.get('height').magnitude / 2
         )[0]
     )
@@ -465,8 +465,8 @@ if PLOTS:
 
         # Normalize radial positions by blade height (hub = 0, tip = 1)
         radii = n0.geo.get('rr').to('m').magnitude
-        rmid = n0.geo.get('rmid').to('m').magnitude[0]
-        span_normalized = (radii - (rmid - height_in / 2)) / height_in
+        rr_midspan = n0.geo.get('rr_midspan').to('m').magnitude[0]
+        span_normalized = (radii - (rr_midspan - height_in / 2)) / height_in
 
         # Determine blade type and color
         is_stator = (n0_idx // 2) % 2 == 0

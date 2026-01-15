@@ -16,8 +16,8 @@ class AngleDeflection(EquationBase):
 
 
 class RadiusRatio(EquationBase):
-    def residual(self, geo_rmid0, geo_rmid1, geo_radiusRatio1):
-        return geo_radiusRatio1 - geo_rmid1 / geo_rmid0
+    def residual(self, geo_rr_midspan0, geo_rr_midspan1, geo_radiusRatio1):
+        return geo_radiusRatio1 - geo_rr_midspan1 / geo_rr_midspan0
 
 
 class HeightRatio(EquationBase):
@@ -65,36 +65,6 @@ class DegreeOfReaction(EquationBase):
 class MeridionalVelocityRatio(EquationBase):
     def residual(self, kin_Vm0, kin_Vm1, kin_VmRatio1):
         return kin_Vm0 * kin_VmRatio1 - kin_Vm1
-
-
-class EndWallVelocities(EquationBase):
-    """Computation of the velocities at the endwall, also for single span cases"""
-
-    def residual(
-        self,
-        kin_Wt0,
-        kin_Wm0,
-        geo_meridional_angle0,
-        kin_omega0,
-        geo_rr0,
-        geo_height0,
-        kin_W_hub0,
-        kin_W_shroud0,
-    ):
-        num_span = max(kin_Wt0.shape)
-        if num_span == 1:
-            midspan = 0
-        else:
-            midspan = num_span // 2
-
-        deltaW = kin_omega0 * geo_height0 * np.cos(geo_meridional_angle0) / 2
-        Wt_hub = kin_Wt0[midspan] - deltaW
-        Wt_shroud = kin_Wt0[midspan] + deltaW
-
-        r1 = kin_W_hub0 - np.sqrt(kin_Wm0[midspan] ** 2 + Wt_hub**2)
-        r2 = kin_W_shroud0 - np.sqrt(kin_Wm0[midspan] ** 2 + Wt_shroud**2)
-
-        return r1, r2
 
 
 class BladePitch(EquationBase):

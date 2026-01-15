@@ -28,7 +28,7 @@ class StaticTotalPressRatio(EquationBase):
 
 
 class MidspanTotalTotalPressRatio(EquationBase):
-    def residual(self, tot_p0, tot_p1, oth_pRatio_tt_midspan1):
+    def residual(self, tot_p0, tot_p1, oth_pRatio_ttrr_midspan1):
         num_span = max(tot_p0.shape)
 
         if num_span == 1:
@@ -36,7 +36,7 @@ class MidspanTotalTotalPressRatio(EquationBase):
         else:
             midspan = num_span // 2
 
-        return tot_p0[midspan] * oth_pRatio_tt_midspan1 - tot_p1[midspan]
+        return tot_p0[midspan] * oth_pRatio_ttrr_midspan1 - tot_p1[midspan]
 
 
 class TotalTotalCompressionEfficiency(EquationBase):
@@ -107,7 +107,14 @@ class SwallowingCapacity(EquationBase):
     Taken from pg 254 Casey Turbocompressors
     """
 
-    def residual(self, oth_massflow0, tot_rhomass0, geo_area1, kin_U1, oth_swllCap1):
+    def residual(
+        self,
+        kin_U1,
+        geo_area1,
+        tot_rhomass0,
+        oth_swllCap1,
+        oth_massflow0,
+    ):
         return oth_swllCap1 - oth_massflow0 / (tot_rhomass0 * geo_area1 * kin_U1)
 
 

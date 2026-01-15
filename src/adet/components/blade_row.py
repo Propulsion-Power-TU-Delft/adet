@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import logging
-from typing import Type, Any
+from typing import Any
 
 from matplotlib.lines import Line2D
 import numpy as np
@@ -25,7 +25,11 @@ from adet.equations.fundamental import (
 from adet.equations import EquationBase
 
 # Dependencies and tooling
-from adet.equations.geometrical import MeridionalUniform, MeridionalVariable
+from adet.equations.geometrical import (
+    EndwallProperties,
+    MeridionalUniform,
+    MeridionalVariable,
+)
 from adet.losses.basic import ZeroDeviation
 from adet.losses.mixing import MixingBalances
 from adet.node import FlowNode
@@ -52,7 +56,7 @@ rotating frame (omega)
 GEOM_LINK = [
     # Geometry
     # 'geo_rr',
-    'geo_rmid',
+    'geo_rr_midspan',
     'geo_height',
     'geo_meridional_angle',
 ]
@@ -72,6 +76,8 @@ class BladeRow(BaseComponent):
         # *** Common definitions
         (HeightRatio, (0, 1)),
         (AngleDeflection, (0, 1)),
+        (EndwallProperties, 0),
+        (EndwallProperties, 1),
         (MeridionalVelocityRatio, (0, 1)),
         # *** Blade count, pitch, channel massflow
         # -- TODO: Make this user-enabled
@@ -182,7 +188,7 @@ class DownstreamMixer(BaseComponent):
         # Keep reference frame alive
         'kin_omega',
         # Keep geometry
-        'geo_rmid',
+        'geo_rr_midspan',
         'geo_height',
         'geo_num_blades',
         'geo_meridional_angle',
@@ -381,7 +387,7 @@ def plot_from_nodes(
     if n0 is None or n1 is None:
         raise AttributeError('None nodes found')
 
-    TO_READ = ('rmid', 'height', 'meridional_angle')
+    TO_READ = ('rr_midspan', 'height', 'meridional_angle')
 
     args = []
     for var in TO_READ:

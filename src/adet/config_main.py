@@ -86,7 +86,7 @@ inlet = Inlet(
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
-            'rmid': 0.5,
+            'rr_midspan': 0.5,
             'height': 0.2,
         },
         'tot': {
@@ -112,7 +112,7 @@ row0 = BladeRow(
         'geo': {
             # Meridional
             'meridional_angle': Quantity(0, 'deg'),
-            'rmid': 0.5,
+            'rr_midspan': 0.5,
             # Blade
             'chord_ax': 0.15,
             'num_blades': 25,
@@ -170,7 +170,7 @@ row1 = BladeRow(
         'geo': {
             # Meridional
             'meridional_angle': Quantity(0, 'deg'),
-            'rmid': 0.5,
+            'rr_midspan': 0.5,
             # Blade
             'chord_ax': 0.15,
             'num_blades': 25,

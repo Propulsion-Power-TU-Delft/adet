@@ -53,8 +53,8 @@ class CoppageBladeLoading(LossModel):
         tot_hmass0,
         tot_hmass1,
         # Geometry
-        geo_rmid0,
-        geo_rmid1,
+        geo_rr_midspan0,
+        geo_rr_midspan1,
         geo_height0,
         geo_meridional_angle0,
         # Kinematics
@@ -67,7 +67,7 @@ class CoppageBladeLoading(LossModel):
         oth_bl_loadingCoeff1,  # 0.75
     ):
         work_abs = safe_abs(tot_hmass1 - tot_hmass0)
-        r0s_by_r1 = (geo_rmid0 + geo_height0 / 2) / geo_rmid1
+        r0s_by_r1 = (geo_rr_midspan0 + geo_height0 / 2) / geo_rr_midspan1
         diff_coeff = (
             1
             - kin_W1 / kin_W_shroud0

@@ -344,7 +344,7 @@ class ConstraintManager:
             for arg_no_idx, value in node.get_constraints().items():
                 arg = arg_no_idx + str(node_idx)
                 if arg not in self.data.declared_arguments:
-                    logger.debug(f'Unused constraint {arg}')
+                    logger.warning(f'Unused constraint {arg}')
                 constraint_names.append(arg)
                 constr_value = value.to_base_units().magnitude
 
