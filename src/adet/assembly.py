@@ -1343,7 +1343,7 @@ class CasadiSystem(SystemAssembler):
                         'ipopt.max_iter': 10000,
                         'ipopt.tol': 1e-8,
                         # Need the limited-memory, approx (quasi-newton)
-                        # the eos does not have an hessian
+                        # not all propetries have second derivatives
                         'ipopt.hessian_approximation': 'limited-memory',
                         **opts,
                     },

@@ -7,7 +7,7 @@ from adet.equations import EquationBase
 import numpy as np
 import CoolProp as cp
 
-from adet.equations.utils import therodynamic_derivative
+from adet.equations.utils import thermodynamic_derivative
 
 
 class TotalTotalPressureRatio(EquationBase):
@@ -182,5 +182,5 @@ class GammaPV(EquationBase):
     manual_units = ('dimensionless',)
 
     def residual(self, oth_gamma_pv0, stc_rhomass0, stc_smass0, stc_p0):
-        dp_drho = therodynamic_derivative(self.eos, stc_rhomass0, stc_smass0, 0)[0]
+        dp_drho = thermodynamic_derivative(self.eos, stc_rhomass0, stc_smass0, 0)[0]
         return oth_gamma_pv0 - stc_rhomass0 / stc_p0 * dp_drho

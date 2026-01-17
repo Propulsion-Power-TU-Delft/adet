@@ -45,7 +45,7 @@ def safe_min_clip(x, min_value):
     return x
 
 
-def therodynamic_derivative(eos: CasadiEos, arg0, arg1, wrt: Literal[0, 1]):
+def thermodynamic_derivative(eos: CasadiEos, arg0, arg1, wrt: Literal[0, 1]):
     eos_value = eos(arg0, arg1)
     if not isinstance(eos_value, tuple):
         eos_value = (eos_value,)

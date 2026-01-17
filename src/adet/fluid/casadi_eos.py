@@ -3,6 +3,7 @@ import logging
 from typing import Any, Callable, ClassVar, Generic, TypeVar, cast, overload
 import casadi as cs
 import CoolProp as cp
+import jax
 import numpy as np
 
 from adet.constants import COOLPROP_NAMES_MAP
@@ -52,8 +53,8 @@ def dummy_eos(v0, v1):
     return (
         cs.sin(v0 + v1),
         cs.cos(v0 + v1),
-        cs.sin(v1 - v0),
-        cs.cos(v1 - v0),
+        # cs.sin(v1 - v0),
+        # cs.cos(v1 - v0),
     )
 
 
@@ -208,7 +209,7 @@ class CasadiEosJacobian(cs.Callback):
         return Sparsity.diag(self._num_span)
 
     def has_jacobian(self, *args) -> bool:
-        return False
+        return True
 
     def get_jacobian(self, name, inames, onames, opts={}):
         self.hes_callback = CasadiEosHessian(
@@ -261,7 +262,7 @@ class CasadiEosJacobian(cs.Callback):
                         prop_id, input_id, other_id
                     )
 
-        return list(chain.from_iterable(result))
+        return jax.tree.leaves(result)
 
 
 # This has not been debugged and it currently not working
@@ -369,7 +370,7 @@ class CasadiEosHessian(cs.Callback):
                             prop_id, inp0_id, oth0_id, inp1_id, oth1_id
                         )
 
-        return list(chain.from_iterable(result))
+        return jax.tree.leaves(result)
 
 
 M = TypeVar('M', bound=ExternalFluidModel)
@@ -412,11 +413,12 @@ if __name__ == '__main__':
     # Setup a CoolProp EOS
     eos = DebugAbstractState('HEOS', 'Air')
 
-    NUM_SPAN = 10
+    NUM_SPAN = 7
     PROPERTIES = [
         'hmass',
         'smass',
-        # 'speed_sound',
+        'rhomass',
+        # 'speed_sound', # Does not work for the hessian
     ]
     OPTS = {'enable_fd': True}
 
@@ -454,3 +456,9 @@ if __name__ == '__main__':
         f'Jacobian value of properties {PROPERTIES} '
         f'wrt {callback._input_names} input pair:\n{jac_value}'
     )
+
+    hes_value = callback.jacobian().jacobian()(
+        v0_val, v1_val, *callback(v0_val, v1_val), *jac_value
+    )
+
+    print(f'Hessian is:\n{hes_value}')
