@@ -167,13 +167,14 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'speed_sound': 'm/s',
         # Others
         '.*massflow': 'kg / s',
-        'mach': 'dimensionless',
-        'relmach': 'dimensionless',
+        'mach.*': 'dimensionless',
+        'relmach.*': 'dimensionless',
         'reactDegree': 'dimensionless',
         'swllCap': 'dimensionless',
         '.*Coeff': 'dimensionless',
         '.*Ratio.*': 'dimensionless',
         'eta_[s-t]{2}': 'dimensionless',  # eta_tt, eta_ts
+        'gamma_pv': 'dimensionless',
         # Kinematics
         'V': 'm/s',
         'V_.*': 'm/s',

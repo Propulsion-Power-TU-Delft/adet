@@ -5,6 +5,9 @@ coefficients used in TurboMachinery
 
 from adet.equations import EquationBase
 import numpy as np
+import CoolProp as cp
+
+from adet.equations.utils import therodynamic_derivative
 
 
 class TotalTotalPressureRatio(EquationBase):
@@ -101,7 +104,7 @@ class WorkCoefficient(EquationBase):
 class SwallowingCapacity(EquationBase):
     """
     .. math::
-        \\phi_{t0} = \\frac{\\dot{m}}{\\rho_{t0}A_1U_1}
+        \\phi_{t0} = \\frac{\\dot{m}}{\\rho_{t0} D_1^2 U_1}
 
 
     Taken from pg 254 Casey Turbocompressors
@@ -110,12 +113,24 @@ class SwallowingCapacity(EquationBase):
     def residual(
         self,
         kin_U1,
-        geo_area1,
+        geo_rr_midspan1,
         tot_rhomass0,
-        oth_swllCap1,
+        oth_swllCap0,
         oth_massflow0,
     ):
-        return oth_swllCap1 - oth_massflow0 / (tot_rhomass0 * geo_area1 * kin_U1)
+        return oth_swllCap0 - oth_massflow0 / (
+            tot_rhomass0 * (2 * geo_rr_midspan1) ** 2 * kin_U1
+        )
+
+
+class CaseyRushInletFunc(EquationBase):
+    def residual(
+        self, oth_swllCap0, kin_machU1, oth_massFlowFunc0, kin_U1, stc_speed_sound1
+    ):
+        r1 = kin_machU1 - kin_U1 / stc_speed_sound1
+        r2 = oth_massFlowFunc0 - oth_swllCap0 * kin_machU1
+
+        return r1, r2
 
 
 class SpecificSpeed(EquationBase):
@@ -159,3 +174,13 @@ class RelativeMachNumber(EquationBase):
         # Choking criterion, not used for now
         # choke = cs.if_else(kin_relmach0 > 1.0, 1.0, kin_relmach0)
         return kin_relmach0 * stc_speed_sound0 - kin_W0
+
+
+class GammaPV(EquationBase):
+    input_pair = cp.DmassSmass_INPUTS
+    output_quantities = ('p',)
+    manual_units = ('dimensionless',)
+
+    def residual(self, oth_gamma_pv0, stc_rhomass0, stc_smass0, stc_p0):
+        dp_drho = therodynamic_derivative(self.eos, stc_rhomass0, stc_smass0, 0)[0]
+        return oth_gamma_pv0 - stc_rhomass0 / stc_p0 * dp_drho

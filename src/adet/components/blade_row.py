@@ -76,7 +76,6 @@ class BladeRow(BaseComponent):
         # *** Common definitions
         (HeightRatio, (0, 1)),
         (AngleDeflection, (0, 1)),
-        (EndwallProperties, 0),
         (EndwallProperties, 1),
         (MeridionalVelocityRatio, (0, 1)),
         # *** Blade count, pitch, channel massflow

@@ -2,7 +2,7 @@ from adet.equations.base_equation import CamberLineGeom, EquationBase, Meridiona
 import numpy as np
 import matplotlib.pyplot as plt
 
-from adet.equations.utils import safe_min_clip, safe_sum
+from adet.equations.utils import safe_abs, safe_min_clip, safe_sum
 
 
 # NOTE:
@@ -81,17 +81,23 @@ class AnnulusAreas(EquationBase):
 class EndwallProperties(EquationBase):
     def residual(
         self,
+        # Geometry
         geo_height0,
+        geo_rr_midspan0,
         geo_meridional_angle0,
+        # Kinematics
+        kin_Vt0,
         kin_Wt0,
         kin_Wm0,
         kin_omega0,
+        stc_speed_sound0,
         # Scalars
         kin_W_hub0,
         kin_W_tip0,
+        kin_relmach_hub0,
+        kin_relmach_tip0,
         geo_rr_hub0,
         geo_rr_tip0,
-        geo_rr_midspan0,
     ):
         num_span = max(kin_Wt0.shape)
         if num_span == 1:
@@ -100,7 +106,6 @@ class EndwallProperties(EquationBase):
             midspan = num_span // 2
 
         delta_radius = geo_height0 / 2 * np.cos(geo_meridional_angle0)
-        deltaU = kin_omega0 * delta_radius
 
         r_hub = geo_rr_midspan0 - delta_radius
         r_tip = geo_rr_midspan0 + delta_radius
@@ -108,26 +113,37 @@ class EndwallProperties(EquationBase):
         r1 = geo_rr_hub0 - r_hub
         r2 = geo_rr_tip0 - r_tip
 
-        Wt_hub = kin_Wt0[midspan] - deltaU
-        Wt_tip = kin_Wt0[midspan] + deltaU
+        Wt_hub = kin_Vt0 - kin_omega0 * r_hub
+        Wt_tip = kin_Vt0 - kin_omega0 * r_tip
 
         r3 = kin_W_hub0 - (kin_Wm0[midspan] ** 2 + Wt_hub**2) ** 0.5
         r4 = kin_W_tip0 - (kin_Wm0[midspan] ** 2 + Wt_tip**2) ** 0.5
 
-        return r1, r2, r3, r4
+        r5 = stc_speed_sound0 * kin_relmach_hub0 - kin_W_hub0
+        r6 = stc_speed_sound0 * kin_relmach_tip0 - kin_W_tip0
+
+        return r1, r2, r3, r4, r5, r6
 
 
 class CompressorShapeFactor(EquationBase):
     # shape factor  k = 1 - (Rh1/Rs1)^2
     def residual(
         self,
-        geo_height0,
         geo_rr_hub0,
         geo_rr_tip0,
         geo_shapeKCoeff0,
-        geo_meridional_angle0,
     ):
-        return geo_shapeKCoeff0 - (1 - geo_rr_hub0 / geo_rr_tip0) ** 2
+        return geo_shapeKCoeff0 - (1 - (geo_rr_hub0 / geo_rr_tip0) ** 2)
+
+
+class HubTipRadiusRatio(EquationBase):
+    def residual(
+        self,
+        geo_rr_hub0,
+        geo_rr_tip0,
+        geo_radRatio0,
+    ):
+        return geo_radRatio0 - geo_rr_hub0 / geo_rr_tip0
 
 
 class LaxByOutradius(EquationBase):
@@ -146,12 +162,12 @@ class MinimalCamberLine(CamberLineGeom):
 
     def residual(
         self,
+        geo_chord1,
+        geo_chord_ax1,
+        geo_stagger1,
+        geo_camb_len1,
         geo_metal_angle0,
         geo_metal_angle1,
-        geo_chord1,
-        geo_stagger1,
-        geo_chord_ax1,
-        geo_camb_len1,
     ):
         stagger_computed = (geo_metal_angle1 + geo_metal_angle0) / 2
 

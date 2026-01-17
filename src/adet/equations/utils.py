@@ -6,6 +6,8 @@ import numpy as np
 from sympy import Symbol
 from pint.facets.plain import PlainQuantity
 
+from adet.fluid.casadi_eos import CasadiEos
+
 
 def safe_abs(x):
     return (x**2) ** 0.5
@@ -41,6 +43,15 @@ def safe_min_clip(x, min_value):
         x = x_sign * np.clip(np.abs(x), min_value, None)
 
     return x
+
+
+def therodynamic_derivative(eos: CasadiEos, arg0, arg1, wrt: Literal[0, 1]):
+    eos_value = eos(arg0, arg1)
+    if not isinstance(eos_value, tuple):
+        eos_value = (eos_value,)
+
+    jacobian = eos.jacobian()(arg0, arg1, *eos_value)
+    return [cs.diag(jacobian[wrt + 2 * i]) for i in range(eos.n_out())]
 
 
 def trapezoid1(y, x):

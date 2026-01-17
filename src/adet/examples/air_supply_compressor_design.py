@@ -3,12 +3,16 @@
 # pt1 = 0.45 barA
 # pt2 = 2.025 barA
 # m_flow = 1.5 kg/s
-#
-# shape factor k = 0.9 [ k = 1 - (Rh1/Rs1)^2 ]
+
+# shape factor k = 1 - (Rh1/Rs1)^2 = 0.9
 # swallowing capacity phi_t1 = 0.05
 # outlet flow angle alpha2 = 65 deg
 # pressure recovery factor diffuser Cp = 0.5
 # ratio axial length to impeller outlet radius Lax/R2 = 0.7
+#
+# Stiffest models
+# - Skin friction
+# - Amirante - Explicit non-iterative (2015)
 
 
 import logging
@@ -23,10 +27,15 @@ from adet.components.network import ComponentNetwork
 
 from adet.equations.geometrical import (
     CompressorShapeFactor,
+    EndwallProperties,
     LaxByOutradius,
     MinimalCamberLine,
 )
-from adet.equations.nondimensional import SwallowingCapacity, TotalTotalPressureRatio
+from adet.equations.nondimensional import (
+    CaseyRushInletFunc,
+    SwallowingCapacity,
+    TotalTotalPressureRatio,
+)
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
 from adet.losses.basic import (
     PercTotalPressureLoss,
@@ -34,7 +43,7 @@ from adet.losses.basic import (
     ZeroDeviation,
 )
 
-from adet.registries import GuessRegistry, ScalarsRegistry, VariableBoundsRegistry
+from adet.registries import GuessRegistry, VariableBoundsRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 
@@ -44,6 +53,8 @@ setup_logger(logger)
 # This makes the missing guesses default to 1
 _greg = GuessRegistry()
 _limreg = VariableBoundsRegistry()
+_limreg.set('massflow', (1.0, 10.0))
+
 
 _greg.set_fallback_value(1.0)
 _greg.set('beta', -0.5)
@@ -82,16 +93,15 @@ inlet = Inlet(
             'T': Quantity(7.8, 'degC'),
         },
         'kin': {
-            'relmach': 0.3,  # TODO: Use tip relmach 1.4
+            'relmach_tip': 0.909,
             'alpha': 0.0,
         },
         'oth': {
-            'cum_massflow': 1.5,
+            'massflow': 1.5,
         },
     },
 )
 
-ScalarsRegistry().set('shapeKCoeff', -1)
 
 # +++ Components
 rotor = BladeRow(
@@ -104,13 +114,16 @@ rotor = BladeRow(
             'thick_by_pitch': 0.02,
             'shapeKCoeff': 0.9,
         },
+        'oth': {
+            'swllCap': 0.055,
+        },
     },
     out_constraints={
+        'tot': {
+            'p': Quantity(2.025, 'bar'),
+        },
         'kin': {
             'alpha': Quantity(65, 'deg'),
-        },
-        'tot': {
-            'p': Quantity(2.045, 'bar'),
         },
         'geo': {
             # *** Meridional geometry
@@ -120,19 +133,23 @@ rotor = BladeRow(
         },
         'oth': {
             'chAx_outRad_Ratio': 0.7,
-            'swllCap': 0.05,
         },
     },
     extra_equations={
+        # *** Design parameters
         LaxByOutradius(): 1,
-        MinimalCamberLine(): (0, 1),
+        CompressorShapeFactor(): 0,  # Coupled with EndwallProperties
+        EndwallProperties(): 0,  # NEEDED for tip and hub rad
         SwallowingCapacity(): (0, 1),
-        CompressorShapeFactor(): 0,
+        CaseyRushInletFunc(): (0, 1),
+        # *** Geometry
+        MinimalCamberLine(): (0, 1),
+        # *** Metal angle <-[link]-> Flow angle
         ZeroDeviation(): 0,  # Zero incidence
         ZeroDeviation(): 1,  # Zero Deviation
-        # MinimalCamberLine(): (0, 1),
+        # *** Entropy generation
         PercentageEntropyLoss(0.0): (0, 1),
-        # *** Definitions
+        # *** Definition - Not for design
         TotalTotalPressureRatio(): (0, 1),
     },
 )
@@ -141,10 +158,8 @@ vaneless_diff = VanelessDiffuser(
     'diffuser',
     in_constraints={},
     out_constraints={
-        'geo': {
-            'rr_midspan': Quantity(0.3055659, 'm'),
-            'heightRatio': 1.0,
-        },
+        'geo': {'heightRatio': 1.0},  # Constant diffuser height
+        'oth': {'prFactor': 0.5},
     },
     extra_equations={
         PercTotalPressureLoss(0.0): (0, 1),  # Isentropic
@@ -169,8 +184,8 @@ bnd = ntw.system.get_arguments_bounds()
 
 # IPOPT is very robust, KINSOL faster but fails more easily
 rootfinder = ntw.system.make_rootfinder(
-    'kinsol',
-    opts={'error_on_fail': True},
+    'ipopt',
+    opts={'error_on_fail': False},
 )
 solution = solve_root_roblem(
     rootfinder,
@@ -214,9 +229,12 @@ for c in ntw.components:
 
     offset += c.outlet_node.geo.chord_ax[0]
 
+# Assign nodes to globals for easier access
 for idx, n in enumerate(ntw.system.nodes):
     globals()[f'n{idx}'] = n
 
+
+print(n0.oth.massflow / ((2 * n1.geo.rr) ** 2 * n0.tot.rhomass * n1.kin.U))  # pyright:ignore
 
 # plt.close('all')
 plt.show()

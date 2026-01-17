@@ -10,8 +10,17 @@ from adet.components.network import ComponentNetwork
 
 from adet.equations.definitions import IsentropicTotalEnthalpy
 from adet.equations.fundamental import BladeBlockage
-from adet.equations.geometrical import MinimalCamberLine, MeridionalVariable
+from adet.equations.geometrical import (
+    HubTipRadiusRatio,
+    CompressorShapeFactor,
+    EndwallProperties,
+    LaxByOutradius,
+    MinimalCamberLine,
+    MeridionalVariable,
+)
 from adet.equations.nondimensional import (
+    GammaPV,
+    SwallowingCapacity,
     WorkCoefficient,
     StaticTotalPressRatio,
     StaticStaticPressRatio,
@@ -42,8 +51,7 @@ _limreg.set('Vm', (1.0, 300.0))
 _greg.set_fallback_value(1.0)
 _greg.set('beta', -0.5)
 
-
-NUM_SPAN = 7
+NUM_SPAN = 1
 
 # +++ Shafts
 shaft = Shaft(
@@ -97,7 +105,7 @@ rotor = BladeRow(
             'height': Quantity(0.0670433, 'm'),
             # *** Blades specs
             'metal_angle': Quantity(-44, 'deg'),
-            'thick_by_pitch': 0.0,
+            'thick_by_pitch': 0.02,
         },
     },
     out_constraints={
@@ -108,7 +116,7 @@ rotor = BladeRow(
             'height': Quantity(0.01524, 'm'),
             # *** Blades specs
             'metal_angle': Quantity(-30, 'deg'),
-            'thick_by_pitch': 0.0,  # Thickness by pitch ratio
+            'thick_by_pitch': 0.02,  # Thickness by pitch ratio
             'chord_ax': Quantity(0.133879895, 'm'),
             'num_blades': 30,
         },
@@ -119,7 +127,7 @@ rotor = BladeRow(
         },
     },
     extra_equations={
-        MeridionalVariable(): 1,
+        # MeridionalVariable(): 1,
         BackstromSlip(): (0, 1),
         # ZeroDeviation(): 1,
         MinimalCamberLine(): (0, 1),
@@ -134,9 +142,11 @@ rotor = BladeRow(
         # *** Definitions
         WorkCoefficient(): (0, 1),
         # CoppageBladeLoading(): (0, 1),
-        StaticTotalPressRatio(): (0, 1),
-        StaticStaticPressRatio(): (0, 1),
+        # StaticTotalPressRatio(): (0, 1),
+        # StaticStaticPressRatio(): (0, 1),
         TotalTotalPressureRatio(): (0, 1),
+        # # TO REMOVE
+        GammaPV(): 0,
     },
 )
 
@@ -164,7 +174,6 @@ ntw = ComponentNetwork(
 
 ntw.system.add_spanwise_constants('kin_Vm0')
 ntw.system.add_spanwise_constants('stc_p1')
-ntw.system.add_spanwise_constants('stc_p3')
 
 ntw.build()
 
@@ -175,8 +184,8 @@ bnd = ntw.system.get_arguments_bounds()
 # IPOPT is more robust, takes variable limits into account -> For 'bi-stable' solutions
 # KINSOL is faster, sometimes converges on problems where ipopt struggles
 rootfinder = ntw.system.make_rootfinder(
-    'kinsol',
-    opts={'error_on_fail': True},
+    'ipopt',
+    opts={'error_on_fail': False},
 )
 solution = solve_root_roblem(
     rootfinder,
@@ -188,7 +197,7 @@ solution = solve_root_roblem(
 
 ntw.system.write_solution_to_nodes(solution)
 
-fig, axs = plt.subplots(2, 2, figsize=(8, 15))
+fig, axs = plt.subplots(2, 2, figsize=(8, 20))
 for cmp_idx, cmp in enumerate(ntw.components):
     if cmp.inlet_node is None or cmp.outlet_node is None:
         raise ValueError('Missing nodes')
@@ -224,5 +233,5 @@ for idx, n in enumerate(ntw.system.nodes):
     globals()[f'n{idx}'] = n
 
 
-# plt.close('all')
-plt.show()
+plt.close('all')
+# plt.show()

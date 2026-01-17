@@ -12,6 +12,7 @@ from adet.equations.fundamental import (
     Kinematics,
     CumMassFlow,
     MassAreaRelation,
+    TotalArea,
     TotalStaticMatching,
 )
 
@@ -31,6 +32,7 @@ _SINGLE_NODE_EQUATIONS = [
     # -> the system is well posed w/o them
     # if they are not mentioned in other equations
     CumMassFlow,
+    # TotalArea,
     AbsoluteMachNumber,
     RelativeMachNumber,
     ThermoVarsAdder,

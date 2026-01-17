@@ -2,7 +2,12 @@ import numpy as np
 
 from adet.equations.utils import safe_abs
 from adet.losses.base_loss import LossModel
-from adet.equations.base_equation import DeviationModel
+from adet.equations.base_equation import DeviationModel, EquationBase
+
+
+class WorkCoefficientEstimate(EquationBase):
+    def residual(self):
+        pass
 
 
 class BackstromSlip(DeviationModel):

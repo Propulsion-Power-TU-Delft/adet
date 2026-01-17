@@ -1324,8 +1324,8 @@ class CasadiSystem(SystemAssembler):
                     'newton',
                     rootfind_problem,
                     {
-                        'print_iteration': False,
                         'error_on_fail': True,
+                        'print_iteration': False,
                         **opts,
                     },
                 )
@@ -1427,6 +1427,10 @@ class JaxSystem(SystemAssembler):
     Build a jax compatible assembled system, with stacked arguments input shapes,
     no need for flat vectors.
     """
+
+    def __init__(self, num_span: int) -> None:
+        logger.warning('*** jax backend is not maintained, proceed with caution ***')
+        super().__init__(num_span)
 
     def _build_stack_composer(self):
         """

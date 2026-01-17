@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 # This is needed to keep references alive
 _JAC_CALLBACK_CACHE = []
+_HES_CALLBACK_CACHE = []
 
 
 # These two classes are just to correct meaningless
@@ -61,6 +62,16 @@ def get_dummy_jac_shape(v0: cs.MX, v1: cs.MX):
     print(f'|> [DEV NOTE] Needed jacobian shape:\n\t{dummy_func.jacobian()}\n')
 
     return dummy_func.jacobian()
+
+
+def get_dummy_hess_shape(v0: cs.MX, v1: cs.MX):
+    dummy_expr = dummy_eos(v0, v1)
+    dummy_func = cs.Function('dummy', [v0, v1], dummy_expr)
+    print(
+        f'|> [DEV NOTE] Needed hessian shape:\n\t{dummy_func.jacobian().jacobian()}\n'
+    )
+
+    return dummy_func.jacobian().jacobian()
 
 
 class CasadiEos(cs.Callback):
@@ -194,6 +205,104 @@ class CasadiEosJacobian(cs.Callback):
 
     def get_sparsity_out(self, i):
         return Sparsity.diag(self._num_span)
+
+    def eval(self, args):
+        eos = self._eos
+        num_span = self._num_span
+        input_names = self._input_names
+        output_props = self._output_props
+        input_pair = self._input_pair
+
+        result = [
+            [cs.DM(num_span, num_span) for _ in input_names] for _ in output_props
+        ]
+
+        for span in range(num_span):
+            updt_vals = [float(args[i][span]) for i in range(len(input_names))]
+            eos.update(input_pair, *updt_vals)
+
+            for input_idx, inpt in enumerate(input_names):
+                for prop_idx, prop in enumerate(output_props):
+                    # If name is not in the map, just keep
+                    # its original name, to which we add a `i`
+                    # e.g. rhomass -> iDmass, but speed_sound -> ispeed_sound
+                    prop_name = COOLPROP_NAMES_MAP.get(prop, prop)
+
+                    # Get the integer id of that property
+                    prop_id = getattr(cp, f'i{prop_name}')
+
+                    # Get the input properties ids
+                    input_id = getattr(cp, f'i{inpt}')
+                    other_id = getattr(cp, f'i{input_names[1 - input_idx]}', None)
+
+                    # Only work for couples (pairs)
+                    if other_id is None:
+                        raise NotImplementedError('Only pairs supported')
+
+                    result[prop_idx][input_idx][span, span] = eos.first_partial_deriv(
+                        prop_id, input_id, other_id
+                    )
+
+        return list(chain.from_iterable(result))
+
+
+class CasadiEosHessian(cs.Callback):
+    def __init__(
+        self,
+        name,
+        eos,
+        input_pair,
+        output_props,
+        num_span,
+        opts=None,
+    ):
+        super().__init__()
+        # Assignments
+        self._eos = eos
+        self._input_pair = input_pair
+        self._output_props = output_props
+        self._num_span = num_span
+
+        # Post
+        self._input_names = get_input_names(input_pair)
+        self.construct(name, opts or {})
+
+    def __del__(self):
+        logger.debug(f'Jacobian reference {self.name()} deleted')
+
+    def get_n_in(self):
+        return (
+            len(self._input_names)
+            + len(self._output_props)
+            + len(self._input_names) * len(self._output_props)
+        )
+
+    def get_n_out(self):
+        return (
+            len(self._input_names)
+            * len(self._output_props)
+            * (len(self._output_props) + len(self._input_names))
+        )
+
+    def get_sparsity_in(self, i):
+        ins_and_outs = len(self._input_names) + len(self._output_props)
+
+        if i < ins_and_outs:
+            return Sparsity.dense(self._num_span)
+        else:
+            return Sparsity.diag(self._num_span)
+
+    def get_sparsity_out(self, i):
+        ins_and_outs = len(self._input_names) + len(self._output_props)
+
+        if i % ins_and_outs == 0 or i % ins_and_outs == 1:
+            # FINISH THIS
+            pass
+        else:
+            return Sparsity(self._num_span**2, self._num_span)
+
+    def has_jacobian(self, *args) -> bool:
+        return True
 
     def eval(self, args):
         eos = self._eos
