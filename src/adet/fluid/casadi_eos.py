@@ -3,6 +3,7 @@ import logging
 from typing import Any, Callable, ClassVar, Generic, TypeVar, cast, overload
 import casadi as cs
 import CoolProp as cp
+import numpy as np
 
 from adet.constants import COOLPROP_NAMES_MAP
 from adet.fluid.settings import ExternalFluidModel
@@ -206,6 +207,23 @@ class CasadiEosJacobian(cs.Callback):
     def get_sparsity_out(self, i):
         return Sparsity.diag(self._num_span)
 
+    def has_jacobian(self, *args) -> bool:
+        return False
+
+    def get_jacobian(self, name, inames, onames, opts={}):
+        self.hes_callback = CasadiEosHessian(
+            name=f'{name}',
+            eos=self._eos,
+            input_pair=self._input_pair,
+            output_props=self._output_props,
+            num_span=self._num_span,
+            opts=opts,
+        )
+
+        _HES_CALLBACK_CACHE.append(self.hes_callback)
+
+        return self.hes_callback
+
     def eval(self, args):
         eos = self._eos
         num_span = self._num_span
@@ -246,6 +264,9 @@ class CasadiEosJacobian(cs.Callback):
         return list(chain.from_iterable(result))
 
 
+# This has not been debugged and it currently not working
+# it was abandoned because second derivative support from
+# coolprop is limited anyways
 class CasadiEosHessian(cs.Callback):
     def __init__(
         self,
@@ -268,7 +289,7 @@ class CasadiEosHessian(cs.Callback):
         self.construct(name, opts or {})
 
     def __del__(self):
-        logger.debug(f'Jacobian reference {self.name()} deleted')
+        logger.debug(f'Hessian reference {self.name()} deleted')
 
     def get_n_in(self):
         return (
@@ -295,14 +316,17 @@ class CasadiEosHessian(cs.Callback):
     def get_sparsity_out(self, i):
         ins_and_outs = len(self._input_names) + len(self._output_props)
 
+        # WARN: This if loop assumes two input properties
         if i % ins_and_outs == 0 or i % ins_and_outs == 1:
-            # FINISH THIS
-            pass
+            pattern = Sparsity(self._num_span**2, self._num_span)
+            for sp in range(self._num_span):
+                pattern.add_nz((self._num_span + 1) * sp, sp)
+            return pattern
         else:
             return Sparsity(self._num_span**2, self._num_span)
 
     def has_jacobian(self, *args) -> bool:
-        return True
+        return False
 
     def eval(self, args):
         eos = self._eos
@@ -311,35 +335,39 @@ class CasadiEosHessian(cs.Callback):
         output_props = self._output_props
         input_pair = self._input_pair
 
+        ins_and_outs = len(self._input_names) + len(self._output_props)
+
         result = [
-            [cs.DM(num_span, num_span) for _ in input_names] for _ in output_props
+            [
+                [cs.DM(num_span**2, num_span) for _ in range(ins_and_outs)]
+                for _ in input_names
+            ]
+            for _ in output_props
         ]
 
-        for span in range(num_span):
-            updt_vals = [float(args[i][span]) for i in range(len(input_names))]
+        for span_idx in range(num_span):
+            updt_vals = [float(args[i][span_idx]) for i in range(len(input_names))]
             eos.update(input_pair, *updt_vals)
 
-            for input_idx, inpt in enumerate(input_names):
-                for prop_idx, prop in enumerate(output_props):
-                    # If name is not in the map, just keep
-                    # its original name, to which we add a `i`
-                    # e.g. rhomass -> iDmass, but speed_sound -> ispeed_sound
-                    prop_name = COOLPROP_NAMES_MAP.get(prop, prop)
+            for prop_idx, prop in enumerate(output_props):
+                prop_name = COOLPROP_NAMES_MAP.get(prop, prop)
+                # Get the integer id of that property
+                prop_id = getattr(cp, f'i{prop_name}')
 
-                    # Get the integer id of that property
-                    prop_id = getattr(cp, f'i{prop_name}')
+                for in0_idx, inpt0 in enumerate(input_names):
+                    for in1_idx, inpt1 in enumerate(input_names):
+                        # Get the input properties ids
+                        inp0_id = getattr(cp, f'i{inpt0}')
+                        oth0_id = getattr(cp, f'i{input_names[1 - in0_idx]}', None)
 
-                    # Get the input properties ids
-                    input_id = getattr(cp, f'i{inpt}')
-                    other_id = getattr(cp, f'i{input_names[1 - input_idx]}', None)
+                        inp1_id = getattr(cp, f'i{inpt1}')
+                        oth1_id = getattr(cp, f'i{input_names[1 - in1_idx]}', None)
 
-                    # Only work for couples (pairs)
-                    if other_id is None:
-                        raise NotImplementedError('Only pairs supported')
-
-                    result[prop_idx][input_idx][span, span] = eos.first_partial_deriv(
-                        prop_id, input_id, other_id
-                    )
+                        result[prop_idx][in0_idx][in1_idx][
+                            (num_span + 1) * span_idx, span_idx
+                        ] = eos.second_partial_deriv(
+                            prop_id, inp0_id, oth0_id, inp1_id, oth1_id
+                        )
 
         return list(chain.from_iterable(result))
 
@@ -388,7 +416,7 @@ if __name__ == '__main__':
     PROPERTIES = [
         'hmass',
         'smass',
-        'speed_sound',
+        # 'speed_sound',
     ]
     OPTS = {'enable_fd': True}
 
