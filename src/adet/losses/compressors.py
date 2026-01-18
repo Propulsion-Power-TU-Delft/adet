@@ -6,8 +6,68 @@ from adet.equations.base_equation import DeviationModel, EquationBase
 
 
 class WorkCoefficientEstimate(EquationBase):
-    def residual(self):
-        pass
+    def residual(
+        self,
+        tot_p0,
+        tot_p1,
+        kin_machU1,
+        oth_workCoeff1,
+        # oth_isEfficiency1,
+        oth_gamma_pv1,
+    ):
+        lhs = (tot_p1 / tot_p0) ** ((oth_gamma_pv1 - 1) / oth_gamma_pv1)
+        rhs = 1 + (oth_gamma_pv1 - 1) * oth_workCoeff1 * kin_machU1**2
+        return lhs - rhs
+
+
+# TODO: This can be generalized instead of using the
+# ideal gas expressions with gamma_pv
+class CaseyRushInletFunc(EquationBase):
+    def residual(
+        self,
+        kin_U1,
+        tot_speed_sound0,
+        oth_swllCap0,
+        kin_machU1,
+        oth_massFlowFunc0,
+        geo_shapeKCoeff0,
+        kin_relmach_tip0,
+        kin_beta_tip0,
+        oth_gamma_pv1,
+    ):
+        r0 = kin_machU1 - kin_U1 / tot_speed_sound0
+        # Equation 7 in Casey-Rush
+        r1 = oth_massFlowFunc0 - oth_swllCap0 * kin_machU1
+
+        # Equation 17 in Casey-Rush
+        lhs = oth_massFlowFunc0 * 4 * kin_machU1**2 / (geo_shapeKCoeff0 * np.pi)
+        rhs_num = (
+            kin_relmach_tip0**3 * np.sin(kin_beta_tip0) ** 2 * np.cos(kin_beta_tip0)
+        )
+        rhs_den = (
+            1
+            + (oth_gamma_pv1 - 1) / 2 * (kin_relmach_tip0 * np.cos(kin_beta_tip0)) ** 2
+        )
+        r2 = lhs - rhs_num / rhs_den ** (1 / (oth_gamma_pv1 - 1) + 1.5)
+
+        # Equation 18 in Casey-Rush
+        first_term = 3 + oth_gamma_pv1 * kin_relmach_tip0**2 + 2 * kin_relmach_tip0
+        second_term = 3 + oth_gamma_pv1 * kin_relmach_tip0**2 - 2 * kin_relmach_tip0
+        rhs = (first_term**0.5 - second_term**0.5) / (2 * kin_relmach_tip0)
+        r3 = np.cos(kin_beta_tip0) - rhs
+
+        return r0, r1, r2, r3
+
+
+class CompressorShapeFactor(EquationBase):
+    # shape factor  k = 1 - (Rh1/Rs1)^2
+    def residual(
+        self,
+        geo_rr_hub0,
+        geo_rr_tip0,
+        geo_shapeKCoeff0,
+    ):
+        return geo_shapeKCoeff0 - (1 - (geo_rr_hub0 / geo_rr_tip0) ** 2)
 
 
 class BackstromSlip(DeviationModel):

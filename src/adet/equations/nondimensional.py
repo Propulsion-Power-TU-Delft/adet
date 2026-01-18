@@ -3,11 +3,11 @@ Module that gathers equations that represent definitions of nondimensional
 coefficients used in TurboMachinery
 """
 
-from adet.equations import EquationBase
 import numpy as np
 import CoolProp as cp
 
-from adet.equations.utils import finite_diff_thermo, thermodynamic_derivative
+from adet.equations import EquationBase
+from adet.equations.utils import thermo_deriv
 
 
 class TotalTotalPressureRatio(EquationBase):
@@ -97,8 +97,8 @@ class WorkCoefficient(EquationBase):
     In some literature the denominator is :math:`2U_0V_{t0}`
     """
 
-    def residual(self, tot_hmass0, tot_hmass1, kin_Vt0, kin_U0, oth_workCoeff1):
-        return (tot_hmass0 - tot_hmass1) - kin_U0**2 * oth_workCoeff1
+    def residual(self, tot_hmass0, tot_hmass1, kin_Vt0, kin_U1, oth_workCoeff1):
+        return oth_workCoeff1 * kin_U1**2 - (tot_hmass1 - tot_hmass0)
 
 
 class SwallowingCapacity(EquationBase):
@@ -113,24 +113,14 @@ class SwallowingCapacity(EquationBase):
     def residual(
         self,
         kin_U1,
-        geo_rr_midspan1,
+        geo_rr1,
         tot_rhomass0,
         oth_swllCap0,
         oth_massflow0,
     ):
         return oth_swllCap0 - oth_massflow0 / (
-            tot_rhomass0 * (2 * geo_rr_midspan1) ** 2 * kin_U1
+            tot_rhomass0 * kin_U1 * (2 * geo_rr1) ** 2
         )
-
-
-class CaseyRushInletFunc(EquationBase):
-    def residual(
-        self, oth_swllCap0, kin_machU1, oth_massFlowFunc0, kin_U1, stc_speed_sound1
-    ):
-        r1 = kin_machU1 - kin_U1 / stc_speed_sound1
-        r2 = oth_massFlowFunc0 - oth_swllCap0 * kin_machU1
-
-        return r1, r2
 
 
 class SpecificSpeed(EquationBase):
@@ -182,5 +172,5 @@ class GammaPV(EquationBase):
     manual_units = ('dimensionless',)
 
     def residual(self, oth_gamma_pv0, stc_rhomass0, stc_smass0, stc_p0):
-        dp_drho = thermodynamic_derivative(self.eos, stc_rhomass0, stc_smass0, 0)[0]
+        dp_drho = thermo_deriv(self.eos, stc_rhomass0, stc_smass0, 0)[0]
         return oth_gamma_pv0 - stc_rhomass0 / stc_p0 * dp_drho

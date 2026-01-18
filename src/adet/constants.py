@@ -13,6 +13,8 @@ COOLPROP_NAMES_MAP = {
     'umass': 'Umass',
     'smass': 'Smass',
     'rhomass': 'Dmass',
+    'cpmass': 'Cpmass',
+    'cvmass': 'Cvmass',
 }
 
 INVERSE_CP_NAMES_MAP = {v: k for k, v in COOLPROP_NAMES_MAP.items()}

@@ -298,6 +298,8 @@ ThermoVariable = Literal[
     'rhomass',
     'speed_sound',
     'Q',
+    'cpmass',
+    'cvmass',
 ]
 
 

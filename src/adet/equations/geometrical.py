@@ -2,7 +2,7 @@ from adet.equations.base_equation import CamberLineGeom, EquationBase, Meridiona
 import numpy as np
 import matplotlib.pyplot as plt
 
-from adet.equations.utils import safe_abs, safe_min_clip, safe_sum
+from adet.equations.utils import safe_min_clip, safe_sum
 
 
 # NOTE:
@@ -98,6 +98,8 @@ class EndwallProperties(EquationBase):
         kin_relmach_tip0,
         geo_rr_hub0,
         geo_rr_tip0,
+        kin_beta_hub0,
+        kin_beta_tip0,
     ):
         num_span = max(kin_Wt0.shape)
         if num_span == 1:
@@ -119,21 +121,13 @@ class EndwallProperties(EquationBase):
         r3 = kin_W_hub0 - (kin_Wm0[midspan] ** 2 + Wt_hub**2) ** 0.5
         r4 = kin_W_tip0 - (kin_Wm0[midspan] ** 2 + Wt_tip**2) ** 0.5
 
-        r5 = stc_speed_sound0 * kin_relmach_hub0 - kin_W_hub0
-        r6 = stc_speed_sound0 * kin_relmach_tip0 - kin_W_tip0
+        r5 = kin_beta_hub0 - np.atan2(Wt_hub, kin_Wm0)
+        r6 = kin_beta_tip0 - np.atan2(Wt_tip, kin_Wm0)
 
-        return r1, r2, r3, r4, r5, r6
+        r7 = stc_speed_sound0 * kin_relmach_hub0 - kin_W_hub0
+        r8 = stc_speed_sound0 * kin_relmach_tip0 - kin_W_tip0
 
-
-class CompressorShapeFactor(EquationBase):
-    # shape factor  k = 1 - (Rh1/Rs1)^2
-    def residual(
-        self,
-        geo_rr_hub0,
-        geo_rr_tip0,
-        geo_shapeKCoeff0,
-    ):
-        return geo_shapeKCoeff0 - (1 - (geo_rr_hub0 / geo_rr_tip0) ** 2)
+        return r1, r2, r3, r4, r5, r6, r7, r8
 
 
 class HubTipRadiusRatio(EquationBase):

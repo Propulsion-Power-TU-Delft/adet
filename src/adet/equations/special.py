@@ -30,5 +30,12 @@ class ThermoVarsAdder(EquationBase):
         rlt_rhomass0,
         tot_rhomass0,
         stc_rhomass0,
+        # Cp and Cv
+        rlt_cpmass0,
+        tot_cpmass0,
+        stc_cpmass0,
+        rlt_cvmass0,
+        tot_cvmass0,
+        stc_cvmass0,
     ):
         return ()

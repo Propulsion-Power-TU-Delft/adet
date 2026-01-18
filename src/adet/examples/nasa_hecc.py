@@ -12,7 +12,6 @@ from adet.equations.definitions import IsentropicTotalEnthalpy
 from adet.equations.fundamental import BladeBlockage
 from adet.equations.geometrical import (
     HubTipRadiusRatio,
-    CompressorShapeFactor,
     EndwallProperties,
     LaxByOutradius,
     MinimalCamberLine,

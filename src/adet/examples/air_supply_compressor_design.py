@@ -26,15 +26,15 @@ from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 
 from adet.equations.geometrical import (
-    CompressorShapeFactor,
     EndwallProperties,
     LaxByOutradius,
     MinimalCamberLine,
 )
 from adet.equations.nondimensional import (
-    CaseyRushInletFunc,
+    GammaPV,
     SwallowingCapacity,
     TotalTotalPressureRatio,
+    WorkCoefficient,
 )
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
 from adet.losses.basic import (
@@ -43,6 +43,11 @@ from adet.losses.basic import (
     ZeroDeviation,
 )
 
+from adet.losses.compressors import (
+    CaseyRushInletFunc,
+    CompressorShapeFactor,
+    WorkCoefficientEstimate,
+)
 from adet.registries import GuessRegistry, VariableBoundsRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
@@ -58,6 +63,7 @@ _limreg.set('massflow', (1.0, 10.0))
 
 _greg.set_fallback_value(1.0)
 _greg.set('beta', -0.5)
+_greg.set('gamma_pv', 1.1)  # != 1 !
 
 
 NUM_SPAN = 1
@@ -93,7 +99,7 @@ inlet = Inlet(
             'T': Quantity(7.8, 'degC'),
         },
         'kin': {
-            'relmach_tip': 0.909,
+            # 'relmach_tip': 0.909,
             'alpha': 0.0,
         },
         'oth': {
@@ -115,7 +121,7 @@ rotor = BladeRow(
             'shapeKCoeff': 0.9,
         },
         'oth': {
-            'swllCap': 0.055,
+            'swllCap': 0.05,
         },
     },
     out_constraints={
@@ -133,15 +139,20 @@ rotor = BladeRow(
         },
         'oth': {
             'chAx_outRad_Ratio': 0.7,
+            # 'isEfficiency': 0.8,
+            # 'workCoeff': 1.1,
         },
     },
     extra_equations={
         # *** Design parameters
         LaxByOutradius(): 1,
-        CompressorShapeFactor(): 0,  # Coupled with EndwallProperties
+        WorkCoefficient(): (0, 1),
+        # WorkCoefficientEstimate(): (0, 1),
         EndwallProperties(): 0,  # NEEDED for tip and hub rad
         SwallowingCapacity(): (0, 1),
+        CompressorShapeFactor(): 0,
         CaseyRushInletFunc(): (0, 1),
+        GammaPV(): 1,
         # *** Geometry
         MinimalCamberLine(): (0, 1),
         # *** Metal angle <-[link]-> Flow angle

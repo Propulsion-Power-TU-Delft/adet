@@ -172,6 +172,8 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'reactDegree': 'dimensionless',
         'swllCap': 'dimensionless',
         '.*Coeff': 'dimensionless',
+        '.*Efficiency': 'dimensionless',
+        '.*Func': 'dimensionless',
         '.*Ratio.*': 'dimensionless',
         'eta_[s-t]{2}': 'dimensionless',  # eta_tt, eta_ts
         'gamma_pv': 'dimensionless',
