@@ -3,7 +3,7 @@
 import numpy as np
 
 from adet.equations import EquationBase
-from adet.equations.utils import safe_sum, fin_diff
+from adet.equations.utils import safe_sum, span_fin_diff
 from adet.equations.base_equation import MeridAreaBlockage
 
 
@@ -171,7 +171,7 @@ class SimpleRadialEquilibrium(EquationBase):
     manual_units = ('J / kg / m',)
 
     def residual(self, geo_rr0, stc_p0, kin_Vt0, stc_rhomass0):
-        dp_dr = fin_diff(stc_p0, geo_rr0)
+        dp_dr = span_fin_diff(stc_p0, geo_rr0)
         return dp_dr / stc_rhomass0 - kin_Vt0**2 / geo_rr0
 
 
@@ -181,10 +181,10 @@ class NisRe(EquationBase):
     manual_units = ('J / kg / m',)
 
     def residual(self, geo_rr0, kin_Vt0, kin_Vm0, tot_hmass0, stc_T0, stc_smass0):
-        dVt_dr = fin_diff(kin_Vt0, geo_rr0)
-        dVm_dr = fin_diff(kin_Vm0, geo_rr0)
-        dht_dr = fin_diff(tot_hmass0, geo_rr0)
-        ds_dr = fin_diff(stc_smass0, geo_rr0)
+        dVt_dr = span_fin_diff(kin_Vt0, geo_rr0)
+        dVm_dr = span_fin_diff(kin_Vm0, geo_rr0)
+        dht_dr = span_fin_diff(tot_hmass0, geo_rr0)
+        ds_dr = span_fin_diff(stc_smass0, geo_rr0)
 
         lhs = kin_Vm0 * dVm_dr + kin_Vt0 * dVt_dr + kin_Vt0**2 / geo_rr0
         rhs = dht_dr - stc_T0 * ds_dr

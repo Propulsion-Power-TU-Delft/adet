@@ -418,7 +418,7 @@ if __name__ == '__main__':
         'hmass',
         'smass',
         'rhomass',
-        # 'speed_sound', # Does not work for the hessian
+        'speed_sound',  # Does not work for the hessian
     ]
     OPTS = {'enable_fd': True}
 

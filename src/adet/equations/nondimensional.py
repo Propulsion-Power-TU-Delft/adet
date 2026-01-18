@@ -7,7 +7,7 @@ from adet.equations import EquationBase
 import numpy as np
 import CoolProp as cp
 
-from adet.equations.utils import thermodynamic_derivative
+from adet.equations.utils import finite_diff_thermo, thermodynamic_derivative
 
 
 class TotalTotalPressureRatio(EquationBase):

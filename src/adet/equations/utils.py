@@ -45,13 +45,24 @@ def safe_min_clip(x, min_value):
     return x
 
 
-def thermodynamic_derivative(eos: CasadiEos, arg0, arg1, wrt: Literal[0, 1]):
-    eos_value = eos(arg0, arg1)
-    if not isinstance(eos_value, tuple):
-        eos_value = (eos_value,)
-
+def thermo_deriv(eos: CasadiEos, arg0, arg1, wrt: Literal[0, 1]):
+    eos_value = (eos(arg0, arg1),)
     jacobian = eos.jacobian()(arg0, arg1, *eos_value)
     return [cs.diag(jacobian[wrt + 2 * i]) for i in range(eos.n_out())]
+
+
+def thermo_fwd_fd(eos: CasadiEos, arg0, arg1, wrt: Literal[0, 1]):
+    base_value = (eos(arg0, arg1),)
+
+    delta_x = 1e-5
+    if wrt == 0:
+        delta_eos_value = (eos(arg0 + delta_x, arg1),)
+    else:
+        delta_eos_value = (eos(arg0, arg1 + delta_x),)
+
+    return [
+        (delta - base) / delta_x for delta, base in zip(delta_eos_value, base_value)
+    ]
 
 
 def trapezoid1(y, x):
@@ -72,7 +83,7 @@ def is_casadi_type(x):
     return isinstance(x, (cs.DM, cs.MX, cs.SX))
 
 
-def fin_diff(f, x, edge_order: Literal['first', 'second'] = 'second'):
+def span_fin_diff(f, x, edge_order: Literal['first', 'second'] = 'second'):
     """
     Centered finite difference df/dx derivative along the span,
     fwd and bwd on the edges
