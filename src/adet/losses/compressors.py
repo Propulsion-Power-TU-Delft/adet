@@ -192,7 +192,7 @@ class SkinFrictionJansen(LossModel):
         geo_rr_midspan1,
         geo_height1,
         geo_chord_ax1,
-        geo_num_blades,
+        geo_num_blades1,
         geo_metal_angle1,
         # Kinematics
         kin_V0,
@@ -235,7 +235,7 @@ class SkinFrictionJansen(LossModel):
             * ((2 * geo_rr_tip0) ** 2 - (2 * geo_rr_hub0) ** 2)
             / (
                 (4 * np.pi * geo_rr_midspan0)
-                + geo_num_blades * 2 * (geo_rr_tip0 - geo_rr_hub0)
+                + geo_num_blades1 * 2 * (geo_rr_tip0 - geo_rr_hub0)
             )
         )
 

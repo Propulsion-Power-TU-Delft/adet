@@ -146,6 +146,7 @@ rotor = BladeRow(
             'chAx_outRad_Ratio': 0.7,
             # For losses
             'bl_loadingCoeff': 0.75,
+            'abs_roughness': Quantity(0.05, 'mm'),
         },
     },
     extra_equations={
@@ -169,7 +170,7 @@ rotor = BladeRow(
         # Enthalpy based losses
         BladeLoadingCoppage(): (0, 1),
         ClearanceJansen(): (0, 1),
-        # SkinFrictionJansen(): (0, 1),
+        SkinFrictionJansen(): (0, 1),
     },
 )
 
