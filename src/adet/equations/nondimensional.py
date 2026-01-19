@@ -98,7 +98,7 @@ class WorkCoefficient(EquationBase):
     """
 
     def residual(self, tot_hmass0, tot_hmass1, kin_Vt0, kin_U1, oth_workCoeff1):
-        return oth_workCoeff1 * kin_U1**2 - (tot_hmass1 - tot_hmass0)
+        return oth_workCoeff1 - (tot_hmass1 - tot_hmass0) / kin_U1**2
 
 
 class SwallowingCapacity(EquationBase):
@@ -147,8 +147,9 @@ class SizeParameter(EquationBase):
         tot_hmass0,
         stc_hmass1,
     ):
-        return oth_sizeParameter1 * ((tot_hmass0 - stc_hmass1) ** (1 / 4)) - np.sqrt(
-            oth_massflow1 / stc_rhomass1
+        return (
+            oth_sizeParameter1 * ((tot_hmass0 - stc_hmass1) ** (1 / 4))
+            - (oth_massflow1 / stc_rhomass1) ** 0.5
         )
 
 
@@ -171,6 +172,6 @@ class GammaPV(EquationBase):
     output_quantities = ('p',)
     manual_units = ('dimensionless',)
 
-    def residual(self, oth_gamma_pv0, stc_rhomass0, stc_smass0, stc_p0):
+    def residual(self, gamma_pv, stc_rhomass0, stc_smass0, stc_p0):
         dp_drho = thermo_deriv(self.eos, stc_rhomass0, stc_smass0, 0)[0]
-        return oth_gamma_pv0 - stc_rhomass0 / stc_p0 * dp_drho
+        return gamma_pv - stc_rhomass0 / stc_p0 * dp_drho

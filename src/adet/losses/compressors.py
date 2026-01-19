@@ -27,32 +27,31 @@ class CaseyRushInletFunc(EquationBase):
         self,
         kin_U1,
         tot_speed_sound0,
-        oth_swllCap0,
+        swllCap0,
         kin_machU1,
-        oth_massFlowFunc0,
+        massFlowFunc0,
         geo_shapeKCoeff0,
         kin_relmach_tip0,
         kin_beta_tip0,
-        oth_gamma_pv1,
+        gamma_pv1,
     ):
         r0 = kin_machU1 - kin_U1 / tot_speed_sound0
         # Equation 7 in Casey-Rush
-        r1 = oth_massFlowFunc0 - oth_swllCap0 * kin_machU1
+        r1 = massFlowFunc0 - swllCap0 * kin_machU1
 
         # Equation 17 in Casey-Rush
-        lhs = oth_massFlowFunc0 * 4 * kin_machU1**2 / (geo_shapeKCoeff0 * np.pi)
+        lhs = massFlowFunc0 * 4 * kin_machU1**2 / (geo_shapeKCoeff0 * np.pi)
         rhs_num = (
             kin_relmach_tip0**3 * np.sin(kin_beta_tip0) ** 2 * np.cos(kin_beta_tip0)
         )
         rhs_den = (
-            1
-            + (oth_gamma_pv1 - 1) / 2 * (kin_relmach_tip0 * np.cos(kin_beta_tip0)) ** 2
+            1 + (gamma_pv1 - 1) / 2 * (kin_relmach_tip0 * np.cos(kin_beta_tip0)) ** 2
         )
-        r2 = lhs - rhs_num / rhs_den ** (1 / (oth_gamma_pv1 - 1) + 1.5)
+        r2 = lhs - rhs_num / rhs_den ** (1 / (gamma_pv1 - 1) + 1.5)
 
         # Equation 18 in Casey-Rush
-        first_term = 3 + oth_gamma_pv1 * kin_relmach_tip0**2 + 2 * kin_relmach_tip0
-        second_term = 3 + oth_gamma_pv1 * kin_relmach_tip0**2 - 2 * kin_relmach_tip0
+        first_term = 3 + gamma_pv1 * kin_relmach_tip0**2 + 2 * kin_relmach_tip0
+        second_term = 3 + gamma_pv1 * kin_relmach_tip0**2 - 2 * kin_relmach_tip0
         rhs = (first_term**0.5 - second_term**0.5) / (2 * kin_relmach_tip0)
         r3 = np.cos(kin_beta_tip0) - rhs
 
@@ -111,7 +110,7 @@ class BackstromSlip(DeviationModel):
         return r0, r1, r2
 
 
-class CoppageBladeLoading(LossModel):
+class BladeLoadingCoppage(LossModel):
     def residual(
         self,
         # Enthalpies for work
@@ -125,7 +124,7 @@ class CoppageBladeLoading(LossModel):
         # Kinematics
         kin_U1,
         kin_W1,
-        kin_W_shroud0,
+        kin_W_tip0,
         geo_num_blades1,
         # Coefficients
         oth_delta_hmass_loading1,
@@ -135,10 +134,10 @@ class CoppageBladeLoading(LossModel):
         r0s_by_r1 = (geo_rr_midspan0 + geo_height0 / 2) / geo_rr_midspan1
         diff_coeff = (
             1
-            - kin_W1 / kin_W_shroud0
+            - kin_W1 / kin_W_tip0
             + oth_bl_loadingCoeff1
             * (work_abs / kin_U1**2)
-            * (kin_W1 / kin_W_shroud0)
+            * (kin_W1 / kin_W_tip0)
             / (((geo_num_blades1 / np.pi) * (1 - r0s_by_r1)) + (2 * r0s_by_r1))
         )
 
@@ -149,75 +148,111 @@ class CoppageBladeLoading(LossModel):
 class ClearanceJansen(LossModel):
     def residual(
         self,
-        R1s,
-        R1h,
-        R2,
-        rho_out,
-        rho_in,
-        eps,
-        H2,
-        vt2,
-        N_blades,
-        vm1,
+        geo_rr_tip0,
+        geo_rr_hub0,
+        geo_rr_midspan1,
+        stc_rhomass1,
+        stc_rhomass0,
+        geo_tip_clearance0,
+        geo_height1,
+        kin_Vt1,
+        geo_num_blades1,
+        kin_Vm0,
         oth_delta_hmass_clearance1,
     ):
-        K = abs((R1s ^ 2 - R1h ^ 2) / ((R2 - R1s) * (1 + rho_out / rho_in)))
+        K = safe_abs(
+            (geo_rr_tip0**2 - geo_rr_hub0**2)
+            / ((geo_rr_midspan1 - geo_rr_tip0) * (1 + stc_rhomass1 / stc_rhomass0))
+        )
         return oth_delta_hmass_clearance1 - (
             0.6
-            * eps
-            / H2
-            * vt2
-            * np.sqrt(np.abs((4 * np.pi / (H2 * N_blades)) * K * vt2 * vm1))
+            * geo_tip_clearance0
+            / geo_height1
+            * kin_Vt1
+            * (
+                safe_abs(
+                    (4 * np.pi / (geo_height1 * geo_num_blades1))
+                    * K
+                    * kin_Vt1
+                    * kin_Vm0
+                )
+            )
+            ** 0.5
         )
 
 
 class SkinFrictionJansen(LossModel):
     def residual(
         self,
-        R1,
-        R2,
-        R1s,
-        R1h,
-        H2,
-        L_ax,
-        beta1s,
-        beta1h,
-        beta2_blade,
-        N_blades,
-        v1s,
-        v2,
-        w1s,
-        w1h,
-        w2,
-        mu_in,
-        mu_out,
-        Ra,
-        Cf_smooth,
-        Cf_rough,
-        m,
+        oth_massflow0,
+        # Geometry
+        geo_rr_tip0,
+        geo_rr_hub0,
+        geo_rr_midspan0,
+        geo_rr_midspan1,
+        geo_height1,
+        geo_chord_ax1,
+        geo_num_blades,
+        geo_metal_angle1,
+        # Kinematics
+        kin_V0,
+        kin_V1,
+        kin_W1,
+        kin_W_tip0,
+        kin_W_hub0,
+        kin_beta_tip0,
+        kin_beta_hub0,
+        # Thermo
+        stc_viscosity0,
+        stc_viscosity1,
+        # Roughness params
+        oth_abs_roughness1,
+        oth_Cf_smooth1,
+        oth_Cf_rough1,
+        oth_delta_hmass_skin1,
     ):
         L_hyd = (
             np.pi
             / 8
-            * (2 * R2 - R1s - R1h - H2 + 2 * L_ax)
-            * (2 / ((np.cos(beta1s) + np.cos(beta1h)) / 2 + np.cos(beta2_blade)))
+            * (
+                2 * geo_rr_midspan1
+                - geo_rr_tip0
+                - geo_rr_hub0
+                - geo_height1
+                + 2 * geo_chord_ax1
+            )
+            * (
+                2
+                / (
+                    (np.cos(kin_beta_tip0) + np.cos(kin_beta_hub0)) / 2
+                    + np.cos(geo_metal_angle1)
+                )
+            )
         )
 
         D_hyd = (
             np.pi
-            * ((2 * R1s) ^ 2 - (2 * R1h) ^ 2)
-            / ((4 * np.pi * R1) + N_blades * ((2 * R1s) - (2 * R1h)))
+            * ((2 * geo_rr_tip0) ** 2 - (2 * geo_rr_hub0) ** 2)
+            / (
+                (4 * np.pi * geo_rr_midspan0)
+                + geo_num_blades * 2 * (geo_rr_tip0 - geo_rr_hub0)
+            )
         )
 
-        w_mean = (v1s + v2 + w1s + 2 * w1h + 3 * w2) / 8
+        w_mean = (kin_V0 + kin_V1 + kin_W_tip0 + 2 * kin_W_hub0 + 3 * kin_W1) / 8
 
-        Re = m / (((mu_in + mu_out) / 2) * D_hyd)
-        Re_e = (Re - 2000) * Ra / D_hyd
+        Re = oth_massflow0 / (((stc_viscosity0 + stc_viscosity1) / 2) * D_hyd)
+        Re_e = (Re - 2000) * oth_abs_roughness1 / D_hyd
 
-        Cf_smooth = (
-            1 / (np.log10((2.51 / (Re * np.sqrt((4 * Cf_smooth)))) ^ (-2)))
-        ) ^ 2 / 4
-        Cf_rough = (1 / (np.log10((Ra / (3.71 * D_hyd)) ^ (-2)))) ^ 2 / 4
-        Cf = Cf_smooth + (Cf_rough - Cf_smooth) * (1 - (60 / Re_e))
+        r1 = 4 * oth_Cf_smooth1 - (
+            (1 / (np.log10((2.51 / (Re * np.sqrt((4 * oth_Cf_smooth1)))) ** (-2)))) ** 2
+        )
+        r2 = (
+            4 * oth_Cf_rough1
+            - (1 / (np.log10((oth_abs_roughness1 / (3.71 * D_hyd)) ** (-2)))) ** 2
+        )
 
-        Dht_sf = 2 * abs(Cf) * (L_hyd / D_hyd) * (w_mean ^ 2)
+        Cf = oth_Cf_smooth1 + (oth_Cf_rough1 - oth_Cf_smooth1) * (1 - (60 / Re_e))
+        r3 = oth_delta_hmass_skin1 - 2 * safe_abs(Cf) * (L_hyd / D_hyd) * (w_mean**2)
+
+        return r1, r2, r3

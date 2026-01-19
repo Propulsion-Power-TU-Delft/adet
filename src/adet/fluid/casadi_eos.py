@@ -1,10 +1,9 @@
-from itertools import chain
 import logging
 from typing import Any, Callable, ClassVar, Generic, TypeVar, cast, overload
 import casadi as cs
 import CoolProp as cp
 import jax
-import numpy as np
+import scipy.differentiate as diff
 
 from adet.constants import COOLPROP_NAMES_MAP
 from adet.fluid.settings import ExternalFluidModel
@@ -16,6 +15,15 @@ logger = logging.getLogger(__name__)
 # This is needed to keep references alive
 _JAC_CALLBACK_CACHE = []
 _HES_CALLBACK_CACHE = []
+_VAC_CALLBACK_CACHE = []
+
+# Properties whose first derivative does not exist
+NOT_JACOBIABLE = ['viscosity']
+# Properties whose second derivative does not exist
+NOT_HESSIABLE = ['speed_sound', 'cpmass', 'cvmass']
+# NOTE: Where derivatives are not available, we use 0.0
+# an alternative would be to code finite differences
+# for spe
 
 
 # These two classes are just to correct meaningless
@@ -43,37 +51,44 @@ class Sparsity(cs.Sparsity):
     def dense(*args):
         return cs.Sparsity.dense(*args)
 
+    @staticmethod
+    def diag(*args):
+        return cs.Sparsity.diag(*args)
+
 
 # *** DUMMY HELPER FUNCTIONS FOR DEV
 # These are needed to mock the actual function,
 # and get information about the shapes required
 # when overloading the methods
 # ( 2 inputs ) |-> ( 4 outputs ) example
-def dummy_eos(v0, v1):
-    return (
-        cs.sin(v0 + v1),
-        cs.cos(v0 + v1),
-        # cs.sin(v1 - v0),
-        # cs.cos(v1 - v0),
-    )
+def dummy_eos(v0, v1, n_out):
+    return n_out * [cs.sin(v0) + cs.cos(v1)]
 
 
-def get_dummy_jac_shape(v0: cs.MX, v1: cs.MX):
-    dummy_expr = dummy_eos(v0, v1)
+def get_dummy_jac_shape(n_out: int, n_span: int, debug=True) -> cs.Function:
+    v0 = MX.sym('v0', n_span)
+    v1 = MX.sym('v1', n_span)
+    dummy_expr = dummy_eos(v0, v1, n_out)
+
     dummy_func = cs.Function('dummy', [v0, v1], dummy_expr)
-    print(f'|> [DEV NOTE] Needed jacobian shape:\n\t{dummy_func.jacobian()}\n')
+    if debug:
+        print(f'|> [DEV NOTE] Needed jacobian shape:\n\t{dummy_func.jacobian()}\n')
 
     return dummy_func.jacobian()
 
 
-def get_dummy_hess_shape(v0: cs.MX, v1: cs.MX):
-    dummy_expr = dummy_eos(v0, v1)
-    dummy_func = cs.Function('dummy', [v0, v1], dummy_expr)
-    print(
-        f'|> [DEV NOTE] Needed hessian shape:\n\t{dummy_func.jacobian().jacobian()}\n'
-    )
+def get_dummy_hess_shape(n_out: int, n_span: int, debug=True) -> cs.Function:
+    dummy_jac = get_dummy_jac_shape(n_out, n_span)
+    if debug:
+        print(f'|> [DEV NOTE] Needed hessian shape:\n\t{dummy_jac.jacobian()}\n')
+    return dummy_jac.jacobian()
 
-    return dummy_func.jacobian().jacobian()
+
+def get_dummy_vacc_shape(n_out: int, n_span: int, debug=True) -> cs.Function:
+    dummy_hess = get_dummy_hess_shape(n_out, n_span)
+    if debug:
+        print(f'|> [DEV NOTE] Needed vaccarian shape:\n\t{dummy_hess.jacobian()}\n')
+    return dummy_hess.jacobian()
 
 
 class CasadiEos(cs.Callback):
@@ -175,11 +190,11 @@ class CasadiEos(cs.Callback):
 class CasadiEosJacobian(cs.Callback):
     def __init__(
         self,
-        name,
-        eos,
-        input_pair,
-        output_props,
-        num_span,
+        name: str,
+        eos: Any,
+        input_pair: int,
+        output_props: list[str] | tuple[str, ...],
+        num_span: int = 1,
         opts=None,
     ):
         super().__init__()
@@ -258,16 +273,50 @@ class CasadiEosJacobian(cs.Callback):
                     if other_id is None:
                         raise NotImplementedError('Only pairs supported')
 
-                    result[prop_idx][input_idx][span, span] = eos.first_partial_deriv(
-                        prop_id, input_id, other_id
-                    )
+                    if prop in NOT_JACOBIABLE:
+                        derivative = fwd_diff(
+                            eos,
+                            input_pair,
+                            prop,
+                            updt_vals[0],
+                            updt_vals[1],
+                            input_idx,
+                        )
+                        # derivative = 0.0
+                    else:
+                        derivative = eos.first_partial_deriv(
+                            prop_id, input_id, other_id
+                        )
+
+                    result[prop_idx][input_idx][span, span] = derivative
 
         return jax.tree.leaves(result)
 
 
-# This has not been debugged and it currently not working
-# it was abandoned because second derivative support from
-# coolprop is limited anyways
+def fwd_diff(eos, input_pair: int, prop, x, y, wrt: int, eps: float = 1e-4):
+    """Simple forward difference for an AbstractState"""
+    prop_meth = getattr(eos, prop)
+    prop_orig = prop_meth()
+    match wrt:
+        case 0:
+            eps *= x
+            x_pert = x + eps
+            eos.update(input_pair, x_pert, y)
+            prop_pert = prop_meth()
+        case 1:
+            eps *= y
+            y_pert = y + eps
+            eos.update(input_pair, x, y_pert)
+            prop_pert = prop_meth()
+
+    # NOTE: In theory I should restore the eos to its original state
+    # this is actually slightly modifying the jacobian,
+    # but saves a lot of updates and impact is minimal
+    # >>> eos.update(input_pair, x, y)
+
+    return (prop_pert - prop_orig) / eps
+
+
 class CasadiEosHessian(cs.Callback):
     def __init__(
         self,
@@ -327,7 +376,19 @@ class CasadiEosHessian(cs.Callback):
             return Sparsity(self._num_span**2, self._num_span)
 
     def has_jacobian(self, *args) -> bool:
-        return False
+        return True
+
+    def get_jacobian(self, name, inames, onames, opts={}):
+        self.vac_callback = CasadiEosVaccarian(
+            name=f'{name}',
+            output_props=self._output_props,
+            num_span=self._num_span,
+            opts=opts,
+        )
+
+        _VAC_CALLBACK_CACHE.append(self.vac_callback)
+
+        return self.vac_callback
 
     def eval(self, args):
         eos = self._eos
@@ -364,13 +425,56 @@ class CasadiEosHessian(cs.Callback):
                         inp1_id = getattr(cp, f'i{inpt1}')
                         oth1_id = getattr(cp, f'i{input_names[1 - in1_idx]}', None)
 
+                        if prop in (NOT_JACOBIABLE + NOT_HESSIABLE):
+                            derivative = 0.0
+                        else:
+                            derivative = eos.second_partial_deriv(
+                                prop_id, inp0_id, oth0_id, inp1_id, oth1_id
+                            )
+
                         result[prop_idx][in0_idx][in1_idx][
                             (num_span + 1) * span_idx, span_idx
-                        ] = eos.second_partial_deriv(
-                            prop_id, inp0_id, oth0_id, inp1_id, oth1_id
-                        )
+                        ] = derivative
 
         return jax.tree.leaves(result)
+
+
+class CasadiEosVaccarian(cs.Callback):
+    """Third order partial derivative tensor, this just returns zeros"""
+
+    def __init__(
+        self,
+        name,
+        output_props,
+        num_span,
+        opts=None,
+    ):
+        super().__init__()
+        # Assignments
+        self._num_span = num_span
+        self.dummy_func = get_dummy_vacc_shape(len(output_props), num_span, False)
+        self.construct(name, opts or {})
+
+    def __del__(self):
+        logger.debug(f'Third order deriv tensor reference {self.name()} deleted')
+
+    def get_n_in(self):
+        return self.dummy_func.n_in()
+
+    def get_n_out(self):
+        return self.dummy_func.n_out()
+
+    def get_sparsity_in(self, i):
+        return self.dummy_func.sparsity_in(i)
+
+    def get_sparsity_out(self, i):
+        return self.dummy_func.sparsity_out(i)
+
+    def has_jacobian(self, *args) -> bool:
+        return False
+
+    def eval(self, args):
+        return [cs.DM.zeros(self.get_sparsity_out(i)) for i in range(self.get_n_out())]
 
 
 M = TypeVar('M', bound=ExternalFluidModel)
@@ -418,12 +522,23 @@ if __name__ == '__main__':
         'hmass',
         'smass',
         'rhomass',
-        'speed_sound',  # Does not work for the hessian
+        'speed_sound',
+        'viscosity',
     ]
-    OPTS = {'enable_fd': True}
+    OPTS = {
+        'enable_fd': True,
+        'fd_method': 'forward',
+    }
 
     # Example
-    callback = CasadiEos('PT_eos', eos, cp.PT_INPUTS, PROPERTIES, NUM_SPAN)
+    callback = CasadiEos(
+        'PT_eos',
+        eos,
+        cp.PT_INPUTS,
+        PROPERTIES,
+        NUM_SPAN,
+        opts=OPTS,
+    )
 
     # Type annotation
     callback = cast(
@@ -462,3 +577,9 @@ if __name__ == '__main__':
     )
 
     print(f'Hessian is:\n{hes_value}')
+
+    vac_value = (
+        callback.jacobian()
+        .jacobian()
+        .jacobian()(v0_val, v1_val, *callback(v0_val, v1_val), *jac_value, *hes_value)
+    )

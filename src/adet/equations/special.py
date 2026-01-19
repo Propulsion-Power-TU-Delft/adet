@@ -1,15 +1,6 @@
 from adet.equations import EquationBase
 
 
-# TODO: This linking method is becoming a bit verbose and error prone,
-# I would like to just add links bewteen variables or, even
-# better, to make it so that the same variable types at subsequent nodes
-# are actually referncing the same symbol when they are linked.
-# (Careful about reference frame-specific variables, omega, U, W, etc.
-# make it explicit)
-# DONE
-
-
 class ThermoVarsAdder(EquationBase):
     """
     This is a `ghost` equation, but don't get scared!
@@ -37,5 +28,7 @@ class ThermoVarsAdder(EquationBase):
         rlt_cvmass0,
         tot_cvmass0,
         stc_cvmass0,
+        # Visc
+        stc_viscosity0,
     ):
         return ()

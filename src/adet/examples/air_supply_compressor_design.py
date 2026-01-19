@@ -46,6 +46,9 @@ from adet.losses.basic import (
 from adet.losses.compressors import (
     CaseyRushInletFunc,
     CompressorShapeFactor,
+    ClearanceJansen,
+    SkinFrictionJansen,
+    BladeLoadingCoppage,
     WorkCoefficientEstimate,
 )
 from adet.registries import GuessRegistry, VariableBoundsRegistry
@@ -64,6 +67,7 @@ _limreg.set('massflow', (1.0, 10.0))
 _greg.set_fallback_value(1.0)
 _greg.set('beta', -0.5)
 _greg.set('gamma_pv', 1.1)  # != 1 !
+_greg.set('rr_tip', 1.1)  # != 1 !
 
 
 NUM_SPAN = 1
@@ -99,7 +103,6 @@ inlet = Inlet(
             'T': Quantity(7.8, 'degC'),
         },
         'kin': {
-            # 'relmach_tip': 0.909,
             'alpha': 0.0,
         },
         'oth': {
@@ -119,6 +122,7 @@ rotor = BladeRow(
             'meridional_angle': Quantity(0, 'deg'),
             'thick_by_pitch': 0.02,
             'shapeKCoeff': 0.9,
+            'tip_clearance': 1e-5,
         },
         'oth': {
             'swllCap': 0.05,
@@ -136,20 +140,20 @@ rotor = BladeRow(
             'meridional_angle': Quantity(90, 'deg'),
             'thick_by_pitch': 0.02,
             'num_blades': 30,
+            #
         },
         'oth': {
             'chAx_outRad_Ratio': 0.7,
-            # 'isEfficiency': 0.8,
-            # 'workCoeff': 1.1,
+            # For losses
+            'bl_loadingCoeff': 0.75,
         },
     },
     extra_equations={
         # *** Design parameters
         LaxByOutradius(): 1,
-        WorkCoefficient(): (0, 1),
-        # WorkCoefficientEstimate(): (0, 1),
-        EndwallProperties(): 0,  # NEEDED for tip and hub rad
         SwallowingCapacity(): (0, 1),
+        WorkCoefficient(): (0, 1),
+        EndwallProperties(): 0,  # NEEDED for tip and hub rad
         CompressorShapeFactor(): 0,
         CaseyRushInletFunc(): (0, 1),
         GammaPV(): 1,
@@ -162,6 +166,10 @@ rotor = BladeRow(
         PercentageEntropyLoss(0.0): (0, 1),
         # *** Definition - Not for design
         TotalTotalPressureRatio(): (0, 1),
+        # Enthalpy based losses
+        BladeLoadingCoppage(): (0, 1),
+        ClearanceJansen(): (0, 1),
+        # SkinFrictionJansen(): (0, 1),
     },
 )
 
@@ -187,7 +195,7 @@ ntw = ComponentNetwork(
 
 ntw.system.add_spanwise_constants('kin_Vm0')
 
-ntw.build()
+ntw.build(True)
 
 x0 = ntw.system.get_initial_guess()
 kn = ntw.system.get_scaled_constraints()
@@ -196,7 +204,10 @@ bnd = ntw.system.get_arguments_bounds()
 # IPOPT is very robust, KINSOL faster but fails more easily
 rootfinder = ntw.system.make_rootfinder(
     'ipopt',
-    opts={'error_on_fail': False},
+    opts={
+        'error_on_fail': False,
+        'ipopt.print_level': 3,
+    },
 )
 solution = solve_root_roblem(
     rootfinder,

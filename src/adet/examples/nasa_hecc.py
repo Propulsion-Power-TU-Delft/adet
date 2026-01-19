@@ -34,7 +34,7 @@ from adet.losses.basic import (
     ZeroDeviation,
 )
 
-from adet.losses.compressors import BackstromSlip, CoppageBladeLoading
+from adet.losses.compressors import BackstromSlip, BladeLoadingCoppage
 from adet.registries import GuessRegistry, VariableBoundsRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger

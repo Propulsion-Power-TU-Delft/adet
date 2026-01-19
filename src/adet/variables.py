@@ -300,6 +300,7 @@ ThermoVariable = Literal[
     'Q',
     'cpmass',
     'cvmass',
+    'viscosity',
 ]
 
 

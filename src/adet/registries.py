@@ -165,18 +165,21 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'cpmass.*': 'J / (kg * K)',
         'cvmass.*': 'J / (kg * K)',
         'speed_sound': 'm/s',
+        'viscosity': 'Pa * s',
         # Others
         '.*massflow': 'kg / s',
         'mach.*': 'dimensionless',
         'relmach.*': 'dimensionless',
         'reactDegree': 'dimensionless',
         'swllCap': 'dimensionless',
+        'gamma_pv': 'dimensionless',
+        # Dimensionless REGEX
+        'eta_[s-t]{2}': 'dimensionless',  # eta_tt, eta_ts
         '.*Coeff': 'dimensionless',
         '.*Efficiency': 'dimensionless',
         '.*Func': 'dimensionless',
         '.*Ratio.*': 'dimensionless',
-        'eta_[s-t]{2}': 'dimensionless',  # eta_tt, eta_ts
-        'gamma_pv': 'dimensionless',
+        'Cf_.*': 'dimensionless',  # Friction factor
         # Kinematics
         'V': 'm/s',
         'V_.*': 'm/s',
@@ -200,6 +203,8 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'hh': 'm',
         'rr': 'm',
         'rr_.*': 'm',
+        'tip_clearance': 'm',
+        'abs_roughness': 'm',
         '.*area': 'm**2',
         # Blade parameters
         'chord.*': 'm',
@@ -252,6 +257,7 @@ class GuessRegistry(BaseRegistry[str, float]):
         'metal_angle': 0.1,
         'hh': 0.1,
         'height': 0.1,
+        'tip_clearance': 0.1,
         'rr': 0.1,
         'rr_.*': 0.1,
         'chord': 0.1,
@@ -277,6 +283,7 @@ SCALING_FACTORS: dict[str, float] = {
     'J / kg / m': 5e5,  # Radial equilibrium
     'kg / s': 5e1,
     'meter * rad / s': 1e2,  # Tangential velocity
+    'Pa * s': 1e-5,  # Dynamic viscosity
     'rad / s': 1e3,
     'rad': 0.5,
     'm': 1e-1,
