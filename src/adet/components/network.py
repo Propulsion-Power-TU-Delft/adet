@@ -25,8 +25,8 @@ T = TypeVar('T', bound=SystemAssembler)
 _SINGLE_NODE_EQUATIONS = [
     # *** FOUNDATIONAL EQs - DO NOT REMOVE!
     Kinematics,
-    MassAreaRelation,
     AnnulusAreas,
+    MassAreaRelation,
     TotalStaticMatching,
     # *** Courtesy definitions
     # -> the system is well posed w/o them
@@ -35,6 +35,7 @@ _SINGLE_NODE_EQUATIONS = [
     # TotalArea,
     AbsoluteMachNumber,
     RelativeMachNumber,
+    # Special
     ThermoVarsAdder,
 ]
 

@@ -74,12 +74,13 @@ class BladeRow(BaseComponent):
         (ZeroBlockage, 0),
         (ZeroBlockage, 1),
         # *** Common definitions
+        (EndwallProperties, 0),
+        (EndwallProperties, 1),
         (HeightRatio, (0, 1)),
         (AngleDeflection, (0, 1)),
-        (EndwallProperties, 1),
         (MeridionalVelocityRatio, (0, 1)),
         # *** Blade count, pitch, channel massflow
-        # -- TODO: Make this user-enabled
+        # |> TODO: Make this user-enabled
         (BladePitch, 0),
         (BladePitch, 1),
         (ThicknessToPitch, 0),
@@ -187,8 +188,8 @@ class DownstreamMixer(BaseComponent):
         # Keep reference frame alive
         'kin_omega',
         # Keep geometry
-        'geo_rr_midspan',
         'geo_height',
+        'geo_rr_midspan',
         'geo_num_blades',
         'geo_meridional_angle',
     ]

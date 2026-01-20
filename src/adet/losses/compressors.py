@@ -271,7 +271,7 @@ class LossAdder(EquationBase):
     ):
         return tot_hmass0 - (
             oth_tot_hmass_is0
-            - oth_delta_hmass_skin0
-            - oth_delta_hmass_loading
-            - oth_delta_hmass_clearance0
+            + oth_delta_hmass_skin0
+            + oth_delta_hmass_loading
+            + oth_delta_hmass_clearance0
         )

@@ -27,47 +27,55 @@ from adet.components.network import ComponentNetwork
 
 from adet.equations.definitions import IsentropicTotalEnthalpy
 from adet.equations.geometrical import (
-    EndwallProperties,
     LaxByOutradius,
     MinimalCamberLine,
 )
 from adet.equations.nondimensional import (
     GammaPV,
-    SwallowingCapacity,
-    TotalTotalPressureRatio,
     WorkCoefficient,
+    SwallowingCapacity,
+    TotalTotalCompressionEfficiency,
 )
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
-from adet.losses.basic import (
-    PercTotalPressureLoss,
-    PercentageEntropyLoss,
-    ZeroDeviation,
-)
+from adet.losses.basic import PercTotalPressureLoss, ZeroDeviation
 
 from adet.losses.compressors import (
     BackstromSlip,
     CaseyRushInletFunc,
     CompressorShapeFactor,
-    ClearanceJansen,
     LossAdder,
+    ClearanceJansen,
     SkinFrictionJansen,
     BladeLoadingCoppage,
 )
-from adet.registries import GuessRegistry, VariableBoundsRegistry
-from adet.tools.coolprop_utils import DebugAbstractState
+from adet.registries import GuessRegistry, ScalarsRegistry, VariableBoundsRegistry
 from adet.tools.loggers import setup_logger
+from adet.tools.coolprop_utils import DebugAbstractState
 
 logger = logging.Logger(__name__)
 setup_logger(logger)
 
-# This makes the missing guesses default to 1
-_limreg = VariableBoundsRegistry()
-_limreg.set('massflow', (1.0, 3.0))
-_limreg.set('delta_hmass_loading', (0.0, 5e3))
+# Set some bounds
+_bounds_reg = VariableBoundsRegistry()
+_bounds_reg.reset()
+_bounds_reg.from_dict(
+    {
+        'massflow': (0.1, 4.0),
+        'delta_hmass_.*': (10.0, 1e5),
+        'delta_hmass_loading': (10.0, 1e4),  # This tends to diverge, bound it
+    }
+)
 
 _greg = GuessRegistry()
-_greg.set('beta', -0.7)
-_greg.set_fallback_value(0.5)
+_greg.reset()
+_greg.from_dict(
+    {
+        'beta': -0.5,
+        'gamma_pv': 1.4,
+        'delta_hmass_.*': 1000,
+    }
+)
+_greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 
 
 NUM_SPAN = 1
@@ -85,7 +93,7 @@ casing = Shaft(
 
 # +++ Fluid settings
 fluid_model = ExternalFluidModel(
-    DebugAbstractState('HEOS', 'Air'),  # This just counts the number of updates
+    DebugAbstractState('REFPROP', 'Air'),  # This just counts the number of updates
 )
 
 fluid_settings = FluidSettings(
@@ -111,6 +119,7 @@ inlet = Inlet(
     },
 )
 
+ScalarsRegistry().set('chAx_outRad_Ratio', -1)
 
 # +++ Components
 rotor = BladeRow(
@@ -122,7 +131,7 @@ rotor = BladeRow(
             'meridional_angle': Quantity(0, 'deg'),
             'thick_by_pitch': 0.02,
             'shapeKCoeff': 0.9,
-            'tip_clearance': 1e-5,
+            'tip_clearance': 1e-3,
         },
         'oth': {
             'swllCap': 0.05,
@@ -139,7 +148,7 @@ rotor = BladeRow(
             # *** Meridional geometry
             'meridional_angle': Quantity(90, 'deg'),
             'thick_by_pitch': 0.02,
-            'num_blades': 15,
+            'num_blades': 20,
             #
         },
         'oth': {
@@ -155,23 +164,21 @@ rotor = BladeRow(
         LaxByOutradius(): 1,
         SwallowingCapacity(): (0, 1),
         WorkCoefficient(): (0, 1),
-        EndwallProperties(): 0,  # NEEDED for tip and hub rad
         CompressorShapeFactor(): 0,
         CaseyRushInletFunc(): (0, 1),
         GammaPV(): 1,
-        IsentropicTotalEnthalpy(): (0, 1),
         # *** Geometry
         MinimalCamberLine(): (0, 1),
         # *** Metal angle <-[link]-> Flow angle
         ZeroDeviation(): 0,  # Zero incidence
         BackstromSlip(): (0, 1),
         # *** Enthalpy based losses
-        BladeLoadingCoppage(): (0, 1),
+        TotalTotalCompressionEfficiency(): (0, 1),
+        IsentropicTotalEnthalpy(): (0, 1),
         ClearanceJansen(): (0, 1),
         SkinFrictionJansen(): (0, 1),
+        BladeLoadingCoppage(): (0, 1),
         LossAdder(): 1,  # Add up the three losses above
-        # *** Definition - Not for design
-        TotalTotalPressureRatio(): (0, 1),
     },
 )
 
@@ -196,6 +203,7 @@ ntw = ComponentNetwork(
 )
 
 ntw.system.add_spanwise_constants('kin_Vm0')
+ntw.system.add_spanwise_constants('stc_p1')
 
 ntw.build(True)
 
@@ -258,8 +266,6 @@ for c in ntw.components:
 for idx, n in enumerate(ntw.system.nodes):
     globals()[f'n{idx}'] = n
 
-
-print(n0.oth.massflow / ((2 * n1.geo.rr) ** 2 * n0.tot.rhomass * n1.kin.U))  # pyright:ignore
 
 # plt.close('all')
 plt.show()

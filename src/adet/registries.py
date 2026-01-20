@@ -235,7 +235,7 @@ class GuessRegistry(BaseRegistry[str, float]):
         'rhomass': 2.0,
         'T': 800.0,
         'smass': 1e4,
-        'gamma_pv': 1.1,
+        'gamma_pv': 1.4,
         # KINEMATICS
         'V': 300.0,
         'Vm': 300.0,
@@ -246,7 +246,7 @@ class GuessRegistry(BaseRegistry[str, float]):
         'U': 10.0,
         'omega': 10.0,
         'alpha': 0.3,
-        'beta': 0.3,
+        'beta': -0.3,
         # OTHERS
         'massflow': 20.0,
         'cum_massflow': 20.0,
@@ -285,15 +285,15 @@ SCALING_FACTORS: dict[str, float] = {
     'J / kg': 5e5,
     'J / (kg * K)': 1e3,
     'J / kg / m': 5e5,  # Radial equilibrium
-    'kg / s': 5e1,
+    'kg / s': 5,
     'meter * rad / s': 1e2,  # Tangential velocity
     'Pa * s': 1e-5,  # Dynamic viscosity
-    'rad / s': 1e3,
+    'rad / s': 1e3,  # Omega
     'rad': 0.5,
-    'm': 1e-1,
+    'm': 0.1,
     'm**2': 1e-2,
     'm**2 / s': 10.0,
-    'kg / m**3': 2.0,
+    'kg / m**3': 2.0,  # Densities
     'dimensionless': 1.0,
 }
 # Convert to standard string representation
@@ -355,8 +355,6 @@ class ScalarsRegistry(BaseRegistry[str, int]):
         'meridional_angle': -1,
         'num_blades': -1,
         '.*AreaAve': -1,
-        '_SCL_.*': -1,
-        #
     }
 
 
@@ -381,7 +379,7 @@ class VariableBoundsRegistry(
         'Wt': (-500.0, 500.0),
         'U': (-500.0, 500.0),
         'omega': (-15000.0, 15000.0),
-        'alpha': (-1.57, 1.57),
+        'alpha': (-1.54, 1.54),
         'beta': (-1.54, 1.54),
         '.*area': (0.0, 1.0),
         'rr': (1e-4, 3.0),

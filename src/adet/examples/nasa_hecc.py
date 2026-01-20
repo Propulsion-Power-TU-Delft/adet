@@ -11,9 +11,7 @@ from adet.components.network import ComponentNetwork
 from adet.equations.definitions import IsentropicTotalEnthalpy
 from adet.equations.fundamental import BladeBlockage
 from adet.equations.geometrical import (
-    HubTipRadiusRatio,
     EndwallProperties,
-    LaxByOutradius,
     MinimalCamberLine,
     MeridionalVariable,
 )
@@ -34,7 +32,13 @@ from adet.losses.basic import (
     ZeroDeviation,
 )
 
-from adet.losses.compressors import BackstromSlip, BladeLoadingCoppage
+from adet.losses.compressors import (
+    BackstromSlip,
+    BladeLoadingCoppage,
+    ClearanceJansen,
+    LossAdder,
+    SkinFrictionJansen,
+)
 from adet.registries import GuessRegistry, VariableBoundsRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
@@ -47,10 +51,10 @@ _greg = GuessRegistry()
 _limreg = VariableBoundsRegistry()
 _limreg.set('Vm', (1.0, 300.0))
 
-_greg.set_fallback_value(1.0)
+_greg.set_fallback_value(0.8)
 _greg.set('beta', -0.5)
 
-NUM_SPAN = 1
+NUM_SPAN = 7
 
 # +++ Shafts
 shaft = Shaft(
@@ -65,7 +69,7 @@ casing = Shaft(
 
 # +++ Fluid settings
 fluid_model = ExternalFluidModel(
-    DebugAbstractState('HEOS', 'Air'),  # This just counts the number of updates
+    DebugAbstractState('REFPROP', 'Air'),  # This just counts the number of updates
 )
 
 fluid_settings = FluidSettings(
@@ -105,6 +109,7 @@ rotor = BladeRow(
             # *** Blades specs
             'metal_angle': Quantity(-44, 'deg'),
             'thick_by_pitch': 0.02,
+            'tip_clearance': 1e-3,
         },
     },
     out_constraints={
@@ -121,31 +126,31 @@ rotor = BladeRow(
         },
         'oth': {
             # 'eta_tt': 0.87,  # Total total efficiency
+            # For losses
             'slip_factCoeff': 5.0,
+            'abs_roughness': Quantity(0.05, 'mm'),
             'bl_loadingCoeff': 0.75,
         },
     },
     extra_equations={
-        # MeridionalVariable(): 1,
+        MeridionalVariable(): 1,
         BackstromSlip(): (0, 1),
         # ZeroDeviation(): 1,
         MinimalCamberLine(): (0, 1),
-        # PlaceHolderLoss(): (0, 1),  # T
-        PercentageEntropyLoss(0.0): (0, 1),
-        # *** Enthalpy based efficiency
+        # PercentageEntropyLoss(0.0): (0, 1),
+        PlaceHolderLoss(): (0, 1),
+        # *** Enthalpy based Losses
         IsentropicTotalEnthalpy(): (0, 1),
         TotalTotalCompressionEfficiency(): (0, 1),
-        # *** You can drop these in to use actual blade blockage
+        BladeLoadingCoppage(): (0, 1),
+        ClearanceJansen(): (0, 1),
+        WorkCoefficient(): (0, 1),
+        SkinFrictionJansen(): (0, 1),
+        TotalTotalPressureRatio(): (0, 1),
+        LossAdder(): 1,
+        # *** Blockage (optional)
         # BladeBlockage(): 0,
         # BladeBlockage(): 1,
-        # *** Definitions
-        WorkCoefficient(): (0, 1),
-        # CoppageBladeLoading(): (0, 1),
-        # StaticTotalPressRatio(): (0, 1),
-        # StaticStaticPressRatio(): (0, 1),
-        TotalTotalPressureRatio(): (0, 1),
-        # # TO REMOVE
-        GammaPV(): 0,
     },
 )
 
@@ -167,7 +172,7 @@ vaneless_diff = VanelessDiffuser(
 ntw = ComponentNetwork(
     fluid_settings=fluid_settings,
     inlet=inlet,
-    backend=CasadiSystem(num_span=NUM_SPAN),
+    backend=CasadiSystem(num_span=NUM_SPAN, scale_suffix='<|'),
     components=[rotor],
 )
 
@@ -232,5 +237,5 @@ for idx, n in enumerate(ntw.system.nodes):
     globals()[f'n{idx}'] = n
 
 
-plt.close('all')
-# plt.show()
+# plt.close('all')
+plt.show()
