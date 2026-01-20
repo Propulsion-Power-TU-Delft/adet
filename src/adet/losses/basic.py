@@ -56,8 +56,8 @@ class PercentageEntropyLoss(LossModel):
         s_{1} = s_{0} \\cdot (1 + \\mathrm{C})
     """
 
-    def __init__(self, entropy_generation: float = 0.05):
-        super().__init__()
+    def __init__(self, entropy_generation: float = 0.05, scaling_factor=None):
+        super().__init__(scaling_factor)
         self.entropy_gen = entropy_generation
 
     def residual(self, stc_smass0, stc_smass1):

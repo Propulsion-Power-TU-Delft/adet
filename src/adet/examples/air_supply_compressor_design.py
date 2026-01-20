@@ -37,7 +37,11 @@ from adet.equations.nondimensional import (
     TotalTotalCompressionEfficiency,
 )
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
-from adet.losses.basic import PercTotalPressureLoss, ZeroDeviation
+from adet.losses.basic import (
+    PercTotalPressureLoss,
+    PercentageEntropyLoss,
+    ZeroDeviation,
+)
 
 from adet.losses.compressors import (
     BackstromSlip,
@@ -76,7 +80,6 @@ _greg.from_dict(
     }
 )
 _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
-
 
 NUM_SPAN = 1
 
@@ -121,6 +124,20 @@ inlet = Inlet(
 
 ScalarsRegistry().set('chAx_outRad_Ratio', -1)
 
+ENABLE_LOSSES = True
+if not ENABLE_LOSSES:
+    LOSSES = {
+        PercentageEntropyLoss(0.0): (0, 1),
+    }
+else:
+    LOSSES = {
+        ClearanceJansen(): (0, 1),
+        SkinFrictionJansen(): (0, 1),
+        BladeLoadingCoppage(): (0, 1),
+        LossAdder(): 1,
+    }
+
+
 # +++ Components
 rotor = BladeRow(
     name='rotor',
@@ -131,7 +148,7 @@ rotor = BladeRow(
             'meridional_angle': Quantity(0, 'deg'),
             'thick_by_pitch': 0.02,
             'shapeKCoeff': 0.9,
-            'tip_clearance': 1e-3,
+            'tip_clearance': 1e-4,
         },
         'oth': {
             'swllCap': 0.05,
@@ -148,14 +165,14 @@ rotor = BladeRow(
             # *** Meridional geometry
             'meridional_angle': Quantity(90, 'deg'),
             'thick_by_pitch': 0.02,
-            'num_blades': 20,
-            #
+            'num_blades': 26.25,
         },
         'oth': {
+            'workCoeff': 0.7,
             'chAx_outRad_Ratio': 0.7,
             # For losses
             'bl_loadingCoeff': 0.75,
-            'abs_roughness': Quantity(0.05, 'mm'),
+            'abs_roughness': Quantity(0.01, 'mm'),
             'slip_factCoeff': 5.0,
         },
     },
@@ -172,13 +189,10 @@ rotor = BladeRow(
         # *** Metal angle <-[link]-> Flow angle
         ZeroDeviation(): 0,  # Zero incidence
         BackstromSlip(): (0, 1),
-        # *** Enthalpy based losses
-        TotalTotalCompressionEfficiency(): (0, 1),
+        # *** Enthalpy definitions
         IsentropicTotalEnthalpy(): (0, 1),
-        ClearanceJansen(): (0, 1),
-        SkinFrictionJansen(): (0, 1),
-        BladeLoadingCoppage(): (0, 1),
-        LossAdder(): 1,  # Add up the three losses above
+        TotalTotalCompressionEfficiency(): (0, 1),
+        **LOSSES,
     },
 )
 
@@ -202,8 +216,6 @@ ntw = ComponentNetwork(
     components=[rotor],
 )
 
-ntw.system.add_spanwise_constants('kin_Vm0')
-ntw.system.add_spanwise_constants('stc_p1')
 
 ntw.build(True)
 
@@ -216,16 +228,17 @@ rootfinder = ntw.system.make_rootfinder(
     'ipopt',
     opts={
         'error_on_fail': False,
-        'ipopt.print_level': 3,
+        # 'ipopt.print_level': 3,
     },
 )
+
 solution = solve_root_roblem(
     rootfinder,
     x0,
     kn,
     bnd,
     suppress_output=False,
-    perturbate=False,
+    perturbate=True,
 )
 
 ntw.system.write_solution_to_nodes(solution)
