@@ -1618,6 +1618,7 @@ def solve_root_roblem(
     knowns: list[NDArray],
     arg_bounds: tuple[cs.DM, cs.DM] | None = None,
     suppress_output: bool = True,
+    perturbate: bool = False,
 ):
     if suppress_output:
         output_manipulator = output_suppression
@@ -1627,6 +1628,13 @@ def solve_root_roblem(
 
     with output_manipulator():
         logger.info('Solving the system...')
+
+        def perturb_func(x):
+            DELTA = 0.1
+            return x + x * DELTA * np.random.ranf(1)
+
+        if perturbate:
+            guess = jax.tree.map(perturb_func, guess)
 
         guess_cat = np.concatenate(guess)
         knowns_cat = np.concatenate(knowns)

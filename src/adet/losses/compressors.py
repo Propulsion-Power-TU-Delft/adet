@@ -84,13 +84,13 @@ class BackstromSlip(DeviationModel):
         kin_Wt1,
     ):
         radius_ratio = geo_rr0 / geo_rr1
-        r0 = oth_eff_solidity1 - (
+        r1 = oth_eff_solidity1 - (
             (1 - radius_ratio)
             * geo_num_blades1
             / (2 * np.pi * np.cos(geo_metal_angle1))
         )
 
-        r1 = oth_slip_factor1 - (
+        r2 = oth_slip_factor1 - (
             1
             - 1
             / (
@@ -105,9 +105,9 @@ class BackstromSlip(DeviationModel):
 
         Wt1_noslip = kin_Wm1 * np.tan(geo_metal_angle1)
 
-        r2 = kin_Wt1 - (Wt1_noslip - slip_velocity)
+        r3 = kin_Wt1 - (Wt1_noslip - slip_velocity)
 
-        return r0, r1, r2
+        return r1, r2, r3
 
 
 class BladeLoadingCoppage(LossModel):
@@ -117,10 +117,8 @@ class BladeLoadingCoppage(LossModel):
         tot_hmass0,
         tot_hmass1,
         # Geometry
-        geo_rr_midspan0,
+        geo_rr_tip0,
         geo_rr_midspan1,
-        geo_height0,
-        geo_meridional_angle0,
         # Kinematics
         kin_U1,
         kin_W1,
@@ -130,8 +128,8 @@ class BladeLoadingCoppage(LossModel):
         oth_delta_hmass_loading1,
         oth_bl_loadingCoeff1,  # 0.75
     ):
-        work_abs = safe_abs(tot_hmass1 - tot_hmass0)
-        r0s_by_r1 = (geo_rr_midspan0 + geo_height0 / 2) / geo_rr_midspan1
+        work_abs = tot_hmass1 - tot_hmass0
+        r0s_by_r1 = geo_rr_tip0 / geo_rr_midspan1
         diff_coeff = (
             1
             - kin_W1 / kin_W_tip0
@@ -148,16 +146,20 @@ class BladeLoadingCoppage(LossModel):
 class ClearanceJansen(LossModel):
     def residual(
         self,
+        # Kine
+        kin_Vm0,
+        kin_Vt1,
         geo_rr_tip0,
+        # Geo
+        geo_height1,
         geo_rr_hub0,
         geo_rr_midspan1,
-        stc_rhomass1,
-        stc_rhomass0,
-        geo_tip_clearance0,
-        geo_height1,
-        kin_Vt1,
         geo_num_blades1,
-        kin_Vm0,
+        geo_tip_clearance0,
+        # Thermo
+        stc_rhomass0,
+        stc_rhomass1,
+        # Enthalpy prod
         oth_delta_hmass_clearance1,
     ):
         K = safe_abs(
@@ -256,3 +258,20 @@ class SkinFrictionJansen(LossModel):
         r3 = oth_delta_hmass_skin1 - 2 * safe_abs(Cf) * (L_hyd / D_hyd) * (w_mean**2)
 
         return r1, r2, r3
+
+
+class LossAdder(EquationBase):
+    def residual(
+        self,
+        tot_hmass0,
+        oth_tot_hmass_is0,
+        oth_delta_hmass_skin0,
+        oth_delta_hmass_loading,
+        oth_delta_hmass_clearance0,
+    ):
+        return tot_hmass0 - (
+            oth_tot_hmass_is0
+            - oth_delta_hmass_skin0
+            - oth_delta_hmass_loading
+            - oth_delta_hmass_clearance0
+        )

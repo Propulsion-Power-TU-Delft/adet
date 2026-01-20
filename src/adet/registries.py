@@ -235,6 +235,7 @@ class GuessRegistry(BaseRegistry[str, float]):
         'rhomass': 2.0,
         'T': 800.0,
         'smass': 1e4,
+        'gamma_pv': 1.1,
         # KINEMATICS
         'V': 300.0,
         'Vm': 300.0,
@@ -257,9 +258,12 @@ class GuessRegistry(BaseRegistry[str, float]):
         'metal_angle': 0.1,
         'hh': 0.1,
         'height': 0.1,
-        'tip_clearance': 0.1,
+        'tip_clearance': 0.001,
         'rr': 0.1,
-        'rr_.*': 0.1,
+        'rr_hub': 0.1,
+        'rr_midspan': 0.11,
+        'rr_tip': 0.12,
+        'rrRatio': 0.4,
         'chord': 0.1,
         'chord_ax': 0.1,
         'camb_len': 0.1,
@@ -366,10 +370,8 @@ class VariableBoundsRegistry(
     DEFAULTS = {
         # THERMODYNAMICS
         'p': (1e4, 50e5),
-        # 'hmass': (1e3, 1e9),
-        # 'umass': (1e3, 1e9),
         'rhomass': (1e-3, 50.0),
-        'T': (20.0, 1800.0),
+        'T': (80.0, 1800.0),
         # KINEMATICS
         'V': (10.0, 500.0),
         'Vm': (1.0, 200.0),
@@ -378,17 +380,18 @@ class VariableBoundsRegistry(
         'Wm': (1.0, 500.0),
         'Wt': (-500.0, 500.0),
         'U': (-500.0, 500.0),
-        'omega': (-10000.0, 10000.0),
+        'omega': (-15000.0, 15000.0),
         'alpha': (-1.57, 1.57),
-        'beta': (-1.57, 1.57),
+        'beta': (-1.54, 1.54),
         '.*area': (0.0, 1.0),
         'rr': (1e-4, 3.0),
         'rr_.*': (1e-4, 3.0),
         'hh': (1e-8, 1.0),
         'height': (1e-5, 3.0),
         # OTHERS
+        '.*solidity': (0.05, 10.0),
         '.*massflow': (1e-3, 100.0),
-        'slip_factor': (0.0, 1.0),
+        'slip_factor': (0.01, 0.99),
     }
 
 

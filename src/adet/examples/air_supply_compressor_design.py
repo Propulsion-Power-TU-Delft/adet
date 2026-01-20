@@ -25,6 +25,7 @@ from adet.components.blade_row import VanelessDiffuser, plot_from_nodes
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 
+from adet.equations.definitions import IsentropicTotalEnthalpy
 from adet.equations.geometrical import (
     EndwallProperties,
     LaxByOutradius,
@@ -44,12 +45,13 @@ from adet.losses.basic import (
 )
 
 from adet.losses.compressors import (
+    BackstromSlip,
     CaseyRushInletFunc,
     CompressorShapeFactor,
     ClearanceJansen,
+    LossAdder,
     SkinFrictionJansen,
     BladeLoadingCoppage,
-    WorkCoefficientEstimate,
 )
 from adet.registries import GuessRegistry, VariableBoundsRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
@@ -59,15 +61,13 @@ logger = logging.Logger(__name__)
 setup_logger(logger)
 
 # This makes the missing guesses default to 1
-_greg = GuessRegistry()
 _limreg = VariableBoundsRegistry()
-_limreg.set('massflow', (1.0, 10.0))
+_limreg.set('massflow', (1.0, 3.0))
+_limreg.set('delta_hmass_loading', (0.0, 5e3))
 
-
-_greg.set_fallback_value(1.0)
-_greg.set('beta', -0.5)
-_greg.set('gamma_pv', 1.1)  # != 1 !
-_greg.set('rr_tip', 1.1)  # != 1 !
+_greg = GuessRegistry()
+_greg.set('beta', -0.7)
+_greg.set_fallback_value(0.5)
 
 
 NUM_SPAN = 1
@@ -139,7 +139,7 @@ rotor = BladeRow(
             # *** Meridional geometry
             'meridional_angle': Quantity(90, 'deg'),
             'thick_by_pitch': 0.02,
-            'num_blades': 30,
+            'num_blades': 15,
             #
         },
         'oth': {
@@ -147,6 +147,7 @@ rotor = BladeRow(
             # For losses
             'bl_loadingCoeff': 0.75,
             'abs_roughness': Quantity(0.05, 'mm'),
+            'slip_factCoeff': 5.0,
         },
     },
     extra_equations={
@@ -158,19 +159,19 @@ rotor = BladeRow(
         CompressorShapeFactor(): 0,
         CaseyRushInletFunc(): (0, 1),
         GammaPV(): 1,
+        IsentropicTotalEnthalpy(): (0, 1),
         # *** Geometry
         MinimalCamberLine(): (0, 1),
         # *** Metal angle <-[link]-> Flow angle
         ZeroDeviation(): 0,  # Zero incidence
-        ZeroDeviation(): 1,  # Zero Deviation
-        # *** Entropy generation
-        PercentageEntropyLoss(0.0): (0, 1),
-        # *** Definition - Not for design
-        TotalTotalPressureRatio(): (0, 1),
-        # Enthalpy based losses
+        BackstromSlip(): (0, 1),
+        # *** Enthalpy based losses
         BladeLoadingCoppage(): (0, 1),
         ClearanceJansen(): (0, 1),
         SkinFrictionJansen(): (0, 1),
+        LossAdder(): 1,  # Add up the three losses above
+        # *** Definition - Not for design
+        TotalTotalPressureRatio(): (0, 1),
     },
 )
 
@@ -216,6 +217,7 @@ solution = solve_root_roblem(
     kn,
     bnd,
     suppress_output=False,
+    perturbate=False,
 )
 
 ntw.system.write_solution_to_nodes(solution)

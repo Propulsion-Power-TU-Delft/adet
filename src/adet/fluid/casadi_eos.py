@@ -65,7 +65,7 @@ def dummy_eos(v0, v1, n_out):
     return n_out * [cs.sin(v0) + cs.cos(v1)]
 
 
-def get_dummy_jac_shape(n_out: int, n_span: int, debug=True) -> cs.Function:
+def get_dummy_jac_shape(n_out: int, n_span: int, debug=False) -> cs.Function:
     v0 = MX.sym('v0', n_span)
     v1 = MX.sym('v1', n_span)
     dummy_expr = dummy_eos(v0, v1, n_out)
@@ -77,14 +77,14 @@ def get_dummy_jac_shape(n_out: int, n_span: int, debug=True) -> cs.Function:
     return dummy_func.jacobian()
 
 
-def get_dummy_hess_shape(n_out: int, n_span: int, debug=True) -> cs.Function:
+def get_dummy_hess_shape(n_out: int, n_span: int, debug=False) -> cs.Function:
     dummy_jac = get_dummy_jac_shape(n_out, n_span)
     if debug:
         print(f'|> [DEV NOTE] Needed hessian shape:\n\t{dummy_jac.jacobian()}\n')
     return dummy_jac.jacobian()
 
 
-def get_dummy_vacc_shape(n_out: int, n_span: int, debug=True) -> cs.Function:
+def get_dummy_vacc_shape(n_out: int, n_span: int, debug=False) -> cs.Function:
     dummy_hess = get_dummy_hess_shape(n_out, n_span)
     if debug:
         print(f'|> [DEV NOTE] Needed vaccarian shape:\n\t{dummy_hess.jacobian()}\n')
