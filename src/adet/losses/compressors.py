@@ -77,17 +77,19 @@ class BackstromSlip(DeviationModel):
         geo_rr0,
         geo_rr1,
         geo_num_blades1,
+        geo_num_splitters1,
         geo_metal_angle1,
         oth_eff_solidity1,
         kin_U1,
         kin_Wm1,
         kin_Wt1,
     ):
+        # Use actual number of blades at the outlet
+        tot_blades = geo_num_blades1 + geo_num_splitters1
+
         radius_ratio = geo_rr0 / geo_rr1
         r1 = oth_eff_solidity1 - (
-            (1 - radius_ratio)
-            * geo_num_blades1
-            / (2 * np.pi * np.cos(geo_metal_angle1))
+            (1 - radius_ratio) * tot_blades / (2 * np.pi * np.cos(geo_metal_angle1))
         )
 
         r2 = oth_slip_factor1 - (
@@ -110,6 +112,11 @@ class BackstromSlip(DeviationModel):
         return r1, r2, r3
 
 
+class EffectiveBladeNumber(EquationBase):
+    def residual(self, geo_num_blades0, geo_num_splitters0, geo_num_blades_eff0):
+        return geo_num_blades_eff0 - (geo_num_blades0 + 0.75 * geo_num_splitters0)
+
+
 class BladeLoadingCoppage(LossModel):
     def residual(
         self,
@@ -123,26 +130,25 @@ class BladeLoadingCoppage(LossModel):
         kin_U1,
         kin_W1,
         kin_W_tip0,
-        geo_num_blades1,
+        geo_num_blades_eff1,
         # Coefficients
         oth_delta_hmass_loading1,
         oth_bl_loadingCoeff1,  # 0.75
     ):
         work_abs = tot_hmass1 - tot_hmass0
         r0s_by_r1 = geo_rr_tip0 / geo_rr_midspan1
-        diff_coeff = (
+        diffusion_coeff = (
             1
             - kin_W1 / kin_W_tip0
             + oth_bl_loadingCoeff1
             * (work_abs / kin_U1**2)
             * (kin_W1 / kin_W_tip0)
-            / (((geo_num_blades1 / np.pi) * (1 - r0s_by_r1)) + (2 * r0s_by_r1))
+            / (((geo_num_blades_eff1 / np.pi) * (1 - r0s_by_r1)) + (2 * r0s_by_r1))
         )
 
-        return oth_delta_hmass_loading1 - 0.05 * (diff_coeff * kin_U1) ** 2
+        return oth_delta_hmass_loading1 - 0.05 * (diffusion_coeff * kin_U1) ** 2
 
 
-# TODO: These below are unfinished
 class ClearanceJansen(LossModel):
     def residual(
         self,
@@ -154,7 +160,7 @@ class ClearanceJansen(LossModel):
         geo_height1,
         geo_rr_hub0,
         geo_rr_midspan1,
-        geo_num_blades1,
+        geo_num_blades_eff1,
         geo_tip_clearance0,
         # Thermo
         stc_rhomass0,
@@ -173,7 +179,7 @@ class ClearanceJansen(LossModel):
             * kin_Vt1
             * (
                 safe_abs(
-                    (4 * np.pi / (geo_height1 * geo_num_blades1))
+                    (4 * np.pi / (geo_height1 * geo_num_blades_eff1))
                     * K
                     * kin_Vt1
                     * kin_Vm0
@@ -194,7 +200,7 @@ class SkinFrictionJansen(LossModel):
         geo_rr_midspan1,
         geo_height1,
         geo_chord_ax1,
-        geo_num_blades1,
+        geo_num_blades_eff1,
         geo_metal_angle1,
         # Kinematics
         kin_V0,
@@ -237,7 +243,7 @@ class SkinFrictionJansen(LossModel):
             * ((2 * geo_rr_tip0) ** 2 - (2 * geo_rr_hub0) ** 2)
             / (
                 (4 * np.pi * geo_rr_midspan0)
-                + geo_num_blades1 * 2 * (geo_rr_tip0 - geo_rr_hub0)
+                + geo_num_blades_eff1 * 2 * (geo_rr_tip0 - geo_rr_hub0)
             )
         )
 

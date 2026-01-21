@@ -10,7 +10,7 @@ from collections import defaultdict, OrderedDict
 from copy import deepcopy
 from itertools import combinations
 import logging
-from typing import Callable, Self, Sequence, Type, Literal, Any, cast
+from typing import Callable, Mapping, Self, Sequence, Type, Literal, Any, cast
 
 from numpy.typing import NDArray
 from pint import Quantity
@@ -961,7 +961,7 @@ class SystemAssembler(ABC):
         )
 
     def get_initial_guess(
-        self, manual_values: dict[str, ArrayLike] = {}
+        self, manual_values: Mapping[str, ArrayLike] = {}
     ) -> list[NDArray]:
         """Generate initial guesses for free arguments"""
         guesses = []
@@ -1027,9 +1027,21 @@ class CasadiSystem(SystemAssembler):
         super().__init__(num_span)
         self.scale_suffix = scale_suffix
 
+    def _reset_symbols(self):
+        logger.debug('Resetting all CasADi symbolics...')
+        self.const_sym: list[cs.MX] = []
+        self.free_args_sym: list[cs.MX] = []
+
+        self.scales_const_sym: list[cs.MX] = []
+        self.scales_free_args_sym: list[cs.MX] = []
+
+        self._eq_scales_sym: list[cs.MX] = []
+        self._res_expr_scaled: list[cs.MX] = []
+
     def build(self, scaled: bool = True, throw: bool = True):
         super().build(scaled)
         logger.info('Building CasADi backend...')
+        self._reset_symbols()
         self._build_base_symbols()
         self._build_composed_symbols()
         self._build_residual_expressions()
@@ -1619,6 +1631,7 @@ def solve_root_roblem(
     arg_bounds: tuple[cs.DM, cs.DM] | None = None,
     suppress_output: bool = True,
     perturbate: bool = False,
+    delta_pert: float = 0.05,
 ):
     if suppress_output:
         output_manipulator = output_suppression
@@ -1630,8 +1643,7 @@ def solve_root_roblem(
         logger.info('Solving the system...')
 
         def perturb_func(x):
-            DELTA = 0.1
-            return x + x * DELTA * np.random.ranf(1)
+            return x + x * delta_pert * (-1 + 2 * np.random.ranf(1))
 
         if perturbate:
             guess = jax.tree.map(perturb_func, guess)

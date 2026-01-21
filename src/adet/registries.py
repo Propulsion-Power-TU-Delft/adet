@@ -216,7 +216,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'metal_angle_.*': 'rad',
         '.*solidity': 'dimensionless',
         'slip_factor': 'dimensionless',
-        'num_blades': 'dimensionless',
+        'num_.*': 'dimensionless',
         '.*_thick': 'meters',
         'thick_by_pitch': 'dimensionless',
     }
@@ -269,7 +269,8 @@ class GuessRegistry(BaseRegistry[str, float]):
         'camb_len': 0.1,
         'pitch': 0.1,
         'bld_thick': 0.005,
-        'num_blades': 20.0,
+        'num_blades.*': 20.0,
+        'num_splitters': 20.0,
         'throat': 0.1,
         'stagger': 0.1,
     }

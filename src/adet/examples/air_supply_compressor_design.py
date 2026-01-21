@@ -16,6 +16,7 @@
 
 
 import logging
+import scipy.stats.qmc as qmc
 from pint import Quantity
 import matplotlib.pyplot as plt
 
@@ -47,6 +48,7 @@ from adet.losses.compressors import (
     BackstromSlip,
     CaseyRushInletFunc,
     CompressorShapeFactor,
+    EffectiveBladeNumber,
     LossAdder,
     ClearanceJansen,
     SkinFrictionJansen,
@@ -82,6 +84,7 @@ _greg.from_dict(
 _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 
 NUM_SPAN = 1
+ENABLE_LOSSES = False
 
 # +++ Shafts
 shaft = Shaft(
@@ -124,18 +127,19 @@ inlet = Inlet(
 
 ScalarsRegistry().set('chAx_outRad_Ratio', -1)
 
-ENABLE_LOSSES = True
-if not ENABLE_LOSSES:
-    LOSSES = {
-        PercentageEntropyLoss(0.0): (0, 1),
-    }
-else:
-    LOSSES = {
-        ClearanceJansen(): (0, 1),
-        SkinFrictionJansen(): (0, 1),
-        BladeLoadingCoppage(): (0, 1),
-        LossAdder(): 1,
-    }
+EQS_ISENTROPIC = {
+    PercentageEntropyLoss(0.0): (0, 1),
+    ZeroDeviation(): 1,
+}
+EQS_WITH_LOSSES = {
+    BackstromSlip(): (0, 1),
+    ClearanceJansen(): (0, 1),
+    SkinFrictionJansen(): (0, 1),
+    BladeLoadingCoppage(): (0, 1),
+    LossAdder(): 1,
+}
+
+losses = EQS_ISENTROPIC if ENABLE_LOSSES else EQS_ISENTROPIC
 
 
 # +++ Components
@@ -165,7 +169,8 @@ rotor = BladeRow(
             # *** Meridional geometry
             'meridional_angle': Quantity(90, 'deg'),
             'thick_by_pitch': 0.02,
-            'num_blades': 26.25,
+            'num_blades': 15,
+            'num_splitters': 15,
         },
         'oth': {
             'workCoeff': 0.7,
@@ -186,13 +191,13 @@ rotor = BladeRow(
         GammaPV(): 1,
         # *** Geometry
         MinimalCamberLine(): (0, 1),
+        EffectiveBladeNumber(): 1,
         # *** Metal angle <-[link]-> Flow angle
         ZeroDeviation(): 0,  # Zero incidence
-        BackstromSlip(): (0, 1),
         # *** Enthalpy definitions
         IsentropicTotalEnthalpy(): (0, 1),
         TotalTotalCompressionEfficiency(): (0, 1),
-        **LOSSES,
+        **losses,
     },
 )
 
@@ -217,31 +222,73 @@ ntw = ComponentNetwork(
 )
 
 
-ntw.build(True)
+ntw.build()
 
-x0 = ntw.system.get_initial_guess()
+x0_is = ntw.system.get_initial_guess()
 kn = ntw.system.get_scaled_constraints()
-bnd = ntw.system.get_arguments_bounds()
+bnd_loss = ntw.system.get_arguments_bounds()
 
 # IPOPT is very robust, KINSOL faster but fails more easily
-rootfinder = ntw.system.make_rootfinder(
+rootfinder_is = ntw.system.make_rootfinder(
     'ipopt',
     opts={
-        'error_on_fail': False,
-        # 'ipopt.print_level': 3,
+        'error_on_fail': True,
+        'ipopt.tol': 1e-7,
+        'ipopt.print_level': 3,
     },
 )
 
-solution = solve_root_roblem(
-    rootfinder,
-    x0,
+# Get the isentropic solution, we will perturbate
+# it to check the robustness of the solver
+solution_is = solve_root_roblem(
+    rootfinder_is,
+    x0_is,
     kn,
-    bnd,
+    bnd_loss,
     suppress_output=False,
-    perturbate=True,
 )
 
-ntw.system.write_solution_to_nodes(solution)
+solution_is = solve_root_roblem(
+    rootfinder_is,
+    solution_is.tolist(),
+    kn,
+    bnd_loss,
+    suppress_output=False,
+)
+
+
+sol_is_dict = ntw.system.solution_to_dict(solution_is)
+
+# Remove isentropic and add losses
+for eq, pos in EQS_ISENTROPIC.items():
+    ntw.system.remove_equation(eq.__class__, pos)
+for eq, pos in EQS_WITH_LOSSES.items():
+    ntw.system.add_equation(eq, pos)
+
+ntw.build()  # Rebuild
+
+# Get
+x0_loss = ntw.system.get_initial_guess(sol_is_dict)
+bnd_loss = ntw.system.get_arguments_bounds()
+
+rootfinder_loss = ntw.system.make_rootfinder(
+    'ipopt',
+    opts={
+        'error_on_fail': False,
+        'ipopt.tol': 1e-10,
+        'ipopt.print_level': 3,
+    },
+)
+
+solution_loss = solve_root_roblem(
+    rootfinder_loss,
+    x0_loss,
+    kn,
+    bnd_loss,
+    suppress_output=False,
+)
+
+ntw.system.write_solution_to_nodes(solution_loss)
 
 fig, axs = plt.subplots(2, 2, figsize=(8, 15))
 for cmp_idx, cmp in enumerate(ntw.components):
