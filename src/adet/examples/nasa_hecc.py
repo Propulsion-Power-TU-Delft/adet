@@ -2,7 +2,7 @@ import logging
 from pint import Quantity
 import matplotlib.pyplot as plt
 
-from adet.assembly import CasadiSystem, solve_root_roblem
+from adet.assembly import CasadiSystem, solve_root_problem
 from adet.components import BladeRow
 from adet.components.blade_row import VanelessDiffuser, plot_from_nodes
 from adet.components.connections import Inlet, Shaft
@@ -16,11 +16,7 @@ from adet.equations.geometrical import (
     MeridionalVariable,
 )
 from adet.equations.nondimensional import (
-    GammaPV,
-    SwallowingCapacity,
     WorkCoefficient,
-    StaticTotalPressRatio,
-    StaticStaticPressRatio,
     TotalTotalPressureRatio,
     TotalTotalCompressionEfficiency,
 )
@@ -36,6 +32,7 @@ from adet.losses.compressors import (
     BackstromSlip,
     BladeLoadingCoppage,
     ClearanceJansen,
+    EffectiveBladeNumber,
     LossAdder,
     SkinFrictionJansen,
 )
@@ -47,14 +44,28 @@ logger = logging.Logger(__name__)
 setup_logger(logger)
 
 # This makes the missing guesses default to 1
+_bounds_reg = VariableBoundsRegistry()
+_bounds_reg.reset()
+_bounds_reg.from_dict(
+    {
+        'Vm': (10.0, 200.0),
+        'delta_hmass_.*': (10.0, 1e5),
+        'delta_hmass_loading': (10.0, 2e4),  # This tends to diverge, bound it
+    }
+)
+
 _greg = GuessRegistry()
-_limreg = VariableBoundsRegistry()
-_limreg.set('Vm', (1.0, 300.0))
+_greg.reset()
+_greg.from_dict(
+    {
+        'beta': -0.5,
+        'gamma_pv': 1.4,
+        'delta_hmass_.*': 1000,
+    }
+)
+_greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 
-_greg.set_fallback_value(0.8)
-_greg.set('beta', -0.5)
-
-NUM_SPAN = 7
+NUM_SPAN = 11
 
 # +++ Shafts
 shaft = Shaft(
@@ -109,7 +120,7 @@ rotor = BladeRow(
             # *** Blades specs
             'metal_angle': Quantity(-44, 'deg'),
             'thick_by_pitch': 0.02,
-            'tip_clearance': 1e-3,
+            'tip_clearance': Quantity(0.3048, 'mm'),
         },
     },
     out_constraints={
@@ -122,13 +133,14 @@ rotor = BladeRow(
             'metal_angle': Quantity(-30, 'deg'),
             'thick_by_pitch': 0.02,  # Thickness by pitch ratio
             'chord_ax': Quantity(0.133879895, 'm'),
-            'num_blades': 30,
+            'num_blades': 15,
+            'num_splitters': 15,
         },
         'oth': {
             # 'eta_tt': 0.87,  # Total total efficiency
             # For losses
             'slip_factCoeff': 5.0,
-            'abs_roughness': Quantity(0.05, 'mm'),
+            'abs_roughness': Quantity(1.524, 'micron'),
             'bl_loadingCoeff': 0.75,
         },
     },
@@ -137,20 +149,21 @@ rotor = BladeRow(
         BackstromSlip(): (0, 1),
         # ZeroDeviation(): 1,
         MinimalCamberLine(): (0, 1),
-        # PercentageEntropyLoss(0.0): (0, 1),
-        PlaceHolderLoss(): (0, 1),
+        EffectiveBladeNumber(): 1,
         # *** Enthalpy based Losses
         IsentropicTotalEnthalpy(): (0, 1),
         TotalTotalCompressionEfficiency(): (0, 1),
-        BladeLoadingCoppage(): (0, 1),
         ClearanceJansen(): (0, 1),
-        WorkCoefficient(): (0, 1),
         SkinFrictionJansen(): (0, 1),
-        TotalTotalPressureRatio(): (0, 1),
-        LossAdder(): 1,
+        BladeLoadingCoppage(): (0, 1),
+        # LossAdder(): 1,  # Use losses
+        PercentageEntropyLoss(0.0): (0, 1),  # Keep isentropic
         # *** Blockage (optional)
         # BladeBlockage(): 0,
         # BladeBlockage(): 1,
+        # Definitions
+        WorkCoefficient(): (0, 1),
+        TotalTotalPressureRatio(): (0, 1),
     },
 )
 
@@ -191,7 +204,7 @@ rootfinder = ntw.system.make_rootfinder(
     'ipopt',
     opts={'error_on_fail': False},
 )
-solution = solve_root_roblem(
+solution = solve_root_problem(
     rootfinder,
     x0,
     kn,

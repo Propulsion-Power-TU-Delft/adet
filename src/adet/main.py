@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import jax
 
 # Network build
-from adet.assembly import CasadiSystem, solve_root_roblem
+from adet.assembly import CasadiSystem, solve_root_problem
 from adet.components import ComponentNetwork
 from adet.equations.geometrical import (
     MinimalCamberLine,
@@ -100,7 +100,7 @@ rootfinder_is = ntw.system.make_rootfinder(
 x0_is = ntw.system.get_initial_guess()
 kn_is = ntw.system.get_scaled_constraints()
 
-sol_is = solve_root_roblem(rootfinder_is, x0_is, kn_is)
+sol_is = solve_root_problem(rootfinder_is, x0_is, kn_is)
 
 # Write solution to network (just for post processing)
 ntw.system.write_solution_to_nodes(sol_is)

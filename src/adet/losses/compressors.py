@@ -155,10 +155,10 @@ class ClearanceJansen(LossModel):
         # Kine
         kin_Vm0,
         kin_Vt1,
-        geo_rr_tip0,
         # Geo
         geo_height1,
         geo_rr_hub0,
+        geo_rr_tip0,
         geo_rr_midspan1,
         geo_num_blades_eff1,
         geo_tip_clearance0,
@@ -196,7 +196,7 @@ class SkinFrictionJansen(LossModel):
         # Geometry
         geo_rr_tip0,
         geo_rr_hub0,
-        geo_rr_midspan0,
+        geo_rr0,
         geo_rr_midspan1,
         geo_height1,
         geo_chord_ax1,
@@ -242,7 +242,7 @@ class SkinFrictionJansen(LossModel):
             np.pi
             * ((2 * geo_rr_tip0) ** 2 - (2 * geo_rr_hub0) ** 2)
             / (
-                (4 * np.pi * geo_rr_midspan0)
+                (4 * np.pi * geo_rr0)
                 + geo_num_blades_eff1 * 2 * (geo_rr_tip0 - geo_rr_hub0)
             )
         )

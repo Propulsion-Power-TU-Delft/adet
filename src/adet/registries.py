@@ -348,8 +348,8 @@ class ScalarsRegistry(BaseRegistry[str, int]):
     DEFAULTS = {
         'omega': -1,
         '.*_midspan': -1,
-        '.*_hub': -1,
-        '.*_tip': -1,
+        # '.*_hub': -1,
+        # '.*_tip': -1,
         'height': -1,
         'heightRatio': -1,
         'cum_massflow': -1,

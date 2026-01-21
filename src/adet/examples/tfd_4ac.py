@@ -8,7 +8,7 @@ from pint import Quantity
 
 from adet.components import BladeRow, ComponentNetwork, Inlet
 from adet.components.connections import Shaft
-from adet.assembly import CasadiSystem, solve_root_roblem
+from adet.assembly import CasadiSystem, solve_root_problem
 from adet.equations.geometrical import MinimalCamberLine
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.fluid.settings import FluidSettings, ExternalFluidModel
@@ -303,7 +303,7 @@ rootfinder = ntw.system.make_rootfinder('nlpsol')
 x0 = ntw.system.get_initial_guess()
 kn = ntw.system.get_scaled_constraints()
 
-sol = solve_root_roblem(rootfinder, x0, kn)
+sol = solve_root_problem(rootfinder, x0, kn)
 
 # Write solution to network
 ntw.system.write_solution_to_nodes(sol)

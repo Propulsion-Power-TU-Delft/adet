@@ -16,11 +16,10 @@
 
 
 import logging
-import scipy.stats.qmc as qmc
 from pint import Quantity
 import matplotlib.pyplot as plt
 
-from adet.assembly import CasadiSystem, solve_root_roblem
+from adet.assembly import CasadiSystem, solve_root_problem
 from adet.components import BladeRow
 from adet.components.blade_row import VanelessDiffuser, plot_from_nodes
 from adet.components.connections import Inlet, Shaft
@@ -59,7 +58,7 @@ from adet.tools.loggers import setup_logger
 from adet.tools.coolprop_utils import DebugAbstractState
 
 logger = logging.Logger(__name__)
-setup_logger(logger)
+# setup_logger(logger)
 
 # Set some bounds
 _bounds_reg = VariableBoundsRegistry()
@@ -99,7 +98,7 @@ casing = Shaft(
 
 # +++ Fluid settings
 fluid_model = ExternalFluidModel(
-    DebugAbstractState('REFPROP', 'Air'),  # This just counts the number of updates
+    DebugAbstractState('HEOS', 'Air'),  # This just counts the number of updates
 )
 
 fluid_settings = FluidSettings(
@@ -226,106 +225,99 @@ ntw.build()
 
 x0_is = ntw.system.get_initial_guess()
 kn = ntw.system.get_scaled_constraints()
-bnd_loss = ntw.system.get_arguments_bounds()
+bnd_is = ntw.system.get_arguments_bounds()
 
 # IPOPT is very robust, KINSOL faster but fails more easily
 rootfinder_is = ntw.system.make_rootfinder(
     'ipopt',
     opts={
         'error_on_fail': True,
-        'ipopt.tol': 1e-7,
+        'ipopt.tol': 1e-5,
         'ipopt.print_level': 3,
+        'ipopt.max_iter': 500,
     },
 )
 
-# Get the isentropic solution, we will perturbate
-# it to check the robustness of the solver
-solution_is = solve_root_roblem(
+# Get the isentropic solution
+solution_is = solve_root_problem(
     rootfinder_is,
     x0_is,
     kn,
-    bnd_loss,
-    suppress_output=False,
-)
-
-solution_is = solve_root_roblem(
-    rootfinder_is,
-    solution_is.tolist(),
-    kn,
-    bnd_loss,
-    suppress_output=False,
+    bnd_is,
+    suppress_output=True,
 )
 
 
 sol_is_dict = ntw.system.solution_to_dict(solution_is)
 
-# Remove isentropic and add losses
-for eq, pos in EQS_ISENTROPIC.items():
-    ntw.system.remove_equation(eq.__class__, pos)
-for eq, pos in EQS_WITH_LOSSES.items():
-    ntw.system.add_equation(eq, pos)
 
-ntw.build()  # Rebuild
+if __name__ == '__main__':
+    # If this script is run, also perform the loss case
 
-# Get
-x0_loss = ntw.system.get_initial_guess(sol_is_dict)
-bnd_loss = ntw.system.get_arguments_bounds()
+    # Remove isentropic and add losses
+    for eq, pos in EQS_ISENTROPIC.items():
+        ntw.system.remove_equation(eq.__class__, pos)
+    for eq, pos in EQS_WITH_LOSSES.items():
+        ntw.system.add_equation(eq, pos)
 
-rootfinder_loss = ntw.system.make_rootfinder(
-    'ipopt',
-    opts={
-        'error_on_fail': False,
-        'ipopt.tol': 1e-10,
-        'ipopt.print_level': 3,
-    },
-)
+    ntw.build()  # Rebuild
 
-solution_loss = solve_root_roblem(
-    rootfinder_loss,
-    x0_loss,
-    kn,
-    bnd_loss,
-    suppress_output=False,
-)
-
-ntw.system.write_solution_to_nodes(solution_loss)
-
-fig, axs = plt.subplots(2, 2, figsize=(8, 15))
-for cmp_idx, cmp in enumerate(ntw.components):
-    if cmp.inlet_node is None or cmp.outlet_node is None:
-        raise ValueError('Missing nodes')
-
-    node_idx = 0
-    for n in (cmp.inlet_node, cmp.outlet_node):
-        ax = axs[cmp_idx][node_idx]
-
-        ax.set_title(f'Node number {2 * cmp_idx + node_idx}')
-        ax.set_aspect('equal')
-        n.kin.plot(n.geo, 8, ax)
-
-        node_idx += 1
-
-
-fig, ax = plt.subplots()
-ax.set_aspect('equal')
-offset = 0.0
-for c in ntw.components:
-    if not c.inlet_node or not c.outlet_node:
-        raise ValueError('missing nodes')
-
-    lines = plot_from_nodes(
-        c.inlet_node,
-        c.outlet_node,
-        False,
-        offset,
+    # Get
+    x0_loss = ntw.system.get_initial_guess(sol_is_dict)
+    bnd_loss = ntw.system.get_arguments_bounds()
+    rootfinder_loss = ntw.system.make_rootfinder(
+        'ipopt',
+        opts={
+            'error_on_fail': False,
+            'ipopt.tol': 1e-10,
+            'ipopt.print_level': 3,
+        },
     )
 
-    offset += c.outlet_node.geo.chord_ax[0]
+    solution_loss = solve_root_problem(
+        rootfinder_loss,
+        x0_loss,
+        kn,
+        bnd_loss,
+        suppress_output=False,
+    )
 
-# Assign nodes to globals for easier access
-for idx, n in enumerate(ntw.system.nodes):
-    globals()[f'n{idx}'] = n
+    ntw.system.write_solution_to_nodes(solution_loss)
 
+    fig, axs = plt.subplots(2, 2, figsize=(8, 15))
+    for cmp_idx, cmp in enumerate(ntw.components):
+        if cmp.inlet_node is None or cmp.outlet_node is None:
+            raise ValueError('Missing nodes')
 
-# plt.close('all')
-plt.show()
+        node_idx = 0
+        for n in (cmp.inlet_node, cmp.outlet_node):
+            ax = axs[cmp_idx][node_idx]
+
+            ax.set_title(f'Node number {2 * cmp_idx + node_idx}')
+            ax.set_aspect('equal')
+            n.kin.plot(n.geo, 8, ax)
+
+            node_idx += 1
+
+    fig, ax = plt.subplots()
+    ax.set_aspect('equal')
+    offset = 0.0
+    for c in ntw.components:
+        if not c.inlet_node or not c.outlet_node:
+            raise ValueError('missing nodes')
+
+        lines = plot_from_nodes(
+            c.inlet_node,
+            c.outlet_node,
+            False,
+            offset,
+        )
+
+        offset += c.outlet_node.geo.chord_ax[0]
+
+    # Assign nodes to globals for easier access
+    for idx, n in enumerate(ntw.system.nodes):
+        globals()[f'n{idx}'] = n
+
+    # plt.close('all')
+    plt.show()

@@ -1624,7 +1624,7 @@ def {func_name}(equations, {', '.join(self._declared_arguments)}):
         return cas_sys
 
 
-def solve_root_roblem(
+def solve_root_problem(
     rootfinder: Any,
     guess: list[NDArray],
     knowns: list[NDArray],
