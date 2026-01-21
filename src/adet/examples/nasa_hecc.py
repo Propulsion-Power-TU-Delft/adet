@@ -39,7 +39,7 @@ from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 
 logger = logging.Logger(__name__)
-setup_logger(logger)
+# setup_logger(logger)
 
 # This makes the missing guesses default to 1
 _bounds_reg = VariableBoundsRegistry()
@@ -63,7 +63,8 @@ _greg.from_dict(
 )
 _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 
-NUM_SPAN = 5
+NUM_SPAN = 1
+ENABLE_LOSSES = False
 
 # +++ Shaftskin_omega0 (node 0) is unknown,
 shaft = Shaft(
@@ -104,6 +105,21 @@ inlet = Inlet(
     },
 )
 
+EQS_WITH_LOSSES = {
+    BackstromSlip(): (0, 1),
+    ClearanceJansen(): (0, 1),
+    SkinFrictionJansen(): (0, 1),
+    BladeLoadingCoppage(): (0, 1),
+    LossAdder(): 1,  # Use losses
+}
+
+EQS_ISENTROPIC = {
+    PercentageEntropyLoss(0.0): (0, 1),
+    ZeroDeviation(): 1,
+}
+
+
+losses = EQS_WITH_LOSSES if ENABLE_LOSSES else EQS_ISENTROPIC
 
 # +++ Components
 rotor = BladeRow(
@@ -143,28 +159,20 @@ rotor = BladeRow(
         },
     },
     extra_equations={
-        BackstromSlip(): (0, 1),
         # ZeroDeviation(): 1,
         MinimalCamberLine(): (0, 1),
         EffectiveBladeNumber(): 1,
         # *** Enthalpy based Losses
         IsentropicTotalEnthalpy(): (0, 1),
         TotalTotalCompressionEfficiency(): (0, 1),
-        ClearanceJansen(): (0, 1),
-        SkinFrictionJansen(): (0, 1),
-        BladeLoadingCoppage(): (0, 1),
-        # -----------
-        # LossAdder(): 1,  # Use losses
-        PercentageEntropyLoss(0.0): (0, 1),  # Keep isentropic
-        # -----------
         # *** Blockage (optional)
-        # BladeBlockage(): 0,
-        # BladeBlockage(): 1,
         # Definitions
         WorkCoefficient(): (0, 1),
         TotalTotalPressureRatio(): (0, 1),
+        **losses,
     },
 )
+
 
 vaneless_diff = VanelessDiffuser(
     'diffuser',
@@ -188,73 +196,101 @@ ntw = ComponentNetwork(
     components=[rotor],
 )
 
+ntw.system.add_spanwise_constants('kin_Vm0')
+ntw.system.add_spanwise_constants('stc_p1')
+
 if NUM_SPAN > 1:
     ntw.system.remove_equation(MeridionalUniform, 1)
     ntw.system.add_equation(MeridionalVariable(), 1)
-ntw.system.add_spanwise_constants('kin_Vm0')
-ntw.system.add_spanwise_constants('stc_p1')
 
 ntw.build()
 
 x0 = ntw.system.get_initial_guess()
-kn = ntw.system.get_scaled_constraints()
-bnd = ntw.system.get_arguments_bounds()
+kn_hecc = ntw.system.get_scaled_constraints()
+bnd_hecc_is = ntw.system.get_arguments_bounds()
 
 # IPOPT is more robust, takes variable limits into account -> For 'bi-stable' solutions
 # KINSOL is faster, sometimes converges on problems where ipopt struggles
-rootfinder = ntw.system.make_rootfinder(
+rootfinder_hecc_is = ntw.system.make_rootfinder(
     'ipopt',
     opts={
-        'error_on_fail': False,
-        'ipopt.tol': 1e-6,
+        'error_on_fail': True,
+        'ipopt.tol': 1e-5,
+        'ipopt.max_iter': 500,
+        'ipopt.max_wall_time': 10,
+        'ipopt.print_level': 3,
     },
 )
-solution = solve_root_problem(
-    rootfinder,
-    x0,
-    kn,
-    bnd,
-    suppress_output=False,
+solution_hecc_is = solve_root_problem(
+    rootfinder_hecc_is, x0, kn_hecc, bnd_hecc_is, suppress_output=False
 )
+sol_is_dict = ntw.system.solution_to_dict(solution_hecc_is)
 
-ntw.system.write_solution_to_nodes(solution)
+if __name__ == '__main__':
+    # Remove isentropic and add losses
+    for eq, pos in EQS_ISENTROPIC.items():
+        ntw.system.remove_equation(eq.__class__, pos)
+    for eq, pos in EQS_WITH_LOSSES.items():
+        ntw.system.add_equation(eq, pos)
 
-fig, axs = plt.subplots(2, 2, figsize=(8, 20))
-for cmp_idx, cmp in enumerate(ntw.components):
-    if cmp.inlet_node is None or cmp.outlet_node is None:
-        raise ValueError('Missing nodes')
+    ntw.system.num_span = 11
+    if ntw.system.num_span > 1:
+        ntw.system.remove_equation(MeridionalUniform, 1)
+        ntw.system.add_equation(MeridionalVariable(), 1)
 
-    node_idx = 0
-    for n in (cmp.inlet_node, cmp.outlet_node):
-        ax = axs[cmp_idx][node_idx]
-
-        ax.set_title(f'Node number {2 * cmp_idx + node_idx}')
-        ax.set_aspect('equal')
-        n.kin.plot(n.geo, 8, ax)
-
-        node_idx += 1
-
-
-fig, ax = plt.subplots()
-ax.set_aspect('equal')
-offset = 0.0
-for c in ntw.components:
-    if not c.inlet_node or not c.outlet_node:
-        raise ValueError('missing nodes')
-
-    lines = plot_from_nodes(
-        c.inlet_node,
-        c.outlet_node,
-        False,
-        offset,
+    ntw.build()
+    rootfinder_hecc_loss = ntw.system.make_rootfinder(
+        'ipopt',
+        opts={
+            'error_on_fail': True,
+            'ipopt.tol': 1e-3,
+        },
     )
 
-    offset += c.outlet_node.geo.chord_ax[0]
+    x0_loss = ntw.system.get_initial_guess(sol_is_dict)
+    kn_loss = ntw.system.get_scaled_constraints()
+    bnd_loss = ntw.system.get_arguments_bounds()
+    solution_loss = solve_root_problem(
+        rootfinder_hecc_loss, x0_loss, kn_loss, bnd_loss, suppress_output=True
+    )
 
-for idx, n in enumerate(ntw.system.nodes):
-    globals()[f'n{idx}'] = n
+    ntw.system.write_solution_to_nodes(solution_loss)
 
+    for idx, n in enumerate(ntw.system.nodes):
+        globals()[f'n{idx}'] = n
 
-print(n1.oth)
-plt.close('all')
-# plt.show()
+    # --------------------------------------
+    fig, axs = plt.subplots(2, 2, figsize=(8, 20))
+    for cmp_idx, cmp in enumerate(ntw.components):
+        if cmp.inlet_node is None or cmp.outlet_node is None:
+            raise ValueError('Missing nodes')
+
+        node_idx = 0
+        for n in (cmp.inlet_node, cmp.outlet_node):
+            ax = axs[cmp_idx][node_idx]
+
+            ax.set_title(f'Node number {2 * cmp_idx + node_idx}')
+            ax.set_aspect('equal')
+            n.kin.plot(n.geo, 8, ax)
+
+            node_idx += 1
+
+    fig, ax = plt.subplots()
+    ax.set_aspect('equal')
+    offset = 0.0
+    for c in ntw.components:
+        if not c.inlet_node or not c.outlet_node:
+            raise ValueError('missing nodes')
+
+        lines = plot_from_nodes(
+            c.inlet_node,
+            c.outlet_node,
+            False,
+            offset,
+        )
+
+        offset += c.outlet_node.geo.chord_ax[0]
+
+    print(n1.oth)
+    # plt.close('all')
+    plt.show()

@@ -2,55 +2,75 @@ import logging
 import multiprocessing as mp
 import scipy.stats.qmc as qmc
 import numpy as np
-
+from rich.progress import track
+import matplotlib.pyplot as plt
+from adet.tools.loggers import setup_logger
 from copy import deepcopy
 from adet.assembly import solve_root_problem
-from adet.examples.air_supply_compressor_design import (
-    kn,
-    bnd_is,
-    solution_is,
-    rootfinder_is,
-)
-import matplotlib.pyplot as plt
 
-from adet.tools.loggers import setup_logger
+# --------------------
+# from adet.examples.air_supply_compressor_design import (
+#     kn_des,
+#     bnd_des_is,
+#     solution_des_is,
+#     rootfinder_des_is,
+# )
+#
+# ROOTFINDER = rootfinder_des_is
+# --------------------
+# --------------------
+from adet.examples.nasa_hecc import (
+    kn_hecc,
+    bnd_hecc_is,
+    solution_hecc_is,
+    rootfinder_hecc_is,
+)
+
+ROOTFINDER = rootfinder_hecc_is
+# --------------------
+
 
 logger = logging.getLogger(__name__)
 setup_logger(logger, logging.ERROR, logging.ERROR)
 
 
-def process_sample(sample, perturbation):
-    rootfinder = deepcopy(rootfinder_is)
+def process_sample(sample, solution, knowns, bounds, perturbation):
+    rootfinder_copy = deepcopy(ROOTFINDER)
     sample_trans = np.atleast_2d(sample).T
-    x0_perturbed = solution_is + solution_is * perturbation * (-1 + 2 * sample_trans)
+    x0_perturbed = solution + solution * perturbation * (-1 + 2 * sample_trans)
 
     try:
         solve_root_problem(
-            rootfinder, x0_perturbed.tolist(), kn, bnd_is, suppress_output=True
+            rootfinder_copy, x0_perturbed.tolist(), knowns, bounds, suppress_output=True
         )
         return 1
     except Exception:
         return 0
 
 
-if __name__ == '__main__':
-    from rich.progress import track
+def test_robustness(solution, knowns, bounds, samples_multiplier, max_perturbation):
+    num_samples = int(
+        samples_multiplier
+        * max(
+            ROOTFINDER.sparsity_in(0).shape,
+        )
+    )
 
-    mp.freeze_support()
-    # Latin Hypercube sampling for testing robustness
-    NUM_SAMPLES = 100
-    NUM_PROCS = 10
-    MAX_PERT = 10
-
-    out = {j: [] for j in range(0, MAX_PERT)}
+    out = {j: [] for j in range(1, max_perturbation)}
     with mp.Pool(NUM_PROCS) as pool:
-        for pert in track(range(0, MAX_PERT), 'Overall progress', MAX_PERT):
-            sampler = qmc.LatinHypercube(len(solution_is))
-            samples = sampler.random(NUM_SAMPLES)
+        for pert in track(range(1, max_perturbation), 'Overall progress'):
+            sampler = qmc.LatinHypercube(len(solution))
+            samples = sampler.random(num_samples)
 
-            multires = [pool.apply_async(process_sample, (s, pert)) for s in samples]
+            multires = [
+                pool.apply_async(
+                    process_sample,
+                    (s, solution, knowns, bounds, pert),
+                )
+                for s in samples
+            ]
             out[pert] = [
-                res.get(timeout=60)
+                res.get()
                 for res in track(
                     multires,
                     f'|> Progress over samples for perturbation {pert}',
@@ -58,6 +78,20 @@ if __name__ == '__main__':
             ]
 
     for pert, results in out.items():
-        plt.bar(pert, sum(results) / NUM_SAMPLES)
+        plt.bar(pert, 100 * sum(results) / num_samples)
 
+    plt.xticks(ticks=list(out.keys()), labels=[f'{100 * o}%' for o in out.keys()])
+    plt.xlabel('Perturbation from converged solution')
+    plt.ylabel('Convergence rate')
     plt.show()
+
+
+if __name__ == '__main__':
+    mp.freeze_support()
+    # Latin Hypercube sampling for testing robustness
+    SAMPLES_MULTI = 6
+    NUM_PROCS = 10
+    MAX_PERT = 8
+
+    # test_robustness(solution_des_is, kn_des, bnd_des_is, SAMPLES_MULTI, MAX_PERT)
+    test_robustness(solution_hecc_is, kn_hecc, bnd_hecc_is, SAMPLES_MULTI, MAX_PERT)

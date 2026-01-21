@@ -57,7 +57,7 @@ from adet.tools.loggers import setup_logger
 from adet.tools.coolprop_utils import DebugAbstractState
 
 logger = logging.Logger(__name__)
-setup_logger(logger)
+# setup_logger(logger)
 
 # Set some bounds
 _bounds_reg = VariableBoundsRegistry()
@@ -223,11 +223,11 @@ ntw = ComponentNetwork(
 ntw.build()
 
 x0_is = ntw.system.get_initial_guess()
-kn = ntw.system.get_scaled_constraints()
-bnd_is = ntw.system.get_arguments_bounds()
+kn_des = ntw.system.get_scaled_constraints()
+bnd_des_is = ntw.system.get_arguments_bounds()
 
 # IPOPT is very robust, KINSOL faster but fails more easily
-rootfinder_is = ntw.system.make_rootfinder(
+rootfinder_des_is = ntw.system.make_rootfinder(
     'ipopt',
     opts={
         'error_on_fail': True,
@@ -238,16 +238,16 @@ rootfinder_is = ntw.system.make_rootfinder(
 )
 
 # Get the isentropic solution
-solution_is = solve_root_problem(
-    rootfinder_is,
+solution_des_is = solve_root_problem(
+    rootfinder_des_is,
     x0_is,
-    kn,
-    bnd_is,
+    kn_des,
+    bnd_des_is,
     suppress_output=True,
 )
 
 
-sol_is_dict = ntw.system.solution_to_dict(solution_is)
+sol_is_dict = ntw.system.solution_to_dict(solution_des_is)
 
 
 if __name__ == '__main__':
@@ -276,7 +276,7 @@ if __name__ == '__main__':
     solution_loss = solve_root_problem(
         rootfinder_loss,
         x0_loss,
-        kn,
+        kn_des,
         bnd_loss,
         suppress_output=False,
     )
