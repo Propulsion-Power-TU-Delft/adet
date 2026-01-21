@@ -74,12 +74,14 @@ class BackstromSlip(DeviationModel):
         self,
         oth_slip_factor1,
         oth_slip_factCoeff1,
+        #
         geo_rr0,
         geo_rr1,
         geo_num_blades1,
-        geo_num_splitters1,
         geo_metal_angle1,
-        oth_eff_solidity1,
+        geo_eff_solidity1,
+        geo_num_splitters1,
+        #
         kin_U1,
         kin_Wm1,
         kin_Wt1,
@@ -88,7 +90,7 @@ class BackstromSlip(DeviationModel):
         tot_blades = geo_num_blades1 + geo_num_splitters1
 
         radius_ratio = geo_rr0 / geo_rr1
-        r1 = oth_eff_solidity1 - (
+        r1 = geo_eff_solidity1 - (
             (1 - radius_ratio) * tot_blades / (2 * np.pi * np.cos(geo_metal_angle1))
         )
 
@@ -98,7 +100,7 @@ class BackstromSlip(DeviationModel):
             / (
                 1
                 + oth_slip_factCoeff1
-                * oth_eff_solidity1
+                * geo_eff_solidity1
                 * np.cos(geo_metal_angle1) ** 0.5
             )
         )
@@ -112,11 +114,6 @@ class BackstromSlip(DeviationModel):
         return r1, r2, r3
 
 
-class EffectiveBladeNumber(EquationBase):
-    def residual(self, geo_num_blades0, geo_num_splitters0, geo_num_blades_eff0):
-        return geo_num_blades_eff0 - (geo_num_blades0 + 0.75 * geo_num_splitters0)
-
-
 class BladeLoadingCoppage(LossModel):
     def residual(
         self,
@@ -124,7 +121,8 @@ class BladeLoadingCoppage(LossModel):
         tot_hmass0,
         tot_hmass1,
         # Geometry
-        geo_rr_tip0,
+        geo_rr0,
+        geo_hh0,
         geo_rr_midspan1,
         # Kinematics
         kin_U1,
@@ -132,11 +130,11 @@ class BladeLoadingCoppage(LossModel):
         kin_W_tip0,
         geo_num_blades_eff1,
         # Coefficients
-        oth_delta_hmass_loading1,
         oth_bl_loadingCoeff1,  # 0.75
+        oth_delta_hmass_loading1,
     ):
         work_abs = tot_hmass1 - tot_hmass0
-        r0s_by_r1 = geo_rr_tip0 / geo_rr_midspan1
+        r0s_by_r1 = (geo_rr0 + geo_hh0 / 2) / geo_rr_midspan1
         diffusion_coeff = (
             1
             - kin_W1 / kin_W_tip0
@@ -192,7 +190,7 @@ class ClearanceJansen(LossModel):
 class SkinFrictionJansen(LossModel):
     def residual(
         self,
-        oth_massflow0,
+        oth_cum_massflow0,
         # Geometry
         geo_rr_tip0,
         geo_rr_hub0,
@@ -249,15 +247,15 @@ class SkinFrictionJansen(LossModel):
 
         w_mean = (kin_V0 + kin_V1 + kin_W_tip0 + 2 * kin_W_hub0 + 3 * kin_W1) / 8
 
-        Re = oth_massflow0 / (((stc_viscosity0 + stc_viscosity1) / 2) * D_hyd)
+        Re = oth_cum_massflow0 / ((stc_viscosity0 + stc_viscosity1) / 2 * D_hyd)
         Re_e = (Re - 2000) * oth_abs_roughness1 / D_hyd
 
         r1 = 4 * oth_Cf_smooth1 - (
-            (1 / (np.log10((2.51 / (Re * np.sqrt((4 * oth_Cf_smooth1)))) ** (-2)))) ** 2
+            (1 / np.log10((2.51 / (Re * np.sqrt(4 * oth_Cf_smooth1))) ** -2)) ** 2
         )
         r2 = (
             4 * oth_Cf_rough1
-            - (1 / (np.log10((oth_abs_roughness1 / (3.71 * D_hyd)) ** (-2)))) ** 2
+            - (1 / np.log10((oth_abs_roughness1 / (3.71 * D_hyd)) ** -2)) ** 2
         )
 
         Cf = oth_Cf_smooth1 + (oth_Cf_rough1 - oth_Cf_smooth1) * (1 - (60 / Re_e))

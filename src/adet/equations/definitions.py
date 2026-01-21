@@ -97,6 +97,11 @@ class BladePitch(EquationBase):
         return r1, r2
 
 
+class EffectiveBladeNumber(EquationBase):
+    def residual(self, geo_num_blades0, geo_num_splitters0, geo_num_blades_eff0):
+        return geo_num_blades_eff0 - (geo_num_blades0 + 0.75 * geo_num_splitters0)
+
+
 class IsentropicTotalEnthalpy(EquationBase):
     input_pair = cp.PSmass_INPUTS
     output_quantities = ('hmass',)

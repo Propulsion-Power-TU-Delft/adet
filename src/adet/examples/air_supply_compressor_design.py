@@ -25,7 +25,7 @@ from adet.components.blade_row import VanelessDiffuser, plot_from_nodes
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 
-from adet.equations.definitions import IsentropicTotalEnthalpy
+from adet.equations.definitions import IsentropicTotalEnthalpy, EffectiveBladeNumber
 from adet.equations.geometrical import (
     LaxByOutradius,
     MinimalCamberLine,
@@ -47,7 +47,6 @@ from adet.losses.compressors import (
     BackstromSlip,
     CaseyRushInletFunc,
     CompressorShapeFactor,
-    EffectiveBladeNumber,
     LossAdder,
     ClearanceJansen,
     SkinFrictionJansen,
@@ -58,7 +57,7 @@ from adet.tools.loggers import setup_logger
 from adet.tools.coolprop_utils import DebugAbstractState
 
 logger = logging.Logger(__name__)
-# setup_logger(logger)
+setup_logger(logger)
 
 # Set some bounds
 _bounds_reg = VariableBoundsRegistry()
@@ -319,5 +318,6 @@ if __name__ == '__main__':
     for idx, n in enumerate(ntw.system.nodes):
         globals()[f'n{idx}'] = n
 
-    # plt.close('all')
-    plt.show()
+    print(n1.oth)
+    plt.close('all')
+    # plt.show()

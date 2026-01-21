@@ -8,10 +8,9 @@ from adet.components.blade_row import VanelessDiffuser, plot_from_nodes
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 
-from adet.equations.definitions import IsentropicTotalEnthalpy
-from adet.equations.fundamental import BladeBlockage
+from adet.equations.definitions import IsentropicTotalEnthalpy, EffectiveBladeNumber
 from adet.equations.geometrical import (
-    EndwallProperties,
+    MeridionalUniform,
     MinimalCamberLine,
     MeridionalVariable,
 )
@@ -32,7 +31,6 @@ from adet.losses.compressors import (
     BackstromSlip,
     BladeLoadingCoppage,
     ClearanceJansen,
-    EffectiveBladeNumber,
     LossAdder,
     SkinFrictionJansen,
 )
@@ -50,7 +48,7 @@ _bounds_reg.from_dict(
     {
         'Vm': (10.0, 200.0),
         'delta_hmass_.*': (10.0, 1e5),
-        'delta_hmass_loading': (10.0, 2e4),  # This tends to diverge, bound it
+        'delta_hmass_loading': (10.0, 1e4),  # This tends to diverge, bound it
     }
 )
 
@@ -65,9 +63,9 @@ _greg.from_dict(
 )
 _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 
-NUM_SPAN = 11
+NUM_SPAN = 5
 
-# +++ Shafts
+# +++ Shaftskin_omega0 (node 0) is unknown,
 shaft = Shaft(
     omega=Quantity(21000, 'rpm'),
     is_constrained=True,
@@ -145,7 +143,6 @@ rotor = BladeRow(
         },
     },
     extra_equations={
-        MeridionalVariable(): 1,
         BackstromSlip(): (0, 1),
         # ZeroDeviation(): 1,
         MinimalCamberLine(): (0, 1),
@@ -156,8 +153,10 @@ rotor = BladeRow(
         ClearanceJansen(): (0, 1),
         SkinFrictionJansen(): (0, 1),
         BladeLoadingCoppage(): (0, 1),
+        # -----------
         # LossAdder(): 1,  # Use losses
         PercentageEntropyLoss(0.0): (0, 1),  # Keep isentropic
+        # -----------
         # *** Blockage (optional)
         # BladeBlockage(): 0,
         # BladeBlockage(): 1,
@@ -189,6 +188,9 @@ ntw = ComponentNetwork(
     components=[rotor],
 )
 
+if NUM_SPAN > 1:
+    ntw.system.remove_equation(MeridionalUniform, 1)
+    ntw.system.add_equation(MeridionalVariable(), 1)
 ntw.system.add_spanwise_constants('kin_Vm0')
 ntw.system.add_spanwise_constants('stc_p1')
 
@@ -202,7 +204,10 @@ bnd = ntw.system.get_arguments_bounds()
 # KINSOL is faster, sometimes converges on problems where ipopt struggles
 rootfinder = ntw.system.make_rootfinder(
     'ipopt',
-    opts={'error_on_fail': False},
+    opts={
+        'error_on_fail': False,
+        'ipopt.tol': 1e-6,
+    },
 )
 solution = solve_root_problem(
     rootfinder,
@@ -250,5 +255,6 @@ for idx, n in enumerate(ntw.system.nodes):
     globals()[f'n{idx}'] = n
 
 
-# plt.close('all')
-plt.show()
+print(n1.oth)
+plt.close('all')
+# plt.show()
