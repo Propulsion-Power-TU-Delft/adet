@@ -180,6 +180,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         '.*Func': 'dimensionless',
         '.*Ratio.*': 'dimensionless',
         'Cf_.*': 'dimensionless',  # Friction factor
+        'Cd_.*': 'dimensionless',  # Friction factor
         # Kinematics
         'V': 'm/s',
         'V_.*': 'm/s',
@@ -282,6 +283,7 @@ SCALING_FACTORS: dict[str, float] = {
     'm / s': 100.0,
     'Pa': 5e5,
     'N': 100.0,
+    'N / m': 1000.0,
     'K': 500.0,
     'J / kg': 5e5,
     'J / (kg * K)': 1e3,
@@ -345,6 +347,9 @@ class ScalarsRegistry(BaseRegistry[str, int]):
     rootfinder will always fail due to a rank deficiency in the Jacobian.
     """
 
+    # The values do nothing, this acts as a list but I wanted to reuse
+    # the base registry class without duplication
+    # Could do a dual mode for the registry for clarity
     DEFAULTS = {
         'omega': -1,
         '.*_midspan': -1,
@@ -352,7 +357,7 @@ class ScalarsRegistry(BaseRegistry[str, int]):
         '.*_tip': -1,
         'height': -1,
         'heightRatio': -1,
-        'cum_massflow': -1,
+        'cum_.*': -1,
         'meridional_angle': -1,
         'num_blades': -1,
         '.*AreaAve': -1,

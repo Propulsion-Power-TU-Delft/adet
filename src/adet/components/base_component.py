@@ -52,11 +52,11 @@ class BaseComponent(ABC):
         in_constraints: dict[
             str,
             dict[str, Any],
-        ],
+        ] = {},
         out_constraints: dict[
             str,
             dict[str, Any],
-        ],
+        ] = {},
         extra_equations: dict[
             EquationBase,
             int | tuple[int, ...],

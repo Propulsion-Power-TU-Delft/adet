@@ -1351,9 +1351,9 @@ class CasadiSystem(SystemAssembler):
                     {
                         'error_on_fail': True,
                         # Reasonable defaults for IPOPT, overwritten by user
-                        'ipopt.print_level': 5,
-                        'ipopt.max_iter': 3000,
-                        'ipopt.tol': 1e-12,
+                        'ipopt.print_level': 3,
+                        'ipopt.max_iter': 1000,
+                        'ipopt.tol': 1e-6,
                         # NOTE: Superseeded by new implementations, thermo
                         # derivatives available up to the 3rd order (null)
                         # 'ipopt.hessian_approximation': 'limited-memory',

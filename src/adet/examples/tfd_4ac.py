@@ -228,8 +228,8 @@ _dfu_reg.from_dict(
         'xi_by_camb_len_A': 'meters',
         'xi_by_camb_len_B': 'meters',
         'k_prof': 'dimensionless',
-        'mom_by_bld_thick': 'dimensionless',
-        'disp_by_mom_thick': 'dimensionless',
+        'mom_by_bld_Ratio': 'dimensionless',
+        'disp_by_mom_Ratio': 'dimensionless',
     }
 )
 

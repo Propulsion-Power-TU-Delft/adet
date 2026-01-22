@@ -56,8 +56,8 @@ rotating frame (omega)
 GEOM_LINK = [
     # Geometry
     # 'geo_rr',
-    'geo_rr_midspan',
     'geo_height',
+    'geo_rr_midspan',
     'geo_meridional_angle',
 ]
 
@@ -156,12 +156,12 @@ class DownstreamMixer(BaseComponent):
     base_equations = [
         # *** Fundamental
         (MixingBalances, (0, 1)),
-        (MassConservation, (0, 1)),
         # *** Blockage
-        (BladeBlockage, 0),  # Blade blockage at the start
+        (ZeroBlockage, 0),  # Blockage hardcoded in balances now
         (ZeroBlockage, 1),  # No blockg mixed out
-        # *** Deviation
-        (ZeroDeviation, 0),  # metal = kine angle @ blade
+        # Uniform meridional distribution
+        (MeridionalUniform, 0),
+        (MeridionalUniform, 1),
         # *** Definition of channel massflow and num_blades
         (BladePitch, 0),
         (BladePitch, 1),
@@ -177,8 +177,8 @@ class DownstreamMixer(BaseComponent):
             'kin_omega',
             # Geometry
             'geo_pitch',
+            # Boundary layer and blade thicknesses
             'geo_bld_thick',
-            # Boundary layer
             'oth_disp_thick',
             'oth_mom_thick',
         ]
@@ -188,11 +188,8 @@ class DownstreamMixer(BaseComponent):
         # Keep reference frame alive
         'kin_omega',
         # Keep geometry
-        'geo_height',
-        'geo_rr_midspan',
         'geo_num_blades',
-        'geo_meridional_angle',
-    ]
+    ] + GEOM_LINK
 
 
 @dataclass

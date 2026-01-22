@@ -44,12 +44,12 @@ class MeridionalVariable(MeridionalGeom):
 class MeridionalUniform(MeridionalGeom):
     def residual(
         self,
-        geo_rr0,
-        geo_rr_midspan0,
-        geo_height0,
         geo_hh0,
-        geo_meridional_angle0,
+        geo_rr0,
         geo_area0,
+        geo_height0,
+        geo_rr_midspan0,
+        geo_meridional_angle0,
     ):
         num_span = max(geo_rr0.shape)
         if num_span == 1:

@@ -133,11 +133,11 @@ class BoundaryLayerRatios(EquationBase):
         geo_thick_by_pitch0,
         # Boundary layer
         oth_disp_thick0,
-        oth_disp_by_mom_thick0,
+        oth_disp_by_mom_Ratio0,
         oth_mom_thick0,
-        oth_mom_by_bld_thick0,
+        oth_mom_by_bld_Ratio0,
     ):
-        r1 = oth_disp_thick0 - oth_disp_by_mom_thick0 * oth_mom_thick0
-        r2 = oth_mom_thick0 - oth_mom_by_bld_thick0 * geo_bld_thick0
+        r1 = oth_disp_thick0 - oth_disp_by_mom_Ratio0 * oth_mom_thick0
+        r2 = oth_mom_thick0 - oth_mom_by_bld_Ratio0 * geo_bld_thick0
 
         return r1, r2

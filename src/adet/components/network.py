@@ -10,7 +10,7 @@ from adet.equations.geometrical import AnnulusAreas
 from adet.equations.nondimensional import AbsoluteMachNumber, RelativeMachNumber
 from adet.equations.fundamental import (
     Kinematics,
-    CumMassFlow,
+    TotalMassFlow,
     MassAreaRelation,
     TotalArea,
     TotalStaticMatching,
@@ -31,11 +31,11 @@ _SINGLE_NODE_EQUATIONS = [
     # *** Courtesy definitions
     # -> the system is well posed w/o them
     # if they are not mentioned in other equations
-    CumMassFlow,
-    # TotalArea,
+    TotalArea,
+    TotalMassFlow,
     AbsoluteMachNumber,
     RelativeMachNumber,
-    # Special
+    # *** Spezial
     ThermoVarsAdder,
 ]
 

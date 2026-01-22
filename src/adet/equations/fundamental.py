@@ -27,7 +27,7 @@ class MassConservation(EquationBase):
         return oth_massflow0 - oth_massflow1
 
 
-class CumMassFlow(EquationBase):
+class TotalMassFlow(EquationBase):
     """Cumulative massflow"""
 
     def residual(self, oth_cum_massflow0, oth_massflow0):
@@ -35,10 +35,8 @@ class CumMassFlow(EquationBase):
 
 
 class TotalArea(EquationBase):
-    """Cumulative massflow"""
-
-    def residual(self, geo_tot_area0, geo_area0):
-        return geo_tot_area0 - safe_sum(geo_area0)
+    def residual(self, geo_cum_area0, geo_area0):
+        return geo_cum_area0 - safe_sum(geo_area0)
 
 
 class MassAreaRelation(EquationBase):

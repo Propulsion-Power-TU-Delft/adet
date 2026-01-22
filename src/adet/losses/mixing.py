@@ -15,7 +15,7 @@ class MixingBalances(EquationBase):
     1 = Mixed out conditions
     """
 
-    manual_units = ('N / m', 'J / kg', 'J / kg / K')
+    manual_units = ('kg / s / m', 'N / m', 'N / m', 'J / kg', 'Pa')
 
     def _get_base_pressure_interpolant(self, blade_type: Literal['conv', 'conv-div']):
         data_folder = Path(__file__).parents[3] / 'data'
@@ -30,13 +30,10 @@ class MixingBalances(EquationBase):
         stc_p0,
         stc_p1,
         stc_rhomass0,
-        oth_ch_massflow0,
-        oth_ch_massflow1,
+        stc_rhomass1,
         tot_p0,  # For sieverding
         tot_hmass0,
         tot_hmass1,
-        stc_smass0,
-        stc_smass1,
         # Kinematics
         kin_W0,
         kin_W1,
@@ -44,10 +41,10 @@ class MixingBalances(EquationBase):
         kin_beta1,
         # Geometry
         geo_pitch0,
-        geo_hh0,
-        geo_hh1,
         geo_bld_thick0,
         # Boundary layer
+        oth_p_base0,
+        oth_disp_thick0,
         oth_mom_thick0,
     ):
         # Detect array shapes
@@ -56,40 +53,44 @@ class MixingBalances(EquationBase):
         # `map` makes it a multi-dimensional function
         base_p_interpolant = self._get_base_pressure_interpolant('conv').map(num_span)
 
-        # TODO:
+        # TODO: Double check this
         # Hardcoded blade parameter (=2)-> Check meaning
         # Add support for other blade parameters
         first_param = stc_p1 / tot_p0
-        second_param = 2
+        second_param = 2 * stc_p1**0
         table_entry = cs.horzcat(first_param, second_param)
-        p_base = base_p_interpolant(table_entry.T)
+        r4 = oth_p_base0 - base_p_interpolant(table_entry.T).T
 
         # NOTE:
         # 1. These balances are on a control volume with inlet and outlet
         # perpendicular to the relative velocity (not meridional)
         # 2. The sign of deviation should not be relevant
         # because the cosine makes it positive anyways
-        deviation = kin_beta0 - kin_beta1
-        throat = geo_pitch0 * np.cos(kin_beta0)
-        out_passage = geo_pitch0 * np.cos(kin_beta1)
+        # 3. Use stagger instead of beta?
+        alpha = kin_beta0
+        w = geo_pitch0 * np.cos(alpha)
+        delta = alpha - kin_beta1
+        p_suc = stc_p0
 
-        # Momentum definitions
-        mom_in = (
-            oth_ch_massflow0 * kin_W0 / geo_hh0  # Incoming massflow
+        mass_in = stc_rhomass0 * kin_W0 * (w - geo_bld_thick0 - oth_disp_thick0)
+        mass_out = stc_rhomass1 * kin_W1 * geo_pitch0 * np.cos(alpha - delta)
+
+        r0 = mass_in - mass_out
+
+        # Momentum in x direction
+        mom_in_x = (
+            stc_p0 * (w - geo_bld_thick0)  # Throat minus te thickness
+            + oth_p_base0 * geo_bld_thick0  # Base pressure contribution
+            + mass_in * kin_W0  # Incoming massflow
             - stc_rhomass0 * kin_W0**2 * oth_mom_thick0  # Deficit due to b.l.
-            + stc_p0 * (throat - geo_bld_thick0)  # Throat minus te thicknes
-            + p_base * geo_bld_thick0 * kin_beta0  # Base pressure contribution
         )
-        mom_out = (
-            oth_ch_massflow1 * kin_W1 / geo_hh1 * np.cos(deviation)
-            + stc_p1 * out_passage
-        )
+        mom_out_x = mass_out * kin_W1 * np.cos(delta) + stc_p1 * w
+        r1 = mom_in_x - mom_out_x
 
-        # 1. Momentum balance
-        r1 = mom_in - mom_out
+        # Momentum in y direction
+        r2 = (p_suc - stc_p1) * w * np.tan(alpha) - mass_out * kin_W1**2 * np.sin(delta)
 
-        # 2/3. Energy balance (ISENTROPIC MIXING hypothesis)
-        r2 = tot_hmass0 - tot_hmass1
-        r3 = stc_smass0 - stc_smass1
+        # Energy balance
+        r3 = tot_hmass0 - tot_hmass1
 
-        return r1, r2, r3
+        return r0, r1, r2, r3, r4
