@@ -63,9 +63,8 @@ _greg.from_dict(
 )
 _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 
-NUM_SPAN = 1
+NUM_SPAN = 9
 ENABLE_LOSSES = False
-
 # +++ Shaftskin_omega0 (node 0) is unknown,
 shaft = Shaft(
     omega=Quantity(21000, 'rpm'),
@@ -87,7 +86,6 @@ fluid_settings = FluidSettings(
     update_variables=('p', 'T'),  # Thermodynamic iteration variables
     update_length=2,  # Single phase => Two update vars
 )
-
 
 # +++ Boundary conditions
 inlet = Inlet(
@@ -117,7 +115,6 @@ EQS_ISENTROPIC = {
     PercentageEntropyLoss(0.0): (0, 1),
     ZeroDeviation(): 1,
 }
-
 
 losses = EQS_WITH_LOSSES if ENABLE_LOSSES else EQS_ISENTROPIC
 
@@ -173,7 +170,6 @@ rotor = BladeRow(
     },
 )
 
-
 vaneless_diff = VanelessDiffuser(
     'diffuser',
     in_constraints={},
@@ -188,18 +184,17 @@ vaneless_diff = VanelessDiffuser(
     },
 )
 
-
 ntw = ComponentNetwork(
     fluid_settings=fluid_settings,
     inlet=inlet,
-    backend=CasadiSystem(num_span=NUM_SPAN, scale_suffix='<|'),
+    backend=CasadiSystem(num_span=1, scale_suffix='<|'),
     components=[rotor],
 )
 
 ntw.system.add_spanwise_constants('kin_Vm0')
 ntw.system.add_spanwise_constants('stc_p1')
 
-if NUM_SPAN > 1:
+if ntw.system.num_span > 1:
     ntw.system.remove_equation(MeridionalUniform, 1)
     ntw.system.add_equation(MeridionalVariable(), 1)
 
@@ -217,8 +212,8 @@ rootfinder_hecc_is = ntw.system.make_rootfinder(
         'error_on_fail': True,
         'ipopt.tol': 1e-5,
         'ipopt.max_iter': 500,
-        'ipopt.max_wall_time': 10,
-        'ipopt.print_level': 3,
+        'ipopt.max_wall_time': 100,
+        'ipopt.print_level': 5,
     },
 )
 solution_hecc_is = solve_root_problem(
@@ -226,40 +221,63 @@ solution_hecc_is = solve_root_problem(
 )
 sol_is_dict = ntw.system.solution_to_dict(solution_hecc_is)
 
+ntw.system.num_span = NUM_SPAN
+if ntw.system.num_span > 1:
+    ntw.system.remove_equation(MeridionalVariable, 1)
+    ntw.system.remove_equation(MeridionalUniform, 1)
+    ntw.system.add_equation(MeridionalVariable(), 1)
+
+ntw.build()
+#  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
+rootfinder_hecc_multi = ntw.system.make_rootfinder(
+    'kinsol',
+    opts={'error_on_fail': True},
+)
+x0_multi = ntw.system.get_initial_guess(sol_is_dict)
+kn_hecc_multi = ntw.system.get_scaled_constraints()
+bnd_hecc_multi = ntw.system.get_arguments_bounds()
+solution_hecc_multi = solve_root_problem(
+    rootfinder_hecc_multi,
+    x0_multi,
+    kn_hecc_multi,
+    bnd_hecc_multi,
+    suppress_output=False,
+)
+sol_multi_dict = ntw.system.solution_to_dict(solution_hecc_multi)
+#  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 if __name__ == '__main__':
+    #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
     # Remove isentropic and add losses
     for eq, pos in EQS_ISENTROPIC.items():
         ntw.system.remove_equation(eq.__class__, pos)
     for eq, pos in EQS_WITH_LOSSES.items():
         ntw.system.add_equation(eq, pos)
-
-    ntw.system.num_span = 11
-    if ntw.system.num_span > 1:
-        ntw.system.remove_equation(MeridionalUniform, 1)
-        ntw.system.add_equation(MeridionalVariable(), 1)
-
     ntw.build()
+
     rootfinder_hecc_loss = ntw.system.make_rootfinder(
         'ipopt',
         opts={
             'error_on_fail': True,
-            'ipopt.tol': 1e-3,
+            'ipopt.tol': 1e-7,
         },
     )
-
-    x0_loss = ntw.system.get_initial_guess(sol_is_dict)
+    x0_loss = ntw.system.get_initial_guess(sol_multi_dict)
     kn_loss = ntw.system.get_scaled_constraints()
     bnd_loss = ntw.system.get_arguments_bounds()
     solution_loss = solve_root_problem(
-        rootfinder_hecc_loss, x0_loss, kn_loss, bnd_loss, suppress_output=True
+        rootfinder_hecc_loss,
+        x0_loss,
+        kn_loss,
+        bnd_loss,
+        suppress_output=False,
     )
+    sol_loss_dict = ntw.system.write_solution_to_nodes(solution_loss)
+    #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 
-    ntw.system.write_solution_to_nodes(solution_loss)
-
+    # ---------------- PLOT ---------------------
     for idx, n in enumerate(ntw.system.nodes):
         globals()[f'n{idx}'] = n
 
-    # --------------------------------------
     fig, axs = plt.subplots(2, 2, figsize=(8, 20))
     for cmp_idx, cmp in enumerate(ntw.components):
         if cmp.inlet_node is None or cmp.outlet_node is None:
@@ -291,6 +309,6 @@ if __name__ == '__main__':
 
         offset += c.outlet_node.geo.chord_ax[0]
 
-    print(n1.oth)
-    # plt.close('all')
-    plt.show()
+    print(ntw.system.nodes[1].oth)
+    plt.close('all')
+    # plt.show()

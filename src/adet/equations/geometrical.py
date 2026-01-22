@@ -1,8 +1,8 @@
-from adet.equations.base_equation import CamberLineGeom, EquationBase, MeridionalGeom
 import numpy as np
 import matplotlib.pyplot as plt
 
 from adet.equations.utils import safe_min_clip, safe_sum
+from adet.equations.base_equation import CamberLineGeom, EquationBase, MeridionalGeom
 
 
 # NOTE:

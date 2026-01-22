@@ -21,12 +21,12 @@ from adet.assembly import solve_root_problem
 # --------------------
 from adet.examples.nasa_hecc import (
     kn_hecc,
-    bnd_hecc_is,
-    solution_hecc_is,
-    rootfinder_hecc_is,
+    bnd_hecc_multi,
+    solution_hecc_multi,
+    rootfinder_hecc_multi,
 )
 
-ROOTFINDER = rootfinder_hecc_is
+ROOTFINDER = rootfinder_hecc_multi
 # --------------------
 
 
@@ -80,6 +80,7 @@ def test_robustness(solution, knowns, bounds, samples_multiplier, max_perturbati
     for pert, results in out.items():
         plt.bar(pert, 100 * sum(results) / num_samples)
 
+    print(f'Success rate for perturbation rate {pert} {/num_samples}')
     plt.xticks(ticks=list(out.keys()), labels=[f'{100 * o}%' for o in out.keys()])
     plt.xlabel('Perturbation from converged solution')
     plt.ylabel('Convergence rate')
@@ -94,4 +95,6 @@ if __name__ == '__main__':
     MAX_PERT = 8
 
     # test_robustness(solution_des_is, kn_des, bnd_des_is, SAMPLES_MULTI, MAX_PERT)
-    test_robustness(solution_hecc_is, kn_hecc, bnd_hecc_is, SAMPLES_MULTI, MAX_PERT)
+    test_robustness(
+        solution_hecc_multi, kn_hecc, bnd_hecc_multi, SAMPLES_MULTI, MAX_PERT
+    )

@@ -23,39 +23,13 @@ class WorkCoefficientEstimate(EquationBase):
 # TODO: This can be generalized instead of using the
 # ideal gas expressions with gamma_pv
 class CaseyRushInletFunc(EquationBase):
-    def residual(
-        self,
-        # kin_U1,
-        # tot_speed_sound0,
-        # swllCap0,
-        # kin_machU1,
-        # massFlowFunc0,
-        # geo_shapeKCoeff0,
-        kin_relmach_tip0,
-        kin_beta_tip0,
-        gamma_pv1,
-    ):
-        # r0 = kin_machU1 - kin_U1 / tot_speed_sound0
-        # Equation 7 in Casey-Rush
-
-        # Equation 17 in Casey-Rush
-        # r1 = massFlowFunc0 - swllCap0 * kin_machU1
-        # lhs = massFlowFunc0 * 4 * kin_machU1**2 / (geo_shapeKCoeff0 * np.pi)
-        # rhs_num = (
-        #     kin_relmach_tip0**3 * np.sin(kin_beta_tip0) ** 2 * np.cos(kin_beta_tip0)
-        # )
-        # rhs_den = (
-        #     1 + (gamma_pv1 - 1) / 2 * (kin_relmach_tip0 * np.cos(kin_beta_tip0)) ** 2
-        # )
-        # r2 = lhs - rhs_num / rhs_den ** (1 / (gamma_pv1 - 1) + 1.5)
-
+    def residual(self, kin_relmach_tip0, kin_beta_tip0, gamma_pv1):
         # Equation 18 in Casey-Rush
         first_term = 3 + gamma_pv1 * kin_relmach_tip0**2 + 2 * kin_relmach_tip0
         second_term = 3 + gamma_pv1 * kin_relmach_tip0**2 - 2 * kin_relmach_tip0
         rhs = (first_term**0.5 - second_term**0.5) / (2 * kin_relmach_tip0)
-        r3 = np.cos(kin_beta_tip0) - rhs
 
-        return r3
+        return np.cos(kin_beta_tip0) - rhs
 
 
 class CompressorShapeFactor(EquationBase):
@@ -121,25 +95,28 @@ class BladeLoadingCoppage(LossModel):
         tot_hmass0,
         tot_hmass1,
         # Geometry
-        geo_rr0,
         geo_hh0,
+        geo_rr0,
+        geo_rr_tip0,
         geo_rr_midspan1,
         # Kinematics
         kin_U1,
         kin_W1,
-        kin_W0,
         kin_W_tip0,
+        kin_Wm0,
+        kin_omega0,
         geo_num_blades_eff1,
         # Coefficients
         oth_bl_loadingCoeff1,  # 0.75
         oth_delta_hmass_loading1,
     ):
-        num_span = max(geo_rr0.shape)
-        if num_span == 1:
-            W_ratio = kin_W1 / kin_W_tip0
-        else:
-            W_ratio = kin_W1 / kin_W0
+        W_loc_tip = (kin_Wm0**2 + (kin_omega0 * (geo_rr0 + geo_hh0 / 2)) ** 2) ** 0.5
+        # W_loc_tip = kin_W_tip0
+        W_ratio = kin_W1 / W_loc_tip
+
         work = tot_hmass1 - tot_hmass0
+
+        # r0_by_r1 = geo_rr_tip0 / geo_rr_midspan1
         r0_by_r1 = (geo_rr0 + geo_hh0 / 2) / geo_rr_midspan1
 
         diffusion_coeff = (

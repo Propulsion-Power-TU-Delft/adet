@@ -59,8 +59,9 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 # === CONFIGURATION
 # Simulation settings
-NUM_SPAN = 1  # Number of spanwise stations
-NUM_STAGES = 4  # Number of turbine stages (stator-rotor pairs)
+NUM_SPAN = 3  # Number of spanwise stations
+HIGH_RES_MULTIPLIER = 3
+NUM_STAGES = 6  # Number of turbine stages (stator-rotor pairs)
 SCALED = True  # Use scaled equations for better numerical conditioning
 PLOTS = True  # Show plots at end
 PRINTS = True  # Print node information
@@ -253,7 +254,7 @@ for stage in range(ntw.num_components // 2):
 ntw.system.build(SCALED)
 rootfinder_mean_is = ntw.system.make_rootfinder(
     'ipopt',
-    opts={'ipopt.tol': 1e-1},
+    opts={'ipopt.tol': 1e-5},
 )
 x0_mean_is = ntw.system.get_initial_guess()
 kn_mean_is = ntw.system.get_scaled_constraints()
@@ -322,8 +323,7 @@ sol_camber_dict = sys_camber.solution_to_dict(sol_camber)
 # === SOLVE STAGE 5: High-resolution multi-span ===
 
 sys_highres = sys_camber.copy()
-sys_highres.num_span = NUM_SPAN * 5
-
+sys_highres.num_span = NUM_SPAN * HIGH_RES_MULTIPLIER
 
 sys_highres.build(SCALED)
 rootfinder_highres = sys_highres.make_rootfinder('kinsol')

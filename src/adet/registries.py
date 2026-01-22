@@ -78,7 +78,7 @@ class BaseRegistry(Generic[K, V]):
 
     def get(self, key: K) -> V:
         # Return the forced value if assigned
-        if self._forced_value:
+        if self._forced_value is not None:
             return self._forced_value
 
         # Try exact match first
@@ -98,7 +98,7 @@ class BaseRegistry(Generic[K, V]):
             return regex_match
 
         # No match found - check fallback or raise error
-        if self._fallback_value:
+        if self._fallback_value is not None:
             return self._fallback_value
 
         class_name = self.__class__.__name__

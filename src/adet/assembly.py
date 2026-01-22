@@ -991,7 +991,7 @@ class SystemAssembler(ABC):
             # If there is no guess and no manual value
             else:
                 # If the registry has defined a fallback, use that
-                if _guess_reg._fallback_value:
+                if _guess_reg._fallback_value is not None:
                     guess_value = _guess_reg.get(arg_type)
                 # Otherwise ask for user input
                 else:
@@ -1007,9 +1007,9 @@ class SystemAssembler(ABC):
                 if max(guess_value.shape) != 1:
                     logger.warning(
                         f'Length mismatch in guess for {arg},'
-                        f' using the first element as guess'
+                        f' using the mean value as guess'
                     )
-                    guess_value = guess_value[0]
+                    guess_value = np.mean(guess_value)
 
                 if arg not in self.data.scalar_arguments:
                     guess_value = np.repeat(guess_value, self.data.num_span)
