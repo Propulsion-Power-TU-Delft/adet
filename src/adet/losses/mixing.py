@@ -37,6 +37,7 @@ class MixingBalances(EquationBase):
         # Kinematics
         kin_W0,
         kin_W1,
+        kin_metal_angle0,
         kin_beta0,
         kin_beta1,
         # Geometry
@@ -66,8 +67,8 @@ class MixingBalances(EquationBase):
         # perpendicular to the relative velocity (not meridional)
         # 2. The sign of deviation should not be relevant
         # because the cosine makes it positive anyways
-        # 3. Use stagger instead of beta?
-        alpha = kin_beta0
+        # 3. Use metal angle instead of beta?
+        alpha = kin_metal_angle0
         w = geo_pitch0 * np.cos(alpha)
         delta = alpha - kin_beta1
         p_suc = stc_p0

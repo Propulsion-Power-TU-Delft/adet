@@ -157,7 +157,8 @@ class DownstreamMixer(BaseComponent):
         # *** Fundamental
         (MixingBalances, (0, 1)),
         # *** Blockage
-        (ZeroBlockage, 0),  # Blockage hardcoded in balances now
+        (BladeBlockage, 0),
+        # (ZeroBlockage, 0),  # Blockage hardcoded in balances now
         (ZeroBlockage, 1),  # No blockg mixed out
         # Uniform meridional distribution
         (MeridionalUniform, 0),

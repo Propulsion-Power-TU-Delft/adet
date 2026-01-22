@@ -394,7 +394,7 @@ class VariableBoundsRegistry(
         'height': (1e-5, 3.0),
         # OTHERS
         '.*solidity': (0.05, 10.0),
-        '.*massflow': (1e-3, 100.0),
+        '.*massflow': (1e-3, 500.0),
         'slip_factor': (0.01, 0.99),
     }
 

@@ -66,13 +66,13 @@ class BladeBlockage(MeridAreaBlockage):
         geo_bld_thick0,
         geo_metal_angle0,
         # Boundary Layer - Out for now
-        # oth_disp_thick0,
+        oth_disp_thick0,
     ):
         return geo_eff_area0 - (
             geo_area0
             - geo_num_blades0
             * geo_hh0
-            * (geo_bld_thick0)  # + 2 * oth_disp_thick0)
+            * (geo_bld_thick0 + 2 * oth_disp_thick0)
             / np.cos(geo_metal_angle0)
         )
 

@@ -9,6 +9,7 @@ from adet.components.blade_row import DownstreamMixer
 from adet.equations.definitions import BoundaryLayerRatios
 from adet.equations.fundamental import ZeroBlockage
 from adet.equations.geometrical import (
+    MeridionalVariable,
     MinimalCamberLine,
     ParabolicCamberline,
 )
@@ -21,7 +22,7 @@ from adet.losses.basic import (
 
 # Tooling & Components
 from adet.tools.coolprop_utils import DebugAbstractState
-from adet.registries import DefaultUnitsRegistry, GuessRegistry
+from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
 from adet.fluid.settings import ExternalFluidModel
 from adet.components import BladeRow, Shaft, Inlet
 
@@ -78,6 +79,9 @@ _defreg = DefaultUnitsRegistry()
 _guess_reg = GuessRegistry()
 _guess_reg.reset()
 _guess_reg.set_fallback_value(1.2)
+
+_limreg = VariableBoundsRegistry()
+# _limreg.set('Vm', (0.0, 100.0))
 
 # Set fallback values for scales and guesses to 1.0
 
@@ -169,7 +173,10 @@ mixer = DownstreamMixer(
             'metal_angle': 0.0,
         },
     },
-    extra_equations={PlaceHolderLoss(): (0, 1)},
+    extra_equations={
+        PlaceHolderLoss(): (0, 1),
+        MeridionalVariable(): 1,
+    },
 )
 
 
@@ -189,14 +196,14 @@ ntw.system.build(SCALED)
 rootfinder_is = ntw.system.make_rootfinder(
     'ipopt',
     opts={
-        'ipopt.tol': 1e-4,
+        'ipopt.tol': 1e-6,
     },
 )
 
 x0_is = ntw.system.get_initial_guess()
 kn_is = ntw.system.get_scaled_constraints()
-
-sol_is = solve_root_problem(rootfinder_is, x0_is, kn_is)
+bnd_is = ntw.system.get_arguments_bounds()
+sol_is = solve_root_problem(rootfinder_is, x0_is, kn_is, bnd_is, suppress_output=False)
 
 # Write solution to network (just for post processing)
 ntw.system.write_solution_to_nodes(sol_is)

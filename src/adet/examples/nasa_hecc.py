@@ -78,7 +78,7 @@ casing = Shaft(
 
 # +++ Fluid settings
 fluid_model = ExternalFluidModel(
-    DebugAbstractState('REFPROP', 'Air'),  # This just counts the number of updates
+    DebugAbstractState('HEOS', 'Air'),  # This just counts the number of updates
 )
 
 fluid_settings = FluidSettings(

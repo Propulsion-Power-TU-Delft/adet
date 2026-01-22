@@ -26,7 +26,7 @@ class MeridionalVariable(MeridionalGeom):
         geo_rr_midspan0,
         geo_meridional_angle0,
     ):
-        _tip_radius = geo_rr_midspan0 - (geo_height0 - geo_hh0[-1]) / 2 * np.cos(
+        _min_radius = geo_rr_midspan0 - (geo_height0 - geo_hh0[0]) / 2 * np.cos(
             geo_meridional_angle0
         )
 
@@ -35,7 +35,7 @@ class MeridionalVariable(MeridionalGeom):
             + (geo_hh0[:-1] + geo_hh0[1:]) / 2 * np.cos(geo_meridional_angle0)
             - geo_rr0[1:]
         )
-        r2 = geo_rr0[-1] - _tip_radius
+        r2 = geo_rr0[0] - _min_radius
         r3 = safe_sum(geo_hh0) - geo_height0
 
         return r1, r2, r3
