@@ -104,20 +104,26 @@ class BladeLoadingCoppage(LossModel):
         kin_W1,
         kin_W_tip0,
         kin_Wm0,
+        kin_Wt0,
         kin_omega0,
         geo_num_blades_eff1,
         # Coefficients
         oth_bl_loadingCoeff1,  # 0.75
         oth_delta_hmass_loading1,
     ):
-        W_loc_tip = (kin_Wm0**2 + (kin_omega0 * (geo_rr0 + geo_hh0 / 2)) ** 2) ** 0.5
-        # W_loc_tip = kin_W_tip0
+        num_span = max(geo_rr0.shape)
+        if num_span == 1:
+            W_loc_tip = kin_W_tip0
+            r_loc_tip = geo_rr_tip0
+        else:
+            W_loc_tip = (kin_Wm0**2 + (kin_Wt0 + kin_omega0 * geo_hh0 / 2) ** 2) ** 0.5
+            r_loc_tip = geo_rr0 + geo_hh0 / 2
+
         W_ratio = kin_W1 / W_loc_tip
 
         work = tot_hmass1 - tot_hmass0
 
-        # r0_by_r1 = geo_rr_tip0 / geo_rr_midspan1
-        r0_by_r1 = (geo_rr0 + geo_hh0 / 2) / geo_rr_midspan1
+        r0_by_r1 = r_loc_tip / geo_rr_midspan1
 
         diffusion_coeff = (
             1

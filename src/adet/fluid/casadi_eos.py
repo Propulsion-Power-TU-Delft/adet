@@ -540,15 +540,6 @@ if __name__ == '__main__':
         opts=OPTS,
     )
 
-    # Type annotation
-    callback = cast(
-        Callable[
-            [ArrayLike, ArrayLike],
-            tuple[cs.DM, ...],
-        ],
-        callback,
-    )
-
     v0_val = cs.linspace(100e5, 600e5, NUM_SPAN)  # Pressure [Pa]
     v1_val = cs.linspace(400, 600, NUM_SPAN)  # Temperature [K]
 

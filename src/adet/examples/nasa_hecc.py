@@ -63,7 +63,7 @@ _greg.from_dict(
 )
 _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 
-NUM_SPAN = 9
+NUM_SPAN = 11
 ENABLE_LOSSES = False
 # +++ Shaftskin_omega0 (node 0) is unknown,
 shaft = Shaft(
@@ -258,7 +258,7 @@ if __name__ == '__main__':
         'ipopt',
         opts={
             'error_on_fail': True,
-            'ipopt.tol': 1e-7,
+            'ipopt.tol': 1e-10,
         },
     )
     x0_loss = ntw.system.get_initial_guess(sol_multi_dict)
@@ -311,4 +311,11 @@ if __name__ == '__main__':
 
     print(ntw.system.nodes[1].oth)
     plt.close('all')
+    # plt.show()
+
+    # plt.plot(n1.oth.delta_hmass_loading)
+    # plt.plot(n1.oth.delta_hmass_clearance)
+    # plt.plot(n1.oth.delta_hmass_skin)
+    # plt.legend(['loading', 'clearance', 'skin'])
+    # plt.grid()
     # plt.show()
