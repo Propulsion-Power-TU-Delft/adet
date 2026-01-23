@@ -160,8 +160,8 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'T_ref': 'K',
         'rhomass': 'kg / m**3',
         '.*hmass.*': 'J / kg',  # Includes delta_hmass
+        '.*smass.*': 'J / (kg * K)',  # Includes delta_smass
         'umass': 'J / kg',
-        'smass': 'J / (kg * K)',
         'cpmass.*': 'J / (kg * K)',
         'cvmass.*': 'J / (kg * K)',
         'speed_sound': 'm/s',

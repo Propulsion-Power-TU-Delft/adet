@@ -55,13 +55,11 @@ invalid-method-override = "ignore"
 line-length = 88
 
 [tool.ruff.lint]
-# Enable pycodestyle errors and warnings (E, W) and pyflakes (F)
-select = ["E", "W", "F"]
-
-# Don't report unused imports (pyright does already)
-ignore = ["F401"]
-
-# Avoid trying to fix flake8-bugbear (`B`) violations.
+# - Enable pycodestyle errors and warnings (E, W) and pyflakes (F)
+select = ["E", "W", "F", "ARG", "C4"]
+# - Don't report unused imports (pyright does already)
+# ignore = ["F401"]
+# - Avoid trying to fix flake8-bugbear (`B`) violations.
 unfixable = ["B"]
 
 # Ignore `E402` (import violations) in selected files and directories

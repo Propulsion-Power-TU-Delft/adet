@@ -2,7 +2,7 @@ from inspect import getfullargspec
 from abc import ABC, abstractmethod
 import logging
 import re
-from typing import ClassVar, get_args, cast, Self
+from typing import ClassVar, get_args, cast, Self, Any
 import ast
 import inspect
 import textwrap
@@ -71,7 +71,7 @@ class EquationBase(ABC):
         return self.residual(*args)
 
     @abstractmethod
-    def residual(self, *args):
+    def residual(self, *args) -> Any | tuple[Any, ...]:
         """
         Expected format for argument is <node_state>_<var_type><index>
         where the index corresponds to the FlowNode in the order

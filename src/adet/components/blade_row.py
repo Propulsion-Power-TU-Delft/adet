@@ -30,8 +30,8 @@ from adet.equations.geometrical import (
     MeridionalUniform,
     MeridionalVariable,
 )
-from adet.losses.basic import ZeroDeviation
-from adet.losses.mixing import MixingBalances
+from adet.losses.basic import ZeroDeviation, PercentageEntropyLoss
+from adet.losses.mixing import MixingMomentumBalances
 from adet.node import FlowNode
 from adet.components import BaseComponent, Shaft
 from adet.geometry import BezierCurve, StraightLine
@@ -55,7 +55,6 @@ rotating frame (omega)
 
 GEOM_LINK = [
     # Geometry
-    # 'geo_rr',
     'geo_height',
     'geo_rr_midspan',
     'geo_meridional_angle',
@@ -155,11 +154,12 @@ class VanelessDiffuser(BaseComponent):
 class DownstreamMixer(BaseComponent):
     base_equations = [
         # *** Fundamental
-        (MixingBalances, (0, 1)),
+        (MassConservation, (0, 1)),
+        (EnergyConservation, (0, 1)),
+        (MixingMomentumBalances, (0, 1)),
         # *** Blockage
         (BladeBlockage, 0),
-        # (ZeroBlockage, 0),  # Blockage hardcoded in balances now
-        (ZeroBlockage, 1),  # No blockg mixed out
+        (ZeroBlockage, 1),  # No blockage mixed out
         # Uniform meridional distribution
         (MeridionalUniform, 0),
         (MeridionalUniform, 1),
@@ -177,7 +177,8 @@ class DownstreamMixer(BaseComponent):
             # Stay in the same MRF as blade row
             'kin_omega',
             # Geometry
-            'geo_pitch',
+            'geo_num_blades',
+            'geo_metal_angle',
             # Boundary layer and blade thicknesses
             'geo_bld_thick',
             'oth_disp_thick',

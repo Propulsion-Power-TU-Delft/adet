@@ -8,14 +8,14 @@ from adet.equations.base_equation import EquationBase
 from adet.tools.interpolation import make_casadi_interpolant
 
 
-class MixingBalances(EquationBase):
+class MixingMomentumBalances(EquationBase):
     """
     Balances of mass, momentum and energy for a mixing
     0 = Throat
     1 = Mixed out conditions
     """
 
-    manual_units = ('kg / s / m', 'N / m', 'N / m', 'J / kg', 'Pa')
+    manual_units = ('Pa', 'N / m', 'N / m')
 
     def _get_base_pressure_interpolant(self, blade_type: Literal['conv', 'conv-div']):
         data_folder = Path(__file__).parents[3] / 'data'
@@ -26,26 +26,25 @@ class MixingBalances(EquationBase):
 
     def residual(
         self,
+        oth_ch_massflow0,
+        oth_ch_massflow1,
         # Thermo
         stc_p0,
         stc_p1,
         stc_rhomass0,
-        stc_rhomass1,
         tot_p0,  # For sieverding
-        tot_hmass0,
-        tot_hmass1,
         # Kinematics
         kin_W0,
         kin_W1,
-        kin_metal_angle0,
         kin_beta0,
         kin_beta1,
         # Geometry
+        geo_hh0,
+        geo_hh1,
         geo_pitch0,
         geo_bld_thick0,
         # Boundary layer
         oth_p_base0,
-        oth_disp_thick0,
         oth_mom_thick0,
     ):
         # Detect array shapes
@@ -58,40 +57,32 @@ class MixingBalances(EquationBase):
         # Hardcoded blade parameter (=2)-> Check meaning
         # Add support for other blade parameters
         first_param = stc_p1 / tot_p0
-        second_param = 2 * stc_p1**0
-        table_entry = cs.horzcat(first_param, second_param)
-        r4 = oth_p_base0 - base_p_interpolant(table_entry.T).T
+        second_param = 2 * stc_p1**0  # it's just a 2 with the correct shape
+        table_entry = cs.horzcat(first_param, second_param).T
+        pb_by__ptin = base_p_interpolant(table_entry).T
+        r0 = oth_p_base0 - pb_by__ptin * tot_p0
 
-        # NOTE:
-        # 1. These balances are on a control volume with inlet and outlet
-        # perpendicular to the relative velocity (not meridional)
-        # 2. The sign of deviation should not be relevant
-        # because the cosine makes it positive anyways
-        # 3. Use metal angle instead of beta?
-        alpha = kin_metal_angle0
-        w = geo_pitch0 * np.cos(alpha)
-        delta = alpha - kin_beta1
-        p_suc = stc_p0
-
-        mass_in = stc_rhomass0 * kin_W0 * (w - geo_bld_thick0 - oth_disp_thick0)
-        mass_out = stc_rhomass1 * kin_W1 * geo_pitch0 * np.cos(alpha - delta)
-
-        r0 = mass_in - mass_out
+        # Hypotheses
+        alpha = kin_beta0  # Trailing edge aligned to local flow
+        p_suct = stc_p0  # Pressure on suction surface = outlet pressure
+        throat = geo_pitch0 * np.cos(alpha)
+        devtn = kin_beta1 - alpha
 
         # Momentum in x direction
         mom_in_x = (
-            stc_p0 * (w - geo_bld_thick0)  # Throat minus te thickness
+            stc_p0 * (throat - geo_bld_thick0)  # Throat minus te thickness
             + oth_p_base0 * geo_bld_thick0  # Base pressure contribution
-            + mass_in * kin_W0  # Incoming massflow
+            + oth_ch_massflow0 / geo_hh0 * kin_W0  # Incoming massflow
             - stc_rhomass0 * kin_W0**2 * oth_mom_thick0  # Deficit due to b.l.
         )
-        mom_out_x = mass_out * kin_W1 * np.cos(delta) + stc_p1 * w
+        mom_out_x = (
+            oth_ch_massflow1 / geo_hh1 * kin_W1 * np.cos(devtn) + stc_p1 * throat
+        )
         r1 = mom_in_x - mom_out_x
 
         # Momentum in y direction
-        r2 = (p_suc - stc_p1) * w * np.tan(alpha) - mass_out * kin_W1**2 * np.sin(delta)
+        r2 = (p_suct - stc_p1) * throat * np.tan(
+            alpha
+        ) - oth_ch_massflow1 / geo_hh1 * kin_W1 * np.sin(devtn)
 
-        # Energy balance
-        r3 = tot_hmass0 - tot_hmass1
-
-        return r0, r1, r2, r3, r4
+        return r0, r1, r2

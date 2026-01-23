@@ -1,19 +1,22 @@
 # === IMPORTS
 # Standard library
+from adet.equations.nondimensional import (
+    TotalTotalExpansionEfficiency,
+)
 import logging
 
 from pint import Quantity
 
 # Equations
 from adet.components.blade_row import DownstreamMixer
-from adet.equations.definitions import BoundaryLayerRatios
-from adet.equations.fundamental import ZeroBlockage
+from adet.equations.definitions import BoundaryLayerRatios, IsentropicTotalEnthalpy
+from adet.equations.fundamental import BladeBlockage
 from adet.equations.geometrical import (
+    MeridionalUniform,
     MeridionalVariable,
     MinimalCamberLine,
     ParabolicCamberline,
 )
-from adet.equations.nondimensional import WorkCoefficient
 from adet.losses.basic import (
     PercentageEntropyLoss,
     PlaceHolderLoss,
@@ -22,13 +25,12 @@ from adet.losses.basic import (
 
 # Tooling & Components
 from adet.tools.coolprop_utils import DebugAbstractState
-from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
+from adet.registries import DefaultUnitsRegistry, GuessRegistry
 from adet.fluid.settings import ExternalFluidModel
 from adet.components import BladeRow, Shaft, Inlet
 
 # External libraries
 import matplotlib.pyplot as plt
-import jax
 
 # Network build
 from adet.assembly import CasadiSystem, solve_root_problem
@@ -38,34 +40,27 @@ from adet.fluid.settings import FluidSettings
 # Objects Configuration => MODIFY CONFIG FILE TO SET BOUNDARY CONDITIONS
 
 # Tooling and utils
-from adet.losses.base_loss import LossModel
-from adet.losses.profile import DentonProfileLoss
 from adet.tools.iter import grouper
 from adet.tools.loggers import setup_logger
 from adet.components.blade_row import plot_from_nodes
 
 logger = logging.getLogger(__name__)
-jax.config.update('jax_enable_x64', True)
 
 setup_logger(
     logger,
     logging.INFO,
     logging.INFO,
-    suppress_modules=['matplotlib', 'jax'],
     banned_keywords=['STREAM', 'findfont', 'sBIT'],
 )
 
-# Disable verbose jax debug logs that somehow elude
-# the logging filter I set up for it
-
 # === SETTINGS
-NUM_SPAN = 5
+NUM_SPAN = 1
 SCALED = True
 PLOTS = True
 PRINTS = True
 
 # This counts the number of updates in an attribute
-abs_state = DebugAbstractState('HEOS', 'Air')
+abs_state = DebugAbstractState('REFPROP', 'Air')
 abs_state.debug_print = False
 
 real_model = ExternalFluidModel(abs_state)
@@ -80,26 +75,18 @@ _guess_reg = GuessRegistry()
 _guess_reg.reset()
 _guess_reg.set_fallback_value(1.2)
 
-_limreg = VariableBoundsRegistry()
-# _limreg.set('Vm', (0.0, 100.0))
-
-# Set fallback values for scales and guesses to 1.0
-
 # *** Shafts
-casing = Shaft(
-    Quantity(0.0, 'rpm'),
+shaft = Shaft(
+    Quantity(800.0, 'rpm'),
     is_constrained=True,
 )
-rotating_shaft = Shaft(
-    Quantity(1000.0, 'rpm'),
-    is_constrained=True,
-)
+
 
 # COMPONENT STACK
 inlet = Inlet(
     {
         'kin': {
-            'alpha': Quantity(0, 'deg'),
+            'alpha': Quantity(40, 'deg'),
             'Vm': Quantity(80, 'm/s'),
         },
         'geo': {
@@ -114,9 +101,9 @@ inlet = Inlet(
     }
 )
 
-row0 = BladeRow(
+row = BladeRow(
     name='Stator',
-    shaft=casing,
+    shaft=shaft,
     in_constraints={
         'geo': {
             'thick_by_pitch': 0.04,
@@ -124,7 +111,7 @@ row0 = BladeRow(
     },
     out_constraints={
         'kin': {
-            'alpha': Quantity(60, 'deg'),
+            'beta': Quantity(-60, 'deg'),
             # 'mach': 0.2,
         },
         'geo': {
@@ -133,12 +120,9 @@ row0 = BladeRow(
             'rr_midspan': 0.5,
             # Blade
             'chord_ax': 0.15,
-            'num_blades': 25,
-            'thick_by_pitch': 0.02,  # Blade thickness by pitch
+            'num_blades': 15,
+            'thick_by_pitch': 0.015,  # Blade thickness by pitch
             'heightRatio': 1.1,
-        },
-        'tot': {
-            # 'p': 5e5,  # Impose either here or at inlet
         },
         'oth': {
             'mom_by_bld_Ratio': 0.075,
@@ -154,28 +138,26 @@ row0 = BladeRow(
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
         PercentageEntropyLoss(0.0): (0, 1),
-        # |> Boundary layer properties for mixing
+        # |> Boundary layer properties
         BoundaryLayerRatios(): 1,
+        BladeBlockage(): 1,
+        # Efficiency measures
     },
 )
 
 mixer = DownstreamMixer(
     'Mixer',
-    in_constraints={
-        'geo': {
-            'metal_angle': 0.0,
-        },
-    },
     out_constraints={
         'geo': {
             # PLOTTING for sanity checks, no physical meaning
             'chord_ax': 0.05,
-            'metal_angle': 0.0,
+            'metal_angle': 0.01,
         },
     },
     extra_equations={
         PlaceHolderLoss(): (0, 1),
-        MeridionalVariable(): 1,
+        # ZeroDeviation(): 1,
+        # PercentageEntropyLoss(0.0): (0, 1),
     },
 )
 
@@ -186,17 +168,25 @@ ntw = ComponentNetwork(
     inlet,  # Inlet conditions
     CasadiSystem(num_span=NUM_SPAN),  # Backend
     [
-        row0,
+        row,
         mixer,
     ],
 )
+
+# if ntw.system.num_span > 1:
+#     ntw.system.remove_equation(MeridionalUniform, 1)
+#     ntw.system.add_equation(MeridionalVariable(), 1)
+
+if ntw.num_components > 1:
+    ntw.system.add_equation(IsentropicTotalEnthalpy(), (0, 3))
+    ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
 
 ntw.system.build(SCALED)
 
 rootfinder_is = ntw.system.make_rootfinder(
     'ipopt',
     opts={
-        'ipopt.tol': 1e-6,
+        'ipopt.tol': 1e-4,
     },
 )
 
@@ -220,19 +210,20 @@ if PLOTS:
     FONTSIZE = 18
     FONTDICT = {'fontsize': FONTSIZE}
 
-    fig, ax = plt.subplots(len(nodes))
     # Plot velocity triangles
-    for i, n in enumerate(ntw.system.nodes):
-        n.kin.plot(n.geo, FONTSIZE, ax[i])
+    for i, node in enumerate(ntw.system.nodes):
+        _, ax = plt.subplots()
+        ax.set_aspect('equal')
+        node.kin.plot(node.geo, FONTSIZE, ax)
         plt.title(f'Node number {i}')
 
     # Plot entropy rise
     fig, ax = plt.subplots()
     ax.set_title('Entropy rise')
     smass0 = ntw.system.nodes[0].stc.smass
-    for i, n in enumerate(ntw.system.nodes):
+    for i, node in enumerate(ntw.system.nodes):
         # Plot entropy distributions
-        ax.plot(n.geo.rr, n.stc.smass - smass0)  # pyright:ignore
+        ax.plot(node.geo.rr, node.stc.smass - smass0)  # pyright:ignore
 
     plt.tick_params(labelsize=FONTSIZE / 1.5 // 1)
 
@@ -309,5 +300,9 @@ if PLOTS:
     plt.tight_layout()
 
 print(f'Num updates = {real_model.eos_object.num_updates}')
-plt.show()
+if ntw.num_components > 1:
+    print(f'Entropy rise {nodes[3].stc.smass - nodes[2].stc.smass}')
+    print(f'Deviation {nodes[3].kin.beta - nodes[2].kin.beta}')
+
+# plt.show()
 plt.close('all')

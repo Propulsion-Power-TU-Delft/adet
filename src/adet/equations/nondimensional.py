@@ -42,6 +42,21 @@ class MidspanTotalTotalPressRatio(EquationBase):
         return tot_p0[midspan] * oth_pRatio_ttrr_midspan1 - tot_p1[midspan]
 
 
+class TotalTotalExpansionEfficiency(EquationBase):
+    def residual(
+        self,
+        tot_p1,
+        stc_smass0,
+        tot_hmass0,
+        tot_hmass1,
+        oth_eta_tt1,
+        oth_tot_hmass_is1,
+    ):
+        return oth_eta_tt1 - (tot_hmass0 - tot_hmass1) / (
+            tot_hmass0 - oth_tot_hmass_is1
+        )
+
+
 class TotalTotalCompressionEfficiency(EquationBase):
     def residual(
         self,
