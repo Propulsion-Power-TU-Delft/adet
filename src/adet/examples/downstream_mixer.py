@@ -2,6 +2,7 @@
 # Standard library
 from adet.equations.nondimensional import (
     TotalTotalExpansionEfficiency,
+    WorkCoefficient,
 )
 import logging
 
@@ -11,12 +12,7 @@ from pint import Quantity
 from adet.components.blade_row import DownstreamMixer
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicTotalEnthalpy
 from adet.equations.fundamental import BladeBlockage
-from adet.equations.geometrical import (
-    MeridionalUniform,
-    MeridionalVariable,
-    MinimalCamberLine,
-    ParabolicCamberline,
-)
+from adet.equations.geometrical import MinimalCamberLine, ParabolicCamberline
 from adet.losses.basic import (
     PercentageEntropyLoss,
     PlaceHolderLoss,
@@ -25,7 +21,7 @@ from adet.losses.basic import (
 
 # Tooling & Components
 from adet.tools.coolprop_utils import DebugAbstractState
-from adet.registries import DefaultUnitsRegistry, GuessRegistry
+from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
 from adet.fluid.settings import ExternalFluidModel
 from adet.components import BladeRow, Shaft, Inlet
 
@@ -60,7 +56,7 @@ PLOTS = True
 PRINTS = True
 
 # This counts the number of updates in an attribute
-abs_state = DebugAbstractState('REFPROP', 'Air')
+abs_state = DebugAbstractState('REFPROP', 'MM')
 abs_state.debug_print = False
 
 real_model = ExternalFluidModel(abs_state)
@@ -73,21 +69,26 @@ settings = FluidSettings(
 _defreg = DefaultUnitsRegistry()
 _guess_reg = GuessRegistry()
 _guess_reg.reset()
-_guess_reg.set_fallback_value(1.2)
+_guess_reg.set_fallback_value(0.5)
+
+_bounds_reg = VariableBoundsRegistry()
+_bounds_reg.set('.*massflow.*', (0.0, 1e5))
+_bounds_reg.set('delta_smass_.*', (0.0, 100.0))
+_bounds_reg.set('eta_tt', (0.8, 1.0))
+
 
 # *** Shafts
 shaft = Shaft(
-    Quantity(800.0, 'rpm'),
+    Quantity(1800.0, 'rpm'),
     is_constrained=True,
 )
-
 
 # COMPONENT STACK
 inlet = Inlet(
     {
         'kin': {
-            'alpha': Quantity(40, 'deg'),
-            'Vm': Quantity(80, 'm/s'),
+            'beta': Quantity(40, 'deg'),
+            'Vm': Quantity(70, 'm/s'),
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
@@ -95,8 +96,8 @@ inlet = Inlet(
             'height': 0.2,
         },
         'tot': {
-            'p': 6e5,
-            'T': 700,
+            'p': 18e5,
+            'T': 600,
         },
     }
 )
@@ -111,7 +112,8 @@ row = BladeRow(
     },
     out_constraints={
         'kin': {
-            'beta': Quantity(-60, 'deg'),
+            # 'beta': Quantity(-40, 'deg'),
+            'relmach': 1.0,
             # 'mach': 0.2,
         },
         'geo': {
@@ -120,8 +122,8 @@ row = BladeRow(
             'rr_midspan': 0.5,
             # Blade
             'chord_ax': 0.15,
-            'num_blades': 15,
-            'thick_by_pitch': 0.015,  # Blade thickness by pitch
+            'num_blades': 20,
+            'thick_by_pitch': 0.02,
             'heightRatio': 1.1,
         },
         'oth': {
@@ -151,12 +153,11 @@ mixer = DownstreamMixer(
         'geo': {
             # PLOTTING for sanity checks, no physical meaning
             'chord_ax': 0.05,
-            'metal_angle': 0.01,
         },
     },
     extra_equations={
+        ZeroDeviation(): 1,
         PlaceHolderLoss(): (0, 1),
-        # ZeroDeviation(): 1,
         # PercentageEntropyLoss(0.0): (0, 1),
     },
 )
@@ -173,10 +174,6 @@ ntw = ComponentNetwork(
     ],
 )
 
-# if ntw.system.num_span > 1:
-#     ntw.system.remove_equation(MeridionalUniform, 1)
-#     ntw.system.add_equation(MeridionalVariable(), 1)
-
 if ntw.num_components > 1:
     ntw.system.add_equation(IsentropicTotalEnthalpy(), (0, 3))
     ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
@@ -186,14 +183,21 @@ ntw.system.build(SCALED)
 rootfinder_is = ntw.system.make_rootfinder(
     'ipopt',
     opts={
-        'ipopt.tol': 1e-4,
+        'ipopt.tol': 1e-7,
+        'error_on_fail': True,
     },
 )
 
 x0_is = ntw.system.get_initial_guess()
 kn_is = ntw.system.get_scaled_constraints()
 bnd_is = ntw.system.get_arguments_bounds()
-sol_is = solve_root_problem(rootfinder_is, x0_is, kn_is, bnd_is, suppress_output=False)
+sol_is = solve_root_problem(
+    rootfinder_is,
+    x0_is,
+    kn_is,
+    bnd_is,
+    suppress_output=True,
+)
 
 # Write solution to network (just for post processing)
 ntw.system.write_solution_to_nodes(sol_is)
@@ -303,6 +307,9 @@ print(f'Num updates = {real_model.eos_object.num_updates}')
 if ntw.num_components > 1:
     print(f'Entropy rise {nodes[3].stc.smass - nodes[2].stc.smass}')
     print(f'Deviation {nodes[3].kin.beta - nodes[2].kin.beta}')
+    print(f'Eta TT  {nodes[3].oth.eta_tt}')
+    print(f'K_is {2 * (n3.oth.tot_hmass_is - n0.tot.hmass) / n0.kin.U**2}')
+    print(f'Phi {n1.kin.Vm / n0.kin.U}')
 
 # plt.show()
 plt.close('all')

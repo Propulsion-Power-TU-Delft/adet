@@ -270,6 +270,8 @@ class GuessRegistry(BaseRegistry[str, float]):
         'camb_len': 0.1,
         'pitch': 0.1,
         'bld_thick': 0.005,
+        'mom_thick': 1e-5,
+        'disp_thick': 2e-5,
         'num_blades.*': 20.0,
         'num_splitters': 20.0,
         'throat': 0.1,
@@ -373,14 +375,14 @@ class VariableBoundsRegistry(
 ):
     DEFAULTS = {
         # THERMODYNAMICS
-        'p': (1e4, 50e5),
-        'rhomass': (1e-3, 50.0),
+        'p': (1e4, 150e5),
+        'rhomass': (1e-3, 300.0),
         'T': (80.0, 1800.0),
         # KINEMATICS
-        'V': (10.0, 500.0),
-        'Vm': (1.0, 200.0),
+        'V': (1.0, 500.0),
+        'Vm': (1.0, 500.0),
         'Vt': (-500.0, 500.0),
-        'W': (10.0, 500.0),
+        'W': (1.0, 500.0),
         'Wm': (1.0, 500.0),
         'Wt': (-500.0, 500.0),
         'U': (-500.0, 500.0),
