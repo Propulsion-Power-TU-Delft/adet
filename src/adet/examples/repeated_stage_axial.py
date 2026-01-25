@@ -96,15 +96,13 @@ _dfu_reg.from_dict(
         'workCoeff': 'dimensionless',
         'flowCoeff': 'dimensionless',
         'specificSpeed': 'dimensionless',
-        'STratio': 'dimensionless',
         'VmRatio': 'dimensionless',
         'Vtmid': 'm/s',
-        'Cd_profile': 'dimensionless',
         'sizeParameter': 'meters',
-        'num_blades': 'dimensionless',
-        'xi_by_camb_len_A': 'meters',
-        'xi_by_camb_len_B': 'meters',
-        'k_prof': '',
+        'Cd_profile': 'dimensionless',
+        'xi_by_camb_len_A': 'dimensionless',
+        'xi_by_camb_len_B': 'dimensionless',
+        'k_prof': 'dimensionless',
     }
 )
 

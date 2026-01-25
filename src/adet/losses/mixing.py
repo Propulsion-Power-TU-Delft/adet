@@ -1,12 +1,13 @@
 """Mixing losses downstream of turbomachinery blades"""
 
-from adet.equations.utils import safe_abs
-
 from pathlib import Path
 from typing import Literal
+
 import casadi as cs
 import numpy as np
+
 from adet.equations.base_equation import EquationBase
+from adet.equations.utils import safe_abs
 from adet.tools.interpolation import make_casadi_interpolant
 
 
@@ -72,7 +73,7 @@ class MixingMomentumBalances(EquationBase):
         delta_smass_mixing1,
     ):
         # Hypotheses
-        p_suct = stc_p0
+        p_suct = stc_p1
         devtn = kin_beta1 - kin_beta0
 
         # Massflow per unit length

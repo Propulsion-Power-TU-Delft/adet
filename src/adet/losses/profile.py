@@ -1,4 +1,3 @@
-from adet.equations.base_equation import EquationBase
 import CoolProp as cp
 import casadi as cs
 import numpy as np
@@ -28,14 +27,16 @@ class RectVelocityIncompressible(LossModel):
 
     def residual(
         self,
-        kin_W0,
-        kin_W1,
-        oth_Cd_profile1,
-        geo_camb_len1,
-        geo_pitch1,
         tot_p0,
         tot_p1,
         stc_rhomass1,
+        #
+        kin_W0,
+        kin_W1,
+        #
+        geo_camb_len1,
+        geo_pitch1,
+        oth_Cd_profile1,
     ):
         delta_W = kin_W1 - kin_W0
         W_mean = (kin_W1 + kin_W0) / 2
@@ -70,7 +71,7 @@ class RectVelocityIncompressible(LossModel):
 #            xi_by_camb_len1   xi_by_camb_len2
 
 
-class DentonProfileLoss(EquationBase):
+class DentonProfileLoss(LossModel):
     """
     Axial blade profile losses based on simplified pressure distribution.
     It should be able to be used for axial compressors and turbine blades,
@@ -140,10 +141,8 @@ class DentonProfileLoss(EquationBase):
         oth_Cd_profile1,
         # Geo
         geo_hh1,
-        geo_chord_ax1,
         geo_camb_len1,
         geo_stagger1,
-        geo_num_blades1,
     ):
         xi_by_camb_len, W_distr_ss, W_distr_ps = self._build_velocity_profile(
             oth_xi_by_camb_len_A1, oth_xi_by_camb_len_B1, oth_k_prof1, kin_W0, kin_W1

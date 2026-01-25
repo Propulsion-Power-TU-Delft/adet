@@ -1,9 +1,8 @@
-from collections import defaultdict, namedtuple
+from collections import namedtuple
 import csv
 from pathlib import Path
 
 import numpy as np
-import jax
 from pint import Quantity
 
 from adet.components import BladeRow, ComponentNetwork, Inlet
@@ -220,13 +219,11 @@ _dfu_reg.from_dict(
         'workCoeff': 'dimensionless',
         'flowCoeff': 'dimensionless',
         'specificSpeed': 'dimensionless',
-        'STratio': 'dimensionless',
         'VmRatio': 'dimensionless',
         'sizeParameter': 'meters',
         # Profile losses
         'Cd_profile': 'dimensionless',
-        'xi_by_camb_len_A': 'meters',
-        'xi_by_camb_len_B': 'meters',
+        'xi_by_camb_len.*': 'dimensionless',
         'k_prof': 'dimensionless',
         'mom_by_bld_Ratio': 'dimensionless',
         'disp_by_mom_Ratio': 'dimensionless',

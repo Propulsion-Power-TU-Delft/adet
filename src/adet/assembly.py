@@ -1631,7 +1631,7 @@ def solve_root_problem(
     knowns: list[NDArray],
     arg_bounds: tuple[cs.DM, cs.DM] | None = None,
     suppress_output: bool = True,
-    perturbate: bool = False,
+    perturbate_guess: bool = False,
     delta_pert: float = 0.05,
 ):
     if suppress_output:
@@ -1646,7 +1646,7 @@ def solve_root_problem(
         def perturb_func(x):
             return x + x * delta_pert * (-1 + 2 * np.random.ranf(1))
 
-        if perturbate:
+        if perturbate_guess:
             guess = jax.tree.map(perturb_func, guess)
 
         guess_cat = np.concatenate(guess)

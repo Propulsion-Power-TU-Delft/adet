@@ -19,6 +19,7 @@ from adet.fluid.settings import ExternalFluidModel
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import PercentageEntropyLoss, PlaceHolderLoss, ZeroDeviation
 from adet.losses.mixing import SieverdingBasePressure
+from adet.losses.profile import DentonProfileLoss, RectVelocityIncompressible
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.iter import grouper
@@ -51,10 +52,16 @@ settings = FluidSettings(
 )
 
 _defreg = DefaultUnitsRegistry()
+_defreg.from_dict(
+    {
+        'xi_by_camb_.*': 'dimensionless',
+        'Cd_prof': 'dimensionless',
+        'k_prof': 'dimensionless',
+    }
+)
 _guess_reg = GuessRegistry()
 _guess_reg.reset()
 _guess_reg.set_fallback_value(0.5)
-_guess_reg.set('beta', -0.5)
 
 _bounds_reg = VariableBoundsRegistry()
 _bounds_reg.reset()
@@ -71,7 +78,6 @@ inlet = Inlet(
     {
         'kin': {
             'beta': Quantity(-30, 'deg'),
-            # 'mach': Quantity(0.6, 'm/s'),
             'Vm': Quantity(70, 'm/s'),
         },
         'geo': {
@@ -96,7 +102,7 @@ row = BladeRow(
     },
     out_constraints={
         'kin': {
-            'beta': Quantity(-30, 'deg'),
+            'beta': Quantity(-40, 'deg'),
             # 'relmach': 1.0,
             # 'mach': 0.2,
         },
@@ -113,6 +119,10 @@ row = BladeRow(
         'oth': {
             'mom_by_bld_Ratio': 0.075,
             'disp_by_mom_Ratio': 2,
+            # Profile losses
+            'Cd_profile': 0.002,
+            'xi_by_camb_len_A': 0.375,
+            'xi_by_camb_len_B': 0.675,
         },
     },
     extra_equations={
@@ -123,10 +133,12 @@ row = BladeRow(
         # |> Losses & Dev
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
-        PercentageEntropyLoss(0.0): (0, 1),
+        # PercentageEntropyLoss(0.0): (0, 1),
         # |> Boundary layer properties
         BoundaryLayerRatios(): 1,
         BladeBlockage(): 1,
+        # DentonProfileLoss(): (0, 1),
+        RectVelocityIncompressible(): (0, 1),
         SieverdingBasePressure(): (0, 1),
         # Efficiency measures
     },
@@ -165,13 +177,7 @@ if ntw.num_components == 2:
 
 ntw.system.build(SCALED)
 
-rootfinder_is = ntw.system.make_rootfinder(
-    'ipopt',
-    opts={
-        'ipopt.tol': 1e-7,
-        'error_on_fail': True,
-    },
-)
+rootfinder_is = ntw.system.make_rootfinder('ipopt')
 
 x0_is = ntw.system.get_initial_guess()
 kn_is = ntw.system.get_scaled_constraints()
@@ -182,22 +188,39 @@ sol_is = solve_root_problem(
     kn_is,
     bnd_is,
     suppress_output=True,
-    perturbate=True,
-    delta_pert=0.0,
+    perturbate_guess=True,
+    delta_pert=0.05,
 )
 
-# Write solution to network (just for post processing)
-ntw.system.write_solution_to_nodes(sol_is)
+# Write solution to nodes for post processing
+sol_dict_is = ntw.system.solution_to_dict(sol_is)
 
+ntw.system.remove_equation(RectVelocityIncompressible, (0, 1))
+ntw.system.add_equation(DentonProfileLoss(), (0, 1))
+ntw.system.build()
+
+x0_loss = ntw.system.get_initial_guess(sol_dict_is)
+kn_loss = ntw.system.get_scaled_constraints()
+bnd_loss = ntw.system.get_arguments_bounds()
+rootfinder_loss = ntw.system.make_rootfinder('ipopt')
+sol_loss = solve_root_problem(
+    rootfinder_loss,
+    x0_loss,
+    kn_loss,
+    bnd_loss,
+    suppress_output=False,
+    perturbate_guess=False,
+)
+
+ntw.system.write_solution_to_nodes(sol_loss)
 ntw.print_structure()
+
 nodes = {}
 for i, node in enumerate(ntw.system.nodes):
     # For simpler access set n0, n1, n2, ...
     nodes[i] = node
 n0 = nodes[0]
 n1 = nodes[1]
-n2 = nodes[2]
-n3 = nodes[3]
 
 
 if PLOTS:
@@ -295,6 +318,8 @@ if PLOTS:
 
 print(f'Num updates = {real_model.eos_object.num_updates}')
 if ntw.num_components > 1:
+    n2 = nodes[2]
+    n3 = nodes[3]
     print(f'Entropy rise {n3.stc.smass - n2.stc.smass}')
     print(f'Deviation {n3.kin.beta - n2.kin.beta}')
 
@@ -302,7 +327,7 @@ if ntw.num_components > 1:
     w = n2.geo.pitch * np.cos(n2.geo.metal_angle)
     cpb = (n2.oth.p_base - n2.stc.p) / q
 
-    zeta_theory = (
+    zeta_inc = (
         -(cpb * n2.geo.bld_thick) / w
         + 2 * n2.oth.mom_thick / w
         + ((n2.oth.disp_thick + n2.geo.bld_thick) / w) ** 2
@@ -310,7 +335,7 @@ if ntw.num_components > 1:
 
     zeta_actual = (n2.rlt.p - n3.rlt.p) / q
 
-    print(f'Prediction vs actual zeta {zeta_theory}, {zeta_actual}')
+    print(f'Incompressible vs actual zeta {zeta_inc}, {zeta_actual}')
 
-# plt.show()
-plt.close('all')
+plt.show()
+# plt.close('all')

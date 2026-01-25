@@ -1,10 +1,10 @@
 """Implement registries with a singleton pattern"""
 
-import re
 import logging
-from pint import UnitRegistry
-from typing import Generic, TypeVar, Mapping
+import re
+from typing import Generic, Mapping, TypeVar
 
+from pint import UnitRegistry
 from pint.facets.plain import PlainUnit
 
 logger = logging.getLogger(__name__)
