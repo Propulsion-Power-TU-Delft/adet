@@ -1,44 +1,28 @@
 # === IMPORTS
 # Standard library
-from adet.equations.nondimensional import (
-    TotalTotalExpansionEfficiency,
-    WorkCoefficient,
-)
 import logging
 
+import matplotlib.pyplot as plt
+import numpy as np
 from pint import Quantity
 
-# Equations
+from adet.assembly import CasadiSystem, solve_root_problem
+from adet.components import BladeRow, Inlet, Shaft
+from adet.components import ComponentNetwork
 from adet.components.blade_row import DownstreamMixer
+from adet.components.blade_row import plot_from_nodes
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicTotalEnthalpy
 from adet.equations.fundamental import BladeBlockage
 from adet.equations.geometrical import MinimalCamberLine, ParabolicCamberline
-from adet.losses.basic import (
-    PercentageEntropyLoss,
-    PlaceHolderLoss,
-    ZeroDeviation,
-)
-
-# Tooling & Components
-from adet.tools.coolprop_utils import DebugAbstractState
-from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
+from adet.equations.nondimensional import TotalTotalExpansionEfficiency
 from adet.fluid.settings import ExternalFluidModel
-from adet.components import BladeRow, Shaft, Inlet
-
-# External libraries
-import matplotlib.pyplot as plt
-
-# Network build
-from adet.assembly import CasadiSystem, solve_root_problem
-from adet.components import ComponentNetwork
 from adet.fluid.settings import FluidSettings
-
-# Objects Configuration => MODIFY CONFIG FILE TO SET BOUNDARY CONDITIONS
-
-# Tooling and utils
+from adet.losses.basic import PercentageEntropyLoss, PlaceHolderLoss, ZeroDeviation
+from adet.losses.mixing import SieverdingBasePressure
+from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
+from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.iter import grouper
 from adet.tools.loggers import setup_logger
-from adet.components.blade_row import plot_from_nodes
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +40,7 @@ PLOTS = True
 PRINTS = True
 
 # This counts the number of updates in an attribute
-abs_state = DebugAbstractState('REFPROP', 'MM')
+abs_state = DebugAbstractState('REFPROP', 'air')
 abs_state.debug_print = False
 
 real_model = ExternalFluidModel(abs_state)
@@ -70,16 +54,15 @@ _defreg = DefaultUnitsRegistry()
 _guess_reg = GuessRegistry()
 _guess_reg.reset()
 _guess_reg.set_fallback_value(0.5)
+_guess_reg.set('beta', -0.5)
 
 _bounds_reg = VariableBoundsRegistry()
-_bounds_reg.set('.*massflow.*', (0.0, 1e5))
+_bounds_reg.reset()
 _bounds_reg.set('delta_smass_.*', (0.0, 100.0))
-_bounds_reg.set('eta_tt', (0.8, 1.0))
-
 
 # *** Shafts
 shaft = Shaft(
-    Quantity(1800.0, 'rpm'),
+    Quantity(0.0, 'rpm'),
     is_constrained=True,
 )
 
@@ -87,7 +70,8 @@ shaft = Shaft(
 inlet = Inlet(
     {
         'kin': {
-            'beta': Quantity(40, 'deg'),
+            'beta': Quantity(-30, 'deg'),
+            # 'mach': Quantity(0.6, 'm/s'),
             'Vm': Quantity(70, 'm/s'),
         },
         'geo': {
@@ -96,7 +80,7 @@ inlet = Inlet(
             'height': 0.2,
         },
         'tot': {
-            'p': 18e5,
+            'p': 5e5,
             'T': 600,
         },
     }
@@ -112,8 +96,8 @@ row = BladeRow(
     },
     out_constraints={
         'kin': {
-            # 'beta': Quantity(-40, 'deg'),
-            'relmach': 1.0,
+            'beta': Quantity(-30, 'deg'),
+            # 'relmach': 1.0,
             # 'mach': 0.2,
         },
         'geo': {
@@ -122,9 +106,9 @@ row = BladeRow(
             'rr_midspan': 0.5,
             # Blade
             'chord_ax': 0.15,
-            'num_blades': 20,
+            'num_blades': 30,
             'thick_by_pitch': 0.02,
-            'heightRatio': 1.1,
+            'heightRatio': 1.0,
         },
         'oth': {
             'mom_by_bld_Ratio': 0.075,
@@ -143,6 +127,7 @@ row = BladeRow(
         # |> Boundary layer properties
         BoundaryLayerRatios(): 1,
         BladeBlockage(): 1,
+        SieverdingBasePressure(): (0, 1),
         # Efficiency measures
     },
 )
@@ -156,7 +141,7 @@ mixer = DownstreamMixer(
         },
     },
     extra_equations={
-        ZeroDeviation(): 1,
+        ZeroDeviation(): 1,  # Create a fake metal angle for plotting
         PlaceHolderLoss(): (0, 1),
         # PercentageEntropyLoss(0.0): (0, 1),
     },
@@ -174,7 +159,7 @@ ntw = ComponentNetwork(
     ],
 )
 
-if ntw.num_components > 1:
+if ntw.num_components == 2:
     ntw.system.add_equation(IsentropicTotalEnthalpy(), (0, 3))
     ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
 
@@ -197,6 +182,8 @@ sol_is = solve_root_problem(
     kn_is,
     bnd_is,
     suppress_output=True,
+    perturbate=True,
+    delta_pert=0.0,
 )
 
 # Write solution to network (just for post processing)
@@ -207,7 +194,10 @@ nodes = {}
 for i, node in enumerate(ntw.system.nodes):
     # For simpler access set n0, n1, n2, ...
     nodes[i] = node
-    globals()[f'n{i}'] = node
+n0 = nodes[0]
+n1 = nodes[1]
+n2 = nodes[2]
+n3 = nodes[3]
 
 
 if PLOTS:
@@ -281,9 +271,9 @@ if PLOTS:
         outlet_angle = nodes[1].geo.metal_angle[midspan_idx]  # pyright:ignore
         chord_ax = nodes[1].geo.chord_ax[midspan_idx]  # pyright:ignore
         pitch = nodes[1].geo.pitch[midspan_idx]  # pyright:ignore
-        num_blades = 3  # blades to plot
+        num_plt_blades = 3  # blades to plot
 
-        for blade_num in range(num_blades):
+        for blade_num in range(num_plt_blades):
             pbl.plot_camber_line(
                 ax_camber,
                 inlet_angle,
@@ -305,11 +295,22 @@ if PLOTS:
 
 print(f'Num updates = {real_model.eos_object.num_updates}')
 if ntw.num_components > 1:
-    print(f'Entropy rise {nodes[3].stc.smass - nodes[2].stc.smass}')
-    print(f'Deviation {nodes[3].kin.beta - nodes[2].kin.beta}')
-    print(f'Eta TT  {nodes[3].oth.eta_tt}')
-    print(f'K_is {2 * (n3.oth.tot_hmass_is - n0.tot.hmass) / n0.kin.U**2}')
-    print(f'Phi {n1.kin.Vm / n0.kin.U}')
+    print(f'Entropy rise {n3.stc.smass - n2.stc.smass}')
+    print(f'Deviation {n3.kin.beta - n2.kin.beta}')
+
+    q = 0.5 * n2.stc.rhomass * n2.kin.W**2
+    w = n2.geo.pitch * np.cos(n2.geo.metal_angle)
+    cpb = (n2.oth.p_base - n2.stc.p) / q
+
+    zeta_theory = (
+        -(cpb * n2.geo.bld_thick) / w
+        + 2 * n2.oth.mom_thick / w
+        + ((n2.oth.disp_thick + n2.geo.bld_thick) / w) ** 2
+    )
+
+    zeta_actual = (n2.rlt.p - n3.rlt.p) / q
+
+    print(f'Prediction vs actual zeta {zeta_theory}, {zeta_actual}')
 
 # plt.show()
 plt.close('all')

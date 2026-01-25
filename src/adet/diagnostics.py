@@ -1,14 +1,12 @@
-import logging
 from collections import namedtuple
+import logging
+from typing import Generic, TypeAlias, TypeVar, Union
 
-# -- Typing
-from typing import Generic, Union, TypeAlias, TypeVar
-from jax import Array
-from numpy.typing import NDArray
-
-import numpy as np
 import casadi as cs
+from jax import Array
 import jax
+import numpy as np
+from numpy.typing import NDArray
 
 from adet.assembly import CasadiSystem, JaxSystem, SystemAssembler
 

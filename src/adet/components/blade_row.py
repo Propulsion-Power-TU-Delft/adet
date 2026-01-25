@@ -5,36 +5,28 @@ from typing import Any
 from matplotlib.lines import Line2D
 import numpy as np
 
-# Equation objects
+from adet.components import BaseComponent, Shaft
+from adet.equations import EquationBase
 from adet.equations.definitions import (
     AngleDeflection,
     BladePitch,
-    ThicknessToPitch,
     HeightRatio,
     MeridionalVelocityRatio,
     Solidity,
+    ThicknessToPitch,
 )
 from adet.equations.fundamental import (
     BladeBlockage,
+    ConstantAngMomentum,
     ConstantEnergy,
     EulerEquation,
     MassConservation,
-    ConstantAngMomentum,
     ZeroBlockage,
 )
-from adet.equations import EquationBase
-
-# Dependencies and tooling
-from adet.equations.geometrical import (
-    EndwallProperties,
-    MeridionalUniform,
-    MeridionalVariable,
-)
-from adet.losses.basic import ZeroDeviation, PercentageEntropyLoss
-from adet.losses.mixing import MixingMomentumBalances
-from adet.node import FlowNode
-from adet.components import BaseComponent, Shaft
+from adet.equations.geometrical import EndwallProperties, MeridionalUniform
 from adet.geometry import BezierCurve, StraightLine
+from adet.losses.mixing import MixingMomentumBalances, SimplifiedMixingBalances
+from adet.node import FlowNode
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +109,14 @@ class BladeRow(BaseComponent):
         Class that represents a blade row, compressor/turbine,
         stator/rotor
         """
-        super().__init__(name, in_constraints, out_constraints, extra_equations)
+        super().__init__(
+            name,
+            in_constraints,
+            out_constraints,
+            extra_equations,
+            from_previous_node,
+            constant_variables,
+        )
         if shaft.is_constrained:
             self.out_constraints['kin']['omega'] = shaft.omega
 
@@ -154,9 +153,10 @@ class VanelessDiffuser(BaseComponent):
 class DownstreamMixer(BaseComponent):
     base_equations = [
         # *** Fundamental
-        (MassConservation, (0, 1)),
         (ConstantEnergy, (0, 1)),
+        (MassConservation, (0, 1)),
         (MixingMomentumBalances, (0, 1)),
+        # (SimplifiedMixingBalances, (0, 1)),
         # *** Blockage
         (BladeBlockage, 0),
         (ZeroBlockage, 1),  # No blockage mixed out
@@ -174,6 +174,8 @@ class DownstreamMixer(BaseComponent):
         ABSOLUTE_LINK
         + GEOM_LINK
         + [
+            # Get the base pressure
+            'oth_p_base',
             # Stay in the same MRF as blade row
             'kin_omega',
             # Geometry

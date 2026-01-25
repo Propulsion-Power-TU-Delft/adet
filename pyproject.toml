@@ -31,7 +31,7 @@ build-backend = "uv_build"
 dev = [
     "basedpyright>=1.32.1",
     "ipdb>=0.13.13",
-    "ipython>=9.6.0",
+    "ipython<=9.0.0",
     "pdbpp>=0.11.7",
     "pytest>=8.4.2",
     "ruff>=0.14.3",
@@ -58,12 +58,12 @@ line-length = 88
 # - Enable pycodestyle errors and warnings (E, W) and pyflakes (F)
 select = ["E", "W", "F", "ARG", "C4"]
 # - Don't report unused imports (pyright does already)
-# ignore = ["F401"]
+ignore = ["F401"]
 # - Avoid trying to fix flake8-bugbear (`B`) violations.
 unfixable = ["B"]
 
-# Ignore `E402` (import violations) in selected files and directories
 [tool.ruff.lint.per-file-ignores]
+# Ignore `E402` (import violations) in selected files and directories
 "__init__.py" = ["E402"]
 "**/{tests,docs,tools}/*" = ["E402"]
 "main.py" = ["E402"]

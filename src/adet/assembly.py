@@ -6,23 +6,23 @@ data.
 """
 
 from abc import ABC, abstractmethod
-from collections import defaultdict, OrderedDict
+from collections import OrderedDict, defaultdict
 from copy import deepcopy
 from itertools import combinations
 import logging
-from typing import Callable, Mapping, Self, Sequence, Type, Literal, Any, cast
+import sys
+from typing import Any, Callable, Literal, Mapping, Self, Sequence, Type, cast
 
-from numpy.typing import NDArray
-from pint import Quantity
-
-import numpy as np
-from pint.facets.plain import PlainQuantity
-import sympy as sp
 import casadi as cs
-
 import jax as jax
 import jax.numpy as jnp
+import numpy as np
+from numpy.typing import NDArray
+from pint import Quantity
+from pint.facets.plain import PlainQuantity
+import sympy as sp
 
+from adet.constants import ArrayLike, NodeStatesNames
 from adet.equations.base_equation import EquationBase
 from adet.errors import ExistingEquationError
 from adet.fluid.casadi_eos import CasadiEos, CasadiEosFactory
@@ -32,21 +32,20 @@ from adet.fluid.settings import (
     ExternalFluidModel,
     FluidSettings,
 )
+from adet.node import FlowNode
 from adet.registries import (
     GuessRegistry,
-    ScalingRegistry,
     ScalarsRegistry,
+    ScalingRegistry,
     VariableBoundsRegistry,
 )
+from adet.tools.context import dummy_context, output_suppression, override_operators
 from adet.tools.coolprop_utils import (
     pair_based_sorting,
     pair_id_from_tuple,
     pair_tuple_from_id,
 )
-from adet.tools.strings import get_arg_state, rm_end_digits, get_index, get_arg_type
-from adet.node import FlowNode
-from adet.constants import NodeStatesNames, ArrayLike
-from adet.tools.context import dummy_context, override_operators, output_suppression
+from adet.tools.strings import get_arg_state, get_arg_type, get_index, rm_end_digits
 
 
 logger = logging.getLogger(__name__)
@@ -1036,9 +1035,9 @@ class CasadiSystem(SystemAssembler):
         self.scales_free_args_sym: list[cs.MX] = []
 
         self._eq_scales_sym: list[cs.MX] = []
-        self._res_expr_scaled: list[cs.MX] = []
+        self.res_expr_scaled: list[cs.MX] = []
 
-    def build(self, scaled: bool = True, throw: bool = True):
+    def build(self, scaled: bool = True):
         super().build(scaled)
         logger.info('Building CasADi backend...')
         self._reset_symbols()
@@ -1249,10 +1248,12 @@ class CasadiSystem(SystemAssembler):
         )
 
         if num_vars != num_residuals:
-            input(
+            answer = input(
                 f'*** WARNING: Mismatch in number of equations {num_residuals}'
-                f' and variables {num_vars}, press ENTER to continue anyway'
+                f' and variables {num_vars}, continue anyway? [y/n] '
             )
+            if answer not in ('y', 'Y', 'yes'):
+                sys.exit()
 
     def make_residual_function(self):
         """
