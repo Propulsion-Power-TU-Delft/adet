@@ -82,46 +82,6 @@ class DentonProfileLoss(LossModel):
     input_pair = cp.HmassSmass_INPUTS
     output_quantities = ('p', 'rhomass', 'T')
 
-    @staticmethod
-    def _build_velocity_profile(
-        xi_by_camb_len_A, xi_by_camb_len_B, k_prof, kin_W0, kin_W1
-    ) -> tuple[cs.DM, cs.DM, cs.DM]:
-        """
-        Build the velocity proile. `xi` is the curvilinear coordinate
-        along the camberline
-        """
-        # Positions
-        xi_by_camb_len = cs.horzcat(
-            0.0 * xi_by_camb_len_A,
-            xi_by_camb_len_A,
-            xi_by_camb_len_B,
-            xi_by_camb_len_A / xi_by_camb_len_A,
-        )
-
-        # Velocity values
-        CLIP_RATIO = 5  # Clip pressure side to inlet W / ratio
-
-        # NOTE: With the absolute value this should work for both diffusing
-        # and accelerating channels
-        delta_W = cs.fabs(kin_W1 - kin_W0)
-
-        # NOTE: Nothing prevents k_prof from being negative, because
-        # the values used in the residual formulation to compute the pressure
-        # only use W**2.
-        # The problem arises when you try to use the clip ratio, because you
-        # are assuming the value of the sign by using the max function
-        # => Solution = Take the absolute value of k_prof
-
-        k_prof = cs.fabs(k_prof)  # Take the absolute value
-        W_mid_ss = 2 * k_prof * kin_W1 + delta_W
-        W_mid_ps = cs.fmax(k_prof * kin_W0 - delta_W, kin_W0 / CLIP_RATIO)
-
-        # Full velocity distribution
-        W_distr_ss = cs.horzcat(1.0 * kin_W0, W_mid_ss, W_mid_ss, kin_W1)  # Suction
-        W_distr_ps = cs.horzcat(0.0 * kin_W0, W_mid_ps, W_mid_ps, kin_W1)  # Pressure
-
-        return xi_by_camb_len, W_distr_ss, W_distr_ps
-
     def residual(
         self,
         # Thermo
@@ -143,8 +103,9 @@ class DentonProfileLoss(LossModel):
         geo_hh1,
         geo_camb_len1,
         geo_stagger1,
+        delta_smass_profile1,
     ):
-        xi_by_camb_len, W_distr_ss, W_distr_ps = self._build_velocity_profile(
+        xi_by_camb_len, W_distr_ss, W_distr_ps = trapezoidal_vel_profile(
             oth_xi_by_camb_len_A1, oth_xi_by_camb_len_B1, oth_k_prof1, kin_W0, kin_W1
         )
 
@@ -165,12 +126,12 @@ class DentonProfileLoss(LossModel):
         # Entropy generation from 2D viscous dissipation
         # [ kg / m**3 ] * [ m**3 / s**3 ] / [K] * [m]
         # = [ kg * m / s**3 / K ] = [ N / s / K ]
-        entropy_integral_ps = trapezoid2(
-            oth_Cd_profile1 * rho_ps * W_distr_ps**3 / temp_ps,
+        entropy_integral_ps = oth_Cd_profile1 * trapezoid2(
+            rho_ps * W_distr_ps**3 / temp_ps,
             xi_dimensional,
         )
-        entropy_integral_ss = trapezoid2(
-            oth_Cd_profile1 * rho_ss * W_distr_ss**3 / temp_ss,
+        entropy_integral_ss = oth_Cd_profile1 * trapezoid2(
+            rho_ss * W_distr_ss**3 / temp_ss,
             xi_dimensional,
         )
 
@@ -188,6 +149,60 @@ class DentonProfileLoss(LossModel):
         )
 
         # 2. SPECIFIC entropy generation [J / kg / K]
-        r2 = stc_smass1 - stc_smass0 - entropy_integral * geo_hh1 / oth_ch_massflow1
+        r2 = delta_smass_profile1 - entropy_integral * geo_hh1 / oth_ch_massflow1
 
         return r1, r2
+
+
+@staticmethod
+def trapezoidal_vel_profile(
+    xi_by_camb_len_A, xi_by_camb_len_B, k_prof, kin_W0, kin_W1
+) -> tuple[cs.DM, cs.DM, cs.DM]:
+    """
+    Build the velocity proile. `xi` is the curvilinear coordinate
+    along the camberline
+
+    Parameters
+    ----------
+    xi_by_camb_len_A
+        position of the first point
+    xi_by_camb_len_B
+        position of the second point
+    k_prof
+        Velocity multiplier
+    kin_W0
+        Inlet velocity
+    kin_W1
+        Outlet velocity
+    """
+    # Positions
+    xi_by_camb_len = cs.horzcat(
+        0.0 * xi_by_camb_len_A,
+        xi_by_camb_len_A,
+        xi_by_camb_len_B,
+        xi_by_camb_len_A / xi_by_camb_len_A,
+    )
+
+    # Velocity values
+    CLIP_RATIO = 5  # Clip pressure side to inlet W / ratio
+
+    # NOTE: With the absolute value this should work for both diffusing
+    # and accelerating channels
+    delta_W = cs.fabs(kin_W1 - kin_W0)
+
+    # NOTE: Nothing prevents k_prof from being negative, because
+    # the values used in the residual formulation to compute the pressure
+    # only use W**2.
+    # The problem arises when you try to use the clip ratio, because you
+    # are assuming the value of the sign by using the max function
+    # => Solution = Take the absolute value of k_prof
+
+    k_prof = cs.fabs(k_prof)  # Take the absolute value
+    W_mid_ss = 2 * k_prof * kin_W1 + delta_W
+    W_mid_ps = cs.fmax(k_prof * kin_W0 - delta_W, kin_W0 / CLIP_RATIO)
+
+    # Full velocity distribution
+    W_distr_ss = cs.horzcat(1.0 * kin_W0, W_mid_ss, W_mid_ss, kin_W1)  # Suction
+    W_distr_ps = cs.horzcat(0.0 * kin_W0, W_mid_ps, W_mid_ps, kin_W1)  # Pressure
+
+    return xi_by_camb_len, W_distr_ss, W_distr_ps

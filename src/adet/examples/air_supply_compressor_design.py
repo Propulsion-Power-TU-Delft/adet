@@ -25,7 +25,7 @@ from adet.components.blade_row import VanelessDiffuser, plot_from_nodes
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 
-from adet.equations.definitions import IsentropicTotalEnthalpy, EffectiveBladeNumber
+from adet.equations.definitions import IsentropicProperties, EffectiveBladeNumber
 from adet.equations.geometrical import (
     LaxByOutradius,
     MinimalCamberLine,
@@ -193,7 +193,7 @@ rotor = BladeRow(
         # *** Metal angle <-[link]-> Flow angle
         ZeroDeviation(): 0,  # Zero incidence
         # *** Enthalpy definitions
-        IsentropicTotalEnthalpy(): (0, 1),
+        IsentropicProperties(): (0, 1),
         TotalTotalCompressionEfficiency(): (0, 1),
         **losses,
     },

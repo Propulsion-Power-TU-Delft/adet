@@ -11,15 +11,22 @@ from adet.components import BladeRow, Inlet, Shaft
 from adet.components import ComponentNetwork
 from adet.components.blade_row import DownstreamMixer
 from adet.components.blade_row import plot_from_nodes
+from adet.equations.base_equation import EquationBase
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
 from adet.equations.fundamental import BladeBlockage
-from adet.equations.geometrical import MinimalCamberLine, ParabolicCamberline
+from adet.equations.geometrical import (
+    MinimalCamberLine,
+    ParabolicCamberline,
+    TwoSegmentCamberline,
+)
 from adet.equations.nondimensional import TotalTotalExpansionEfficiency
 from adet.fluid.settings import ExternalFluidModel
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import PlaceHolderLoss, ZeroDeviation
+from adet.losses.basic import PercentageEntropyLoss, PlaceHolderLoss, ZeroDeviation
+from adet.losses.leakage import DentonLeakageLoss
 from adet.losses.mixing import SieverdingBasePressure
 from adet.losses.profile import DentonProfileLoss, RectVelocityIncompressible
+from adet.losses.secondary import SecondaryBSM
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.iter import grouper
@@ -33,6 +40,7 @@ setup_logger(
     logging.INFO,
     banned_keywords=['STREAM', 'findfont', 'sBIT'],
 )
+plt.close('all')
 
 # === SETTINGS
 NUM_SPAN = 1
@@ -58,6 +66,7 @@ _defreg.from_dict(
         'xi_by_camb_.*': 'dimensionless',
         'Cd_prof': 'dimensionless',
         'k_prof': 'dimensionless',
+        'Y_.*': 'dimensionless',
     }
 )
 _guess_reg = GuessRegistry()
@@ -78,7 +87,7 @@ shaft = Shaft(
 inlet = Inlet(
     {
         'kin': {
-            'beta': Quantity(-30, 'deg'),
+            'beta': Quantity(10, 'deg'),
             'Vm': Quantity(70, 'm/s'),
         },
         'geo': {
@@ -103,7 +112,7 @@ row = BladeRow(
     },
     out_constraints={
         'kin': {
-            'beta': Quantity(-40, 'deg'),
+            'beta': Quantity(-50, 'deg'),
             # 'relmach': 1.0,
             # 'mach': 0.2,
         },
@@ -115,7 +124,8 @@ row = BladeRow(
             'chord_ax': 0.15,
             'num_blades': 30,
             'thick_by_pitch': 0.02,
-            'heightRatio': 1.0,
+            'heightRatio': 1.1,
+            'tip_clearance': 1e-4,
         },
         'oth': {
             'mom_by_bld_Ratio': 0.075,
@@ -124,32 +134,47 @@ row = BladeRow(
             'Cd_profile': 0.002,
             'xi_by_camb_len_A': 0.375,
             'xi_by_camb_len_B': 0.675,
+            # For tip leakage
+            'dischCoeff': 0.3,
+            # For secondary
+            'disp_H_endW_Ratio': 0.05,
         },
     },
     extra_equations={
         # Camberline model
-        MinimalCamberLine(): (0, 1),
+        # MinimalCamberLine(): (0, 1),
         # TwoSegmentCamberline(): (0, 1),
-        # ParabolicCamberline(): (0, 1),
+        ParabolicCamberline(): (0, 1),
         # |> Losses & Dev
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
-        # PercentageEntropyLoss(0.0): (0, 1),
+        IsentropicProperties(): (0, 1),
         # |> Boundary layer properties
         BoundaryLayerRatios(): 1,
         BladeBlockage(): 1,
         SieverdingBasePressure(): (0, 1),
+        SecondaryBSM(): (0, 1),
         INITIAL_LOSS: (0, 1),
         # Efficiency measures
     },
 )
+
+
+class LossMatcher(EquationBase):
+    def residual(
+        self, stc_smass0, stc_smass1, oth_delta_smass_leakage1, oth_delta_smass_profile1
+    ):
+        return stc_smass1 - (
+            stc_smass0 + oth_delta_smass_leakage1 + oth_delta_smass_profile1
+        )
+
 
 mixer = DownstreamMixer(
     'Mixer',
     out_constraints={
         'geo': {
             # PLOTTING for sanity checks, no physical meaning
-            'chord_ax': 0.05,
+            'chord_ax': 0.01,
         },
     },
     extra_equations={
@@ -195,9 +220,12 @@ solution = solve_root_problem(
 # Write solution to nodes for post processing
 sol_dict_is = ntw.system.solution_to_dict(solution)
 
-# = = = INITIALIZE = = =
+# = = = AFTER INITIALIZING = = =
 ntw.system.remove_equation(INITIAL_LOSS.__class__, (0, 1))
 ntw.system.add_equation(DentonProfileLoss(), (0, 1))
+ntw.system.add_equation(DentonLeakageLoss(), (0, 1))
+ntw.system.add_equation(LossMatcher(), (0, 1))
+# ntw.system.add_equation(PercentageEntropyLoss(0.0), (0, 1))
 ntw.system.build()
 
 x0_loss = ntw.system.get_initial_guess(sol_dict_is)
@@ -210,7 +238,8 @@ solution = solve_root_problem(
     kn_loss,
     bnd_loss,
     suppress_output=False,
-    perturbate_guess=False,
+    perturbate_guess=True,
+    delta_pert=0.01,
 )
 # = = = = = = = = = =
 
@@ -309,7 +338,7 @@ if PLOTS:
                 tangential_offset=blade_num * pitch,
             )
 
-        offset += ax_chord * 1.1
+        offset += ax_chord * 1.03
 
     # Add axis reference line for meridional plot
     ax_merid.plot(
@@ -339,5 +368,5 @@ if ntw.num_components > 1:
 
     print(f'Incompressible vs actual zeta {zeta_inc}, {zeta_actual}')
 
-plt.show()
-# plt.close('all')
+print(n1.oth)
+# plt.show(block=False)

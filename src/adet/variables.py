@@ -264,7 +264,10 @@ class VariableContainer:
         >>> print(vc)  # Shows formatted variable information
         """
         return ('\n\n').join(
-            [f'{name} |> {var:.2f}' for name, var in self.all_quantities.items()]
+            [
+                f'{name} |> {var:.2f}'
+                for name, var in sorted(self.all_quantities.items())
+            ]
         )
 
 

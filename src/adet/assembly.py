@@ -168,7 +168,7 @@ class EquationRegistry:
     ):
         """Remove equation from the system"""
         if isinstance(nodal_position, int):
-            nodal_position = tuple([nodal_position])
+            nodal_position = (nodal_position,)
 
         equation_found = False
         for eq_instance, eq_position in self.data.equations.copy().items():

@@ -157,6 +157,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'p_.*': 'Pa',
         'p_ref': 'Pa',
         'T': 'K',
+        '.*_T_.*': 'K',
         'T_ref': 'K',
         'rhomass': 'kg / m**3',
         '.*hmass.*': 'J / kg',  # Includes delta_hmass
@@ -271,7 +272,7 @@ class GuessRegistry(BaseRegistry[str, float]):
         'pitch': 0.1,
         'bld_thick': 0.005,
         'mom_thick': 1e-5,
-        'disp_thick': 2e-5,
+        'disp_thick.*': 2e-5,
         'num_blades.*': 20.0,
         'num_splitters': 20.0,
         'throat': 0.1,

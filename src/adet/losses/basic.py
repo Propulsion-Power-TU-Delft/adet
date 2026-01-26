@@ -9,8 +9,10 @@ class PercTotalPressureLoss(LossModel):
         \\mathrm{Y} = \\frac{p_{t1}^{r}- p_{t0}^{r}}{p_{t0}^{r} - p_0}
     """
 
-    def __init__(self, loss_coefficient: float = 0.0):
-        super().__init__()
+    def __init__(
+        self, loss_coefficient: float = 0.0, scaling_factor: list[float] | None = None
+    ):
+        super().__init__(scaling_factor)
         self.loss_coeff = loss_coefficient
 
     def residual(self, rlt_p0, rlt_p1):
@@ -56,7 +58,7 @@ class PercentageEntropyLoss(LossModel):
         s_{1} = s_{0} \\cdot (1 + \\mathrm{C})
     """
 
-    def __init__(self, entropy_generation: float = 0.05, scaling_factor=None):
+    def __init__(self, entropy_generation: float = 0.0, scaling_factor=None):
         super().__init__(scaling_factor)
         self.entropy_gen = entropy_generation
 

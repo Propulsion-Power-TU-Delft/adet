@@ -102,13 +102,32 @@ class EffectiveBladeNumber(EquationBase):
         return geo_num_blades_eff0 - (geo_num_blades0 + 0.75 * geo_num_splitters0)
 
 
-class IsentropicTotalEnthalpy(EquationBase):
+class IsentropicProperties(EquationBase):
     input_pair = cp.PSmass_INPUTS
-    output_quantities = ('hmass',)
-    manual_units = ('J / kg',)
+    output_quantities = ('hmass', 'T')
+    manual_units = ('J / kg', 'K', 'J / kg', 'K')
 
-    def residual(self, oth_tot_hmass_is1, stc_smass0, tot_p1):
-        return oth_tot_hmass_is1 - self.eos(tot_p1, stc_smass0)
+    def residual(
+        self,
+        # Actual properties
+        stc_smass0,
+        tot_p1,
+        stc_p1,
+        # Isentropic properties
+        oth_tot_hmass_is1,
+        oth_tot_T_is1,
+        oth_stc_hmass_is1,
+        oth_stc_T_is1,
+    ):
+        hmass_tot_is, temp_tot_is = self.eos(tot_p1, stc_smass0)
+        hmass_is, temp_stat_is = self.eos(stc_p1, stc_smass0)
+
+        r1 = oth_tot_hmass_is1 - hmass_tot_is
+        r2 = oth_tot_T_is1 - temp_tot_is
+        r3 = oth_stc_hmass_is1 - hmass_is
+        r4 = oth_stc_T_is1 - temp_stat_is
+
+        return r1, r2, r3, r4
 
 
 class Solidity(EquationBase):
