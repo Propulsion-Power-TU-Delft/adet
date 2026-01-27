@@ -20,6 +20,7 @@ from adet.equations.geometrical import (
     TwoSegmentCamberline,
 )
 from adet.equations.nondimensional import TotalTotalExpansionEfficiency
+from adet.equations.utils import residual_debugger
 from adet.fluid.settings import ExternalFluidModel
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import PercentageEntropyLoss, PlaceHolderLoss, ZeroDeviation
@@ -125,7 +126,7 @@ row = BladeRow(
             'num_blades': 30,
             'thick_by_pitch': 0.02,
             'heightRatio': 1.1,
-            'tip_clearance': 1e-4,
+            'tip_clearance': 2e-3,
         },
         'oth': {
             'mom_by_bld_Ratio': 0.075,
@@ -135,7 +136,7 @@ row = BladeRow(
             'xi_by_camb_len_A': 0.375,
             'xi_by_camb_len_B': 0.675,
             # For tip leakage
-            'dischCoeff': 0.3,
+            'dischCoeff': 0.4,
             # For secondary
             'disp_H_endW_Ratio': 0.05,
         },
@@ -202,7 +203,7 @@ if ntw.num_components == 2:
 
 ntw.system.build(SCALED)
 
-rootfinder_is = ntw.system.make_rootfinder('ipopt')
+rootfinder_is = ntw.system.make_rootfinder('ipopt', opts={'error_on_fail': True})
 
 x0_is = ntw.system.get_initial_guess()
 kn_is = ntw.system.get_scaled_constraints()
@@ -214,7 +215,7 @@ solution = solve_root_problem(
     bnd_is,
     suppress_output=True,
     perturbate_guess=True,
-    delta_pert=0.01,
+    delta_pert=0.05,
 )
 
 # Write solution to nodes for post processing
@@ -231,7 +232,7 @@ ntw.system.build()
 x0_loss = ntw.system.get_initial_guess(sol_dict_is)
 kn_loss = ntw.system.get_scaled_constraints()
 bnd_loss = ntw.system.get_arguments_bounds()
-rootfinder_loss = ntw.system.make_rootfinder('ipopt')
+rootfinder_loss = ntw.system.make_rootfinder('ipopt', opts={'error_on_fail': True})
 solution = solve_root_problem(
     rootfinder_loss,
     x0_loss,
@@ -239,7 +240,7 @@ solution = solve_root_problem(
     bnd_loss,
     suppress_output=False,
     perturbate_guess=True,
-    delta_pert=0.01,
+    delta_pert=0.05,
 )
 # = = = = = = = = = =
 
@@ -370,3 +371,12 @@ if ntw.num_components > 1:
 
 print(n1.oth)
 # plt.show(block=False)
+
+# DEBUGGING PURPOSES
+globals().update(
+    residual_debugger(
+        DentonLeakageLoss(),
+        [n0, n1],
+    )
+)
+self = DentonLeakageLoss()

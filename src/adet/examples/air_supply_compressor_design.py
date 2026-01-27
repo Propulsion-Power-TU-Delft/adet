@@ -1,5 +1,5 @@
 # Design problem:
-# Tt1 = 7.8 degC
+# Tt1 = -22.5 degC
 # pt1 = 0.45 barA
 # pt2 = 2.025 barA
 # m_flow = 1.5 kg/s
@@ -16,25 +16,22 @@
 
 
 import logging
-from pint import Quantity
+
 import matplotlib.pyplot as plt
+from pint import Quantity
 
 from adet.assembly import CasadiSystem, solve_root_problem
 from adet.components import BladeRow
 from adet.components.blade_row import VanelessDiffuser, plot_from_nodes
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
-
-from adet.equations.definitions import IsentropicProperties, EffectiveBladeNumber
-from adet.equations.geometrical import (
-    LaxByOutradius,
-    MinimalCamberLine,
-)
+from adet.equations.definitions import EffectiveBladeNumber, IsentropicProperties
+from adet.equations.geometrical import LaxByOutradius, MinimalCamberLine
 from adet.equations.nondimensional import (
     GammaPV,
-    WorkCoefficient,
     SwallowingCapacity,
     TotalTotalCompressionEfficiency,
+    WorkCoefficient,
 )
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
 from adet.losses.basic import (
@@ -42,19 +39,18 @@ from adet.losses.basic import (
     PercentageEntropyLoss,
     ZeroDeviation,
 )
-
 from adet.losses.compressors import (
     BackstromSlip,
+    BladeLoadingCoppage,
     CaseyRushInletFunc,
+    ClearanceJansen,
     CompressorShapeFactor,
     LossAdder,
-    ClearanceJansen,
     SkinFrictionJansen,
-    BladeLoadingCoppage,
 )
 from adet.registries import GuessRegistry, ScalarsRegistry, VariableBoundsRegistry
-from adet.tools.loggers import setup_logger
 from adet.tools.coolprop_utils import DebugAbstractState
+from adet.tools.loggers import setup_logger
 
 logger = logging.Logger(__name__)
 # setup_logger(logger)
@@ -112,7 +108,7 @@ inlet = Inlet(
     {
         'tot': {
             'p': Quantity(0.45, 'bar'),
-            'T': Quantity(7.8, 'degC'),
+            'T': Quantity(-22.5, 'degC'),
         },
         'kin': {
             'alpha': 0.0,
@@ -129,6 +125,7 @@ EQS_ISENTROPIC = {
     PercentageEntropyLoss(0.0): (0, 1),
     ZeroDeviation(): 1,
 }
+
 EQS_WITH_LOSSES = {
     BackstromSlip(): (0, 1),
     ClearanceJansen(): (0, 1),
@@ -319,5 +316,5 @@ if __name__ == '__main__':
         globals()[f'n{idx}'] = n
 
     print(n1.oth)
-    plt.close('all')
-    # plt.show()
+    # plt.close('all')
+    plt.show()

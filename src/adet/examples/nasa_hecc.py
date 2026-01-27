@@ -1,6 +1,7 @@
 import logging
 from pint import Quantity
 import matplotlib.pyplot as plt
+import numpy as np
 
 from adet.assembly import CasadiSystem, solve_root_problem
 from adet.components import BladeRow
@@ -118,6 +119,14 @@ EQS_ISENTROPIC = {
 
 losses = EQS_WITH_LOSSES if ENABLE_LOSSES else EQS_ISENTROPIC
 
+# - # - # - # - #
+# Metal angle distribution
+METAL_ANGLE = [-30, -44, -53]
+a, b, c = np.polyfit([0, NUM_SPAN // 2, NUM_SPAN - 1], METAL_ANGLE, 2)
+x = np.linspace(0, NUM_SPAN - 1, NUM_SPAN)
+angle_distribution = Quantity(a * x**2 + b * x + c, 'deg')
+# - # - # - # - #
+
 # +++ Components
 rotor = BladeRow(
     name='rotor',
@@ -217,35 +226,37 @@ rootfinder_hecc_is = ntw.system.make_rootfinder(
     },
 )
 solution_hecc_is = solve_root_problem(
-    rootfinder_hecc_is, x0, kn_hecc, bnd_hecc_is, suppress_output=False
+    rootfinder_hecc_is, x0, kn_hecc, bnd_hecc_is, suppress_output=True
 )
 sol_is_dict = ntw.system.solution_to_dict(solution_hecc_is)
 
-ntw.system.num_span = NUM_SPAN
-if ntw.system.num_span > 1:
-    ntw.system.remove_equation(MeridionalVariable, 1)
-    ntw.system.remove_equation(MeridionalUniform, 1)
-    ntw.system.add_equation(MeridionalVariable(), 1)
-
-ntw.build()
-#  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
-rootfinder_hecc_multi = ntw.system.make_rootfinder(
-    'kinsol',
-    opts={'error_on_fail': True},
-)
-x0_multi = ntw.system.get_initial_guess(sol_is_dict)
-kn_hecc_multi = ntw.system.get_scaled_constraints()
-bnd_hecc_multi = ntw.system.get_arguments_bounds()
-solution_hecc_multi = solve_root_problem(
-    rootfinder_hecc_multi,
-    x0_multi,
-    kn_hecc_multi,
-    bnd_hecc_multi,
-    suppress_output=False,
-)
-sol_multi_dict = ntw.system.solution_to_dict(solution_hecc_multi)
 #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 if __name__ == '__main__':
+    ntw.system.num_span = NUM_SPAN
+    ntw.system.add_boundary_conditions({'geo': {'metal_angle': angle_distribution}}, 0)
+
+    if ntw.system.num_span > 1:
+        ntw.system.remove_equation(MeridionalVariable, 1)
+        ntw.system.remove_equation(MeridionalUniform, 1)
+        ntw.system.add_equation(MeridionalVariable(), 1)
+
+    ntw.build()
+    #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
+    rootfinder_hecc_multi = ntw.system.make_rootfinder(
+        'kinsol',
+        opts={'error_on_fail': True},
+    )
+    x0_multi = ntw.system.get_initial_guess(sol_is_dict)
+    kn_hecc_multi = ntw.system.get_scaled_constraints()
+    bnd_hecc_multi = ntw.system.get_arguments_bounds()
+    solution_hecc_multi = solve_root_problem(
+        rootfinder_hecc_multi,
+        x0_multi,
+        kn_hecc_multi,
+        bnd_hecc_multi,
+        suppress_output=False,
+    )
+    sol_multi_dict = ntw.system.solution_to_dict(solution_hecc_multi)
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
     # Remove isentropic and add losses
     for eq, pos in EQS_ISENTROPIC.items():
@@ -311,11 +322,13 @@ if __name__ == '__main__':
 
     print(ntw.system.nodes[1].oth)
     plt.close('all')
-    # plt.show()
+    # plt.show(block=True)
 
-    # plt.plot(n1.oth.delta_hmass_loading)
-    # plt.plot(n1.oth.delta_hmass_clearance)
-    # plt.plot(n1.oth.delta_hmass_skin)
-    # plt.legend(['loading', 'clearance', 'skin'])
-    # plt.grid()
-    # plt.show()
+    plt.plot(n1.oth.delta_hmass_loading)
+    plt.plot(n1.oth.delta_hmass_clearance)
+    plt.plot(n1.oth.delta_hmass_skin)
+    plt.ylabel('Enthalpy loss [J / kg / K]')
+    plt.xlabel('Spanwise station []')
+    plt.legend(['loading', 'clearance', 'skin'])
+    plt.grid()
+    plt.show()

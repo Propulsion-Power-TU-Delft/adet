@@ -202,7 +202,8 @@ def trapezoidal_vel_profile(
     W_mid_ps = cs.fmax(k_prof * kin_W0 - delta_W, kin_W0 / CLIP_RATIO)
 
     # Full velocity distribution
-    W_distr_ss = cs.horzcat(1.0 * kin_W0, W_mid_ss, W_mid_ss, kin_W1)  # Suction
-    W_distr_ps = cs.horzcat(0.0 * kin_W0, W_mid_ps, W_mid_ps, kin_W1)  # Pressure
+    W_distr_ss = cs.horzcat(1 * kin_W0, W_mid_ss, W_mid_ss, kin_W1)  # Suction
+    # The 99 is needed otherwise the last state is equal, can cause NaN in some formulas
+    W_distr_ps = cs.horzcat(0 * kin_W0, W_mid_ps, W_mid_ps, 0.999 * kin_W1)  # Pressure
 
     return xi_by_camb_len, W_distr_ss, W_distr_ps

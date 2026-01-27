@@ -1,12 +1,18 @@
-from typing import Literal
+from importlib import import_module
+import sys
+from typing import Literal, Mapping
 
 import casadi as cs
 import numpy as np
 
+from numpy.typing import NDArray
 from sympy import Symbol
 from pint.facets.plain import PlainQuantity
 
+from adet.equations.base_equation import EquationBase
 from adet.fluid.casadi_eos import CasadiEos
+from adet.node import FlowNode
+from adet.tools.strings import get_arg_state, get_arg_type, get_index
 
 
 def safe_abs(x):
@@ -102,3 +108,30 @@ def span_fin_diff(f, x, edge_order: Literal['first', 'second'] = 'second'):
     internal_der = (f[2:] - f[:-2]) / inner_delta_x
 
     return cs.vertcat(first_der, internal_der, final_der)
+
+
+def residual_debugger(
+    equation: EquationBase, nodes: list[FlowNode]
+) -> Mapping[str, NDArray | EquationBase]:
+    """
+    Transpose the local namespace and variables of a
+    residual equation to the currently active shell.
+    I think this is probably unsafe with untrusted code.
+    """
+    module = sys.modules[equation.__module__]
+
+    out = {'self': equation, **vars(module)}
+    for arg in equation.arguments:
+        arg_state = get_arg_state(arg)
+        arg_type = get_arg_type(arg)
+        arg_index = get_index(arg)
+
+        out[arg] = (
+            nodes[arg_index]
+            .fetch_state(arg_state)
+            .get(arg_type)
+            .to_base_units()
+            .magnitude
+        )
+
+    return out

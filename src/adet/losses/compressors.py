@@ -189,6 +189,7 @@ class SkinFrictionJansen(LossModel):
         geo_height1,
         geo_chord_ax1,
         geo_num_blades_eff1,
+        geo_metal_angle0,
         geo_metal_angle1,
         # Kinematics
         kin_V0,
@@ -196,8 +197,6 @@ class SkinFrictionJansen(LossModel):
         kin_W1,
         kin_W_tip0,
         kin_W_hub0,
-        kin_beta_tip0,
-        kin_beta_hub0,
         # Thermo
         stc_viscosity0,
         stc_viscosity1,
@@ -220,7 +219,7 @@ class SkinFrictionJansen(LossModel):
             * (
                 2
                 / (
-                    (np.cos(kin_beta_tip0) + np.cos(kin_beta_hub0)) / 2
+                    (np.cos(geo_metal_angle0[0]) + np.cos(geo_metal_angle0[-1])) / 2
                     + np.cos(geo_metal_angle1)
                 )
             )

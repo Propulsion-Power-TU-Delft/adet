@@ -9,24 +9,24 @@ from copy import deepcopy
 from adet.assembly import solve_root_problem
 
 # --------------------
-# from adet.examples.air_supply_compressor_design import (
-#     kn_des,
-#     bnd_des_is,
-#     solution_des_is,
-#     rootfinder_des_is,
-# )
-#
-# ROOTFINDER = rootfinder_des_is
+from adet.examples.air_supply_compressor_design import (
+    kn_des,
+    bnd_des_is,
+    solution_des_is,
+    rootfinder_des_is,
+)
+
+ROOTFINDER = rootfinder_des_is
 # --------------------
 # --------------------
 from adet.examples.nasa_hecc import (
     kn_hecc,
-    bnd_hecc_multi,
-    solution_hecc_multi,
-    rootfinder_hecc_multi,
+    bnd_hecc_is,
+    solution_hecc_is,
+    rootfinder_hecc_is,
 )
 
-ROOTFINDER = rootfinder_hecc_multi
+ROOTFINDER = rootfinder_hecc_is
 # --------------------
 
 
@@ -78,9 +78,9 @@ def test_robustness(solution, knowns, bounds, samples_multiplier, max_perturbati
             ]
 
     for pert, results in out.items():
-        plt.bar(pert, 100 * sum(results) / num_samples)
+        plt.bar(pert, 100 * sum(results) / num_samples, color='b')
 
-    print(f'Success rate for perturbation rate {pert} {/num_samples}')
+    print(f'Success rate for perturbation rate {pert} {sum(results) / num_samples}')
     plt.xticks(ticks=list(out.keys()), labels=[f'{100 * o}%' for o in out.keys()])
     plt.xlabel('Perturbation from converged solution')
     plt.ylabel('Convergence rate')
@@ -90,11 +90,12 @@ def test_robustness(solution, knowns, bounds, samples_multiplier, max_perturbati
 if __name__ == '__main__':
     mp.freeze_support()
     # Latin Hypercube sampling for testing robustness
-    SAMPLES_MULTI = 6
+    SAMPLES_MULTIPLIER = 3
     NUM_PROCS = 10
     MAX_PERT = 8
 
-    # test_robustness(solution_des_is, kn_des, bnd_des_is, SAMPLES_MULTI, MAX_PERT)
+    # test_robustness(solution_des_is, kn_des, bnd_des_is, SAMPLES_MULTIPLIER, MAX_PERT)
+
     test_robustness(
-        solution_hecc_multi, kn_hecc, bnd_hecc_multi, SAMPLES_MULTI, MAX_PERT
+        solution_hecc_is, kn_hecc, bnd_hecc_is, SAMPLES_MULTIPLIER, MAX_PERT
     )
