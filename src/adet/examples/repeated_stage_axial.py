@@ -17,31 +17,29 @@ It shows how to:
 from copy import deepcopy
 import logging
 
-# External libraries
 import matplotlib.pyplot as plt
 from pint import Quantity
 
-# Network build
 from adet.assembly import CasadiSystem, solve_root_problem
-from adet.components import ComponentNetwork, BladeRow, Shaft, Inlet
-from adet.equations.definitions import DegreeOfReaction, RepeatedStage
+from adet.components import BladeRow, ComponentNetwork, Inlet, Shaft
+from adet.components.blade_row import plot_from_nodes
+from adet.equations.definitions import RepeatedStage
 from adet.equations.fundamental import ZeroBlockage
-from adet.equations.geometrical import ParabolicCamberline, MinimalCamberLine
+from adet.equations.geometrical import MinimalCamberLine, ParabolicCamberline
+from adet.equations.nondimensional import (
+    DegreeOfReaction,
+    FlowCoefficient,
+    WorkCoefficient,
+)
 from adet.fluid.casadi_eos import CasadiEos
-from adet.fluid.settings import FluidSettings, ExternalFluidModel, IdealGasModel
-
-# Losses
+from adet.fluid.settings import ExternalFluidModel, FluidSettings, IdealGasModel
 from adet.losses.base_loss import LossModel
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.losses.profile import DentonProfileLoss
-from adet.equations.nondimensional import FlowCoefficient, WorkCoefficient
-
-# Tooling and utils
+from adet.registries import DefaultUnitsRegistry, GuessRegistry, ScalingRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.iter import grouper
 from adet.tools.loggers import setup_logger
-from adet.components.blade_row import plot_from_nodes
-from adet.registries import DefaultUnitsRegistry, ScalingRegistry, GuessRegistry
 
 
 # === LOGGING SETUP
@@ -196,7 +194,7 @@ rotor = BladeRow(
         ZeroDeviation(): 1,
         # Work and flow coefficients defined only on rotor
         WorkCoefficient(): (0, 1),
-        FlowCoefficient(): 1,
+        FlowCoefficient(): (0, 1),
     },
 )
 

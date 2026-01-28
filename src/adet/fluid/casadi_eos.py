@@ -1,9 +1,8 @@
 import logging
-from typing import Any, Callable, ClassVar, Generic, TypeVar, cast, overload
+from typing import Any, ClassVar, Generic, TypeVar, overload
 import casadi as cs
 import CoolProp as cp
 import jax
-import scipy.differentiate as diff
 
 from adet.constants import COOLPROP_NAMES_MAP
 from adet.fluid.settings import ExternalFluidModel
@@ -17,6 +16,7 @@ _JAC_CALLBACK_CACHE = []
 _HES_CALLBACK_CACHE = []
 _VAC_CALLBACK_CACHE = []
 
+CONSTANTS = ['T_critical', 'p_critical']
 # Properties whose first derivative does not exist
 NOT_JACOBIABLE = ['viscosity']
 # Properties whose second derivative does not exist
@@ -273,7 +273,9 @@ class CasadiEosJacobian(cs.Callback):
                     if other_id is None:
                         raise NotImplementedError('Only pairs supported')
 
-                    if prop in NOT_JACOBIABLE:
+                    if prop in CONSTANTS:
+                        derivative = 0.0
+                    elif prop in NOT_JACOBIABLE:
                         derivative = fwd_diff(
                             eos,
                             input_pair,
@@ -282,7 +284,6 @@ class CasadiEosJacobian(cs.Callback):
                             updt_vals[1],
                             input_idx,
                         )
-                        # derivative = 0.0
                     else:
                         derivative = eos.first_partial_deriv(
                             prop_id, input_id, other_id
@@ -425,7 +426,7 @@ class CasadiEosHessian(cs.Callback):
                         inp1_id = getattr(cp, f'i{inpt1}')
                         oth1_id = getattr(cp, f'i{input_names[1 - in1_idx]}', None)
 
-                        if prop in (NOT_JACOBIABLE + NOT_HESSIABLE):
+                        if prop in (CONSTANTS + NOT_JACOBIABLE + NOT_HESSIABLE):
                             derivative = 0.0
                         else:
                             derivative = eos.second_partial_deriv(
@@ -543,11 +544,7 @@ if __name__ == '__main__':
     v0_val = cs.linspace(100e5, 600e5, NUM_SPAN)  # Pressure [Pa]
     v1_val = cs.linspace(400, 600, NUM_SPAN)  # Temperature [K]
 
-    value_str = '\n\t'.join(
-        list(
-            map(lambda x: x.__str__(), callback(v0_val, v1_val)),
-        )
-    )
+    value_str = '\n\t'.join([x.__str__() for x in callback(v0_val, v1_val)])
 
     print(f'Function value:\n\t{value_str}')
 

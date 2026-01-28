@@ -10,7 +10,7 @@ from adet.equations import EquationBase
 from adet.equations.definitions import (
     AngleDeflection,
     BladePitch,
-    HeightRatio,
+    GeometricalRatios,
     MeridionalVelocityRatio,
     Solidity,
     ThicknessToPitch,
@@ -67,7 +67,7 @@ class BladeRow(BaseComponent):
         # *** Common definitions
         (EndwallProperties, 0),
         (EndwallProperties, 1),
-        (HeightRatio, (0, 1)),
+        (GeometricalRatios, (0, 1)),
         (AngleDeflection, (0, 1)),
         (MeridionalVelocityRatio, (0, 1)),
         # *** Blade count, pitch, channel massflow
@@ -134,7 +134,7 @@ class VanelessDiffuser(BaseComponent):
         (ZeroBlockage, 0),
         (ZeroBlockage, 1),
         # Extra definitions
-        (HeightRatio, (0, 1)),
+        (GeometricalRatios, (0, 1)),
     ]
 
     constant_variables = [

@@ -189,15 +189,29 @@ class NisRe(EquationBase):
 
 
 class FreeVortexDistribution(EquationBase):
-    def residual(self, geo_rr0, kin_Vt0, geo_rr_midspan0, oth_Vt_mid0):
-        return geo_rr0 * kin_Vt0 - geo_rr_midspan0 * oth_Vt_mid0
+    def residual(self, geo_rr0, kin_Vt0, geo_rr_midspan0):
+        num_span = max(geo_rr0.shape)
+        if num_span == 1:
+            midspan = 0
+        else:
+            midspan = num_span // 2
+
+        return geo_rr0 * kin_Vt0 - geo_rr_midspan0 * kin_Vt0[midspan]
 
 
 class ForcedVortexDistribution(EquationBase):
-    def residual(self, geo_rr0, kin_Vt0, geo_rr_midspan0, oth_Vtmid0):
-        return kin_Vt0 / geo_rr0 - oth_Vtmid0 / geo_rr_midspan0
+    def residual(self, geo_rr0, kin_Vt0, geo_rr_midspan0):
+        num_span = max(geo_rr0.shape)
+        if num_span == 1:
+            midspan = 0
+        else:
+            midspan = num_span // 2
+
+        return kin_Vt0 / geo_rr0 - kin_Vt0[midspan] / geo_rr_midspan0
 
 
 class GeneralWhirl(EquationBase):
     def residual(self, geo_rr0, kin_Vt0, gen_whirl_a, gen_whirl_b, gen_whirl_n):
+        free_vortex_term = kin_Vt0 * geo_rr0
+        frcd_vortex_term = kin_Vt0 / geo_rr0
         return kin_Vt0 - gen_whirl_a * geo_rr0**gen_whirl_n + gen_whirl_b / geo_rr0

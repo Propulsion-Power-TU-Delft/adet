@@ -132,9 +132,9 @@ class EquationRegistry:
         local_indices = {get_index(arg) for arg in equation.arguments}
         if len(local_indices) != len(nodal_position):
             raise ValueError(
-                f'Detected indices of in the definition of '
+                f'Detected indices in the definition of '
                 f'`{equation.__class__.__name__}` {tuple(local_indices)} '
-                f'is not equal to length of the prescribed '
+                f'is not equal to the length of the prescribed '
                 f'absolute nodal position {nodal_position}'
             )
 

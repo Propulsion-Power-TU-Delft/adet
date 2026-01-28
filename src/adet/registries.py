@@ -155,10 +155,11 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         # Thermodynamics
         'p': 'Pa',
         'p_.*': 'Pa',
-        'p_ref': 'Pa',
         'T': 'K',
-        '.*_T_.*': 'K',
-        'T_ref': 'K',
+        'T_.*': 'K',
+        '.*_T_is': 'K',  # used by isentropic temperature
+        '.*_T_red': 'dimensionless',  # reduced temperature
+        '.*_p_red': 'dimensionless',  # reduced temperature
         'rhomass': 'kg / m**3',
         '.*hmass.*': 'J / kg',  # Includes delta_hmass
         '.*smass.*': 'J / (kg * K)',  # Includes delta_smass
@@ -171,7 +172,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         '.*massflow': 'kg / s',
         'mach.*': 'dimensionless',
         'relmach.*': 'dimensionless',
-        'reactDegree': 'dimensionless',
+        'reactDegree.*': 'dimensionless',
         'swllCap': 'dimensionless',
         'gamma_pv': 'dimensionless',
         # Dimensionless REGEX
@@ -200,6 +201,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'alpha': 'rad',
         'deflection': 'rad',
         # Geometry
+        'flare_angle': 'rad',
         'meridional_angle': 'rad',
         'height': 'm',
         'hh': 'm',
@@ -219,8 +221,9 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         '.*solidity': 'dimensionless',
         'slip_factor': 'dimensionless',
         'num_.*': 'dimensionless',
-        '.*_thick': 'meters',
+        '.*_thick.*': 'meters',
         'thick_by_pitch': 'dimensionless',
+        '.*_by_.*': 'dimensionless',
     }
 
 
@@ -322,7 +325,7 @@ class ScalingRegistry(BaseRegistry[PlainUnit, float]):
         units = self._base_units_from_key(key)
         return super().set(units, value)
 
-    def get(self, key: str, fallback=None):
+    def get(self, key: str):
         units = self._base_units_from_key(key)
         return super().get(units)
 
@@ -360,6 +363,8 @@ class ScalarsRegistry(BaseRegistry[str, int]):
         '.*_tip': -1,
         'height': -1,
         'heightRatio': -1,
+        'radiusRatio': -1,
+        'aspRatio': -1,
         'cum_.*': -1,
         'meridional_angle': -1,
         'num_blades': -1,
@@ -377,7 +382,7 @@ class VariableBoundsRegistry(
     DEFAULTS = {
         # THERMODYNAMICS
         'p': (1e4, 150e5),
-        'rhomass': (1e-3, 300.0),
+        'rhomass': (1e-3, 400.0),
         'T': (80.0, 1800.0),
         # KINEMATICS
         'V': (1.0, 500.0),
@@ -385,8 +390,8 @@ class VariableBoundsRegistry(
         'Vt': (-500.0, 500.0),
         'W': (1.0, 500.0),
         'Wm': (1.0, 500.0),
-        'Wt': (-800.0, 500.0),
-        'U': (-800.0, 500.0),
+        'Wt': (-500.0, 500.0),
+        'U': (-500.0, 500.0),
         'omega': (-15000.0, 15000.0),
         'alpha': (-1.54, 1.54),
         'beta': (-1.54, 1.54),

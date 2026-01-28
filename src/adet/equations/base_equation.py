@@ -169,6 +169,13 @@ class EquationBase(ABC):
                 f'is greater than 0, bad equation formatting'
             )
 
+        expected_sequence = range(max(seen_indices) + 1)
+        if set(seen_indices) != set(expected_sequence):
+            raise ValueError(
+                f'Non sequential nodes found {seen_indices} '
+                f'in {self.__class__.__name__}'
+            )
+
         return tuple(validated_arguments)
 
     def _validate_argument(self, full_argument: str):

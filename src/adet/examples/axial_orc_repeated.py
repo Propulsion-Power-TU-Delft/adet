@@ -12,14 +12,19 @@ from adet.components import ComponentNetwork
 from adet.components.blade_row import DownstreamMixer
 from adet.components.blade_row import plot_from_nodes
 from adet.equations.base_equation import EquationBase
-from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
+from adet.equations.definitions import (
+    BoundaryLayerRatios,
+    ClearanceByHeight,
+    IsentropicProperties,
+    ReducedThermoQuantities,
+)
 from adet.equations.fundamental import BladeBlockage
 from adet.equations.geometrical import (
     MinimalCamberLine,
     ParabolicCamberline,
     TwoSegmentCamberline,
 )
-from adet.equations.nondimensional import TotalTotalExpansionEfficiency
+from adet.equations.nondimensional import FlowCoefficient, TotalTotalExpansionEfficiency
 from adet.equations.utils import residual_debugger
 from adet.fluid.settings import ExternalFluidModel
 from adet.fluid.settings import FluidSettings
@@ -51,7 +56,7 @@ PRINTS = True
 INITIAL_LOSS = PercentageEntropyLoss(0.0)
 
 # This counts the number of updates in an attribute
-abs_state = DebugAbstractState('REFPROP', 'AIR')
+abs_state = DebugAbstractState('REFPROP', 'MM')
 abs_state.debug_print = False
 
 real_model = ExternalFluidModel(abs_state)
@@ -72,6 +77,7 @@ _defreg.from_dict(
 )
 _guess_reg = GuessRegistry()
 _guess_reg.reset()
+_guess_reg.set('rhomass', 400)
 _guess_reg.set_fallback_value(0.5)
 
 _bounds_reg = VariableBoundsRegistry()
@@ -93,14 +99,27 @@ inlet = Inlet(
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
-            'rr_midspan': 0.5,
-            'height': 0.3,
+            'rr_midspan': 0.3,
+            'height': 0.1,
         },
-        'tot': {
-            'p': 5e5,
-            'T': 600,
+        # 'tot': {
+        #     'p': 5e5,
+        #     'T': 600,
+        # },
+        'oth': {
+            'tot_p_red': 2.071,
+            'tot_T_red': 1.052,
         },
     }
+)
+
+_guess_reg.set(
+    'p',
+    1.1 * abs_state.p_critical() * inlet.boundary_conditions['oth']['tot_p_red'],
+)
+_guess_reg.set(
+    'T',
+    1.1 * abs_state.T_critical() * inlet.boundary_conditions['oth']['tot_T_red'],
 )
 
 row = BladeRow(
@@ -120,25 +139,25 @@ row = BladeRow(
         'geo': {
             # Meridional
             'meridional_angle': Quantity(0, 'deg'),
-            'rr_midspan': 0.5,
             # Blade
-            'chord_ax': 0.15,
+            'radiusRatio': 1,
+            'aspRatio': 2,
             'num_blades': 30,
             'thick_by_pitch': 0.02,
             'heightRatio': 1.1,
-            'tip_clearance': 2.5e-3,
+            'clearance_by_height': 0.01,
         },
         'oth': {
-            'mom_by_bld_Ratio': 0.075,
-            'disp_by_mom_Ratio': 2,
+            'mom_by_bld': 0.075,
+            'disp_by_mom': 2,
+            'disp_by_hgt': 0.05,
             # Profile losses
             'Cd_profile': 0.002,
             'xi_by_camb_len_A': 0.375,
             'xi_by_camb_len_B': 0.675,
             # For tip leakage
-            'dischCoeff': 0.4,
+            'dischCoeff': 0.35,
             # For secondary
-            'disp_H_endW_Ratio': 0.05,
         },
     },
     extra_equations={
@@ -146,8 +165,10 @@ row = BladeRow(
         # MinimalCamberLine(): (0, 1),
         # TwoSegmentCamberline(): (0, 1),
         ParabolicCamberline(): (0, 1),
+        ClearanceByHeight(): 1,
+        ReducedThermoQuantities(): 0,
         # |> Losses & Dev
-        ZeroDeviation(): 0,
+        ZeroDeviation(): 0,  # No incidence (design)
         ZeroDeviation(): 1,
         IsentropicProperties(): (0, 1),
         # |> Boundary layer properties
@@ -155,7 +176,8 @@ row = BladeRow(
         BladeBlockage(): 1,
         SieverdingBasePressure(): (0, 1),
         INITIAL_LOSS: (0, 1),
-        # Efficiency measures
+        # Nondimensional
+        # FlowCoefficient(): (0, 1),
     },
 )
 
@@ -200,7 +222,7 @@ ntw = ComponentNetwork(
     CasadiSystem(num_span=NUM_SPAN),  # Backend
     [
         row,
-        mixer,
+        # mixer,
     ],
 )
 
@@ -220,11 +242,11 @@ solution = solve_root_problem(
     rootfinder_is,
     x0_is,
     kn_is,
-    # bnd_is,
-    suppress_output=True,
-    perturbate_guess=True,
-    delta_pert=0.03,
-    num_samples=50,
+    bnd_is,
+    suppress_output=False,
+    perturbate_guess=False,
+    delta_pert=0.02,
+    num_samples=10,
 )
 
 # Write solution to nodes for post processing
@@ -247,7 +269,7 @@ solution = solve_root_problem(
     rootfinder_loss,
     x0_loss,
     kn_loss,
-    # bnd_loss,
+    bnd_loss,
     suppress_output=False,
     perturbate_guess=False,
     delta_pert=0.05,
@@ -380,7 +402,7 @@ if ntw.num_components > 1:
     print(f'Incompressible vs actual zeta {zeta_inc}, {zeta_actual}')
 
 print(n1.oth)
-plt.show(block=True)
+plt.show(block=False)
 
 # DEBUGGING PURPOSES
 globals().update(

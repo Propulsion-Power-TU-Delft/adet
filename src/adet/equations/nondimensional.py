@@ -31,7 +31,7 @@ class StaticTotalPressRatio(EquationBase):
 
 
 class MidspanTotalTotalPressRatio(EquationBase):
-    def residual(self, tot_p0, tot_p1, oth_pRatio_ttrr_midspan1):
+    def residual(self, tot_p0, tot_p1, oth_pRatio_tt_midspan1):
         num_span = max(tot_p0.shape)
 
         if num_span == 1:
@@ -39,14 +39,12 @@ class MidspanTotalTotalPressRatio(EquationBase):
         else:
             midspan = num_span // 2
 
-        return tot_p0[midspan] * oth_pRatio_ttrr_midspan1 - tot_p1[midspan]
+        return tot_p0[midspan] * oth_pRatio_tt_midspan1 - tot_p1[midspan]
 
 
 class TotalTotalExpansionEfficiency(EquationBase):
     def residual(
         self,
-        tot_p1,
-        stc_smass0,
         tot_hmass0,
         tot_hmass1,
         oth_eta_tt1,
@@ -57,11 +55,14 @@ class TotalTotalExpansionEfficiency(EquationBase):
         )
 
 
+class TotalStaticLoadingCoefficient(EquationBase):
+    def residual(self, oth_):
+        pass
+
+
 class TotalTotalCompressionEfficiency(EquationBase):
     def residual(
         self,
-        tot_p1,
-        stc_smass0,
         tot_hmass0,
         tot_hmass1,
         oth_eta_tt1,
@@ -82,6 +83,49 @@ class StaticStaticPressRatio(EquationBase):
         return stc_p0 * oth_pRatio_ss1 - stc_p1
 
 
+class TotalStaticDegreeOfReaction(EquationBase):
+    """
+    0 - [Stator] - 1 === 2 - [Rotor] - 3
+    This assumes the stator is on nodes 0,1 and the stator on 2,3 is the rotor.
+    The degree of reaction is an `oth` property of node 3
+    """
+
+    def residual(
+        self,
+        tot_hmass0,
+        stc_hmass1,
+        stc_hmass2,
+        stc_hmass3,
+        tot_hmass3,
+        oth_reactDegree_ts3,
+    ):
+        delta_hmass_rotor = stc_hmass3 - stc_hmass2
+        delta_tot_hmass_stage = tot_hmass3 - tot_hmass0
+
+        return delta_tot_hmass_stage * oth_reactDegree_ts3 - delta_hmass_rotor
+
+
+class DegreeOfReaction(EquationBase):
+    """
+    0 - [Stator] - 1 === 2 - [Rotor] - 3
+    This assumes the stator is on nodes 0,1 and the stator on 2,3 is the rotor.
+    The degree of reaction is an `oth` property of node 3
+    """
+
+    def residual(
+        self,
+        stc_hmass0,
+        stc_hmass1,
+        stc_hmass2,
+        stc_hmass3,
+        oth_reactDegree3,
+    ):
+        delta_hmass_rotor = stc_hmass3 - stc_hmass2
+        delta_hmass_stage = stc_hmass3 - stc_hmass0
+
+        return delta_hmass_stage * oth_reactDegree3 - delta_hmass_rotor
+
+
 class DensityRatio(EquationBase):
     """
     .. math::
@@ -98,8 +142,8 @@ class FlowCoefficient(EquationBase):
         \\phi = \\frac{V_{m0}}{U_{0}}
     """
 
-    def residual(self, kin_Vm0, kin_U0, oth_flowCoeff0):
-        return kin_U0 * oth_flowCoeff0 - kin_Vm0
+    def residual(self, kin_Vm0, kin_U1, oth_flowCoeff1):
+        return kin_U1 * oth_flowCoeff1 - kin_Vm0
 
 
 class WorkCoefficient(EquationBase):
@@ -112,7 +156,7 @@ class WorkCoefficient(EquationBase):
     In some literature the denominator is :math:`2U_0V_{t0}`
     """
 
-    def residual(self, tot_hmass0, tot_hmass1, kin_Vt0, kin_U1, oth_workCoeff1):
+    def residual(self, tot_hmass0, tot_hmass1, kin_U1, oth_workCoeff1):
         return oth_workCoeff1 - (tot_hmass1 - tot_hmass0) / kin_U1**2
 
 

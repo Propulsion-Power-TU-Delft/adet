@@ -304,6 +304,8 @@ ThermoVariable = Literal[
     'cpmass',
     'cvmass',
     'viscosity',
+    'T_critical',
+    'p_critical',
 ]
 
 

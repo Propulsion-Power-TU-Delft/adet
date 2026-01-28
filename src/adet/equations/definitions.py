@@ -15,14 +15,26 @@ class AngleDeflection(EquationBase):
         return kin_beta1 - kin_beta0 - kin_deflection1
 
 
-class RadiusRatio(EquationBase):
-    def residual(self, geo_rr_midspan0, geo_rr_midspan1, geo_radiusRatio1):
-        return geo_radiusRatio1 - geo_rr_midspan1 / geo_rr_midspan0
-
-
-class HeightRatio(EquationBase):
-    def residual(self, geo_height0, geo_height1, geo_heightRatio1):
-        return geo_heightRatio1 - geo_height1 / geo_height0
+class GeometricalRatios(EquationBase):
+    def residual(
+        self,
+        geo_height0,
+        geo_height1,
+        geo_heightRatio1,
+        geo_flare_angle1,
+        geo_chord_ax1,
+        geo_rr_midspan0,
+        geo_rr_midspan1,
+        geo_radiusRatio1,
+        geo_aspRatio1,
+    ):
+        r1 = geo_heightRatio1 - geo_height1 / geo_height0
+        r2 = np.tan(geo_flare_angle1) - (geo_height1 - geo_height0) / (
+            2 * geo_chord_ax1
+        )
+        r3 = geo_rr_midspan0 * geo_radiusRatio1 - geo_rr_midspan1
+        r4 = geo_chord_ax1 * geo_aspRatio1 - geo_height0
+        return r1, r2, r3, r4
 
 
 class AreaAveragePressure(EquationBase):
@@ -30,6 +42,7 @@ class AreaAveragePressure(EquationBase):
         return safe_sum(geo_area0) * oth_p_AreaAve0 - safe_sum(geo_area0 * stc_p0)
 
 
+# TODO: Vm constant or height ratio
 class RepeatedStage(EquationBase):
     """0 - [Stator] - 1 = 2 - [Rotor] - 3"""
 
@@ -39,27 +52,6 @@ class RepeatedStage(EquationBase):
         r3 = kin_Vm1 - kin_Vm0
 
         return r1, r2, r3
-
-
-class DegreeOfReaction(EquationBase):
-    """
-    0 - [Stator] - 1 === 2 - [Rotor] - 3
-    This assumes the stator is on nodes 0,1 and the stator on 2,3 is the rotor.
-    The degree of reaction is an `oth` property of node 3
-    """
-
-    def residual(
-        self,
-        stc_hmass0,
-        stc_hmass1,
-        stc_hmass2,
-        stc_hmass3,
-        oth_reactDegree3,
-    ):
-        delta_hmass_rotor = stc_hmass3 - stc_hmass2
-        delta_hmass_stage = stc_hmass3 - stc_hmass0
-
-        return delta_hmass_stage * oth_reactDegree3 - delta_hmass_rotor
 
 
 class MeridionalVelocityRatio(EquationBase):
@@ -140,6 +132,27 @@ class ThicknessToPitch(EquationBase):
         return geo_bld_thick0 - geo_thick_by_pitch0 * geo_pitch0
 
 
+class ClearanceByHeight(EquationBase):
+    def residual(self, geo_clearance_by_height0, geo_height0, geo_tip_clearance0):
+        return geo_clearance_by_height0 * geo_height0 - geo_tip_clearance0
+
+
+class ReducedThermoQuantities(EquationBase):
+    def residual(
+        self,
+        tot_T0,
+        tot_p0,
+        oth_tot_T_red0,
+        oth_tot_p_red0,
+        stc_p_critical0,
+        stc_T_critical0,
+    ):
+        r1 = tot_p0 - oth_tot_p_red0 * stc_p_critical0
+        r2 = tot_T0 - oth_tot_T_red0 * stc_T_critical0
+
+        return r1, r2
+
+
 class BoundaryLayerRatios(EquationBase):
     """Boundary layer properties ratios definitions
     based on trailing edge thickness"""
@@ -147,16 +160,19 @@ class BoundaryLayerRatios(EquationBase):
     def residual(
         self,
         # Geometry
-        geo_pitch0,
+        geo_height0,
         geo_bld_thick0,
-        geo_thick_by_pitch0,
         # Boundary layer
-        oth_disp_thick0,
-        oth_disp_by_mom_Ratio0,
-        oth_mom_thick0,
-        oth_mom_by_bld_Ratio0,
+        oth_mom_thick0,  # Momentum thickness
+        oth_disp_thick0,  # Blade disp. thickness
+        oth_disp_thick_ew0,  # Endwall disp. thickness
+        # Ratios
+        oth_disp_by_mom0,  # disp / mom
+        oth_mom_by_bld0,  # mom / blade thick
+        oth_disp_by_hgt0,  # ew disp / height
     ):
-        r1 = oth_disp_thick0 - oth_disp_by_mom_Ratio0 * oth_mom_thick0
-        r2 = oth_mom_thick0 - oth_mom_by_bld_Ratio0 * geo_bld_thick0
+        r1 = oth_disp_thick0 - oth_disp_by_mom0 * oth_mom_thick0
+        r2 = oth_mom_thick0 - oth_mom_by_bld0 * geo_bld_thick0
+        r3 = oth_disp_thick_ew0 - oth_disp_by_hgt0 * geo_height0
 
-        return r1, r2
+        return r1, r2, r3
