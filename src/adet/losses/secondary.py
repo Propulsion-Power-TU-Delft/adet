@@ -53,30 +53,30 @@ class SecondaryBSM(LossModel):
         geo_stagger1,
         oth_disp_H_endW_Ratio1,  # EW disp thick by height
         # Thermo
-        tot_p0,
+        rlt_p0,
         stc_p1,
         stc_smass0,
         tot_hmass1,
         oth_delta_smass_secondary1,
     ):
-        H_c = geo_height1 / geo_chord1
+        hgt_by_ch = geo_height1 / geo_chord1
         cos_ratio = np.cos(kin_beta0) / np.cos(kin_beta1)
 
         Y_min2 = (0.038 + 0.41 * np.tanh(1.2 * oth_disp_H_endW_Ratio1)) / (
             np.cos(geo_stagger1) ** 0.5
             * cos_ratio
-            * (H_c * np.cos(kin_beta1) / np.cos(geo_stagger1)) ** 0.55
+            * (hgt_by_ch * np.cos(kin_beta1) / np.cos(geo_stagger1)) ** 0.55
         )
 
         Y_gtr2 = (0.052 + 0.56 * np.tanh(1.2 * oth_disp_H_endW_Ratio1)) / (
             np.cos(geo_stagger1) ** 0.5
             * cos_ratio
-            * H_c
+            * hgt_by_ch
             * (np.cos(kin_beta1) / np.cos(geo_stagger1)) ** 0.55
         )
 
-        loss_coeffY = cs.if_else(H_c < 2.0, Y_min2, Y_gtr2)
+        loss_coeffY = cs.if_else(hgt_by_ch < 2.0, Y_min2, Y_gtr2)
 
-        pt_out = (tot_p0 + loss_coeffY * stc_p1) / (loss_coeffY + 1)
+        pt_out = (rlt_p0 + loss_coeffY * stc_p1) / (loss_coeffY + 1)
 
         return oth_delta_smass_secondary1 - (self.eos(tot_hmass1, pt_out) - stc_smass0)

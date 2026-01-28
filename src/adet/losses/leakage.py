@@ -21,7 +21,6 @@ class DentonLeakageLoss(LossModel):
         kin_W0,
         kin_W1,
         # Geo
-        geo_hh1,
         geo_camb_len1,
         # Misc
         oth_ch_massflow1,
@@ -41,13 +40,17 @@ class DentonLeakageLoss(LossModel):
         p_ps, rho_ps = self.eos(rlt_hmass0 - W_distr_ps**2 / 2, stc_smass0)
         xi_dimensional = xi_by_camb_len * geo_camb_len1
 
+        # [kg / s / m]
         dm_by_dxi = (
             oth_dischCoeff1 * geo_tip_clearance1 * (2 * rho_ps * (p_ps - p_ss)) ** 0.5
         )
+
+        # [ J / kg ] * [ kg / s / m ] * [m] = [ J / s ]
         leak_integral = trapezoid2(
             W_distr_ss**2 * (1 - W_distr_ps / W_distr_ss) * dm_by_dxi, xi_dimensional
         )
 
+        # [ J / s ] * [ s / kg ] * [ 1 / K ] = [ J / kg / K ] OK
         return oth_delta_smass_leakage1 - leak_integral / (
             oth_ch_massflow1 * oth_stc_T_is1
         )

@@ -124,8 +124,8 @@ class DentonProfileLoss(LossModel):
         pressure_integral = trapezoid2(delta_p, xi_dimensional)
 
         # Entropy generation from 2D viscous dissipation
-        # [ kg / m**3 ] * [ m**3 / s**3 ] / [K] * [m]
-        # = [ kg * m / s**3 / K ] = [ N / s / K ]
+        # [ kg / m^3 ] * [ m^3 / s^3 ] / [K] * [m]
+        # = [ kg * m / s^3 / K ] = [ N / s / K ]
         entropy_integral_ps = oth_Cd_profile1 * trapezoid2(
             rho_ps * W_distr_ps**3 / temp_ps,
             xi_dimensional,

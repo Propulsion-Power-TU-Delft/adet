@@ -3,6 +3,7 @@ Module that contains the tools to define equations, build systems made
 up of assembly of such residual equations and routines to generate reasonable
 initial guesses based on the available thermodynamic, geometric and kinematic
 data.
+Sometimes the CasADi api is slightly cryptic, sorry.
 """
 
 from abc import ABC, abstractmethod
@@ -21,6 +22,7 @@ from numpy.typing import NDArray
 from pint import Quantity
 from pint.facets.plain import PlainQuantity
 import sympy as sp
+from scipy.stats import qmc
 
 from adet.constants import ArrayLike, NodeStatesNames
 from adet.equations.base_equation import EquationBase
@@ -1625,6 +1627,34 @@ def {func_name}(equations, {', '.join(self._declared_arguments)}):
         return cas_sys
 
 
+def perturb_guess(guess, knowns, root_function, delta_pert, num_samples):
+    sampler = qmc.LatinHypercube(len(guess))
+    samples = sampler.random(num_samples)
+
+    def norm_function(x):
+        return np.linalg.norm(x, np.inf)
+
+    best_guess = guess
+    best_res_norm = norm_function(root_function(guess, knowns))
+
+    logging.info(f'Trying out {num_samples} latin hypercube samples for first guess...')
+    for sample in samples:
+        # Perturb the original guess
+        x0 = guess + guess * delta_pert * (-1 + 2 * sample)
+        # Compute first iteration residual
+        try:
+            initial_residual = root_function(x0, knowns)
+        except RuntimeError:
+            continue
+        # Compute the residual norm
+        residual_norm = norm_function(initial_residual)
+        # If the norm is better the the current one, write that guess
+        if residual_norm < best_res_norm:
+            best_guess = x0
+
+    return best_guess
+
+
 def solve_root_problem(
     rootfinder: Any,
     guess: list[NDArray],
@@ -1633,24 +1663,26 @@ def solve_root_problem(
     suppress_output: bool = True,
     perturbate_guess: bool = False,
     delta_pert: float = 0.05,
+    num_samples: int = 100,
 ):
+    """Simple utility function for solving rootfinding problems"""
     if suppress_output:
         output_manipulator = output_suppression
     else:
         output_manipulator = dummy_context
-    """Simple utility function for solving rootfinding problems"""
+
+    root_fn = rootfinder.get_function('nlp_g')
 
     with output_manipulator():
         logger.info('Solving the system...')
 
-        def perturb_func(x):
-            return x + x * delta_pert * (-1 + 2 * np.random.ranf(1))
-
-        if perturbate_guess:
-            guess = jax.tree.map(perturb_func, guess)
-
         guess_cat = np.concatenate(guess)
         knowns_cat = np.concatenate(knowns)
+
+        if perturbate_guess:
+            guess_cat = perturb_guess(
+                guess_cat, knowns_cat, root_fn, delta_pert, num_samples
+            )
 
         extra_args = {}
         if rootfinder.n_in() > 2:

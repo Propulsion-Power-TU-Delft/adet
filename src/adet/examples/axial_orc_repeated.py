@@ -48,10 +48,10 @@ NUM_SPAN = 1
 SCALED = True
 PLOTS = True
 PRINTS = True
-INITIAL_LOSS = RectVelocityIncompressible()
+INITIAL_LOSS = PercentageEntropyLoss(0.0)
 
 # This counts the number of updates in an attribute
-abs_state = DebugAbstractState('REFPROP', 'air')
+abs_state = DebugAbstractState('REFPROP', 'AIR')
 abs_state.debug_print = False
 
 real_model = ExternalFluidModel(abs_state)
@@ -88,13 +88,13 @@ shaft = Shaft(
 inlet = Inlet(
     {
         'kin': {
-            'beta': Quantity(10, 'deg'),
+            'beta': Quantity(30, 'deg'),
             'Vm': Quantity(70, 'm/s'),
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
             'rr_midspan': 0.5,
-            'height': 0.2,
+            'height': 0.3,
         },
         'tot': {
             'p': 5e5,
@@ -113,7 +113,7 @@ row = BladeRow(
     },
     out_constraints={
         'kin': {
-            'beta': Quantity(-50, 'deg'),
+            'beta': Quantity(-40, 'deg'),
             # 'relmach': 1.0,
             # 'mach': 0.2,
         },
@@ -126,7 +126,7 @@ row = BladeRow(
             'num_blades': 30,
             'thick_by_pitch': 0.02,
             'heightRatio': 1.1,
-            'tip_clearance': 2e-3,
+            'tip_clearance': 2.5e-3,
         },
         'oth': {
             'mom_by_bld_Ratio': 0.075,
@@ -154,7 +154,6 @@ row = BladeRow(
         BoundaryLayerRatios(): 1,
         BladeBlockage(): 1,
         SieverdingBasePressure(): (0, 1),
-        SecondaryBSM(): (0, 1),
         INITIAL_LOSS: (0, 1),
         # Efficiency measures
     },
@@ -163,10 +162,18 @@ row = BladeRow(
 
 class LossMatcher(EquationBase):
     def residual(
-        self, stc_smass0, stc_smass1, oth_delta_smass_leakage1, oth_delta_smass_profile1
+        self,
+        stc_smass0,
+        stc_smass1,
+        oth_delta_smass_leakage1,
+        oth_delta_smass_profile1,
+        oth_delta_smass_secondary1,
     ):
         return stc_smass1 - (
-            stc_smass0 + oth_delta_smass_leakage1 + oth_delta_smass_profile1
+            stc_smass0
+            + oth_delta_smass_leakage1
+            + oth_delta_smass_profile1
+            + oth_delta_smass_secondary1
         )
 
 
@@ -201,6 +208,7 @@ if ntw.num_components == 2:
     ntw.system.add_equation(IsentropicProperties(), (0, 3))
     ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
 
+ntw.system.num_span = 5
 ntw.system.build(SCALED)
 
 rootfinder_is = ntw.system.make_rootfinder('ipopt', opts={'error_on_fail': True})
@@ -212,10 +220,11 @@ solution = solve_root_problem(
     rootfinder_is,
     x0_is,
     kn_is,
-    bnd_is,
+    # bnd_is,
     suppress_output=True,
     perturbate_guess=True,
-    delta_pert=0.05,
+    delta_pert=0.03,
+    num_samples=50,
 )
 
 # Write solution to nodes for post processing
@@ -225,6 +234,7 @@ sol_dict_is = ntw.system.solution_to_dict(solution)
 ntw.system.remove_equation(INITIAL_LOSS.__class__, (0, 1))
 ntw.system.add_equation(DentonProfileLoss(), (0, 1))
 ntw.system.add_equation(DentonLeakageLoss(), (0, 1))
+ntw.system.add_equation(SecondaryBSM(), (0, 1))
 ntw.system.add_equation(LossMatcher(), (0, 1))
 # ntw.system.add_equation(PercentageEntropyLoss(0.0), (0, 1))
 ntw.system.build()
@@ -237,9 +247,9 @@ solution = solve_root_problem(
     rootfinder_loss,
     x0_loss,
     kn_loss,
-    bnd_loss,
+    # bnd_loss,
     suppress_output=False,
-    perturbate_guess=True,
+    perturbate_guess=False,
     delta_pert=0.05,
 )
 # = = = = = = = = = =
@@ -352,7 +362,7 @@ print(f'Num updates = {real_model.eos_object.num_updates}')
 if ntw.num_components > 1:
     n2 = nodes[2]
     n3 = nodes[3]
-    print(f'Entropy rise {n3.stc.smass - n2.stc.smass}')
+    print(f'delta_smass_mixing {n3.stc.smass - n2.stc.smass}')
     print(f'Deviation {n3.kin.beta - n2.kin.beta}')
 
     q = 0.5 * n2.stc.rhomass * n2.kin.W**2
@@ -370,7 +380,7 @@ if ntw.num_components > 1:
     print(f'Incompressible vs actual zeta {zeta_inc}, {zeta_actual}')
 
 print(n1.oth)
-# plt.show(block=False)
+plt.show(block=True)
 
 # DEBUGGING PURPOSES
 globals().update(
