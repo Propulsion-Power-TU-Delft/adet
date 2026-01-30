@@ -12,7 +12,12 @@ import CoolProp as cp
 
 class AngleDeflection(EquationBase):
     def residual(self, kin_beta0, kin_beta1, kin_deflection1):
-        return kin_beta1 - kin_beta0 - kin_deflection1
+        return kin_beta1 - (kin_beta0 + kin_deflection1)
+
+
+class IncidenceAngle(EquationBase):
+    def residual(self, kin_beta0, kin_inc_angle0, geo_metal_angle0):
+        return kin_inc_angle0 - (kin_beta0 - geo_metal_angle0)
 
 
 class GeometricalRatios(EquationBase):

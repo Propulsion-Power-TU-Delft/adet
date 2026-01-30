@@ -103,7 +103,7 @@ class DentonProfileLoss(LossModel):
         geo_hh1,
         geo_camb_len1,
         geo_stagger1,
-        delta_smass_profile1,
+        oth_delta_smass_profile1,
     ):
         xi_by_camb_len, W_distr_ss, W_distr_ps = trapezoidal_vel_profile(
             oth_xi_by_camb_len_A1, oth_xi_by_camb_len_B1, oth_k_prof1, kin_W0, kin_W1
@@ -149,7 +149,7 @@ class DentonProfileLoss(LossModel):
         )
 
         # 2. SPECIFIC entropy generation [J / kg / K]
-        r2 = delta_smass_profile1 - entropy_integral * geo_hh1 / oth_ch_massflow1
+        r2 = oth_delta_smass_profile1 - entropy_integral * geo_hh1 / oth_ch_massflow1
 
         return r1, r2
 

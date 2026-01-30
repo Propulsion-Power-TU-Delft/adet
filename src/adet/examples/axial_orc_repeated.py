@@ -1,5 +1,6 @@
 # === IMPORTS
 # Standard library
+from copy import deepcopy
 import logging
 
 import matplotlib.pyplot as plt
@@ -53,10 +54,10 @@ NUM_SPAN = 1
 SCALED = True
 PLOTS = True
 PRINTS = True
-INITIAL_LOSS = PercentageEntropyLoss(0.0)
+INITIAL_LOSS = RectVelocityIncompressible()
 
 # This counts the number of updates in an attribute
-abs_state = DebugAbstractState('REFPROP', 'MM')
+abs_state = DebugAbstractState('HEOS', 'MM')
 abs_state.debug_print = False
 
 real_model = ExternalFluidModel(abs_state)
@@ -82,7 +83,12 @@ _guess_reg.set_fallback_value(0.5)
 
 _bounds_reg = VariableBoundsRegistry()
 _bounds_reg.reset()
-_bounds_reg.set('delta_smass_.*', (0.0, 100.0))
+_bounds_reg.from_dict(
+    {
+        'delta_smass_.*': (0.0, 100.0),
+        'mach': (0.0, 1.0),
+    }
+)
 
 # *** Shafts
 shaft = Shaft(
@@ -95,7 +101,7 @@ inlet = Inlet(
     {
         'kin': {
             'beta': Quantity(30, 'deg'),
-            'Vm': Quantity(70, 'm/s'),
+            'mach': 0.6,
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
@@ -113,13 +119,16 @@ inlet = Inlet(
     }
 )
 
-_guess_reg.set(
-    'p',
-    1.1 * abs_state.p_critical() * inlet.boundary_conditions['oth']['tot_p_red'],
-)
-_guess_reg.set(
-    'T',
-    1.1 * abs_state.T_critical() * inlet.boundary_conditions['oth']['tot_T_red'],
+# Set the pressure and temperature guesses just above the inlet ones
+_guess_reg.from_dict(
+    {
+        'p': 1.1
+        * abs_state.p_critical()
+        * inlet.boundary_conditions['oth']['tot_p_red'],
+        'T': 1.1
+        * abs_state.T_critical()
+        * inlet.boundary_conditions['oth']['tot_T_red'],
+    }
 )
 
 row = BladeRow(
@@ -133,8 +142,6 @@ row = BladeRow(
     out_constraints={
         'kin': {
             'beta': Quantity(-40, 'deg'),
-            # 'relmach': 1.0,
-            # 'mach': 0.2,
         },
         'geo': {
             # Meridional
@@ -142,7 +149,7 @@ row = BladeRow(
             # Blade
             'radiusRatio': 1,
             'aspRatio': 2,
-            'num_blades': 30,
+            'num_blades': 45,
             'thick_by_pitch': 0.02,
             'heightRatio': 1.1,
             'clearance_by_height': 0.01,
@@ -208,7 +215,8 @@ mixer = DownstreamMixer(
         },
     },
     extra_equations={
-        ZeroDeviation(): 1,  # Create a fake metal angle for plotting
+        # This creates a dummy metal angle for plotting like a blade
+        ZeroDeviation(): 1,
         PlaceHolderLoss(): (0, 1),
         # PercentageEntropyLoss(0.0): (0, 1),
     },
@@ -222,15 +230,21 @@ ntw = ComponentNetwork(
     CasadiSystem(num_span=NUM_SPAN),  # Backend
     [
         row,
-        # mixer,
+        mixer,
+        deepcopy(row),
     ],
 )
+
+# Set outlet of second row to axial
+ntw.system.boundary_conditions[5]['kin'].pop('beta')
+ntw.system.boundary_conditions[5]['kin']['alpha'] = 0
+ntw.system.boundary_conditions[5]['kin']['omega'] = -100
 
 if ntw.num_components == 2:
     ntw.system.add_equation(IsentropicProperties(), (0, 3))
     ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
 
-ntw.system.num_span = 5
+ntw.system.num_span = NUM_SPAN
 ntw.system.build(SCALED)
 
 rootfinder_is = ntw.system.make_rootfinder('ipopt', opts={'error_on_fail': True})
@@ -243,38 +257,52 @@ solution = solve_root_problem(
     x0_is,
     kn_is,
     bnd_is,
-    suppress_output=False,
-    perturbate_guess=False,
+    suppress_output=True,
+    perturbate_guess=True,
     delta_pert=0.02,
-    num_samples=10,
+    num_samples=80,
 )
 
-# Write solution to nodes for post processing
-sol_dict_is = ntw.system.solution_to_dict(solution)
+user = input('|> Isentropic problem solved, continue with losses? [y/n] ')
+if user in ('y', 'Y'):
+    # Write solution to dict for reading for next solution
+    sol_dict_is = ntw.system.solution_to_dict(solution)
+    # Set outlet to 0 degrees
 
-# = = = AFTER INITIALIZING = = =
-ntw.system.remove_equation(INITIAL_LOSS.__class__, (0, 1))
-ntw.system.add_equation(DentonProfileLoss(), (0, 1))
-ntw.system.add_equation(DentonLeakageLoss(), (0, 1))
-ntw.system.add_equation(SecondaryBSM(), (0, 1))
-ntw.system.add_equation(LossMatcher(), (0, 1))
-# ntw.system.add_equation(PercentageEntropyLoss(0.0), (0, 1))
-ntw.system.build()
+    # = = = AFTER INITIALIZING = = =
+    ntw.system.remove_equation(INITIAL_LOSS.__class__, (0, 1))
+    ntw.system.add_equation(DentonProfileLoss(), (0, 1))
+    ntw.system.add_equation(DentonLeakageLoss(), (0, 1))
+    ntw.system.add_equation(SecondaryBSM(), (0, 1))
+    ntw.system.add_equation(LossMatcher(), (0, 1))
 
-x0_loss = ntw.system.get_initial_guess(sol_dict_is)
-kn_loss = ntw.system.get_scaled_constraints()
-bnd_loss = ntw.system.get_arguments_bounds()
-rootfinder_loss = ntw.system.make_rootfinder('ipopt', opts={'error_on_fail': True})
-solution = solve_root_problem(
-    rootfinder_loss,
-    x0_loss,
-    kn_loss,
-    bnd_loss,
-    suppress_output=False,
-    perturbate_guess=False,
-    delta_pert=0.05,
-)
-# = = = = = = = = = =
+    # Add to second row
+    ntw.system.remove_equation(INITIAL_LOSS.__class__, (4, 5))
+    ntw.system.add_equation(DentonProfileLoss(), (4, 5))
+    ntw.system.add_equation(DentonLeakageLoss(), (4, 5))
+    ntw.system.add_equation(SecondaryBSM(), (4, 5))
+    # ntw.system.add_equation(LossMatcher(), (4, 5))
+    ntw.system.add_equation(PercentageEntropyLoss(0.0), (0, 1))
+    ntw.system.build()
+
+    x0_loss = ntw.system.get_initial_guess(sol_dict_is)
+    kn_loss = ntw.system.get_scaled_constraints()
+    bnd_loss = ntw.system.get_arguments_bounds()
+    err_on_fail = int(input('Fail on rootfinding error? [0/1] '))
+    rootfinder_loss = ntw.system.make_rootfinder(
+        'ipopt', opts={'error_on_fail': bool(err_on_fail)}
+    )
+    solution = solve_root_problem(
+        rootfinder_loss,
+        x0_loss,
+        kn_loss,
+        # bnd_loss,
+        suppress_output=False,
+        perturbate_guess=False,
+        delta_pert=0.05,
+    )
+    # = = = = = = = = = =
+
 
 ntw.system.write_solution_to_nodes(solution)
 ntw.print_structure()
@@ -403,12 +431,13 @@ if ntw.num_components > 1:
 
 print(n1.oth)
 plt.show(block=False)
+input('Press enter to close')
+plt.close('all')
 
 # DEBUGGING PURPOSES
-globals().update(
-    residual_debugger(
-        DentonLeakageLoss(),
-        [n0, n1],
-    )
-)
-self = DentonLeakageLoss()
+# globals().update(
+#     residual_debugger(
+#         DentonProfileLoss(),
+#         [n0, n1],
+#     )
+# )
