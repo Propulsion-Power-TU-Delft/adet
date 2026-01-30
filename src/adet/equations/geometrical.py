@@ -275,7 +275,6 @@ class ParabolicCamberline(CamberLineGeom):
         geo_stagger1,
         geo_chord_ax1,
         geo_camb_len1,
-        geo_pitch1,
     ):
         a, b, stagger_computed = self._compute_parabola(
             geo_metal_angle0, geo_metal_angle1, geo_chord_ax1
@@ -283,8 +282,8 @@ class ParabolicCamberline(CamberLineGeom):
         arc_len_computed = self._parabolic_arc_len(a, b, geo_chord_ax1)
 
         r1 = geo_camb_len1 - arc_len_computed
-        r2 = geo_stagger1 - stagger_computed
-        r3 = geo_chord1 * np.cos(geo_stagger1) - geo_chord_ax1
+        r2 = geo_chord1 * np.cos(geo_stagger1) - geo_chord_ax1
+        r3 = geo_stagger1 - stagger_computed
         return r1, r2, r3
 
     # === CAMBERLINE PLOTTING FUNCTIONS ===

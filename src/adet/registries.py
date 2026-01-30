@@ -292,7 +292,7 @@ SCALING_FACTORS: dict[str, float] = {
     'N / m': 1000.0,
     'K': 500.0,
     'J / kg': 5e5,
-    'J / (kg * K)': 1e3,
+    'J / kg / K': 1e3,  # Entropy
     'J / kg / m': 5e5,  # Radial equilibrium
     'kg / s': 5,
     'meter * rad / s': 1e2,  # Tangential velocity
@@ -362,6 +362,7 @@ class ScalarsRegistry(BaseRegistry[str, int]):
         '.*_hub': -1,
         '.*_tip': -1,
         'height': -1,
+        'flare_angle': -1,
         'heightRatio': -1,
         'radiusRatio': -1,
         'aspRatio': -1,
@@ -382,28 +383,29 @@ class VariableBoundsRegistry(
     DEFAULTS = {
         # THERMODYNAMICS
         'p': (1e4, 150e5),
-        'rhomass': (1e-3, 400.0),
+        'rhomass': (1e-3, 800.0),
         'T': (80.0, 1800.0),
         # KINEMATICS
-        'V': (1.0, 500.0),
-        'Vm': (1.0, 500.0),
-        'Vt': (-500.0, 500.0),
-        'W': (1.0, 500.0),
-        'Wm': (1.0, 500.0),
-        'Wt': (-500.0, 500.0),
-        'U': (-500.0, 500.0),
+        'V': (1.0, 800.0),
+        'Vm': (1.0, 800.0),
+        'Vt': (-800.0, 800.0),
+        'W': (1.0, 800.0),
+        'Wm': (1.0, 800.0),
+        'Wt': (-800.0, 800.0),
+        'U': (-800.0, 800.0),
         'omega': (-15000.0, 15000.0),
         'alpha': (-1.54, 1.54),
         'beta': (-1.54, 1.54),
         'metal_angle': (-1.54, 1.54),
-        '.*area': (0.0, 1.0),
+        '.*area': (0.0, 2.0),
         'rr': (1e-4, 3.0),
         'rr_.*': (1e-4, 3.0),
         'hh': (1e-8, 1.0),
         'height': (1e-5, 3.0),
         # OTHERS
         '.*solidity': (0.05, 10.0),
-        '.*massflow': (1e-4, 2e4),
+        'num_blades': (1.0, 300.0),
+        '.*massflow': (1e-4, 5e4),
         'slip_factor': (0.01, 0.99),
     }
 

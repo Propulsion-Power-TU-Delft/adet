@@ -80,4 +80,4 @@ class SecondaryBSM(LossModel):
 
         pt_out = (rlt_p0 + loss_coeffY * stc_p1) / (loss_coeffY + 1)
 
-        return oth_delta_smass_secondary1 - (self.eos(tot_hmass1, pt_out) - stc_smass0)
+        return oth_delta_smass_secondary1 - (stc_smass0 - self.eos(tot_hmass1, pt_out))

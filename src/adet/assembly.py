@@ -1635,7 +1635,9 @@ def perturb_guess(guess, knowns, root_function, delta_pert, num_samples):
         return np.linalg.norm(x, np.inf)
 
     best_guess = guess
-    best_res_norm = norm_function(root_function(guess, knowns))
+    best_res_norm = norm_function(
+        root_function(guess, knowns),
+    )
 
     logging.info(f'Trying out {num_samples} latin hypercube samples for first guess...')
     for sample in samples:
@@ -1650,7 +1652,12 @@ def perturb_guess(guess, knowns, root_function, delta_pert, num_samples):
         residual_norm = norm_function(initial_residual)
         # If the norm is better the the current one, write that guess
         if residual_norm < best_res_norm:
+            logger.info(
+                f'Found better initial guess norm {residual_norm:.3f} '
+                f'< {best_res_norm:.3f}'
+            )
             best_guess = x0
+            best_res_norm = residual_norm
 
     return best_guess
 
@@ -1661,8 +1668,9 @@ def solve_root_problem(
     knowns: list[NDArray],
     arg_bounds: tuple[cs.DM, cs.DM] | None = None,
     suppress_output: bool = True,
+    # Guess perturbation
     perturbate_guess: bool = False,
-    delta_pert: float = 0.05,
+    delta_pert: float = 0.02,
     num_samples: int = 100,
 ):
     """Simple utility function for solving rootfinding problems"""
@@ -1671,7 +1679,17 @@ def solve_root_problem(
     else:
         output_manipulator = dummy_context
 
-    root_fn = rootfinder.get_function('nlp_g')
+    if rootfinder.n_in() > 2:
+        rootfinder_type = 'nlp'
+    else:
+        rootfinder_type = 'pure'
+
+    extra_args = {}
+    if rootfinder_type == 'nlp':
+        extra_args.update({'lbg': 0, 'ubg': 0})
+        if arg_bounds:
+            extra_args['lbx'], extra_args['ubx'] = arg_bounds
+        root_fn = rootfinder.get_function('nlp_g')
 
     with output_manipulator():
         logger.info('Solving the system...')
@@ -1680,15 +1698,12 @@ def solve_root_problem(
         knowns_cat = np.concatenate(knowns)
 
         if perturbate_guess:
-            guess_cat = perturb_guess(
-                guess_cat, knowns_cat, root_fn, delta_pert, num_samples
-            )
-
-        extra_args = {}
-        if rootfinder.n_in() > 2:
-            extra_args.update({'lbg': 0, 'ubg': 0})
-            if arg_bounds:
-                extra_args['lbx'], extra_args['ubx'] = arg_bounds
+            if rootfinder_type != 'pure':
+                guess_cat = perturb_guess(
+                    guess_cat, knowns_cat, root_fn, delta_pert, num_samples
+                )
+            else:
+                logger.warning('Perturbation for pure rootfinders not supported')
 
         sol = rootfinder(
             x0=guess_cat,

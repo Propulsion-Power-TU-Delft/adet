@@ -54,7 +54,7 @@ NUM_SPAN = 1
 SCALED = True
 PLOTS = True
 PRINTS = True
-INITIAL_LOSS = RectVelocityIncompressible()
+INITIAL_LOSS = PercentageEntropyLoss(0.0)
 
 # This counts the number of updates in an attribute
 abs_state = DebugAbstractState('HEOS', 'MM')
@@ -86,7 +86,7 @@ _bounds_reg.reset()
 _bounds_reg.from_dict(
     {
         'delta_smass_.*': (0.0, 100.0),
-        'mach': (0.0, 1.0),
+        'mach': (0.0, 1.2),
     }
 )
 
@@ -101,12 +101,12 @@ inlet = Inlet(
     {
         'kin': {
             'beta': Quantity(30, 'deg'),
-            'mach': 0.6,
+            'mach': 0.4,
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
-            'rr_midspan': 0.3,
-            'height': 0.1,
+            'rr_midspan': 0.1,
+            'height': 0.06,
         },
         # 'tot': {
         #     'p': 5e5,
@@ -148,8 +148,13 @@ row = BladeRow(
             'meridional_angle': Quantity(0, 'deg'),
             # Blade
             'radiusRatio': 1,
-            'aspRatio': 2,
-            'num_blades': 45,
+            # ***  height <-> chord
+            # 'aspRatio': 2,
+            'flare_angle': Quantity(5, 'deg'),
+            # ***
+            # If too low velocity suction explodes!
+            'num_blades': 25,
+            # 'solidity': 1.3,
             'thick_by_pitch': 0.02,
             'heightRatio': 1.1,
             'clearance_by_height': 0.01,
@@ -228,21 +233,24 @@ ntw = ComponentNetwork(
     settings,  # Fluid settings
     inlet,  # Inlet conditions
     CasadiSystem(num_span=NUM_SPAN),  # Backend
-    [
+    components=[
         row,
         mixer,
         deepcopy(row),
+        deepcopy(mixer),
     ],
 )
 
-# Set outlet of second row to axial
-ntw.system.boundary_conditions[5]['kin'].pop('beta')
-ntw.system.boundary_conditions[5]['kin']['alpha'] = 0
-ntw.system.boundary_conditions[5]['kin']['omega'] = -100
+if ntw.num_components > 1:
+    final_node = ntw.num_components * 2 - 1
+    # ntw.system.add_equation(IsentropicProperties(), (0, final_node))
+    # ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, final_node))
 
-if ntw.num_components == 2:
-    ntw.system.add_equation(IsentropicProperties(), (0, 3))
-    ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
+if ntw.num_components >= 2:
+    ntw.system.boundary_conditions[5]['kin'].pop('beta')
+    # Set outlet of second row to axial
+    ntw.system.boundary_conditions[5]['kin']['alpha'] = 0.0
+    ntw.system.boundary_conditions[5]['kin']['omega'] = -300
 
 ntw.system.num_span = NUM_SPAN
 ntw.system.build(SCALED)
@@ -258,37 +266,46 @@ solution = solve_root_problem(
     kn_is,
     bnd_is,
     suppress_output=True,
-    perturbate_guess=True,
+    perturbate_guess=False,
     delta_pert=0.02,
-    num_samples=80,
+    num_samples=1000,
 )
 
-user = input('|> Isentropic problem solved, continue with losses? [y/n] ')
+user = input('INPUT >>> Isentropic problem solved, continue with losses? [y/n] ')
 if user in ('y', 'Y'):
     # Write solution to dict for reading for next solution
     sol_dict_is = ntw.system.solution_to_dict(solution)
     # Set outlet to 0 degrees
+    new_span = input(
+        'INPUT >>> Select number of spanwise stations for full system [int] '
+    )
 
+    ntw.system.num_span = int(new_span)
     # = = = AFTER INITIALIZING = = =
     ntw.system.remove_equation(INITIAL_LOSS.__class__, (0, 1))
     ntw.system.add_equation(DentonProfileLoss(), (0, 1))
     ntw.system.add_equation(DentonLeakageLoss(), (0, 1))
     ntw.system.add_equation(SecondaryBSM(), (0, 1))
-    ntw.system.add_equation(LossMatcher(), (0, 1))
+    # ntw.system.add_equation(LossMatcher(), (0, 1)) # For losses
+    ntw.system.add_equation(PercentageEntropyLoss(0.0), (0, 1))  # Compute w/o adding
 
-    # Add to second row
-    ntw.system.remove_equation(INITIAL_LOSS.__class__, (4, 5))
-    ntw.system.add_equation(DentonProfileLoss(), (4, 5))
-    ntw.system.add_equation(DentonLeakageLoss(), (4, 5))
-    ntw.system.add_equation(SecondaryBSM(), (4, 5))
-    # ntw.system.add_equation(LossMatcher(), (4, 5))
-    ntw.system.add_equation(PercentageEntropyLoss(0.0), (0, 1))
+    if ntw.num_components >= 2:
+        # Add equations to second row
+        ntw.system.remove_equation(INITIAL_LOSS.__class__, (4, 5))
+        ntw.system.add_equation(DentonProfileLoss(), (4, 5))
+        ntw.system.add_equation(DentonLeakageLoss(), (4, 5))
+        ntw.system.add_equation(SecondaryBSM(), (4, 5))
+        # ntw.system.add_equation(LossMatcher(), (4, 5))
+        ntw.system.add_equation(PercentageEntropyLoss(0.0), (4, 5))
+
     ntw.system.build()
 
     x0_loss = ntw.system.get_initial_guess(sol_dict_is)
     kn_loss = ntw.system.get_scaled_constraints()
     bnd_loss = ntw.system.get_arguments_bounds()
-    err_on_fail = int(input('Fail on rootfinding error? [0/1] '))
+    err_on_fail = int(
+        input('INPUT >>> Fail on rootfinding error? [0/1] '),
+    )
     rootfinder_loss = ntw.system.make_rootfinder(
         'ipopt', opts={'error_on_fail': bool(err_on_fail)}
     )
@@ -299,7 +316,6 @@ if user in ('y', 'Y'):
         # bnd_loss,
         suppress_output=False,
         perturbate_guess=False,
-        delta_pert=0.05,
     )
     # = = = = = = = = = =
 
@@ -430,14 +446,14 @@ if ntw.num_components > 1:
     print(f'Incompressible vs actual zeta {zeta_inc}, {zeta_actual}')
 
 print(n1.oth)
-plt.show(block=False)
-input('Press enter to close')
+# plt.show(block=False)
+# input('Press enter to close ')
 plt.close('all')
 
-# DEBUGGING PURPOSES
-# globals().update(
-#     residual_debugger(
-#         DentonProfileLoss(),
-#         [n0, n1],
-#     )
-# )
+# DEBUGGING EQUATIONS
+globals().update(
+    residual_debugger(
+        SecondaryBSM(),
+        [nodes[4], nodes[5]],
+    )
+)

@@ -33,12 +33,18 @@ class GeometricalRatios(EquationBase):
         geo_radiusRatio1,
         geo_aspRatio1,
     ):
+        num_span = max(geo_chord_ax1.shape)
+        if num_span == 1:
+            midspan = 0
+        else:
+            midspan = num_span // 2
+
         r1 = geo_heightRatio1 - geo_height1 / geo_height0
         r2 = np.tan(geo_flare_angle1) - (geo_height1 - geo_height0) / (
-            2 * geo_chord_ax1
+            2 * geo_chord_ax1[midspan]
         )
         r3 = geo_rr_midspan0 * geo_radiusRatio1 - geo_rr_midspan1
-        r4 = geo_chord_ax1 * geo_aspRatio1 - geo_height0
+        r4 = geo_chord_ax1[midspan] * geo_aspRatio1 - geo_height0
         return r1, r2, r3, r4
 
 

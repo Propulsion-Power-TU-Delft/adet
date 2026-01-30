@@ -6,7 +6,7 @@ from adet.losses.profile import trapezoidal_vel_profile
 
 
 class DentonLeakageLoss(LossModel):
-    manual_units = ('J / kg',)
+    manual_units = ('J / kg / K',)
     input_pair = cp.HmassSmass_INPUTS
     output_quantities = ('p', 'rhomass')
 
