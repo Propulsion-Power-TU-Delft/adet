@@ -25,6 +25,7 @@ from adet.equations.fundamental import (
 )
 from adet.equations.geometrical import EndwallProperties, MeridionalUniform
 from adet.geometry import BezierCurve, StraightLine
+from adet.losses.basic import PlaceHolderLoss
 from adet.losses.mixing import MixingMomentumBalances, SimplifiedMixingBalances
 from adet.node import FlowNode
 
@@ -157,6 +158,7 @@ class DownstreamMixer(BaseComponent):
         (MassConservation, (0, 1)),
         (MixingMomentumBalances, (0, 1)),
         # (SimplifiedMixingBalances, (0, 1)),
+        (PlaceHolderLoss, (0, 1)),
         # *** Blockage
         (BladeBlockage, 0),
         (ZeroBlockage, 1),  # No blockage mixed out

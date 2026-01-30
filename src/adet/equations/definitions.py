@@ -44,7 +44,7 @@ class GeometricalRatios(EquationBase):
             2 * geo_chord_ax1[midspan]
         )
         r3 = geo_rr_midspan0 * geo_radiusRatio1 - geo_rr_midspan1
-        r4 = geo_chord_ax1[midspan] * geo_aspRatio1 - geo_height0
+        r4 = geo_chord_ax1 * geo_aspRatio1 - geo_height0
         return r1, r2, r3, r4
 
 

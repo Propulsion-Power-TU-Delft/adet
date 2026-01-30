@@ -20,19 +20,15 @@ from adet.equations.definitions import (
     ReducedThermoQuantities,
 )
 from adet.equations.fundamental import BladeBlockage
-from adet.equations.geometrical import (
-    MinimalCamberLine,
-    ParabolicCamberline,
-    TwoSegmentCamberline,
-)
+from adet.equations.geometrical import ParabolicCamberline
 from adet.equations.nondimensional import FlowCoefficient, TotalTotalExpansionEfficiency
 from adet.equations.utils import residual_debugger
 from adet.fluid.settings import ExternalFluidModel
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import PercentageEntropyLoss, PlaceHolderLoss, ZeroDeviation
 from adet.losses.leakage import DentonLeakageLoss
-from adet.losses.mixing import SieverdingBasePressure
-from adet.losses.profile import DentonProfileLoss, RectVelocityIncompressible
+from adet.losses.mixing import MixingMomentumBalances, SieverdingBasePressure
+from adet.losses.profile import DentonProfileLoss
 from adet.losses.secondary import SecondaryBSM
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
@@ -213,18 +209,10 @@ class LossMatcher(EquationBase):
 
 mixer = DownstreamMixer(
     'Mixer',
-    out_constraints={
-        'geo': {
-            # PLOTTING for sanity checks, no physical meaning
-            'chord_ax': 0.01,
-        },
-    },
-    extra_equations={
-        # This creates a dummy metal angle for plotting like a blade
-        ZeroDeviation(): 1,
-        PlaceHolderLoss(): (0, 1),
-        # PercentageEntropyLoss(0.0): (0, 1),
-    },
+    # The axial chord is just for plotting it like a row
+    out_constraints={'geo': {'chord_ax': 0.01}},
+    # This creates a dummy metal angle for plotting like a blade
+    extra_equations={ZeroDeviation(): 1},
 )
 
 
@@ -286,8 +274,8 @@ if user in ('y', 'Y'):
     ntw.system.add_equation(DentonProfileLoss(), (0, 1))
     ntw.system.add_equation(DentonLeakageLoss(), (0, 1))
     ntw.system.add_equation(SecondaryBSM(), (0, 1))
-    # ntw.system.add_equation(LossMatcher(), (0, 1)) # For losses
-    ntw.system.add_equation(PercentageEntropyLoss(0.0), (0, 1))  # Compute w/o adding
+    ntw.system.add_equation(LossMatcher(), (0, 1))  # For losses
+    # ntw.system.add_equation(PercentageEntropyLoss(0.0), (0, 1))  # Compute w/o adding
 
     if ntw.num_components >= 2:
         # Add equations to second row
@@ -295,8 +283,8 @@ if user in ('y', 'Y'):
         ntw.system.add_equation(DentonProfileLoss(), (4, 5))
         ntw.system.add_equation(DentonLeakageLoss(), (4, 5))
         ntw.system.add_equation(SecondaryBSM(), (4, 5))
-        # ntw.system.add_equation(LossMatcher(), (4, 5))
-        ntw.system.add_equation(PercentageEntropyLoss(0.0), (4, 5))
+        ntw.system.add_equation(LossMatcher(), (4, 5))
+        # ntw.system.add_equation(PercentageEntropyLoss(0.0), (4, 5))
 
     ntw.system.build()
 
@@ -307,13 +295,17 @@ if user in ('y', 'Y'):
         input('INPUT >>> Fail on rootfinding error? [0/1] '),
     )
     rootfinder_loss = ntw.system.make_rootfinder(
-        'ipopt', opts={'error_on_fail': bool(err_on_fail)}
+        'ipopt',
+        opts={
+            'error_on_fail': bool(err_on_fail),
+            'ipopt.constr_viol_tol': 1e-7,
+        },
     )
     solution = solve_root_problem(
         rootfinder_loss,
         x0_loss,
         kn_loss,
-        # bnd_loss,
+        bnd_loss,
         suppress_output=False,
         perturbate_guess=False,
     )
@@ -345,10 +337,14 @@ if PLOTS:
     # Plot entropy rise
     fig, ax = plt.subplots()
     ax.set_title('Entropy rise')
-    smass0 = ntw.system.nodes[0].stc.smass
+    smass_inlet = ntw.system.nodes[0].stc.smass
     for i, node in enumerate(ntw.system.nodes):
         # Plot entropy distributions
-        ax.plot(node.geo.rr, node.stc.smass - smass0)  # pyright:ignore
+        if i % 2 == 0:
+            continue
+
+        ax.plot(node.geo.rr, node.stc.smass - smass_inlet, label=f'Node {i}')
+        plt.legend()
 
     plt.tick_params(labelsize=FONTSIZE / 1.5 // 1)
 
@@ -446,14 +442,14 @@ if ntw.num_components > 1:
     print(f'Incompressible vs actual zeta {zeta_inc}, {zeta_actual}')
 
 print(n1.oth)
-# plt.show(block=False)
-# input('Press enter to close ')
+plt.show(block=False)
+input('Press enter to close ')
 plt.close('all')
 
 # DEBUGGING EQUATIONS
 globals().update(
     residual_debugger(
-        SecondaryBSM(),
-        [nodes[4], nodes[5]],
+        MixingMomentumBalances(),
+        [nodes[6], nodes[7]],
     )
 )
