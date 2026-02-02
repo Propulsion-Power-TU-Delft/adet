@@ -1087,7 +1087,7 @@ class CasadiSystem(SystemAssembler):
         fl_model = self.fluid_settings.model
 
         if not isinstance(fl_model, ExternalFluidModel):
-            raise NotImplementedError
+            raise NotImplementedError('Ideal gas model support not implemented yet')
 
         self._eos_callbacks: list[CasadiEos] = []
         self._eos_factory = CasadiEosFactory(fl_model)
@@ -1679,18 +1679,6 @@ def solve_root_problem(
     else:
         output_manipulator = dummy_context
 
-    if rootfinder.n_in() > 2:
-        rootfinder_type = 'nlp'
-    else:
-        rootfinder_type = 'pure'
-
-    extra_args = {}
-    if rootfinder_type == 'nlp':
-        extra_args.update({'lbg': 0, 'ubg': 0})
-        if arg_bounds:
-            extra_args['lbx'], extra_args['ubx'] = arg_bounds
-        root_fn = rootfinder.get_function('nlp_g')
-
     with output_manipulator():
         logger.info('Solving the system...')
 
@@ -1698,12 +1686,19 @@ def solve_root_problem(
         knowns_cat = np.concatenate(knowns)
 
         if perturbate_guess:
-            if rootfinder_type != 'pure':
-                guess_cat = perturb_guess(
-                    guess_cat, knowns_cat, root_fn, delta_pert, num_samples
-                )
-            else:
-                logger.warning('Perturbation for pure rootfinders not supported')
+            if rootfinder.n_in() < 2:
+                raise NotImplementedError('Perturbation only implemented for ipopt')
+
+            root_fn = rootfinder.get_function('nlp_g')
+            guess_cat = perturb_guess(
+                guess_cat, knowns_cat, root_fn, delta_pert, num_samples
+            )
+
+        extra_args = {}
+        if rootfinder.n_in() > 2:
+            extra_args.update({'lbg': 0, 'ubg': 0})
+            if arg_bounds:
+                extra_args['lbx'], extra_args['ubx'] = arg_bounds
 
         sol = rootfinder(
             x0=guess_cat,
