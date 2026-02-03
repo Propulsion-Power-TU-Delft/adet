@@ -33,6 +33,7 @@ from adet.equations.nondimensional import (
     TotalTotalCompressionEfficiency,
     WorkCoefficient,
 )
+from adet.equations.utils import residual_debugger
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
 from adet.losses.basic import (
     PercTotalPressureLoss,
@@ -61,8 +62,8 @@ _bounds_reg.reset()
 _bounds_reg.from_dict(
     {
         'massflow': (0.1, 4.0),
-        'delta_hmass_.*': (10.0, 1e5),
-        'delta_hmass_loading': (10.0, 1e4),  # This tends to diverge, bound it
+        # 'delta_hmass_.*': (10.0, 1e5),
+        # 'delta_hmass_loading': (10.0, 1e4),  # This tends to diverge, bound it
     }
 )
 
@@ -72,7 +73,6 @@ _greg.from_dict(
     {
         'beta': -0.5,
         'gamma_pv': 1.4,
-        'delta_hmass_.*': 1000,
     }
 )
 _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
@@ -119,11 +119,13 @@ inlet = Inlet(
     },
 )
 
-ScalarsRegistry().set('chAx_outRad_Ratio', -1)
-
 EQS_ISENTROPIC = {
+    BackstromSlip(): (0, 1),
+    ClearanceJansen(): (0, 1),
+    SkinFrictionJansen(): (0, 1),
+    BladeLoadingCoppage(): (0, 1),
+    # Losses are computed but not added
     PercentageEntropyLoss(0.0): (0, 1),
-    ZeroDeviation(): 1,
 }
 
 EQS_WITH_LOSSES = {
@@ -131,6 +133,7 @@ EQS_WITH_LOSSES = {
     ClearanceJansen(): (0, 1),
     SkinFrictionJansen(): (0, 1),
     BladeLoadingCoppage(): (0, 1),
+    # Losses are added
     LossAdder(): 1,
 }
 
@@ -279,6 +282,8 @@ if __name__ == '__main__':
     )
 
     ntw.system.write_solution_to_nodes(solution_loss)
+    n0 = ntw.system.nodes[0]
+    n1 = ntw.system.nodes[1]
 
     fig, axs = plt.subplots(2, 2, figsize=(8, 15))
     for cmp_idx, cmp in enumerate(ntw.components):
@@ -311,10 +316,8 @@ if __name__ == '__main__':
 
         offset += c.outlet_node.geo.chord_ax[0]
 
-    # Assign nodes to globals for easier access
-    for idx, n in enumerate(ntw.system.nodes):
-        globals()[f'n{idx}'] = n
-
     print(n1.oth)
     # plt.close('all')
     plt.show()
+
+globals().update(residual_debugger(IsentropicProperties(), [n0, n1]))

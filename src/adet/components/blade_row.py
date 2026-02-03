@@ -26,7 +26,7 @@ from adet.equations.fundamental import (
 from adet.equations.geometrical import EndwallProperties, MeridionalUniform
 from adet.geometry import BezierCurve, StraightLine
 from adet.losses.basic import PlaceHolderLoss
-from adet.losses.mixing import MixingMomentumBalances, SimplifiedMixingBalances
+from adet.losses.mixing import MixingMomentumBalances
 from adet.node import FlowNode
 
 logger = logging.getLogger(__name__)

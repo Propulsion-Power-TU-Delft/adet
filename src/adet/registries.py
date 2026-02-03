@@ -239,6 +239,7 @@ class GuessRegistry(BaseRegistry[str, float]):
         'umass': 5e5,
         'rhomass': 2.0,
         'T': 800.0,
+        '.*T_is': 300.0,
         'smass': 1e4,
         'gamma_pv': 1.4,
         # KINEMATICS

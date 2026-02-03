@@ -6,7 +6,6 @@ from adet.equations.base_equation import EquationBase
 from adet.equations.fundamental import Kinematics, TotalStaticMatching
 
 from adet.equations.ideal_gas import IdealRltEos, IdealStcEos, IdealTotEos
-from adet.equations.special import SpeedLinker
 from adet.fluid.settings import ExternalFluidModel, FluidSettings, IdealGasModel
 from adet.registries import DefaultUnitsRegistry, GuessRegistry
 

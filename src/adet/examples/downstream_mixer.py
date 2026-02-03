@@ -3,6 +3,7 @@
 import logging
 
 import matplotlib.pyplot as plt
+from matplotlib.ticker import PercentFormatter
 import numpy as np
 from pint import Quantity
 
@@ -35,7 +36,7 @@ setup_logger(
 )
 
 # === SETTINGS
-NUM_SPAN = 1
+NUM_SPAN = 5
 SCALED = True
 PLOTS = True
 PRINTS = True
@@ -118,8 +119,9 @@ row = BladeRow(
             'heightRatio': 1.0,
         },
         'oth': {
-            'mom_by_bld_Ratio': 0.075,
-            'disp_by_mom_Ratio': 2,
+            'mom_by_bld': 0.075,
+            'disp_by_mom': 2,
+            'disp_by_hgt': 0.05,
             # Profile losses
             'Cd_profile': 0.002,
             'xi_by_camb_len_A': 0.375,
@@ -128,9 +130,9 @@ row = BladeRow(
     },
     extra_equations={
         # Camberline model
-        MinimalCamberLine(): (0, 1),
+        # MinimalCamberLine(): (0, 1),
         # TwoSegmentCamberline(): (0, 1),
-        # ParabolicCamberline(): (0, 1),
+        ParabolicCamberline(): (0, 1),
         # |> Losses & Dev
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
@@ -154,7 +156,6 @@ mixer = DownstreamMixer(
     },
     extra_equations={
         ZeroDeviation(): 1,  # Create a fake metal angle for plotting
-        PlaceHolderLoss(): (0, 1),
         # PercentageEntropyLoss(0.0): (0, 1),
     },
 )
@@ -192,28 +193,6 @@ solution = solve_root_problem(
     delta_pert=0.01,
 )
 
-# Write solution to nodes for post processing
-sol_dict_is = ntw.system.solution_to_dict(solution)
-
-# = = = INITIALIZE = = =
-ntw.system.remove_equation(INITIAL_LOSS.__class__, (0, 1))
-ntw.system.add_equation(DentonProfileLoss(), (0, 1))
-ntw.system.build()
-
-x0_loss = ntw.system.get_initial_guess(sol_dict_is)
-kn_loss = ntw.system.get_scaled_constraints()
-bnd_loss = ntw.system.get_arguments_bounds()
-rootfinder_loss = ntw.system.make_rootfinder('ipopt')
-solution = solve_root_problem(
-    rootfinder_loss,
-    x0_loss,
-    kn_loss,
-    bnd_loss,
-    suppress_output=False,
-    perturbate_guess=False,
-)
-# = = = = = = = = = =
-
 ntw.system.write_solution_to_nodes(solution)
 ntw.print_structure()
 
@@ -242,7 +221,8 @@ if PLOTS:
     smass0 = ntw.system.nodes[0].stc.smass
     for i, node in enumerate(ntw.system.nodes):
         # Plot entropy distributions
-        ax.plot(node.geo.rr, node.stc.smass - smass0)  # pyright:ignore
+        ax.plot(node.geo.rr, node.stc.smass - smass0, label=f'Node {i}')  # pyright:ignore
+        ax.legend()
 
     plt.tick_params(labelsize=FONTSIZE / 1.5 // 1)
 

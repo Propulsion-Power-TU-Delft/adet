@@ -23,6 +23,7 @@ from pint import Quantity
 from adet.assembly import CasadiSystem, solve_root_problem
 from adet.components import BladeRow, ComponentNetwork, Inlet, Shaft
 from adet.components.blade_row import plot_from_nodes
+from adet.equations.base_equation import EquationBase
 from adet.equations.definitions import RepeatedStage
 from adet.equations.fundamental import ZeroBlockage
 from adet.equations.geometrical import MinimalCamberLine, ParabolicCamberline
@@ -218,10 +219,6 @@ ntw.system.add_global_constraints(
         'oth': {
             # Ideal gas properties (reference)
             'disp_thick': 0.0,  # Ignore boundary layer blockage
-            'cpmassid': 1004.0,  # Specific heat at constant pressure [J/kg/K]
-            'cvmassid': 717.0,  # Specific heat at constant volume [J/kg/K]
-            'T_ref': 1.0,
-            'p_ref': 1.0,
             # Profile loss coefficients
             'Cd_profile': 0.002,
             'xi_by_camb_len_A': 0.375,
@@ -258,6 +255,12 @@ sol_mean_is = solve_root_problem(rootfinder_mean_is, x0_mean_is, kn_mean_is)
 sol_mean_is_dict = ntw.system.solution_to_dict(sol_mean_is)
 
 
+# Only use profile
+class LossAdder(EquationBase):
+    def residual(self, stc_smass0, stc_smass1, oth_delta_smass_profile1):
+        return stc_smass1 - (stc_smass0 + oth_delta_smass_profile1)
+
+
 # === SOLVE STAGE 2: Meanline with Denton losses (midspan only) ===
 sys_mean_loss = ntw.system.copy()
 sys_mean_loss.remove_equation_type(LossModel)
@@ -266,7 +269,9 @@ for nodes in nodes_by_stage:
     stator_nodes = (nodes[0], nodes[1])
     rotor_nodes = (nodes[2], nodes[3])
     sys_mean_loss.add_equation(DentonProfileLoss(), stator_nodes)
+    sys_mean_loss.add_equation(LossAdder(), stator_nodes)
     sys_mean_loss.add_equation(DentonProfileLoss(), rotor_nodes)
+    sys_mean_loss.add_equation(LossAdder(), rotor_nodes)
 
 sys_mean_loss.build(SCALED)
 rootfinder_mean_loss = sys_mean_loss.make_rootfinder('kinsol')

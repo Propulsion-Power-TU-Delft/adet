@@ -59,7 +59,6 @@ _greg.from_dict(
     {
         'beta': -0.5,
         'gamma_pv': 1.4,
-        'delta_hmass_.*': 1000,
     }
 )
 _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
@@ -104,6 +103,15 @@ inlet = Inlet(
     },
 )
 
+EQS_ISENTROPIC = {
+    ZeroDeviation(): 1,  # No slip
+    ClearanceJansen(): (0, 1),
+    SkinFrictionJansen(): (0, 1),
+    BladeLoadingCoppage(): (0, 1),
+    # Compute the losses but do not add them
+    PercentageEntropyLoss(0.0): (0, 1),
+}
+
 EQS_WITH_LOSSES = {
     BackstromSlip(): (0, 1),
     ClearanceJansen(): (0, 1),
@@ -112,10 +120,6 @@ EQS_WITH_LOSSES = {
     LossAdder(): 1,  # Use losses
 }
 
-EQS_ISENTROPIC = {
-    PercentageEntropyLoss(0.0): (0, 1),
-    ZeroDeviation(): 1,
-}
 
 losses = EQS_WITH_LOSSES if ENABLE_LOSSES else EQS_ISENTROPIC
 
