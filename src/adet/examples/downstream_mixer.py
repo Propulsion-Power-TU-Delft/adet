@@ -3,7 +3,6 @@
 import logging
 
 import matplotlib.pyplot as plt
-from matplotlib.ticker import PercentFormatter
 import numpy as np
 from pint import Quantity
 
@@ -14,13 +13,22 @@ from adet.components.blade_row import DownstreamMixer
 from adet.components.blade_row import plot_from_nodes
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
 from adet.equations.fundamental import BladeBlockage
-from adet.equations.geometrical import MinimalCamberLine, ParabolicCamberline
-from adet.equations.nondimensional import TotalTotalExpansionEfficiency
+from adet.equations.geometrical import ParabolicCamberline
+from adet.equations.nondimensional import (
+    RelativeMachNumber,
+    RelativeMachWithChoke,
+    TotalTotalExpansionEfficiency,
+)
+from adet.equations.utils import residual_debugger
 from adet.fluid.settings import ExternalFluidModel
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import PlaceHolderLoss, ZeroDeviation
-from adet.losses.mixing import SieverdingBasePressure
-from adet.losses.profile import DentonProfileLoss, RectVelocityIncompressible
+from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
+from adet.losses.mixing import (
+    MixingMomentumBalances,
+    SieverdingBasePressure,
+    SimplifiedMixingBalances,
+)
+from adet.losses.profile import RectVelocityIncompressible
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.iter import grouper
@@ -36,20 +44,20 @@ setup_logger(
 )
 
 # === SETTINGS
-NUM_SPAN = 5
+NUM_SPAN = 1
 SCALED = True
 PLOTS = True
 PRINTS = True
-INITIAL_LOSS = RectVelocityIncompressible()
+INITIAL_LOSS = PercentageEntropyLoss(0.0)
 
 # This counts the number of updates in an attribute
-abs_state = DebugAbstractState('REFPROP', 'air')
+abs_state = DebugAbstractState('REFPROP', 'Air')
 abs_state.debug_print = False
 
 real_model = ExternalFluidModel(abs_state)
 settings = FluidSettings(
     model=real_model,
-    update_variables=('p', 'T', 'rhomass', 'smass', 'hmass'),
+    update_variables=('p', 'T'),
     update_length=2,
 )
 
@@ -63,11 +71,17 @@ _defreg.from_dict(
 )
 _guess_reg = GuessRegistry()
 _guess_reg.reset()
-_guess_reg.set_fallback_value(0.5)
+_guess_reg.set_fallback_value(1.5)
 
 _bounds_reg = VariableBoundsRegistry()
 _bounds_reg.reset()
-_bounds_reg.set('delta_smass_.*', (0.0, 100.0))
+_bounds_reg.from_dict(
+    {
+        'delta_smass_.*': (0.0, 100.0),
+        'dev_angle': (0.0, 0.1),
+        'relmach': (0.0, 1.3),
+    }
+)
 
 # *** Shafts
 shaft = Shaft(
@@ -79,8 +93,8 @@ shaft = Shaft(
 inlet = Inlet(
     {
         'kin': {
-            'beta': Quantity(-30, 'deg'),
-            'Vm': Quantity(70, 'm/s'),
+            'alpha': Quantity(0, 'deg'),
+            'Vm': Quantity(140, 'm/s'),
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
@@ -88,8 +102,8 @@ inlet = Inlet(
             'height': 0.2,
         },
         'tot': {
-            'p': 5e5,
-            'T': 600,
+            'p': 18.1e5,
+            'T': 575,
         },
     }
 )
@@ -104,9 +118,7 @@ row = BladeRow(
     },
     out_constraints={
         'kin': {
-            'beta': Quantity(-40, 'deg'),
-            # 'relmach': 1.0,
-            # 'mach': 0.2,
+            # 'alpha': Quantity(70, 'deg'),
         },
         'geo': {
             # Meridional
@@ -153,9 +165,13 @@ mixer = DownstreamMixer(
             # PLOTTING for sanity checks, no physical meaning
             'chord_ax': 0.05,
         },
+        'kin': {
+            'alpha': Quantity(40, 'deg'),
+            # 'relmach': 1.24,
+        },
     },
     extra_equations={
-        ZeroDeviation(): 1,  # Create a fake metal angle for plotting
+        ZeroDeviation(): 1,  # Creates a fake metal angle for plotting
         # PercentageEntropyLoss(0.0): (0, 1),
     },
 )
@@ -178,17 +194,20 @@ if ntw.num_components == 2:
 
 ntw.system.build(SCALED)
 
-rootfinder_is = ntw.system.make_rootfinder('ipopt')
+rootfinder = ntw.system.make_rootfinder(
+    'ipopt',
+    opts={'ipopt.tol': 1e-7, 'error_on_fail': True},
+)
+x0 = ntw.system.get_initial_guess()
+kn = ntw.system.get_scaled_constraints()
+bnd = ntw.system.get_arguments_bounds()
 
-x0_is = ntw.system.get_initial_guess()
-kn_is = ntw.system.get_scaled_constraints()
-bnd_is = ntw.system.get_arguments_bounds()
 solution = solve_root_problem(
-    rootfinder_is,
-    x0_is,
-    kn_is,
-    bnd_is,
-    suppress_output=True,
+    rootfinder,
+    x0,
+    kn,
+    bnd,
+    suppress_output=False,
     perturbate_guess=True,
     delta_pert=0.01,
 )
@@ -319,5 +338,12 @@ if ntw.num_components > 1:
 
     print(f'Incompressible vs actual zeta {zeta_inc}, {zeta_actual}')
 
-plt.show()
-# plt.close('all')
+# plt.show()
+plt.close('all')
+
+globals().update(
+    residual_debugger(
+        SimplifiedMixingBalances(),
+        [n2, n3],
+    )
+)

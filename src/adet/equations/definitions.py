@@ -20,6 +20,17 @@ class IncidenceAngle(EquationBase):
         return kin_inc_angle0 - (kin_beta0 - geo_metal_angle0)
 
 
+class DeviationAngle(EquationBase):
+    def residual(
+        self,
+        kin_beta0,
+        kin_beta1,
+        kin_dev_angle1,
+        geo_metal_angle0,
+    ):
+        return kin_dev_angle1 + np.sign(geo_metal_angle0) * (kin_beta1 - kin_beta0)
+
+
 class GeometricalRatios(EquationBase):
     def residual(
         self,

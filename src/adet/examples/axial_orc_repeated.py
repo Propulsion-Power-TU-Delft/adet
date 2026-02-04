@@ -59,7 +59,7 @@ abs_state.debug_print = False
 real_model = ExternalFluidModel(abs_state)
 settings = FluidSettings(
     model=real_model,
-    update_variables=('p', 'T', 'rhomass', 'smass', 'hmass'),
+    update_variables=('p', 'T'),
     update_length=2,
 )
 
@@ -145,6 +145,7 @@ row = BladeRow(
             # Blade
             'radiusRatio': 1,
             # ***  height <-> chord
+            # 'chord_ax': 0.34,
             # 'aspRatio': 2,
             'flare_angle': Quantity(5, 'deg'),
             # ***
@@ -229,6 +230,9 @@ ntw = ComponentNetwork(
     ],
 )
 
+# Make the chords constant
+ntw.system.add_spanwise_constants('geo_chord_ax1', 'geo_chord_ax5')
+
 if ntw.num_components > 1:
     final_node = ntw.num_components * 2 - 1
     # ntw.system.add_equation(IsentropicProperties(), (0, final_node))
@@ -305,7 +309,7 @@ if user in ('y', 'Y'):
         rootfinder_loss,
         x0_loss,
         kn_loss,
-        bnd_loss,
+        # bnd_loss,
         suppress_output=False,
         perturbate_guess=False,
     )
@@ -323,6 +327,7 @@ n0 = nodes[0]
 n1 = nodes[1]
 
 
+# ----------------------------------------
 if PLOTS:
     FONTSIZE = 18
     FONTDICT = {'fontsize': FONTSIZE}
@@ -424,6 +429,9 @@ print(f'Num updates = {real_model.eos_object.num_updates}')
 if ntw.num_components > 1:
     n2 = nodes[2]
     n3 = nodes[3]
+    n5 = nodes[5]
+    n6 = nodes[6]
+    n7 = nodes[7]
     print(f'delta_smass_mixing {n3.stc.smass - n2.stc.smass}')
     print(f'Deviation {n3.kin.beta - n2.kin.beta}')
 
@@ -442,14 +450,8 @@ if ntw.num_components > 1:
     print(f'Incompressible vs actual zeta {zeta_inc}, {zeta_actual}')
 
 print(n1.oth)
-plt.show(block=False)
-input('Press enter to close ')
+# plt.show(block=False)
+# input('Press enter to close ')
 plt.close('all')
 
-# DEBUGGING EQUATIONS
-globals().update(
-    residual_debugger(
-        MixingMomentumBalances(),
-        [nodes[6], nodes[7]],
-    )
-)
+globals().update(residual_debugger(MixingMomentumBalances(), [n6, n7]))

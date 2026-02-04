@@ -4,6 +4,7 @@ coefficients used in TurboMachinery
 """
 
 import numpy as np
+import casadi as cs
 import CoolProp as cp
 
 from adet.equations import EquationBase
@@ -222,8 +223,15 @@ class RelativeMachNumber(EquationBase):
 
     def residual(self, kin_relmach0, kin_W0, stc_speed_sound0):
         # Choking criterion, not used for now
-        # choke = cs.if_else(kin_relmach0 > 1.0, 1.0, kin_relmach0)
         return kin_relmach0 * stc_speed_sound0 - kin_W0
+
+
+class RelativeMachWithChoke(EquationBase):
+    manual_units = ('dimensionless',)
+
+    def residual(self, kin_relmach0, kin_W0, stc_speed_sound0):
+        mach_w_choke = cs.if_else(kin_relmach0 > 1.0, 1.0, kin_relmach0)
+        return kin_W0 / stc_speed_sound0 - mach_w_choke
 
 
 class GammaPV(EquationBase):

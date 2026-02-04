@@ -201,7 +201,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'alpha': 'rad',
         'deflection': 'rad',
         # Geometry
-        'flare_angle': 'rad',
+        '.*_angle': 'rad',
         'meridional_angle': 'rad',
         'height': 'm',
         'hh': 'm',
