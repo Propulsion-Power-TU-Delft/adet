@@ -39,7 +39,7 @@ FlowNode (stores solution across stages)
 
 ### Important (Extend for Research)
 5. `losses/profile.py` - Loss correlations (706 LOC!)
-6. `fluid/eos.py` - Thermodynamic integration
+6. `fluid/casadi_eos.py` - Thermodynamic integration via CasADi callbacks
 7. `equations/fundamental.py` - Turbomachinery equations
 8. `components/blade_row.py` - Stage representation
 
@@ -51,16 +51,19 @@ FlowNode (stores solution across stages)
 ## Code Size Distribution
 
 ```
-assembly.py            1,153 LOC  ← MONOLITHIC (refactor candidate)
-losses/profile.py        706 LOC  ← COMPLEX (CasADi-only loss)
-diagnostics.py           556 LOC
-geometry.py              438 LOC
-variables.py             402 LOC
-components/blade_row.py  328 LOC
-fluid/eos.py             287 LOC
-registries.py            286 LOC
-equations/fundamental.py 255 LOC
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+assembly.py                 1,153 LOC  ← MONOLITHIC (refactor candidate)
+losses/profile.py             706 LOC  ← COMPLEX (CasADi-only loss)
+diagnostics.py                556 LOC
+geometry.py                   438 LOC
+variables.py                  402 LOC
+components/blade_row.py       328 LOC
+tools/coolprop_utils.py       302 LOC
+fluid/casadi_eos.py           287 LOC
+registries.py                 286 LOC
+equations/fundamental.py      255 LOC
+node.py                       235 LOC
+equations/base_equation.py    233 LOC
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Total: ~8,500 LOC
 ```
 

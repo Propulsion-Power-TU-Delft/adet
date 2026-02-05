@@ -155,7 +155,7 @@ Comprehensive technical analysis with detailed examination of all modules.
 
 ### Important (Domain Logic)
 5. `src/adet/losses/profile.py` - Loss correlations (706 LOC)
-6. `src/adet/fluid/eos.py` - Thermodynamic integration
+6. `src/adet/fluid/casadi_eos.py` - Thermodynamic integration via CasADi callbacks
 7. `src/adet/equations/fundamental.py` - Turbomachinery equations
 8. `src/adet/components/blade_row.py` - Blade row model
 

@@ -31,19 +31,19 @@ uv run <script_name>.py    # Run any Python script with UV
 ruff check src/            # Check for linting issues
 ruff format src/           # Auto-format code
 ```
+Ruff can also be integrated into your IDE:
+- **VS Code**: Install the [Ruff extension](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff)
+- **PyCharm**: Configure as an external tool or use the Ruff plugin
+- **Other IDEs**: Most support Ruff via plugins or external tool configuration
 
-**Type Checking** (Basedpyright):
+**Type Checking** (Basedpyright/Pyright):
 ```bash
 pyright                    # Run type checker in basic mode
 ```
-
-**Testing** (Pytest):
-```bash
-pytest                     # Run all tests
-pytest tests/<test_file>   # Run specific test file
-pytest -v                  # Verbose output
-pytest -x                  # Stop on first failure
-```
+Pyright/Basedpyright can be integrated into your IDE:
+- **VS Code**: Install [Pylance](https://marketplace.visualstudio.com/items?itemName=ms-python.vscode-pylance) (includes Pyright) or Basedpyright extension
+- **PyCharm**: Enable Pyright via plugin
+- **Other IDEs**: Most modern Python IDEs support Pyright integration
 
 **Interactive Development**:
 ```bash
@@ -114,18 +114,51 @@ As demonstrated in `src/adet/main.py`:
 6. Solve system to convergence
 7. Extract and visualize results (kinematics, losses, flow properties)
 
+## Naming Conventions
+
+### File Names
+- **Python modules**: `snake_case` (e.g., `base_equation.py`, `blade_row.py`, `sketch_vaneless_diff.py`)
+- **Configuration**: `pyproject.toml`, `README.md`, `CLAUDE.md`
+
+### Class Names
+- **PascalCase** for all classes:
+  - Core: `FlowNode`, `EquationBase`, `BaseComponent`, `SystemAssembler`, `ComponentNetwork`
+  - Containers: `VariableContainer`, `KinematicContainer`, `ThermostateContainer`
+  - Registries: `DefaultUnitsRegistry`, `GuessRegistry`, `ScalingRegistry`
+  - Models: `FluidSettings`, `FluidModel`, `LossModel`
+  - Specialized: `UniqueEquation`, `DeviationModel`, `IncidenceModel`, `CamberLineGeom`
+
+### Variable Names
+- **FlowNode state containers**:
+  - `stc` - Static thermodynamic state
+  - `tot` - Total thermodynamic state
+  - `rlt` - Relative total thermodynamic state
+  - `kin` - Kinematics (velocity components)
+  - `geo` - Geometry
+  - `oth` - Other variables
+- **Equation arguments**: Format `<state>_<var_type><index>` (e.g., `stc_p0`, `tot_T1`, `kin_V0`)
+  - State identifiers: `stc`, `tot`, `rlt`, `kin`, `geo`, `oth`
+  - Trailing digit indicates node index
+- **Common variables**: `snake_case` (e.g., `num_span`, `scaling_factor`, `node_name`)
+
+### Function/Method Names
+- **snake_case** for all functions and methods (e.g., `read_from_node`, `fetch_state`, `to_symbolic`)
+- **Private methods**: Leading underscore (e.g., `_validate_argument`, `_count_equations_ast`)
+
 ## Code Style and Conventions
 
 - **Line Length**: 88 characters (Ruff enforcement)
 - **Quotes**: Single quotes for strings
 - **Type Hints**: Basic type checking enabled; add hints for modules you work on (except functions with intentional polymorphism like residuals)
-- **Linting Rules**: E (pycodestyle errors), W (warnings), F (pyflakes)
-- **Per-file Exceptions**: `__init__.py` and `main.py` ignore E402 (import order)
+- **Linting Rules**: E (pycodestyle errors), W (warnings), F (pyflakes), ARG (unused arguments), C4 (comprehensions)
+- **Unused Imports**: F401 ignored (handled by pyright)
+- **Per-file Exceptions**: `__init__.py`, `main.py`, and files in `tests/`, `docs/`, `tools/` ignore E402 (import order)
 
 ### Ruff Configuration
 ```toml
 line-length = 88
-select = ["E", "W", "F"]
+select = ["E", "W", "F", "ARG", "C4"]
+ignore = ["F401"]
 quote-style = "single"
 docstring-code-format = true
 ```

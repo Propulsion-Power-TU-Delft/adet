@@ -262,7 +262,7 @@ Provides analytical EOS equations for ideal gas model.
 
 ### 2.4 Fluid/Thermodynamic Module (`src/adet/fluid/`)
 
-#### EOS (`eos.py`, 287 LOC)
+#### EOS (`casadi_eos.py`, 287 LOC)
 **Features**:
 1. **CasadiEoS**: CasADi callback wrapper around CoolProp
    - Enables `AbstractState` evaluations in symbolic expressions

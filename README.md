@@ -1,28 +1,80 @@
 # ADeT
 **A**utodiff **De**signer for **T**urbomachinery
 
-This is a tool for design and analysis of turbomachinery
+A Python library for equation-oriented design and analysis of turbomachinery components using automatic differentiation (CasADi, JAX) and real gas thermodynamics (CoolProp).
 
-## Getting started
+## Features
+
+- **Equation-oriented modeling**: Define physics symbolically, solve systems automatically
+- **Multiple solver backends**: CasADi (symbolic, C-code generation) and JAX (autodiff)
+- **Real gas thermodynamics**: CoolProp integration with REFPROP support
+- **Automatic differentiation**: Jacobians computed automatically
+- **Unit-aware**: Pint integration for automatic unit checking and conversion
+
+## Getting Started
+
 This project uses [uv](https://docs.astral.sh/uv) for packaging.
 
+### Installation
+
 1. Clone this repository
-1. [Install `uv`](https://docs.astral.sh/uv/getting-started/installation/)
-1. Move into the project root directory
-1. Run `uv sync`  
-    - Optionally use `--all-groups` flag for dev and docs dependency groups
-1. Run scripts using `uv run <script_name>.py`
-    - `uv` creates a `.venv` virtual environment folder within the root directory, which can be activated as normal, or linked to VSCode or PyCharm
+2. [Install `uv`](https://docs.astral.sh/uv/getting-started/installation/)
+3. Navigate to the project root directory
+4. Install dependencies:
+   ```bash
+   uv sync                    # Install base dependencies
+   uv sync --all-groups       # Install dev and docs dependencies
+   ```
 
-> ### Note
-> To access [REFPROP](https://www.nist.gov/srd/refprop) through CoolProp, check out the [guide](https://coolprop.org/coolprop/REFPROP.html).
+### Quick Start
 
-## Contributing
-This project uses :
+Run the main demonstration:
+```bash
+uv run src/adet/main.py
+```
 
-- [ruff](https://docs.astral.sh/ruff) for linting and formatting, 
-- [basedpyright](https://github.com/DetachHead/basedpyright) for static type checking.
+Explore examples:
+```bash
+uv run src/adet/examples/<example_name>.py
+```
 
-Please ensure your IDE supports and has these tools installed to easily comply with style guidelines. 
+Interactive development:
+```bash
+uv run ipython
+```
 
-We only apply basic type checking, therefore missing type and return hints will not be reported aggressively, nontheless it is recommended that you add hints for modules you work on, except where it is not suitable (e.g. functions with intentional polymorphism, such as residuals).
+> **Note**: To access [REFPROP](https://www.nist.gov/srd/refprop) through CoolProp, see the [integration guide](https://coolprop.org/coolprop/REFPROP.html).
+
+## Development
+
+### Code Quality Tools
+
+- **[Ruff](https://docs.astral.sh/ruff)**: Linting and formatting
+- **[Basedpyright](https://github.com/DetachHead/basedpyright)** / **[Pyright](https://github.com/microsoft/pyright)**: Static type checking
+
+These tools can be used via CLI or integrated directly into your IDE:
+- **VS Code**: Install the [Ruff](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff) and [Pylance](https://marketplace.visualstudio.com/items?itemName=ms-python.vscode-pylance) (includes Pyright) extensions
+- **PyCharm**: Configure Ruff as an external tool and enable Pyright via plugin
+- **Other IDEs**: Most modern Python IDEs support these tools via plugins or external tool configuration
+
+### Development Commands
+
+```bash
+# Linting and formatting (CLI)
+ruff check src/            # Check for linting issues
+ruff format src/           # Auto-format code
+
+# Type checking (CLI)
+pyright                    # Run type checker
+```
+
+### Code Style
+
+- **Line length**: 88 characters
+- **Quotes**: Single quotes for strings
+- **Type hints**: Basic type checking enabled; add hints for new code (except for polymorphic functions)
+- **Linting rules**: E (pycodestyle errors), W (warnings), F (pyflakes), ARG (unused arguments), C4 (comprehensions)
+
+### Contributing
+
+Ensure your IDE is configured to use Ruff and Basedpyright for the best development experience. Type hints are recommended for new code, but optional for functions with intentional polymorphism (e.g., equation residuals).
