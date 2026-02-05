@@ -20,8 +20,13 @@ from adet.equations.definitions import (
     ReducedThermoQuantities,
 )
 from adet.equations.fundamental import BladeBlockage
-from adet.equations.geometrical import ParabolicCamberline
-from adet.equations.nondimensional import FlowCoefficient, TotalTotalExpansionEfficiency
+from adet.equations.geometrical import MinimalCamberLine, ParabolicCamberline
+from adet.equations.nondimensional import (
+    FlowCoefficient,
+    TotalStaticDegreeOfReaction,
+    TotalStaticLoadingCoefficient,
+    TotalTotalExpansionEfficiency,
+)
 from adet.equations.utils import residual_debugger
 from adet.fluid.settings import ExternalFluidModel
 from adet.fluid.settings import FluidSettings
@@ -52,8 +57,10 @@ PLOTS = True
 PRINTS = True
 INITIAL_LOSS = PercentageEntropyLoss(0.0)
 
+# ________________________________________________
+
 # This counts the number of updates in an attribute
-abs_state = DebugAbstractState('HEOS', 'MM')
+abs_state = DebugAbstractState('REFPROP', 'MM')
 abs_state.debug_print = False
 
 real_model = ExternalFluidModel(abs_state)
@@ -74,7 +81,7 @@ _defreg.from_dict(
 )
 _guess_reg = GuessRegistry()
 _guess_reg.reset()
-_guess_reg.set('rhomass', 400)
+_guess_reg.set('rhomass', 370)
 _guess_reg.set_fallback_value(0.5)
 
 _bounds_reg = VariableBoundsRegistry()
@@ -85,6 +92,8 @@ _bounds_reg.from_dict(
         'mach': (0.0, 1.2),
     }
 )
+# ________________________________________________
+# ________________________________________________
 
 # *** Shafts
 shaft = Shaft(
@@ -96,21 +105,16 @@ shaft = Shaft(
 inlet = Inlet(
     {
         'kin': {
-            'beta': Quantity(30, 'deg'),
-            'mach': 0.4,
+            'alpha': Quantity(30, 'deg'),
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
             'rr_midspan': 0.1,
             'height': 0.06,
         },
-        # 'tot': {
-        #     'p': 5e5,
-        #     'T': 600,
-        # },
-        'oth': {
-            'tot_p_red': 2.071,
-            'tot_T_red': 1.052,
+        'tot': {
+            'p': 2.071 * abs_state.p_critical(),
+            'T': 1.052 * abs_state.T_critical(),
         },
     }
 )
@@ -118,12 +122,8 @@ inlet = Inlet(
 # Set the pressure and temperature guesses just above the inlet ones
 _guess_reg.from_dict(
     {
-        'p': 1.1
-        * abs_state.p_critical()
-        * inlet.boundary_conditions['oth']['tot_p_red'],
-        'T': 1.1
-        * abs_state.T_critical()
-        * inlet.boundary_conditions['oth']['tot_T_red'],
+        'p': 1.1 * abs_state.p_critical(),
+        'T': 1.1 * abs_state.T_critical(),
     }
 )
 
@@ -171,9 +171,9 @@ row = BladeRow(
     },
     extra_equations={
         # Camberline model
-        # MinimalCamberLine(): (0, 1),
+        MinimalCamberLine(): (0, 1),
         # TwoSegmentCamberline(): (0, 1),
-        ParabolicCamberline(): (0, 1),
+        # ParabolicCamberline(): (0, 1),
         ClearanceByHeight(): 1,
         ReducedThermoQuantities(): 0,
         # |> Losses & Dev
@@ -216,6 +216,8 @@ mixer = DownstreamMixer(
     extra_equations={ZeroDeviation(): 1},
 )
 
+# ________________________________________________
+# ________________________________________________
 
 # Create network
 ntw = ComponentNetwork(
@@ -226,26 +228,34 @@ ntw = ComponentNetwork(
         row,
         mixer,
         deepcopy(row),
-        deepcopy(mixer),
+        # deepcopy(mixer),
     ],
 )
 
 # Make the chords constant
 ntw.system.add_spanwise_constants('geo_chord_ax1', 'geo_chord_ax5')
+ntw.system.add_invariants(('kin_alpha0', 'kin_alpha5'))
 
 if ntw.num_components > 1:
     final_node = ntw.num_components * 2 - 1
-    # ntw.system.add_equation(IsentropicProperties(), (0, final_node))
-    # ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, final_node))
+    ntw.system.add_equation(FlowCoefficient(), (0, final_node))
+    # Nondimensional
+    ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, final_node))
+    ntw.system.add_equation(TotalStaticDegreeOfReaction(), (0, 1, 4, 5))
+    ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, final_node))
 
-if ntw.num_components >= 2:
+if ntw.num_components > 2:
     ntw.system.boundary_conditions[5]['kin'].pop('beta')
-    # Set outlet of second row to axial
-    ntw.system.boundary_conditions[5]['kin']['alpha'] = 0.0
-    ntw.system.boundary_conditions[5]['kin']['omega'] = -300
+    # Choose one of the two
+    # ntw.system.boundary_conditions[5]['oth']['flowCoeff'] = 2
+    ntw.system.boundary_conditions[0]['kin']['Vm'] = 12
+    # Set second row to rotate
+    ntw.system.boundary_conditions[5]['kin']['omega'] = -150
 
 ntw.system.num_span = NUM_SPAN
 ntw.system.build(SCALED)
+
+# ________________________________________________
 
 rootfinder_is = ntw.system.make_rootfinder('ipopt', opts={'error_on_fail': True})
 
@@ -262,6 +272,9 @@ solution = solve_root_problem(
     delta_pert=0.02,
     num_samples=1000,
 )
+
+# ________________________________________________
+# ________________________________________________
 
 user = input('INPUT >>> Isentropic problem solved, continue with losses? [y/n] ')
 if user in ('y', 'Y'):
@@ -281,7 +294,7 @@ if user in ('y', 'Y'):
     ntw.system.add_equation(LossMatcher(), (0, 1))  # For losses
     # ntw.system.add_equation(PercentageEntropyLoss(0.0), (0, 1))  # Compute w/o adding
 
-    if ntw.num_components >= 2:
+    if ntw.num_components > 2:
         # Add equations to second row
         ntw.system.remove_equation(INITIAL_LOSS.__class__, (4, 5))
         ntw.system.add_equation(DentonProfileLoss(), (4, 5))
@@ -309,11 +322,13 @@ if user in ('y', 'Y'):
         rootfinder_loss,
         x0_loss,
         kn_loss,
-        # bnd_loss,
+        bnd_loss,
         suppress_output=False,
         perturbate_guess=False,
     )
     # = = = = = = = = = =
+# ________________________________________________
+# ________________________________________________
 
 
 ntw.system.write_solution_to_nodes(solution)
@@ -327,7 +342,7 @@ n0 = nodes[0]
 n1 = nodes[1]
 
 
-# ----------------------------------------
+# ------------ PLOTS ---------------------
 if PLOTS:
     FONTSIZE = 18
     FONTDICT = {'fontsize': FONTSIZE}
@@ -425,13 +440,20 @@ if PLOTS:
 
     plt.tight_layout()
 
+# ________________________________________________
+# _________________ PRINTS _______________________
+
 print(f'Num updates = {real_model.eos_object.num_updates}')
+# A little staircase :)
 if ntw.num_components > 1:
     n2 = nodes[2]
     n3 = nodes[3]
-    n5 = nodes[5]
-    n6 = nodes[6]
-    n7 = nodes[7]
+    if ntw.num_components > 2:
+        n4 = nodes[4]
+        n5 = nodes[5]
+        if ntw.num_components > 3:
+            n6 = nodes[6]
+            n7 = nodes[7]
     print(f'delta_smass_mixing {n3.stc.smass - n2.stc.smass}')
     print(f'Deviation {n3.kin.beta - n2.kin.beta}')
 
@@ -449,9 +471,10 @@ if ntw.num_components > 1:
 
     print(f'Incompressible vs actual zeta {zeta_inc}, {zeta_actual}')
 
-print(n1.oth)
-# plt.show(block=False)
-# input('Press enter to close ')
+print(n5.oth)
+plt.show(block=False)
+input('Press enter to close ')
 plt.close('all')
+print(f'Inlet mach is {n0.kin.mach}')
 
-globals().update(residual_debugger(MixingMomentumBalances(), [n6, n7]))
+# globals().update(residual_debugger(MixingMomentumBalances(), [n6, n7]))

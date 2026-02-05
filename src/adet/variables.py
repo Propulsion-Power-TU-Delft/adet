@@ -343,7 +343,8 @@ class ThermostateContainer(VariableContainer):
 
         if len(valid_variables) < updt_len:
             raise RuntimeError(
-                f'Insufficient variables to define a valid pair, minimum is {updt_len}'
+                f'Insufficient thermodynamic variables in the problem '
+                f'to define a valid pair, minimum is {updt_len}'
             )
 
         return combinations(valid_variables, updt_len)

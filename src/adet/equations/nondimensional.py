@@ -8,7 +8,7 @@ import casadi as cs
 import CoolProp as cp
 
 from adet.equations import EquationBase
-from adet.equations.utils import thermo_deriv
+from adet.equations.utils import safe_abs, thermo_deriv
 
 
 class TotalTotalPressureRatio(EquationBase):
@@ -44,34 +44,47 @@ class MidspanTotalTotalPressRatio(EquationBase):
 
 
 class TotalTotalExpansionEfficiency(EquationBase):
+    manual_units = ('dimensionless',)
+    input_pair = cp.PSmass_INPUTS
+    output_quantities = ('hmass',)
+
     def residual(
         self,
+        stc_smass0,
+        tot_p1,
         tot_hmass0,
         tot_hmass1,
         oth_eta_tt1,
-        oth_tot_hmass_is1,
     ):
-        return oth_eta_tt1 - (tot_hmass0 - tot_hmass1) / (
-            tot_hmass0 - oth_tot_hmass_is1
-        )
-
-
-class TotalStaticLoadingCoefficient(EquationBase):
-    def residual(self, oth_):
-        pass
+        tot_hmass_is1 = self.eos(tot_p1, stc_smass0)
+        return oth_eta_tt1 - (tot_hmass0 - tot_hmass1) / (tot_hmass0 - tot_hmass_is1)
 
 
 class TotalTotalCompressionEfficiency(EquationBase):
+    manual_units = ('dimensionless',)
+    input_pair = cp.PSmass_INPUTS
+    output_quantities = ('hmass',)
+
     def residual(
         self,
+        stc_smass0,
+        tot_p1,
         tot_hmass0,
         tot_hmass1,
         oth_eta_tt1,
-        oth_tot_hmass_is1,
     ):
-        return oth_eta_tt1 - (oth_tot_hmass_is1 - tot_hmass0) / (
-            tot_hmass1 - tot_hmass0
-        )
+        tot_hmass_is1 = self.eos(tot_p1, stc_smass0)
+        return oth_eta_tt1 - (tot_hmass_is1 - tot_hmass0) / (tot_hmass1 - tot_hmass0)
+
+
+class TotalStaticLoadingCoefficient(EquationBase):
+    manual_units = ('dimensionless',)
+    input_pair = cp.PSmass_INPUTS
+    output_quantities = ('hmass',)
+
+    def residual(self, stc_p1, stc_smass0, oth_ts_loadCoeff1, tot_hmass0, kin_U1):
+        stc_hmass_is1 = self.eos(stc_p1, stc_smass0)
+        return oth_ts_loadCoeff1 - 2 * (tot_hmass0 - stc_hmass_is1) / kin_U1**2
 
 
 class StaticStaticPressRatio(EquationBase):
@@ -144,7 +157,7 @@ class FlowCoefficient(EquationBase):
     """
 
     def residual(self, kin_Vm0, kin_U1, oth_flowCoeff1):
-        return kin_U1 * oth_flowCoeff1 - kin_Vm0
+        return safe_abs(kin_U1) * oth_flowCoeff1 - kin_Vm0
 
 
 class WorkCoefficient(EquationBase):

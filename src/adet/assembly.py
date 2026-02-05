@@ -73,15 +73,15 @@ class SystemSharedData:
     def __init__(self):
         # Core structures
         self.equations: OrderedDict[EquationBase, tuple[int, ...]] = OrderedDict()
-        self.nodes: tuple[FlowNode, ...] = tuple()
+        self.nodes: tuple[FlowNode, ...] = ()
         self._arg_maps: dict[EquationBase, dict[str, str]] = {}
 
         # Arguments
-        self.declared_arguments: tuple[str, ...] = tuple()
-        self.free_args: tuple[str, ...] = tuple()
-        self.constraints: tuple[str, ...] = tuple()
+        self.declared_arguments: tuple[str, ...] = ()
+        self.free_args: tuple[str, ...] = ()
+        self.constraints: tuple[str, ...] = ()
         self.constraints_values: list[NDArray] = []
-        self.scalar_arguments: tuple[str, ...] = tuple()
+        self.scalar_arguments: tuple[str, ...] = ()
 
         # Boundary conditions and constraints
         self.boundary_conditions: defaultdict[
@@ -397,6 +397,7 @@ class ArgumentResolver:
         # Get what variables will be used for state updates
         update_args = []
         for node_idx, node in enumerate(self.data.nodes):
+            logger.debug(f'Getting update variables for node {node_idx}')
             updt_vars = node.get_update_variables()
 
             for state, updt_pair in updt_vars.items():

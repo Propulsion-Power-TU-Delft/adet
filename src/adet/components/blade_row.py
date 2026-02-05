@@ -26,7 +26,7 @@ from adet.equations.fundamental import (
 )
 from adet.equations.geometrical import EndwallProperties, MeridionalUniform
 from adet.geometry import BezierCurve, StraightLine
-from adet.losses.basic import PlaceHolderLoss
+from adet.losses.basic import PercentageEntropyLoss, PlaceHolderLoss
 from adet.losses.mixing import MixingMomentumBalances
 from adet.node import FlowNode
 
@@ -196,6 +196,53 @@ class DownstreamMixer(BaseComponent):
         # Keep reference frame alive
         'kin_omega',
         # Keep geometry
+        'geo_num_blades',
+    ] + GEOM_LINK
+
+
+class DummyMixer(BaseComponent):
+    base_equations = [
+        # *** Fundamental
+        (ConstantEnergy, (0, 1)),
+        (MassConservation, (0, 1)),
+        (PercentageEntropyLoss, (0, 1)),
+        # *** Blockage
+        (BladeBlockage, 0),
+        (ZeroBlockage, 1),  # No blockage mixed out
+        # Uniform meridional distribution
+        (MeridionalUniform, 0),
+        (MeridionalUniform, 1),
+        # *** Definition of channel massflow and num_blades
+        (BladePitch, 0),
+        (BladePitch, 1),
+    ]
+
+    # Keep the absolute triangle
+    # energy, meridional geometry
+    from_previous_node = (
+        ABSOLUTE_LINK
+        + GEOM_LINK
+        + [
+            # Get the base pressure
+            'oth_p_base',
+            # Stay in the same MRF as blade row
+            'kin_omega',
+            # Geometry
+            'geo_num_blades',
+            'geo_metal_angle',
+            # Boundary layer and blade thicknesses
+            'geo_bld_thick',
+            'oth_disp_thick',
+            'oth_mom_thick',
+        ]
+    )
+
+    constant_variables = [
+        # Keep reference frame alive
+        'kin_omega',
+        # Keep geometry
+        'kin_Vt',
+        'kin_Vm',
         'geo_num_blades',
     ] + GEOM_LINK
 

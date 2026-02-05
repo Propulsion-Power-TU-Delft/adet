@@ -100,11 +100,12 @@ class Kinematics(EquationBase):
         r3 = kin_Vm0 - kin_Wm0
         r4 = kin_Vt0 - (kin_Wt0 + kin_U0)
 
-        # atan2 ensures that the angles are between - pi / 2 and pi / 2
+        # *** atan2 ensures that the angles are between - pi / 2 and pi / 2
         r5 = kin_alpha0 - np.atan2(kin_Vt0, kin_Vm0)
         r6 = kin_beta0 - np.atan2(kin_Wt0, kin_Wm0)
 
-        # - OLD Alternative formulation
+        # *** OLD Alternative formulation - Can be used in
+        # combination with bounds
         # r5 = kin_Wm0 - kin_W0 * np.cos(kin_beta0)
         # r6 = kin_Vm0 - kin_V0 * np.cos(kin_alpha0)
 
