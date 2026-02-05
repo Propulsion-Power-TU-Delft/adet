@@ -3,11 +3,11 @@ Simple quantity defintions, for defining differences or ratios rather than
 the single quantities
 """
 
-from adet.equations.utils import safe_sum
-from adet.equations.base_equation import EquationBase
-
-import numpy as np
 import CoolProp as cp
+import numpy as np
+
+from adet.equations.base_equation import EquationBase
+from adet.equations.utils import safe_sum
 
 
 class AngleDeflection(EquationBase):

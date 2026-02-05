@@ -90,6 +90,8 @@ _bounds_reg.from_dict(
     {
         'delta_smass_.*': (0.0, 100.0),
         'mach': (0.0, 1.2),
+        'Vm': (1.0, 30.0),
+        'eta_tt': (0.8, 0.98),
     }
 )
 # ________________________________________________
@@ -105,7 +107,7 @@ shaft = Shaft(
 inlet = Inlet(
     {
         'kin': {
-            'alpha': Quantity(30, 'deg'),
+            # 'alpha': Quantity(30, 'deg'),
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
@@ -137,7 +139,7 @@ row = BladeRow(
     },
     out_constraints={
         'kin': {
-            'beta': Quantity(-40, 'deg'),
+            # 'beta': Quantity(-40, 'deg'),
         },
         'geo': {
             # Meridional
@@ -186,7 +188,6 @@ row = BladeRow(
         SieverdingBasePressure(): (0, 1),
         INITIAL_LOSS: (0, 1),
         # Nondimensional
-        # FlowCoefficient(): (0, 1),
     },
 )
 
@@ -245,12 +246,17 @@ if ntw.num_components > 1:
     ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, final_node))
 
 if ntw.num_components > 2:
-    ntw.system.boundary_conditions[5]['kin'].pop('beta')
+    # ntw.system.boundary_conditions[5]['kin'].pop('beta')
     # Choose one of the two
-    # ntw.system.boundary_conditions[5]['oth']['flowCoeff'] = 2
-    ntw.system.boundary_conditions[0]['kin']['Vm'] = 12
-    # Set second row to rotate
-    ntw.system.boundary_conditions[5]['kin']['omega'] = -150
+    ntw.system.boundary_conditions[5]['oth']['flowCoeff'] = 0.9
+    ntw.system.boundary_conditions[5]['oth']['reactDegree_ts'] = 0.8
+    ntw.system.boundary_conditions[5]['oth']['ts_loadCoeff'] = 3
+    # ntw.system.boundary_conditions[0]['kin']['alpha'] = Quantity(10, 'deg')
+    # ntw.system.boundary_conditions[1]['kin']['alpha'] = Quantity(-50, 'deg')
+    ntw.system.boundary_conditions[0]['kin']['Vm'] = 12  # Impose Mach?
+    # Set second row to rotate - it is 0 otherwise!
+    ntw.system.boundary_conditions[5]['kin'].pop('omega')
+    # ntw.system.boundary_conditions[5]['kin']['omega'] = 100
 
 ntw.system.num_span = NUM_SPAN
 ntw.system.build(SCALED)
