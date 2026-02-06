@@ -69,11 +69,15 @@ class MeridionalUniform(MeridionalGeom):
 
 
 class AnnulusAreas(EquationBase):
+    # Circular annuli at various spanwise
     def residual(self, geo_area0, geo_rr0, geo_hh0):
-        # Circular annuli at various spanwise
-        return geo_area0 - np.pi * (
-            (geo_rr0 + geo_hh0 / 2) ** 2 - (geo_rr0 - geo_hh0 / 2) ** 2
-        )
+        # I realized that in the equation above only the mid terms of the binomial
+        # square do not elide
+        # return geo_area0 - np.pi * (
+        #     (geo_rr0 + geo_hh0 / 2) ** 2 - (geo_rr0 - geo_hh0 / 2) ** 2
+        # )
+
+        return geo_area0 - 2 * np.pi * geo_rr0 * geo_hh0
 
 
 class EndwallProperties(EquationBase):

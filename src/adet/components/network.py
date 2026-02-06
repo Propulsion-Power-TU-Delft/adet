@@ -16,7 +16,7 @@ from adet.equations.fundamental import (
     TotalStaticMatching,
 )
 
-from adet.tools.printing import print_header
+from adet.tools.printing import print_logo
 
 T = TypeVar('T', bound=SystemAssembler)
 
@@ -52,7 +52,7 @@ class ComponentNetwork(Generic[T]):
         components: Sequence[BaseComponent],
     ) -> None:
         """Network of turbomachinery components"""
-        print_header()
+        print_logo()
 
         self.system = backend
         self.system.fluid_settings = fluid_settings
