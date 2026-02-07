@@ -198,7 +198,7 @@ rootfinder = ntw.system.make_rootfinder(
     'ipopt',
     opts={'ipopt.tol': 1e-7, 'error_on_fail': True},
 )
-x0 = ntw.system.get_initial_guess()
+x0 = ntw.system.get_scaled_guess()
 kn = ntw.system.get_scaled_constraints()
 bnd = ntw.system.get_arguments_bounds()
 

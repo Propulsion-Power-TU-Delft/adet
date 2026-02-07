@@ -962,7 +962,7 @@ class SystemAssembler(ABC):
             self.constraints_scaling,
         )
 
-    def get_initial_guess(
+    def get_scaled_guess(
         self, manual_values: Mapping[str, ArrayLike] = {}
     ) -> list[NDArray]:
         """Generate initial guesses for free arguments"""

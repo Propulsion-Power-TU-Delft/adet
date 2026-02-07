@@ -1,71 +1,81 @@
 import logging
 import multiprocessing as mp
+from typing import Iterable
 import scipy.stats.qmc as qmc
+from copy import deepcopy
 import numpy as np
 from rich.progress import track
 import matplotlib.pyplot as plt
 from adet.tools.loggers import setup_logger
-from copy import deepcopy
 from adet.assembly import solve_root_problem
-
-# --------------------
-from adet.examples.air_supply_compressor_design import (
-    kn_des,
-    bnd_des_is,
-    solution_des_is,
-    rootfinder_des_is,
-)
-
-ROOTFINDER = rootfinder_des_is
-# --------------------
-# --------------------
-from adet.examples.nasa_hecc import (
-    kn_hecc,
-    bnd_hecc_is,
-    solution_hecc_is,
-    rootfinder_hecc_is,
-)
-
-ROOTFINDER = rootfinder_hecc_is
-# --------------------
-
 
 logger = logging.getLogger(__name__)
 setup_logger(logger, logging.ERROR, logging.ERROR)
 
+# ============================================================================
+# CONFIGURATION: Select which example to test
+# ============================================================================
+TEST_CASE = 'nasa_hecc'  # Options: 'air_supply', 'nasa_hecc', etc.
+# ============================================================================
 
-def process_sample(sample, solution, knowns, bounds, perturbation):
-    rootfinder_copy = deepcopy(ROOTFINDER)
+# Import the appropriate example based on configuration
+if TEST_CASE == 'air_supply':
+    from adet.examples.air_supply_compressor_design import (
+        solution_ass_is as SOLUTION,
+        ntw_ass as NETWORK,
+        kn_ass as KNOWNS,
+        bnd_ass_is as BOUNDS,
+    )
+elif TEST_CASE == 'nasa_hecc':
+    from adet.examples.nasa_hecc import (
+        solution_hecc_is as SOLUTION,
+        ntw_hecc as NETWORK,
+        kn_hecc_is as KNOWNS,
+        bnd_hecc_is as BOUNDS,
+    )
+else:
+    raise ValueError(f'Unknown test case: {TEST_CASE}')
+
+# Module-level globals - each worker process will create its own copy
+# when importing this module (no pickling needed)
+ROOTFINDER = NETWORK.system.make_rootfinder('ipopt')
+
+
+def process_sample(
+    sample,
+    solution,
+    perturbation,
+):
+    # Use global rootfinder and deepcopy it for this sample
+    rootfinder_cp = deepcopy(ROOTFINDER)
     sample_trans = np.atleast_2d(sample).T
-    x0_perturbed = solution + solution * perturbation * (-1 + 2 * sample_trans)
+    x0_perturbed = solution + perturbation * (-1 + 2 * sample_trans)
 
     try:
         solve_root_problem(
-            rootfinder_copy, x0_perturbed.tolist(), knowns, bounds, suppress_output=True
+            rootfinder_cp, x0_perturbed.tolist(), KNOWNS, BOUNDS, suppress_output=True
         )
         return 1
     except Exception:
         return 0
 
 
-def test_robustness(solution, knowns, bounds, samples_multiplier, max_perturbation):
-    num_samples = int(
-        samples_multiplier
-        * max(
-            ROOTFINDER.sparsity_in(0).shape,
-        )
-    )
+def test_robustness(
+    solution,
+    num_samples,
+    perturbations: Iterable[float],
+):
+    out = {pert: [] for pert in perturbations}
 
-    out = {j: [] for j in range(1, max_perturbation)}
     with mp.Pool(NUM_PROCS) as pool:
-        for pert in track(range(1, max_perturbation), 'Overall progress'):
+        for pert in track(perturbations, 'Overall progress'):
             sampler = qmc.LatinHypercube(len(solution))
             samples = sampler.random(num_samples)
 
             multires = [
                 pool.apply_async(
                     process_sample,
-                    (s, solution, knowns, bounds, pert),
+                    (s, solution, pert),
                 )
                 for s in samples
             ]
@@ -77,25 +87,31 @@ def test_robustness(solution, knowns, bounds, samples_multiplier, max_perturbati
                 )
             ]
 
-    for pert, results in out.items():
-        plt.bar(pert, 100 * sum(results) / num_samples, color='b')
+            print(
+                f'Success rate for perturbation rate {pert} '
+                f'{sum(out[pert]) / num_samples}'
+            )
 
-    print(f'Success rate for perturbation rate {pert} {sum(results) / num_samples}')
-    plt.xticks(ticks=list(out.keys()), labels=[f'{100 * o}%' for o in out.keys()])
-    plt.xlabel('Perturbation from converged solution')
-    plt.ylabel('Convergence rate')
-    plt.show()
+    return out
 
 
 if __name__ == '__main__':
     mp.freeze_support()
     # Latin Hypercube sampling for testing robustness
-    SAMPLES_MULTIPLIER = 3
+    SAMPLES = 100  # For each perturbation level
     NUM_PROCS = 10
-    MAX_PERT = 8
+    PERTURBATIONS = np.linspace(0, 2, 11) + 0.05  # Start with 5% offset
 
-    # test_robustness(solution_des_is, kn_des, bnd_des_is, SAMPLES_MULTIPLIER, MAX_PERT)
+    results = test_robustness(SOLUTION, SAMPLES, PERTURBATIONS)
 
-    test_robustness(
-        solution_hecc_is, kn_hecc, bnd_hecc_is, SAMPLES_MULTIPLIER, MAX_PERT
+    plt.plot(
+        PERTURBATIONS,
+        [100 * sum(res) / SAMPLES for res in results.values()],
+        '-o',
     )
+    plt.xticks(
+        ticks=PERTURBATIONS.tolist(), labels=[f'{100 * o:.0f}%' for o in results.keys()]
+    )
+    plt.xlabel('Perturbation from converged solution')
+    plt.ylabel('Convergence rate')
+    plt.show()

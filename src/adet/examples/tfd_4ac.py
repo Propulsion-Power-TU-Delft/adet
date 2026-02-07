@@ -297,7 +297,7 @@ ntw.system.add_global_constraints(
 ntw.system.build(SCALED)
 
 rootfinder = ntw.system.make_rootfinder('nlpsol')
-x0 = ntw.system.get_initial_guess()
+x0 = ntw.system.get_scaled_guess()
 kn = ntw.system.get_scaled_constraints()
 
 sol = solve_root_problem(rootfinder, x0, kn)

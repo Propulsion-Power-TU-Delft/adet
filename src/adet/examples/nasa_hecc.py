@@ -40,7 +40,7 @@ from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 
 logger = logging.Logger(__name__)
-# setup_logger(logger)
+setup_logger(logger)
 
 # This makes the missing guesses default to 1
 _bounds_reg = VariableBoundsRegistry()
@@ -48,8 +48,8 @@ _bounds_reg.reset()
 _bounds_reg.from_dict(
     {
         'Vm': (10.0, 200.0),
-        'delta_hmass_.*': (10.0, 1e5),
-        'delta_hmass_loading': (10.0, 1e4),  # This tends to diverge, bound it
+        # 'delta_hmass_.*': (10.0, 1e5),
+        # 'delta_hmass_loading': (10.0, 1e4),  # This tends to diverge, bound it
     }
 )
 
@@ -105,9 +105,6 @@ inlet = Inlet(
 
 EQS_ISENTROPIC = {
     ZeroDeviation(): 1,  # No slip
-    ClearanceJansen(): (0, 1),
-    SkinFrictionJansen(): (0, 1),
-    BladeLoadingCoppage(): (0, 1),
     # Compute the losses but do not add them
     PercentageEntropyLoss(0.0): (0, 1),
 }
@@ -197,29 +194,29 @@ vaneless_diff = VanelessDiffuser(
     },
 )
 
-ntw = ComponentNetwork(
+ntw_hecc = ComponentNetwork(
     fluid_settings=fluid_settings,
     inlet=inlet,
     backend=CasadiSystem(num_span=1, scale_suffix='<|'),
     components=[rotor],
 )
 
-ntw.system.add_spanwise_constants('kin_Vm0')
-ntw.system.add_spanwise_constants('stc_p1')
+ntw_hecc.system.add_spanwise_constants('kin_Vm0')
+ntw_hecc.system.add_spanwise_constants('stc_p1')
 
-if ntw.system.num_span > 1:
-    ntw.system.remove_equation(MeridionalUniform, 1)
-    ntw.system.add_equation(MeridionalVariable(), 1)
+if ntw_hecc.system.num_span > 1:
+    ntw_hecc.system.remove_equation(MeridionalUniform, 1)
+    ntw_hecc.system.add_equation(MeridionalVariable(), 1)
 
-ntw.build()
+ntw_hecc.build()
 
-x0 = ntw.system.get_initial_guess()
-kn_hecc = ntw.system.get_scaled_constraints()
-bnd_hecc_is = ntw.system.get_arguments_bounds()
+x0 = ntw_hecc.system.get_scaled_guess()
+kn_hecc_is = ntw_hecc.system.get_scaled_constraints()
+bnd_hecc_is = ntw_hecc.system.get_arguments_bounds()
 
 # IPOPT is more robust, takes variable limits into account -> For 'bi-stable' solutions
 # KINSOL is faster, sometimes converges on problems where ipopt struggles
-rootfinder_hecc_is = ntw.system.make_rootfinder(
+rootfinder_hecc_is = ntw_hecc.system.make_rootfinder(
     'ipopt',
     opts={
         'error_on_fail': True,
@@ -230,29 +227,31 @@ rootfinder_hecc_is = ntw.system.make_rootfinder(
     },
 )
 solution_hecc_is = solve_root_problem(
-    rootfinder_hecc_is, x0, kn_hecc, bnd_hecc_is, suppress_output=True
+    rootfinder_hecc_is, x0, kn_hecc_is, bnd_hecc_is, suppress_output=False
 )
-sol_is_dict = ntw.system.solution_to_dict(solution_hecc_is)
+sol_is_dict = ntw_hecc.system.solution_to_dict(solution_hecc_is)
 
 #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 if __name__ == '__main__':
-    ntw.system.num_span = NUM_SPAN
-    ntw.system.add_boundary_conditions({'geo': {'metal_angle': angle_distribution}}, 0)
+    ntw_hecc.system.num_span = NUM_SPAN
+    ntw_hecc.system.add_boundary_conditions(
+        {'geo': {'metal_angle': angle_distribution}}, 0
+    )
 
-    if ntw.system.num_span > 1:
-        ntw.system.remove_equation(MeridionalVariable, 1)
-        ntw.system.remove_equation(MeridionalUniform, 1)
-        ntw.system.add_equation(MeridionalVariable(), 1)
+    if ntw_hecc.system.num_span > 1:
+        ntw_hecc.system.remove_equation(MeridionalVariable, 1)
+        ntw_hecc.system.remove_equation(MeridionalUniform, 1)
+        ntw_hecc.system.add_equation(MeridionalVariable(), 1)
 
-    ntw.build()
+    ntw_hecc.build()
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
-    rootfinder_hecc_multi = ntw.system.make_rootfinder(
+    rootfinder_hecc_multi = ntw_hecc.system.make_rootfinder(
         'kinsol',
         opts={'error_on_fail': True},
     )
-    x0_multi = ntw.system.get_initial_guess(sol_is_dict)
-    kn_hecc_multi = ntw.system.get_scaled_constraints()
-    bnd_hecc_multi = ntw.system.get_arguments_bounds()
+    x0_multi = ntw_hecc.system.get_scaled_guess(sol_is_dict)
+    kn_hecc_multi = ntw_hecc.system.get_scaled_constraints()
+    bnd_hecc_multi = ntw_hecc.system.get_arguments_bounds()
     solution_hecc_multi = solve_root_problem(
         rootfinder_hecc_multi,
         x0_multi,
@@ -260,25 +259,25 @@ if __name__ == '__main__':
         bnd_hecc_multi,
         suppress_output=False,
     )
-    sol_multi_dict = ntw.system.solution_to_dict(solution_hecc_multi)
+    sol_multi_dict = ntw_hecc.system.solution_to_dict(solution_hecc_multi)
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
     # Remove isentropic and add losses
     for eq, pos in EQS_ISENTROPIC.items():
-        ntw.system.remove_equation(eq.__class__, pos)
+        ntw_hecc.system.remove_equation(eq.__class__, pos)
     for eq, pos in EQS_WITH_LOSSES.items():
-        ntw.system.add_equation(eq, pos)
-    ntw.build()
+        ntw_hecc.system.add_equation(eq, pos)
+    ntw_hecc.build()
 
-    rootfinder_hecc_loss = ntw.system.make_rootfinder(
+    rootfinder_hecc_loss = ntw_hecc.system.make_rootfinder(
         'ipopt',
         opts={
             'error_on_fail': True,
-            'ipopt.tol': 1e-10,
+            'ipopt.tol': 1e-6,
         },
     )
-    x0_loss = ntw.system.get_initial_guess(sol_multi_dict)
-    kn_loss = ntw.system.get_scaled_constraints()
-    bnd_loss = ntw.system.get_arguments_bounds()
+    x0_loss = ntw_hecc.system.get_scaled_guess(sol_multi_dict)
+    kn_loss = ntw_hecc.system.get_scaled_constraints()
+    bnd_loss = ntw_hecc.system.get_arguments_bounds()
     solution_loss = solve_root_problem(
         rootfinder_hecc_loss,
         x0_loss,
@@ -286,15 +285,15 @@ if __name__ == '__main__':
         bnd_loss,
         suppress_output=False,
     )
-    sol_loss_dict = ntw.system.write_solution_to_nodes(solution_loss)
+    sol_loss_dict = ntw_hecc.system.write_solution_to_nodes(solution_loss)
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 
     # ---------------- PLOT ---------------------
-    for idx, n in enumerate(ntw.system.nodes):
-        globals()[f'n{idx}'] = n
+    n0 = ntw_hecc.system.nodes[0]
+    n1 = ntw_hecc.system.nodes[1]
 
     fig, axs = plt.subplots(2, 2, figsize=(8, 20))
-    for cmp_idx, cmp in enumerate(ntw.components):
+    for cmp_idx, cmp in enumerate(ntw_hecc.components):
         if cmp.inlet_node is None or cmp.outlet_node is None:
             raise ValueError('Missing nodes')
 
@@ -311,7 +310,7 @@ if __name__ == '__main__':
     fig, ax = plt.subplots()
     ax.set_aspect('equal')
     offset = 0.0
-    for c in ntw.components:
+    for c in ntw_hecc.components:
         if not c.inlet_node or not c.outlet_node:
             raise ValueError('missing nodes')
 
@@ -324,7 +323,7 @@ if __name__ == '__main__':
 
         offset += c.outlet_node.geo.chord_ax[0]
 
-    print(ntw.system.nodes[1].oth)
+    print(ntw_hecc.system.nodes[1].oth)
     plt.close('all')
     # plt.show(block=True)
 

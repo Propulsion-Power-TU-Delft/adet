@@ -223,7 +223,7 @@ if __name__ == '__main__':
         },
     )
 
-    x0 = system.get_initial_guess()
+    x0 = system.get_scaled_guess()
     kn = system.get_scaled_constraints()
     bnd = system.get_arguments_bounds()
 

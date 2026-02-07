@@ -265,7 +265,7 @@ ntw.system.build(SCALED)
 
 rootfinder_is = ntw.system.make_rootfinder('ipopt', opts={'error_on_fail': True})
 
-x0_is = ntw.system.get_initial_guess()
+x0_is = ntw.system.get_scaled_guess()
 kn_is = ntw.system.get_scaled_constraints()
 bnd_is = ntw.system.get_arguments_bounds()
 solution = solve_root_problem(
@@ -311,7 +311,7 @@ if user in ('y', 'Y'):
 
     ntw.system.build()
 
-    x0_loss = ntw.system.get_initial_guess(sol_dict_is)
+    x0_loss = ntw.system.get_scaled_guess(sol_dict_is)
     kn_loss = ntw.system.get_scaled_constraints()
     bnd_loss = ntw.system.get_arguments_bounds()
     err_on_fail = int(

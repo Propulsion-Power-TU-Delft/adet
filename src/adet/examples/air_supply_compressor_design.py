@@ -49,7 +49,7 @@ from adet.losses.compressors import (
     LossAdder,
     SkinFrictionJansen,
 )
-from adet.registries import GuessRegistry, ScalarsRegistry, VariableBoundsRegistry
+from adet.registries import GuessRegistry, VariableBoundsRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 
@@ -62,8 +62,7 @@ _bounds_reg.reset()
 _bounds_reg.from_dict(
     {
         'massflow': (0.1, 4.0),
-        # 'delta_hmass_.*': (10.0, 1e5),
-        # 'delta_hmass_loading': (10.0, 1e4),  # This tends to diverge, bound it
+        'delta_hmass_loading': (10.0, 1e4),  # This tends to diverge, bound it
     }
 )
 
@@ -120,11 +119,8 @@ inlet = Inlet(
 )
 
 EQS_ISENTROPIC = {
-    BackstromSlip(): (0, 1),
-    ClearanceJansen(): (0, 1),
-    SkinFrictionJansen(): (0, 1),
-    BladeLoadingCoppage(): (0, 1),
     # Losses are computed but not added
+    ZeroDeviation(): 1,
     PercentageEntropyLoss(0.0): (0, 1),
 }
 
@@ -212,7 +208,7 @@ vaneless_diff = VanelessDiffuser(
 )
 
 
-ntw = ComponentNetwork(
+ntw_ass = ComponentNetwork(
     fluid_settings=fluid_settings,
     inlet=inlet,
     backend=CasadiSystem(num_span=NUM_SPAN),
@@ -220,14 +216,14 @@ ntw = ComponentNetwork(
 )
 
 
-ntw.build()
+ntw_ass.build()
 
-x0_is = ntw.system.get_initial_guess()
-kn_des = ntw.system.get_scaled_constraints()
-bnd_des_is = ntw.system.get_arguments_bounds()
+x0_is = ntw_ass.system.get_scaled_guess()
+kn_ass = ntw_ass.system.get_scaled_constraints()
+bnd_ass_is = ntw_ass.system.get_arguments_bounds()
 
 # IPOPT is very robust, KINSOL faster but fails more easily
-rootfinder_des_is = ntw.system.make_rootfinder(
+rootfinder_des_is = ntw_ass.system.make_rootfinder(
     'ipopt',
     opts={
         'error_on_fail': True,
@@ -238,16 +234,16 @@ rootfinder_des_is = ntw.system.make_rootfinder(
 )
 
 # Get the isentropic solution
-solution_des_is = solve_root_problem(
+solution_ass_is = solve_root_problem(
     rootfinder_des_is,
     x0_is,
-    kn_des,
-    bnd_des_is,
+    kn_ass,
+    bnd_ass_is,
     suppress_output=True,
 )
 
 
-sol_is_dict = ntw.system.solution_to_dict(solution_des_is)
+sol_is_dict = ntw_ass.system.solution_to_dict(solution_ass_is)
 
 
 if __name__ == '__main__':
@@ -255,16 +251,16 @@ if __name__ == '__main__':
 
     # Remove isentropic and add losses
     for eq, pos in EQS_ISENTROPIC.items():
-        ntw.system.remove_equation(eq.__class__, pos)
+        ntw_ass.system.remove_equation(eq.__class__, pos)
     for eq, pos in EQS_WITH_LOSSES.items():
-        ntw.system.add_equation(eq, pos)
+        ntw_ass.system.add_equation(eq, pos)
 
-    ntw.build()  # Rebuild
+    ntw_ass.build()  # Rebuild
 
     # Get
-    x0_loss = ntw.system.get_initial_guess(sol_is_dict)
-    bnd_loss = ntw.system.get_arguments_bounds()
-    rootfinder_loss = ntw.system.make_rootfinder(
+    x0_loss = ntw_ass.system.get_scaled_guess(sol_is_dict)
+    bnd_loss = ntw_ass.system.get_arguments_bounds()
+    rootfinder_loss = ntw_ass.system.make_rootfinder(
         'ipopt',
         opts={
             'error_on_fail': False,
@@ -276,17 +272,17 @@ if __name__ == '__main__':
     solution_loss = solve_root_problem(
         rootfinder_loss,
         x0_loss,
-        kn_des,
+        kn_ass,
         bnd_loss,
         suppress_output=False,
     )
 
-    ntw.system.write_solution_to_nodes(solution_loss)
-    n0 = ntw.system.nodes[0]
-    n1 = ntw.system.nodes[1]
+    ntw_ass.system.write_solution_to_nodes(solution_loss)
+    n0 = ntw_ass.system.nodes[0]
+    n1 = ntw_ass.system.nodes[1]
 
     fig, axs = plt.subplots(2, 2, figsize=(8, 15))
-    for cmp_idx, cmp in enumerate(ntw.components):
+    for cmp_idx, cmp in enumerate(ntw_ass.components):
         if cmp.inlet_node is None or cmp.outlet_node is None:
             raise ValueError('Missing nodes')
 
@@ -303,7 +299,7 @@ if __name__ == '__main__':
     fig, ax = plt.subplots()
     ax.set_aspect('equal')
     offset = 0.0
-    for c in ntw.components:
+    for c in ntw_ass.components:
         if not c.inlet_node or not c.outlet_node:
             raise ValueError('missing nodes')
 
@@ -320,4 +316,4 @@ if __name__ == '__main__':
     # plt.close('all')
     plt.show()
 
-globals().update(residual_debugger(IsentropicProperties(), [n0, n1]))
+    globals().update(residual_debugger(IsentropicProperties(), [n0, n1]))
