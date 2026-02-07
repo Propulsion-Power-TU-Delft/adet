@@ -28,19 +28,9 @@ This project uses [uv](https://docs.astral.sh/uv) for packaging.
 
 ### Quick Start
 
-Run the main demonstration:
+Run the one of the examples:
 ```bash
-uv run src/adet/main.py
-```
-
-Explore examples:
-```bash
-uv run src/adet/examples/<example_name>.py
-```
-
-Interactive development:
-```bash
-uv run ipython
+uv run src/adet/examples/air_supply_compressor_design.py
 ```
 
 > **Note**: To access [REFPROP](https://www.nist.gov/srd/refprop) through CoolProp, see the [integration guide](https://coolprop.org/coolprop/REFPROP.html).

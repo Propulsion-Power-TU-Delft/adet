@@ -252,6 +252,6 @@ class GammaPV(EquationBase):
     output_quantities = ('p',)
     manual_units = ('dimensionless',)
 
-    def residual(self, gamma_pv, stc_rhomass0, stc_smass0, stc_p0):
+    def residual(self, oth_gamma_pv0, stc_rhomass0, stc_smass0, stc_p0):
         dp_drho = thermo_deriv(self.eos, stc_rhomass0, stc_smass0, 0)[0]
-        return gamma_pv - stc_rhomass0 / stc_p0 * dp_drho
+        return oth_gamma_pv0 - stc_rhomass0 / stc_p0 * dp_drho

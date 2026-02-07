@@ -123,13 +123,13 @@ class DebugAbstractState(cp.AbstractState):
     def update(self, *args, **kwargs):
         self.num_updates += 1
         debug_str = f"""
-========================
-|> UPDATE DEBUG
-   ------------
-|> Updating with {COOLPROP_PAIRS[args[0]]}
-|> First arg: {args[1]}
-|> Second arg: {args[2]}
-========================
+************************
+> COOLPROP UPDATE DEBUG
+  ---------------------
+> Updating with {COOLPROP_PAIRS[args[0]]}
+> First arg: {args[1]}
+> Second arg: {args[2]}
+************************
         """
 
         if self.debug_print:

@@ -23,10 +23,10 @@ class WorkCoefficientEstimate(EquationBase):
 # TODO: This can be generalized instead of using the
 # ideal gas expressions with gamma_pv
 class CaseyRushInletFunc(EquationBase):
-    def residual(self, kin_relmach_tip0, kin_beta_tip0, gamma_pv1):
+    def residual(self, kin_relmach_tip0, kin_beta_tip0, oth_gamma_pv1):
         # Equation 18 in Casey-Rush
-        first_term = 3 + gamma_pv1 * kin_relmach_tip0**2 + 2 * kin_relmach_tip0
-        second_term = 3 + gamma_pv1 * kin_relmach_tip0**2 - 2 * kin_relmach_tip0
+        first_term = 3 + oth_gamma_pv1 * kin_relmach_tip0**2 + 2 * kin_relmach_tip0
+        second_term = 3 + oth_gamma_pv1 * kin_relmach_tip0**2 - 2 * kin_relmach_tip0
         rhs = (first_term**0.5 - second_term**0.5) / (2 * kin_relmach_tip0)
 
         return np.cos(kin_beta_tip0) - rhs

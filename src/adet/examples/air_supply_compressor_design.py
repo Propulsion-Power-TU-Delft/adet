@@ -9,10 +9,6 @@
 # outlet flow angle alpha2 = 65 deg
 # pressure recovery factor diffuser Cp = 0.5
 # ratio axial length to impeller outlet radius Lax/R2 = 0.7
-#
-# Stiffest models
-# - Skin friction
-# - Amirante - Explicit non-iterative (2015)
 
 
 import logging
@@ -54,7 +50,7 @@ from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 
 logger = logging.Logger(__name__)
-# setup_logger(logger)
+setup_logger(logger)
 
 # Set some bounds
 _bounds_reg = VariableBoundsRegistry()
@@ -66,18 +62,19 @@ _bounds_reg.from_dict(
     }
 )
 
+# Add some guess values specific to this problem
 _greg = GuessRegistry()
 _greg.reset()
 _greg.from_dict(
     {
         'beta': -0.5,
         'gamma_pv': 1.4,
+        'delta_hmass_.*': 1000,
     }
 )
 _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 
 NUM_SPAN = 1
-ENABLE_LOSSES = False
 
 # +++ Shafts
 shaft = Shaft(
@@ -120,6 +117,7 @@ inlet = Inlet(
 
 EQS_ISENTROPIC = {
     # Losses are computed but not added
+    # BladeLoadingCoppage(): (0, 1),
     ZeroDeviation(): 1,
     PercentageEntropyLoss(0.0): (0, 1),
 }
@@ -132,8 +130,6 @@ EQS_WITH_LOSSES = {
     # Losses are added
     LossAdder(): 1,
 }
-
-losses = EQS_ISENTROPIC if ENABLE_LOSSES else EQS_ISENTROPIC
 
 
 # +++ Components
@@ -191,7 +187,7 @@ rotor = BladeRow(
         # *** Enthalpy definitions
         IsentropicProperties(): (0, 1),
         TotalTotalCompressionEfficiency(): (0, 1),
-        **losses,
+        **EQS_ISENTROPIC,
     },
 )
 
