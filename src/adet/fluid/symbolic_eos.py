@@ -11,6 +11,8 @@ from adet.tools.coolprop_utils import pair_tuple_from_id
 
 logger = logging.getLogger(__name__)
 
+UNSUPPORTED_PAIRS = [13, 17, 30, 32]
+
 
 class SymbolicAbstractState(ABC):
     solution_cache: dict[int, dict[str, Callable]] = {}
@@ -35,6 +37,10 @@ class SymbolicAbstractState(ABC):
         return getfullargspec(self.eos).args[1:]
 
     def update(self, input_pair, value0, value1):
+        if input_pair in UNSUPPORTED_PAIRS:
+            pair_name = COOLPROP_PAIRS[input_pair]
+            raise NotImplementedError(f'Unsupported pair {pair_name}')
+
         input_vars = pair_tuple_from_id(input_pair)
         other_vars = set(self.arguments).difference(input_vars)
         logger.debug('Updating {self} with {input_vars}')
@@ -112,9 +118,22 @@ class IdealGasState(SymbolicAbstractState):
         return r1, r2, r3, r4, r5
 
 
+def update_func(pair: int):
+    eos = IdealGasState(
+        gamma=1.4,
+        gas_constant=287.0,
+    )
+    name = COOLPROP_PAIRS[pair]
+    print(f'Update with {name}')
+    eos.update(pair, 10, 10)
+    return pair
+
+
 if __name__ == '__main__':
     import casadi as cs
+    import multiprocessing as mp
 
+    mp.freeze_support()
     eos = IdealGasState(
         gamma=1.4,
         gas_constant=287.0,
@@ -123,18 +142,6 @@ if __name__ == '__main__':
     # Polymorphic
     eos.update(
         cp.PT_INPUTS,
-        1e5,
-        300,
+        cs.MX.sym('x'),  # pyright:ignore
+        cs.MX.sym('y'),  # pyright:ignore
     )
-
-    for pair in COOLPROP_PAIRS.keys():
-        if 'Q' in COOLPROP_PAIRS[pair]:
-            continue
-
-        print(f'Update {COOLPROP_PAIRS[pair]}')
-
-        eos.update(
-            pair,
-            cs.MX.sym('x', 5),  # pyright: ignore
-            cs.MX.sym('y', 5),  # pyright: ignore
-        )

@@ -15,7 +15,7 @@ setup_logger(logger, logging.ERROR, logging.ERROR)
 # ============================================================================
 # CONFIGURATION: Select which example to test
 # ============================================================================
-TEST_CASE = 'nasa_hecc'  # Options: 'air_supply', 'nasa_hecc', etc.
+TEST_CASE = 'air_supply'  # Options: 'air_supply', 'nasa_hecc', etc.
 # ============================================================================
 
 # Import the appropriate example based on configuration
@@ -98,9 +98,9 @@ def test_robustness(
 if __name__ == '__main__':
     mp.freeze_support()
     # Latin Hypercube sampling for testing robustness
-    SAMPLES = 100  # For each perturbation level
+    SAMPLES = 1000  # For each perturbation level
     NUM_PROCS = 10
-    PERTURBATIONS = np.linspace(0, 2, 11) + 0.05  # Start with 5% offset
+    PERTURBATIONS = np.linspace(0, 4, 11) + 0.05  # Start with 5% offset
 
     results = test_robustness(SOLUTION, SAMPLES, PERTURBATIONS)
 
@@ -112,6 +112,10 @@ if __name__ == '__main__':
     plt.xticks(
         ticks=PERTURBATIONS.tolist(), labels=[f'{100 * o:.0f}%' for o in results.keys()]
     )
-    plt.xlabel('Perturbation from converged solution')
+    plt.xlabel(f'Perturbation from converged solution, {SAMPLES} samples')
     plt.ylabel('Convergence rate')
+    plt.ylim(0.0, 110.0)
+    plt.grid(alpha=0.3, axis='y')
+    plt.plot(PERTURBATIONS, 100 * np.ones(len(PERTURBATIONS)))
+    plt.title(TEST_CASE)
     plt.show()

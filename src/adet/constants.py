@@ -21,7 +21,7 @@ COOLPROP_NAMES_MAP = {
 INVERSE_CP_NAMES_MAP = {v: k for k, v in COOLPROP_NAMES_MAP.items()}
 
 _SUFFIX = '_INPUTS'
-COOLPROP_PAIRS = {
+COOLPROP_PAIRS: dict[int, str] = {
     getattr(cp, key): key[: -len(_SUFFIX)] for key in dir(cp) if key.endswith(_SUFFIX)
 }
 

@@ -41,7 +41,7 @@ from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 
 logger = logging.Logger(__name__)
-setup_logger(logger)
+# setup_logger(logger)
 
 # This makes the missing guesses default to 1
 _bounds_reg = VariableBoundsRegistry()
@@ -78,15 +78,15 @@ casing = Shaft(
 )
 
 # +++ Fluid settings
-fluid_model = ExternalFluidModel(
+fluid_model_real = ExternalFluidModel(
     DebugAbstractState('HEOS', 'Air'),  # This just counts the number of updates
 )
-fluid_model = AnalyticalFluidModel(
+fluid_model_ideal = AnalyticalFluidModel(
     IdealGasState(1.4, 287),
 )
 
 fluid_settings = FluidSettings(
-    model=fluid_model,
+    model=fluid_model_ideal,
     update_variables=('p', 'T'),  # Thermodynamic iteration variables
     update_length=2,  # Single phase => Two update vars
 )
@@ -227,17 +227,22 @@ rootfinder_hecc_is = ntw_hecc.system.make_rootfinder(
         'ipopt.tol': 1e-5,
         'ipopt.max_iter': 500,
         'ipopt.max_wall_time': 100,
-        'ipopt.print_level': 5,
     },
 )
 solution_hecc_is = solve_root_problem(
-    rootfinder_hecc_is, x0, kn_hecc_is, bnd_hecc_is, suppress_output=False
+    rootfinder_hecc_is,
+    x0,
+    kn_hecc_is,
+    bnd_hecc_is,
+    suppress_output=True,
 )
 sol_is_dict = ntw_hecc.system.solution_to_dict(solution_hecc_is)
 
 #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 if __name__ == '__main__':
+    # Increase span and switch to real gas
     ntw_hecc.system.num_span = NUM_SPAN
+    ntw_hecc.system.fluid_settings.model = fluid_model_real
     ntw_hecc.system.add_boundary_conditions(
         {'geo': {'metal_angle': angle_distribution}}, 0
     )
@@ -261,7 +266,7 @@ if __name__ == '__main__':
         x0_multi,
         kn_hecc_multi,
         bnd_hecc_multi,
-        suppress_output=False,
+        suppress_output=True,
     )
     sol_multi_dict = ntw_hecc.system.solution_to_dict(solution_hecc_multi)
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
@@ -274,10 +279,7 @@ if __name__ == '__main__':
 
     rootfinder_hecc_loss = ntw_hecc.system.make_rootfinder(
         'ipopt',
-        opts={
-            'error_on_fail': True,
-            'ipopt.tol': 1e-6,
-        },
+        opts={'error_on_fail': True},
     )
     x0_loss = ntw_hecc.system.get_scaled_guess(sol_multi_dict)
     kn_loss = ntw_hecc.system.get_scaled_constraints()
@@ -287,7 +289,7 @@ if __name__ == '__main__':
         x0_loss,
         kn_loss,
         bnd_loss,
-        suppress_output=False,
+        suppress_output=True,
     )
     sol_loss_dict = ntw_hecc.system.write_solution_to_nodes(solution_loss)
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -

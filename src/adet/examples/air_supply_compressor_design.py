@@ -51,7 +51,7 @@ from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 
 logger = logging.Logger(__name__)
-setup_logger(logger)
+# setup_logger(logger)
 
 # Set some bounds
 _bounds_reg = VariableBoundsRegistry()
@@ -242,11 +242,8 @@ solution_ass_is = solve_root_problem(
     x0_is,
     kn_ass,
     bnd_ass_is,
-    suppress_output=False,
+    suppress_output=True,
 )
-
-input('Enter to continue')
-
 
 sol_is_dict = ntw_ass.system.solution_to_dict(solution_ass_is)
 

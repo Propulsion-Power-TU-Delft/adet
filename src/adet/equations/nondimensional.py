@@ -248,6 +248,9 @@ class RelativeMachWithChoke(EquationBase):
 
 
 class GammaPV(EquationBase):
+    # WARN: This update pair for ideal gas
+    # Not that using gamma_pv makes sense, but
+    # beware
     input_pair = cp.DmassSmass_INPUTS
     output_quantities = ('p',)
     manual_units = ('dimensionless',)
