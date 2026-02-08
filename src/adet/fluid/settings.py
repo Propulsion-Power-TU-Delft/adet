@@ -3,6 +3,8 @@ from dataclasses import dataclass
 import logging
 from typing import TYPE_CHECKING, Generic, TypeVar
 
+from adet.fluid.symbolic_eos import IdealGasEos
+
 
 if TYPE_CHECKING:
     from adet.equations.base_equation import EquationBase
@@ -26,25 +28,19 @@ class AnalyticalFluidModel(FluidModel):
     """
 
     @abstractmethod
-    def get_equations(self) -> tuple['EquationBase', ...]:
+    def geo_eos_object(self):
         raise NotImplementedError
 
 
 class EmptyFluidModel(AnalyticalFluidModel):
-    def get_equations(self):
+    def geo_eos_object(self):
         return ()
 
 
 @dataclass
 class IdealGasModel(AnalyticalFluidModel):
-    def get_equations(self):
-        from adet.equations.ideal_gas import (
-            IdealStcEos,
-            IdealTotEos,
-            IdealRltEos,
-        )
-
-        return IdealStcEos(), IdealTotEos(), IdealRltEos()
+    def geo_eos_object(self):
+        return IdealGasEos
 
 
 @dataclass

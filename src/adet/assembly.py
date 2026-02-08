@@ -218,7 +218,7 @@ class EquationRegistry:
 
         if isinstance(fl_model, AnalyticalFluidModel):
             for node_idx, _ in enumerate(self.data.nodes):
-                for eq in fl_model.get_equations():
+                for eq in fl_model.geo_eos_object():
                     try:
                         self.add_equation(eq, node_idx)
                         logger.debug(
