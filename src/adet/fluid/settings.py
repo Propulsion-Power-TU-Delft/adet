@@ -1,51 +1,53 @@
-from abc import abstractmethod
 from dataclasses import dataclass
 import logging
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import Generic, TypeVar
 
-from adet.fluid.symbolic_eos import IdealGasEos
+from adet.fluid.symbolic_eos import SymbolicAbstractState
 
-
-if TYPE_CHECKING:
-    from adet.equations.base_equation import EquationBase
-
-
-T = TypeVar('T')
 
 logger = logging.getLogger(__name__)
+
+E = TypeVar('E')  # External fluid object typevar
+A = TypeVar('A', bound=SymbolicAbstractState)  # Anal. fl. obj. typevar
 
 
 class FluidModel:
     """Parent class for identifying fluid models"""
 
-    pass
+    def __init__(self, eos_object):
+        self.eos_object = eos_object
+
+    def get_eos_object(self):
+        return self.eos_object
 
 
-class AnalyticalFluidModel(FluidModel):
+class EmptyFluidModel(FluidModel):
+    def __init__(self, eos_object=None):
+        pass
+
+    def get_eos_object(self):
+        raise AttributeError('Empty fluid model cannot be called')
+
+
+@dataclass
+class AnalyticalFluidModel(FluidModel, Generic[A]):
     """
     Models which do not require passing through
     external thermodynamic libraries
     """
 
-    @abstractmethod
-    def geo_eos_object(self):
-        raise NotImplementedError
+    eos_object: A
 
-
-class EmptyFluidModel(AnalyticalFluidModel):
-    def geo_eos_object(self):
-        return ()
+    def get_eos_object(self) -> A:
+        return super().get_eos_object()
 
 
 @dataclass
-class IdealGasModel(AnalyticalFluidModel):
-    def geo_eos_object(self):
-        return IdealGasEos
+class ExternalFluidModel(FluidModel, Generic[E]):
+    eos_object: E
 
-
-@dataclass
-class ExternalFluidModel(FluidModel, Generic[T]):
-    eos_object: T
+    def get_eos_object(self) -> E:
+        return super().get_eos_object()
 
     def __copy__(self):
         cls = self.__class__

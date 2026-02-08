@@ -276,8 +276,9 @@ class EquationBase(ABC):
 
         return cls._eos
 
+    # TODO: Fix typing here for analytical/symbolic EoS
     @eos.setter
-    def eos(self, eos: CasadiEos):
+    def eos(self, eos: CasadiEos | Any):
         cls = self.__class__
         if cls._eos is not None:
             logger.warning(f'Overwriting EoS for {cls}')

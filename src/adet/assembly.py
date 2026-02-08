@@ -21,13 +21,14 @@ import numpy as np
 from numpy.typing import NDArray
 from pint import Quantity
 from pint.facets.plain import PlainQuantity
-import sympy as sp
 from scipy.stats import qmc
+import sympy as sp
 
 from adet.constants import ArrayLike, NodeStatesNames
 from adet.equations.base_equation import EquationBase
 from adet.errors import ExistingEquationError
-from adet.fluid.casadi_eos import CasadiEos, CasadiEosFactory
+from adet.fluid.casadi_eos import CasadiEos
+from adet.fluid.eos_factory import EosFactory
 from adet.fluid.settings import (
     AnalyticalFluidModel,
     EmptyFluidModel,
@@ -218,7 +219,7 @@ class EquationRegistry:
 
         if isinstance(fl_model, AnalyticalFluidModel):
             for node_idx, _ in enumerate(self.data.nodes):
-                for eq in fl_model.geo_eos_object():
+                for eq in fl_model.get_eos_object():
                     try:
                         self.add_equation(eq, node_idx)
                         logger.debug(
@@ -1090,8 +1091,9 @@ class CasadiSystem(SystemAssembler):
         if not isinstance(fl_model, ExternalFluidModel):
             raise NotImplementedError('Ideal gas model support not implemented yet')
 
-        self._eos_callbacks: list[CasadiEos] = []
-        self._eos_factory = CasadiEosFactory(fl_model)
+        # TODO: Fix typing here for analytical eos
+        self._eos_callbacks: list[CasadiEos | Any] = []
+        self._eos_factory = EosFactory(fl_model)
 
         # Get discarded thermo args => They become eos outputs
         discarded_thermo = self._argument_resolver.get_discarded_thermo_args()
@@ -1117,7 +1119,7 @@ class CasadiSystem(SystemAssembler):
                 pair_id = pair_id_from_tuple(pair_tuple)
                 sorted_pair_tuple = pair_based_sorting(*pair_tuple)
 
-                casadi_eos_cb = self._eos_factory.make_eos(
+                eos_caller = self._eos_factory.make_eos(
                     pair_id,
                     out_props,
                     self.num_span,
@@ -1125,7 +1127,7 @@ class CasadiSystem(SystemAssembler):
                 )
 
                 # This is to keep references alive
-                self._eos_callbacks.append(casadi_eos_cb)
+                self._eos_callbacks.append(eos_caller)
 
                 # Symbolic representation of the input pair properties
                 symbolic_pair = [
@@ -1134,7 +1136,7 @@ class CasadiSystem(SystemAssembler):
                 ]
 
                 # Symbolic representation of the output properties
-                out_props_syms = casadi_eos_cb(*symbolic_pair)
+                out_props_syms = eos_caller(*symbolic_pair)
 
                 if not isinstance(out_props_syms, tuple):
                     out_props_syms = [out_props_syms]

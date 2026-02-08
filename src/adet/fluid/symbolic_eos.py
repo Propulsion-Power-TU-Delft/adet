@@ -1,32 +1,31 @@
+from abc import ABC, abstractmethod
 from inspect import getfullargspec
+import logging
 from typing import Any, Callable
-import casadi as cs
 
 import CoolProp as cp
-from numpy.typing import NDArray
 import sympy as sm
 
 from adet.tools.coolprop_utils import pair_tuple_from_id
 
+logger = logging.getLogger(__name__)
 
-class IdealGasEos:
+
+class SymbolicAbstractState(ABC):
     solution_cache: dict[int, dict[str, Callable]] = {}
 
     def __init__(self, gamma, gas_constant):
-        self.current_state: dict[str, NDArray] = {}
+        # TODO: Add extra optional manual properties input, e.g. viscosity
+        self.current_state: dict[str, Any] = {}
         self._gamma = gamma
         self._gas_constant = gas_constant
 
         self._cvmass = self._gas_constant / (self._gamma - 1)
         self._cpmass = self._cvmass * self._gamma
 
-    def eos(self, p, T, rhomass, hmass, smass, speed_sound):
-        r1 = p / rhomass - self._gas_constant * T
-        r2 = hmass - self._cpmass * T
-        r3 = smass - self._cvmass * T
-        r4 = speed_sound - (self._gamma * self._gas_constant * T) ** 0.5
-
-        return r1, r2, r3, r4
+    @abstractmethod
+    def eos(self, *args):
+        raise NotImplementedError
 
     @property
     def arguments(self):
@@ -35,6 +34,7 @@ class IdealGasEos:
     def update(self, input_pair, value0, value1):
         input_vars = pair_tuple_from_id(input_pair)
         other_vars = set(self.arguments).difference(input_vars)
+        logger.debug('Updating {self} with {input_vars}')
 
         function_inputs = {
             input_vars[0]: value0,
@@ -44,8 +44,10 @@ class IdealGasEos:
         cache_hit = input_pair in self.solution_cache
 
         if cache_hit:
+            logger.debug(f'Cache hit for {input_vars}')
             solution_funcs = self.__class__.solution_cache[input_pair]
         else:
+            logger.debug(f'Cache miss for {input_vars}, building symbolic solution')
             symbols = {arg: sm.Symbol(arg) for arg in self.arguments}
             symbolic_func = self.eos(**symbols)
             symbolic_solution = sm.solve(symbolic_func, other_vars)
@@ -64,6 +66,9 @@ class IdealGasEos:
         }
 
         self.__class__.solution_cache[input_pair] = solution_funcs
+
+    def get_property(self, prop: str):
+        return self.current_state[prop]
 
     def p(self):
         return self.current_state['p']
@@ -87,6 +92,33 @@ class IdealGasEos:
         return self.current_state['speed_sound']
 
 
+class IdealGasState(SymbolicAbstractState):
+    def eos(self, p, T, rhomass, hmass, smass, speed_sound):
+        r1 = p / rhomass - self._gas_constant * T
+        r2 = hmass - self._cpmass * T
+        r3 = smass - self._cvmass * T
+        r4 = speed_sound - (self._gamma * self._gas_constant * T) ** 0.5
+
+        return r1, r2, r3, r4
+
+
 if __name__ == '__main__':
-    eos = IdealGasEos(1.4, 287.0)
-    eos.update(cp.PT_INPUTS, 1e5, 300)
+    import casadi as cs
+
+    eos = IdealGasState(
+        gamma=1.4,
+        gas_constant=287.0,
+    )
+
+    # Polymorphic
+    eos.update(
+        cp.PT_INPUTS,
+        1e5,
+        300,
+    )
+
+    eos.update(
+        cp.PT_INPUTS,
+        cs.MX.sym('p', 5),  # pyright: ignore
+        cs.MX.sym('T', 5),  # pyright: ignore
+    )
