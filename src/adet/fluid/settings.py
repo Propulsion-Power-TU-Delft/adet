@@ -2,7 +2,7 @@ from dataclasses import dataclass
 import logging
 from typing import Generic, TypeVar
 
-from adet.fluid.symbolic_eos import SymbolicAbstractState
+from adet.fluid.symbolic_eos import AnalyticFluidState
 
 
 logger = logging.getLogger(__name__)
@@ -35,9 +35,9 @@ class AnalyticalFluidModel(FluidModel):
     external thermodynamic libraries
     """
 
-    eos_object: SymbolicAbstractState
+    eos_object: AnalyticFluidState
 
-    def get_eos_object(self) -> SymbolicAbstractState:
+    def get_eos_object(self) -> AnalyticFluidState:
         return super().get_eos_object()
 
 

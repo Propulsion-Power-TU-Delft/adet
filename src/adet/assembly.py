@@ -1402,7 +1402,15 @@ class CasadiSystem(SystemAssembler):
             state_id = cast(NodeStatesNames, state_id)
 
             node_idx = get_index(eos_name_fields[2])
-            input_args = pair_tuple_from_id(eos_cb._input_pair)
+
+            # Full CoolProp
+            if isinstance(eos_cb, CasadiEos):
+                input_args = pair_tuple_from_id(eos_cb._input_pair)
+                out_props = eos_cb._output_props
+            # Analytical EoS
+            else:
+                input_args = eos_cb.name_in()
+                out_props = eos_cb.name_out()
 
             state_obj = self.nodes[node_idx].fetch_state(state_id)
 
@@ -1412,7 +1420,7 @@ class CasadiSystem(SystemAssembler):
             output_values = eos_cb(*inputs)
 
             thermo_dict = {}
-            for prop, val in zip(eos_cb._output_props, output_values):
+            for prop, val in zip(out_props, output_values):
                 thermo_dict[f'{state_id}_{prop}{node_idx}'] = val.toarray().flatten()
 
             self.nodes[node_idx].write_to_node(thermo_dict, False)

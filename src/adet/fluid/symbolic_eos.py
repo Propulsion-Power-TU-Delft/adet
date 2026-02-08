@@ -15,13 +15,14 @@ logger = logging.getLogger(__name__)
 class SymbolicAbstractState(ABC):
     solution_cache: dict[int, dict[str, Callable]] = {}
 
-    def __init__(self, gamma, gas_constant):
+    def __init__(self, gamma, gas_constant, viscosity=1e-5):
         # TODO: Add extra optional manual properties input, e.g. viscosity
         # Move gamma and gas_constant to subclasses, make this general
         self.current_state: dict[str, Any] = {}
         self._gamma = gamma
         self._gas_constant = gas_constant
 
+        self._viscosity = viscosity
         self._cvmass = self._gas_constant / (self._gamma - 1)
         self._cpmass = self._cvmass * self._gamma
 
@@ -92,6 +93,9 @@ class SymbolicAbstractState(ABC):
 
     def cvmass(self):
         return self._cvmass
+
+    def viscosity(self):
+        return self._viscosity
 
     def speed_sound(self):
         return self.current_state['speed_sound']

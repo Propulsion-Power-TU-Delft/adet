@@ -20,7 +20,8 @@ from adet.equations.nondimensional import (
     TotalTotalPressureRatio,
     TotalTotalCompressionEfficiency,
 )
-from adet.fluid.settings import ExternalFluidModel, FluidSettings
+from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidSettings
+from adet.fluid.symbolic_eos import IdealGasState
 from adet.losses.basic import (
     PercTotalPressureLoss,
     PercentageEntropyLoss,
@@ -79,6 +80,9 @@ casing = Shaft(
 # +++ Fluid settings
 fluid_model = ExternalFluidModel(
     DebugAbstractState('HEOS', 'Air'),  # This just counts the number of updates
+)
+fluid_model = AnalyticalFluidModel(
+    IdealGasState(1.4, 287),
 )
 
 fluid_settings = FluidSettings(

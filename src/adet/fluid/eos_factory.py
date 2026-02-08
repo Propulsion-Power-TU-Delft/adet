@@ -5,7 +5,7 @@ import casadi as cs
 
 from adet.fluid.casadi_eos import CasadiEos
 from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidModel
-from adet.fluid.symbolic_eos import SymbolicAbstractState
+from adet.fluid.symbolic_eos import AnalyticFluidState
 from adet.tools.coolprop_utils import get_input_names, pair_tuple_from_id
 
 
@@ -42,7 +42,7 @@ class EosFactory(Generic[M]):
 
     def make_analytical_eos(
         self,
-        eos_object: SymbolicAbstractState,
+        eos_object: AnalyticFluidState,
         input_pair: int,
         output_quantities: tuple[str, ...] | list[str],
         name: str = '',

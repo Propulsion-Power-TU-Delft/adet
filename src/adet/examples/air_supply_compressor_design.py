@@ -93,12 +93,11 @@ fluid_model = ExternalFluidModel(
     DebugAbstractState('HEOS', 'Air'),  # This just counts the number of updates
 )
 
-IDEAL_GAS = False
+IDEAL_GAS = True
 if IDEAL_GAS:
     fluid_model = AnalyticalFluidModel(
         IdealGasState(1.4, 287),
     )
-    _greg.set('smass', 2e5)
 
 fluid_settings = FluidSettings(
     model=fluid_model,
@@ -186,7 +185,7 @@ rotor = BladeRow(
         WorkCoefficient(): (0, 1),
         CompressorShapeFactor(): 0,
         CaseyRushInletFunc(): (0, 1),
-        GammaPV(): 1,
+        # GammaPV(): 1,
         # *** Geometry
         MinimalCamberLine(): (0, 1),
         EffectiveBladeNumber(): 1,
@@ -231,9 +230,9 @@ rootfinder_des_is = ntw_ass.system.make_rootfinder(
     'ipopt',
     opts={
         'error_on_fail': True,
-        'ipopt.tol': 1e-5,
-        'ipopt.print_level': 3,
-        'ipopt.max_iter': 500,
+        # 'ipopt.tol': 1e-5,
+        # 'ipopt.print_level': 3,
+        # 'ipopt.max_iter': 500,
     },
 )
 
@@ -243,8 +242,10 @@ solution_ass_is = solve_root_problem(
     x0_is,
     kn_ass,
     bnd_ass_is,
-    suppress_output=True,
+    suppress_output=False,
 )
+
+input('Enter to continue')
 
 
 sol_is_dict = ntw_ass.system.solution_to_dict(solution_ass_is)
