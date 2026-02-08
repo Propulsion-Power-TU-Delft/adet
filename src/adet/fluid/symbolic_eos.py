@@ -6,6 +6,7 @@ from typing import Any, Callable
 import CoolProp as cp
 import sympy as sm
 
+from adet.constants import COOLPROP_PAIRS
 from adet.tools.coolprop_utils import pair_tuple_from_id
 
 logger = logging.getLogger(__name__)
@@ -16,6 +17,7 @@ class SymbolicAbstractState(ABC):
 
     def __init__(self, gamma, gas_constant):
         # TODO: Add extra optional manual properties input, e.g. viscosity
+        # Move gamma and gas_constant to subclasses, make this general
         self.current_state: dict[str, Any] = {}
         self._gamma = gamma
         self._gas_constant = gas_constant
@@ -52,6 +54,9 @@ class SymbolicAbstractState(ABC):
             symbolic_func = self.eos(**symbols)
             symbolic_solution = sm.solve(symbolic_func, other_vars)
 
+            if isinstance(symbolic_solution, list):
+                symbolic_solution = symbolic_solution[0]
+
             for name in input_vars:
                 symbol = symbols[name]
                 symbolic_solution[symbol] = symbol
@@ -67,14 +72,14 @@ class SymbolicAbstractState(ABC):
 
         self.__class__.solution_cache[input_pair] = solution_funcs
 
-    def get_property(self, prop: str):
-        return self.current_state[prop]
-
     def p(self):
         return self.current_state['p']
 
     def T(self):
         return self.current_state['T']
+
+    def rhomass(self):
+        return self.current_state['rhomass']
 
     def hmass(self):
         return self.current_state['hmass']
@@ -93,13 +98,14 @@ class SymbolicAbstractState(ABC):
 
 
 class IdealGasState(SymbolicAbstractState):
-    def eos(self, p, T, rhomass, hmass, smass, speed_sound):
-        r1 = p / rhomass - self._gas_constant * T
+    def eos(self, p, T, rhomass, hmass, umass, smass, speed_sound):
+        r1 = p - self._gas_constant * rhomass * T
         r2 = hmass - self._cpmass * T
-        r3 = smass - self._cvmass * T
+        r3 = umass - self._cvmass * T
         r4 = speed_sound - (self._gamma * self._gas_constant * T) ** 0.5
+        r5 = smass - self._cpmass * sm.log(T) + self._gas_constant * sm.log(p)
 
-        return r1, r2, r3, r4
+        return r1, r2, r3, r4, r5
 
 
 if __name__ == '__main__':
@@ -117,8 +123,14 @@ if __name__ == '__main__':
         300,
     )
 
-    eos.update(
-        cp.PT_INPUTS,
-        cs.MX.sym('p', 5),  # pyright: ignore
-        cs.MX.sym('T', 5),  # pyright: ignore
-    )
+    for pair in COOLPROP_PAIRS.keys():
+        if 'Q' in COOLPROP_PAIRS[pair]:
+            continue
+
+        print(f'Update {COOLPROP_PAIRS[pair]}')
+
+        eos.update(
+            pair,
+            cs.MX.sym('x', 5),  # pyright: ignore
+            cs.MX.sym('y', 5),  # pyright: ignore
+        )

@@ -1,10 +1,12 @@
 import logging
 from typing import ClassVar, Generic, TypeVar
 
+import casadi as cs
+
 from adet.fluid.casadi_eos import CasadiEos
 from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidModel
 from adet.fluid.symbolic_eos import SymbolicAbstractState
-from adet.tools.coolprop_utils import get_input_names
+from adet.tools.coolprop_utils import get_input_names, pair_tuple_from_id
 
 
 logger = logging.getLogger(__name__)
@@ -32,7 +34,9 @@ class EosFactory(Generic[M]):
                 eos_obj, input_pair, output_quantities, length, name
             )
         elif isinstance(self.fluid_model, AnalyticalFluidModel):
-            return self.make_analytical_eos(eos_obj, input_pair, output_quantities)
+            return self.make_analytical_eos(
+                eos_obj, input_pair, output_quantities, name
+            )
         else:
             raise TypeError('Unknown fluid model type')
 
@@ -41,10 +45,17 @@ class EosFactory(Generic[M]):
         eos_object: SymbolicAbstractState,
         input_pair: int,
         output_quantities: tuple[str, ...] | list[str],
+        name: str = '',
     ):
-        def updater_func(x, y):
-            eos_object.update(input_pair, x, y)
-            return [eos_object.get_property(qty) for qty in output_quantities]
+        pair_vars = pair_tuple_from_id(input_pair)
+
+        input_syms = [cs.MX.sym(var) for var in pair_vars]  # pyright: ignore
+        eos_object.update(input_pair, *input_syms)
+        output_syms = [getattr(eos_object, qty)() for qty in output_quantities]
+
+        updater_func = cs.Function(
+            name, input_syms, output_syms, pair_vars, output_quantities
+        )
 
         return updater_func
 

@@ -29,12 +29,7 @@ from adet.equations.base_equation import EquationBase
 from adet.errors import ExistingEquationError
 from adet.fluid.casadi_eos import CasadiEos
 from adet.fluid.eos_factory import EosFactory
-from adet.fluid.settings import (
-    AnalyticalFluidModel,
-    EmptyFluidModel,
-    ExternalFluidModel,
-    FluidSettings,
-)
+from adet.fluid.settings import AnalyticalFluidModel, EmptyFluidModel, FluidSettings
 from adet.node import FlowNode
 from adet.registries import (
     GuessRegistry,
@@ -369,17 +364,11 @@ class ArgumentResolver:
         Get the real thermodynamic and kinematic arguments needed to complete
         the different states of the node.
         """
-        if isinstance(self.data.fluid_settings.model, AnalyticalFluidModel):
-            # Just a difference between sets, sorted
-            return tuple(
-                sorted(
-                    set(self.data.declared_arguments) - set(self.data.constraints),
-                )
-            )
-        else:
-            return tuple(
-                sorted(self._get_effective_arguments()),
-            )
+        return tuple(
+            sorted(
+                self._get_effective_arguments(),
+            ),
+        )
 
     def _get_effective_arguments(self):
         """
@@ -837,7 +826,7 @@ class SystemAssembler(ABC):
         self._equation_registry.create_nodes()
         self.data.declared_arguments = self._equation_registry.build_argument_maps()
 
-        self._equation_registry.add_analytical_eos()
+        # self._equation_registry.add_analytical_eos()
         self._constraint_manager.write_to_nodes()
         (
             self.data.constraints,
@@ -1088,8 +1077,8 @@ class CasadiSystem(SystemAssembler):
     ) -> dict[str, cs.MX]:
         fl_model = self.fluid_settings.model
 
-        if not isinstance(fl_model, ExternalFluidModel):
-            raise NotImplementedError('Ideal gas model support not implemented yet')
+        # if not isinstance(fl_model, ExternalFluidModel):
+        #     raise NotImplementedError('Ideal gas model support not implemented yet')
 
         # TODO: Fix typing here for analytical eos
         self._eos_callbacks: list[CasadiEos | Any] = []
@@ -1101,8 +1090,9 @@ class CasadiSystem(SystemAssembler):
         # Add inter-node eos
         for eq in self.equations:
             if eq.input_pair:
-                if eq._eos and eq.eos._num_span == self.num_span:
-                    continue
+                # if isinstance(eq._eos, CasadiEos):
+                #     if eq.eos._num_span == self.num_span:
+                #         continue
                 eq.eos = self._eos_factory.make_eos(
                     eq.input_pair,
                     eq.output_quantities,

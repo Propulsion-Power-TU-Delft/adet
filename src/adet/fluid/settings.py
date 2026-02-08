@@ -8,7 +8,6 @@ from adet.fluid.symbolic_eos import SymbolicAbstractState
 logger = logging.getLogger(__name__)
 
 E = TypeVar('E')  # External fluid object typevar
-A = TypeVar('A', bound=SymbolicAbstractState)  # Anal. fl. obj. typevar
 
 
 class FluidModel:
@@ -30,15 +29,15 @@ class EmptyFluidModel(FluidModel):
 
 
 @dataclass
-class AnalyticalFluidModel(FluidModel, Generic[A]):
+class AnalyticalFluidModel(FluidModel):
     """
     Models which do not require passing through
     external thermodynamic libraries
     """
 
-    eos_object: A
+    eos_object: SymbolicAbstractState
 
-    def get_eos_object(self) -> A:
+    def get_eos_object(self) -> SymbolicAbstractState:
         return super().get_eos_object()
 
 
