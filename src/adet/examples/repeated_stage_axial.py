@@ -33,7 +33,8 @@ from adet.equations.nondimensional import (
     WorkCoefficient,
 )
 from adet.fluid.casadi_eos import CasadiEos
-from adet.fluid.settings import ExternalFluidModel, FluidSettings, IdealGasModel
+from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidSettings
+from adet.fluid.symbolic_eos import IdealGasState
 from adet.losses.base_loss import LossModel
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.losses.profile import DentonProfileLoss
@@ -59,7 +60,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 # === CONFIGURATION
 # Simulation settings
 NUM_SPAN = 3  # Number of spanwise stations
-HIGH_RES_MULTIPLIER = 3
+HIGH_RES_MULTIPLIER = 3  # => 9 final spanwise stations
 NUM_STAGES = 6  # Number of turbine stages (stator-rotor pairs)
 SCALED = True  # Use scaled equations for better numerical conditioning
 PLOTS = True  # Show plots at end
@@ -68,15 +69,17 @@ PRINTS = True  # Print node information
 # === FLUID MODEL SETUP
 # Real gas model using CoolProp (HEOS = Helmholtz Equation of State)
 abs_state = DebugAbstractState('HEOS', 'Air')
+idl_state = IdealGasState(1.4, 287.0)
 abs_state.debug_print = False
+
 real_model = ExternalFluidModel(abs_state)
-ideal_model = IdealGasModel()
+ideal_model = AnalyticalFluidModel(idl_state)
 
 # Configure fluid settings with update variables
 # Update variables are used to solve for thermodynamic state
 # (p, T) chosen for stability
 settings = FluidSettings(
-    model=real_model,
+    model=ideal_model,
     update_variables=('p', 'T', 'rhomass', 'smass', 'hmass'),
     update_length=2,
 )
@@ -325,6 +328,7 @@ sol_camber_dict = sys_camber.solution_to_dict(sol_camber)
 
 sys_highres = sys_camber.copy()
 sys_highres.num_span = NUM_SPAN * HIGH_RES_MULTIPLIER
+sys_highres.fluid_settings.model = real_model  # You can move to real model
 
 sys_highres.build(SCALED)
 rootfinder_highres = sys_highres.make_rootfinder('kinsol')

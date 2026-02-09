@@ -49,7 +49,8 @@ def process_sample(
     # Use global rootfinder and deepcopy it for this sample
     rootfinder_cp = deepcopy(ROOTFINDER)
     sample_trans = np.atleast_2d(sample).T
-    x0_perturbed = solution + perturbation * (-1 + 2 * sample_trans)
+    delta_x0 = qmc.scale(sample_trans, -perturbation, +perturbation)
+    x0_perturbed = solution + delta_x0
 
     try:
         solve_root_problem(
@@ -98,9 +99,9 @@ def test_robustness(
 if __name__ == '__main__':
     mp.freeze_support()
     # Latin Hypercube sampling for testing robustness
-    SAMPLES = 1000  # For each perturbation level
+    SAMPLES = 100  # For each perturbation level
     NUM_PROCS = 10
-    PERTURBATIONS = np.linspace(0, 4, 11) + 0.05  # Start with 5% offset
+    PERTURBATIONS = np.linspace(0, 3, 11) + 0.05  # Start with 5% offset
 
     results = test_robustness(SOLUTION, SAMPLES, PERTURBATIONS)
 

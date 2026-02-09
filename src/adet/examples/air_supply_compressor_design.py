@@ -89,18 +89,16 @@ casing = Shaft(
 )
 
 # +++ Fluid settings
-fluid_model = ExternalFluidModel(
+fluid_model_real = ExternalFluidModel(
     DebugAbstractState('HEOS', 'Air'),  # This just counts the number of updates
 )
 
-IDEAL_GAS = True
-if IDEAL_GAS:
-    fluid_model = AnalyticalFluidModel(
-        IdealGasState(1.4, 287),
-    )
+fluid_model_ideal = AnalyticalFluidModel(
+    IdealGasState(1.4, 287),
+)
 
 fluid_settings = FluidSettings(
-    model=fluid_model,
+    model=fluid_model_real,
     update_variables=('p', 'T'),  # Thermodynamic iteration variables
     update_length=2,  # Single phase => Two update vars
 )
@@ -230,9 +228,10 @@ rootfinder_des_is = ntw_ass.system.make_rootfinder(
     'ipopt',
     opts={
         'error_on_fail': True,
+        'ipopt.max_iter': 300,
+        'ipopt.max_wall_time': 30,
         # 'ipopt.tol': 1e-5,
         # 'ipopt.print_level': 3,
-        # 'ipopt.max_iter': 500,
     },
 )
 

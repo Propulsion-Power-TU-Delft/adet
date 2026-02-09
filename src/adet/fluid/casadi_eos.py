@@ -6,7 +6,7 @@ import jax
 
 from adet.constants import COOLPROP_NAMES_MAP
 from adet.fluid.settings import ExternalFluidModel
-from adet.tools.coolprop_utils import DebugAbstractState, get_input_names
+from adet.tools.coolprop_utils import DebugAbstractState, inames_from_id
 
 
 logger = logging.getLogger(__name__)
@@ -109,7 +109,7 @@ class CasadiEos(cs.Callback):
         self._num_span = num_span
 
         # Post
-        self._input_names = get_input_names(input_pair)
+        self._input_names = inames_from_id(input_pair)
         self.construct(name, opts)
 
     def __del__(self):
@@ -205,7 +205,7 @@ class CasadiEosJacobian(cs.Callback):
         self._num_span = num_span
 
         # Post
-        self._input_names = get_input_names(input_pair)
+        self._input_names = inames_from_id(input_pair)
         self.construct(name, opts or {})
 
     def __del__(self):
@@ -336,7 +336,7 @@ class CasadiEosHessian(cs.Callback):
         self._num_span = num_span
 
         # Post
-        self._input_names = get_input_names(input_pair)
+        self._input_names = inames_from_id(input_pair)
         self.construct(name, opts or {})
 
     def __del__(self):
@@ -494,7 +494,7 @@ class CasadiEosFactory(Generic[M]):
         length: int,
         name: str = '',
     ):
-        pair_name = ''.join(get_input_names(input_pair))
+        pair_name = ''.join(inames_from_id(input_pair))
 
         if not name:
             name = f'eos_{pair_name}_l{length}'

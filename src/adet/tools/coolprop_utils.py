@@ -21,7 +21,7 @@ cp_INPUTS_SUFFIX = '_INPUTS'
 logger = logging.getLogger(__name__)
 
 
-def get_input_names(input_pair: int) -> list[str]:
+def inames_from_id(input_pair: int) -> list[str]:
     """
     Example
     -------
@@ -78,7 +78,7 @@ def pair_id_from_tuple(update_variables: tuple[str, ...]):
 
 
 def pair_tuple_from_id(input_pair: int) -> list[str]:
-    input_names = get_input_names(input_pair)
+    input_names = inames_from_id(input_pair)
     return [INVERSE_CP_NAMES_MAP[inp] for inp in input_names]
 
 

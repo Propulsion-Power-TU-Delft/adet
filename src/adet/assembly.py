@@ -12,7 +12,7 @@ from copy import deepcopy
 from itertools import combinations
 import logging
 import sys
-from typing import Any, Callable, Literal, Mapping, Self, Sequence, Type, cast
+from typing import Any, Callable, Literal, Mapping, Self, Sequence, Type
 
 import casadi as cs
 import jax as jax
@@ -24,7 +24,7 @@ from pint.facets.plain import PlainQuantity
 from scipy.stats import qmc
 import sympy as sp
 
-from adet.constants import ArrayLike, NodeStatesNames
+from adet.constants import ArrayLike, INVERSE_CP_NAMES_MAP, NodeStatesNames
 from adet.equations.base_equation import EquationBase
 from adet.errors import ExistingEquationError
 from adet.fluid.casadi_eos import CasadiEos
@@ -38,11 +38,7 @@ from adet.registries import (
     VariableBoundsRegistry,
 )
 from adet.tools.context import dummy_context, output_suppression, override_operators
-from adet.tools.coolprop_utils import (
-    pair_based_sorting,
-    pair_id_from_tuple,
-    pair_tuple_from_id,
-)
+from adet.tools.coolprop_utils import pair_based_sorting, pair_id_from_tuple
 from adet.tools.strings import get_arg_state, get_arg_type, get_index, rm_end_digits
 
 
@@ -52,6 +48,9 @@ logger = logging.getLogger(__name__)
 def get_units_string(var):
     return str(var.to_base_units().units)
 
+
+THERMO_PREFIXES = ('stc', 'tot', 'rlt')
+THERMO_CONST_SUFFIX = '__THERMOCONSTR'  # I don't like this
 
 _scale_reg = ScalingRegistry()
 _scalars_reg = ScalarsRegistry()
@@ -104,6 +103,7 @@ class SystemSharedData:
 
         # EoS tracking
         self.analytic_eos_equations: list[EquationBase] = []
+        self.thermo_updt_args: list[str] = []
 
         # Build status
         self.built: bool = False
@@ -381,19 +381,23 @@ class ArgumentResolver:
         nonthermo_args = [
             arg
             for arg in self.data.declared_arguments
-            if not arg.startswith(('stc', 'tot', 'rlt'))
+            if not arg.startswith(THERMO_PREFIXES)
         ]
 
         # Get what variables will be used for state updates
-        update_args = []
+        self.data.thermo_updt_args = []
         for node_idx, node in enumerate(self.data.nodes):
             logger.debug(f'Getting update variables for node {node_idx}')
             updt_vars = node.get_update_variables()
 
             for state, updt_pair in updt_vars.items():
-                update_args += [f'{state}_{var}{node_idx}' for var in updt_pair]
+                self.data.thermo_updt_args += [
+                    f'{state}_{var}{node_idx}' for var in updt_pair
+                ]
 
-        return set(update_args + nonthermo_args).difference(self.data.constraints)
+        return set(self.data.thermo_updt_args + nonthermo_args).difference(
+            self.data.constraints
+        )
 
     def get_discarded_thermo_args(
         self,
@@ -405,7 +409,7 @@ class ArgumentResolver:
         """
         all_discarded = (
             set(self.data.declared_arguments)
-            - set(self.data.constraints)
+            - set(self.data.thermo_updt_args)
             - set(self.data.free_args)
         )
 
@@ -416,7 +420,8 @@ class ArgumentResolver:
             arg_idx = get_index(arg)
             arg_type = get_arg_type(arg)
 
-            discarded[arg_idx][arg_state].append(arg_type)
+            if arg.startswith(THERMO_PREFIXES):
+                discarded[arg_idx][arg_state].append(arg_type)
 
         return discarded
 
@@ -1028,7 +1033,7 @@ class CasadiSystem(SystemAssembler):
         self.scales_free_args_sym: list[cs.MX] = []
 
         self._eq_scales_sym: list[cs.MX] = []
-        self.res_expr_scaled: list[cs.MX] = []
+        self.residual_expr: list[cs.MX]
 
     def build(self, scaled: bool = True):
         super().build(scaled)
@@ -1077,11 +1082,14 @@ class CasadiSystem(SystemAssembler):
     ) -> dict[str, cs.MX]:
         fl_model = self.fluid_settings.model
 
+        # TODO: Fix typing here for analytical eos
+        self._eos_callbacks: dict[int, dict[str, CasadiEos | Any]] = {
+            n_idx: {} for n_idx, _ in enumerate(self.nodes)
+        }
+
         # if not isinstance(fl_model, ExternalFluidModel):
         #     raise NotImplementedError('Ideal gas model support not implemented yet')
 
-        # TODO: Fix typing here for analytical eos
-        self._eos_callbacks: list[CasadiEos | Any] = []
         self._eos_factory = EosFactory(fl_model)
 
         # Get discarded thermo args => They become eos outputs
@@ -1090,9 +1098,6 @@ class CasadiSystem(SystemAssembler):
         # Add inter-node eos
         for eq in self.equations:
             if eq.input_pair:
-                # if isinstance(eq._eos, CasadiEos):
-                #     if eq.eos._num_span == self.num_span:
-                #         continue
                 eq.eos = self._eos_factory.make_eos(
                     eq.input_pair,
                     eq.output_quantities,
@@ -1100,6 +1105,7 @@ class CasadiSystem(SystemAssembler):
                     f'multi_{eq.__class__.__name__}',
                 )
 
+        # TODO: Refactor this, looks like shit
         out_syms = {}
         for node_idx, discarded_vars in discarded_thermo.items():
             node_inp_pairs = self.nodes[node_idx].get_update_variables()
@@ -1117,7 +1123,7 @@ class CasadiSystem(SystemAssembler):
                 )
 
                 # This is to keep references alive
-                self._eos_callbacks.append(eos_caller)
+                self._eos_callbacks[node_idx][state_name] = eos_caller
 
                 # Symbolic representation of the input pair properties
                 symbolic_pair = [
@@ -1133,7 +1139,10 @@ class CasadiSystem(SystemAssembler):
 
                 # Make a dictionary of symbols that are ouputs from the eos callbacks
                 for pr_name, pr_sym in zip(out_props, out_props_syms):
-                    out_syms[f'{state_name}_{pr_name}{node_idx}'] = pr_sym
+                    arg_name = f'{state_name}_{pr_name}{node_idx}'
+                    if arg_name in self.data.constraints:
+                        arg_name += THERMO_CONST_SUFFIX
+                    out_syms[arg_name] = pr_sym
 
         return out_syms
 
@@ -1158,15 +1167,15 @@ class CasadiSystem(SystemAssembler):
 
         all_args_products = {**free_args_products, **constraints_products}
 
-        # === Build equation of state symbols
+        # 3. Build equation of state symbols
         casadi_eos_symbols = self._build_equations_of_state(all_args_products)
 
         self._all_symbols = {**all_args_products, **casadi_eos_symbols}
 
     def _build_invariant_expressions(self) -> list[cs.MX]:
         """
-        Build expressions for constant quantities, either across nodes
-        or across components
+        Build expressions for constant quantities, across nodes,
+        that can be part of a single or multiple components
         """
         invariant_expressions = []
         for args in self._invariants:
@@ -1186,6 +1195,10 @@ class CasadiSystem(SystemAssembler):
         return invariant_expressions
 
     def _build_spanwise_constants(self) -> list[cs.MX]:
+        """
+        Build expressions for imposing variables to be constant
+        along the span of a certain station
+        """
         spanwise_expressions = []
         for arg in self._spanwise_constants:
             if arg not in self._all_symbols:
@@ -1200,6 +1213,25 @@ class CasadiSystem(SystemAssembler):
                 spanwise_expressions.append(expression)
 
         return spanwise_expressions
+
+    def _build_thermo_constraints(self) -> list[cs.MX]:
+        """
+        Build equations for imposed constraint that do not
+        end up being part of the equations of state update
+        variables
+        """
+        constraints_eqs = []
+        for arg in self.data.constraints:
+            if not arg.startswith(THERMO_PREFIXES):
+                continue
+
+            if arg not in self.data.thermo_updt_args:
+                constraints_eqs.append(
+                    self._all_symbols[arg]
+                    - self._all_symbols[arg + THERMO_CONST_SUFFIX]
+                )
+
+        return constraints_eqs
 
     def _build_residual_expressions(self):
         # Build scaling symbols for all equations
@@ -1217,15 +1249,14 @@ class CasadiSystem(SystemAssembler):
             args = [self._all_symbols[kwmap[k]] for k in eq.arguments]
 
             # NOTE: No need to override the operators for now,
-            # just use numpy operations in a way compatible with
-            # casadi symbolics
+            # just use numpy operations  compatible with casadi
 
             # overridden_eq = override_operators(eq.residual, 'numpy', cs)
             overridden_eq = eq.residual
             residuals.append(overridden_eq(*args))
 
         # Divide each residual expression by its scaling symbol
-        self._res_expr_scaled = list(
+        self.residual_expr = list(
             map(
                 lambda X, Y: X / Y,
                 jax.tree.leaves(residuals),
@@ -1233,11 +1264,12 @@ class CasadiSystem(SystemAssembler):
             )
         )
 
-        self._res_expr_scaled += self._build_invariant_expressions()
-        self._res_expr_scaled += self._build_spanwise_constants()
+        self.residual_expr += self._build_invariant_expressions()
+        self.residual_expr += self._build_spanwise_constants()
+        self.residual_expr += self._build_thermo_constraints()
 
         num_vars = max(cs.vertcat(*self.free_args_sym).shape)
-        num_residuals = max(cs.vertcat(*self._res_expr_scaled).shape)
+        num_residuals = max(cs.vertcat(*self.residual_expr).shape)
         logger.info(
             f'System info: {num_vars} total variables, {num_residuals} total equations'
         )
@@ -1273,7 +1305,7 @@ class CasadiSystem(SystemAssembler):
         constraints = full_arguments_cat[2]
 
         res_full_func = cs.Function(
-            'res_full_func', full_arguments_cat, [cs.vertcat(*self._res_expr_scaled)]
+            'res_func', full_arguments_cat, [cs.vertcat(*self.residual_expr)]
         )
 
         # Numerical values for scaling of variables and equations
@@ -1391,41 +1423,32 @@ class CasadiSystem(SystemAssembler):
     def write_solution_to_nodes(self, solution_values: NDArray):
         solution_dict = super().write_solution_to_nodes(solution_values)
 
-        for eos_cb in self._eos_callbacks:
-            eos_name: str = eos_cb.name()
-            if not eos_name.startswith('nodeCb'):
-                continue
+        for node_idx, cb_specs in self._eos_callbacks.items():
+            for state_id, eos_cb in cb_specs.items():
+                eos_name: str = eos_cb.name()
+                if not eos_name.startswith('nodeCb'):
+                    continue
 
-            eos_name_fields = eos_name.split('_')
-
-            state_id = eos_name_fields[1]
-            state_id = cast(NodeStatesNames, state_id)
-
-            node_idx = get_index(eos_name_fields[2])
-
-            # Full CoolProp
-            if isinstance(eos_cb, CasadiEos):
-                input_args = pair_tuple_from_id(eos_cb._input_pair)
-                out_props = eos_cb._output_props
-            # Analytical EoS
-            else:
-                input_args = eos_cb.name_in()
+                # Full CoolProp
+                input_args = [INVERSE_CP_NAMES_MAP[arg] for arg in eos_cb.name_in()]
                 out_props = eos_cb.name_out()
 
-            state_obj = self.nodes[node_idx].fetch_state(state_id)
+                state_obj = self.nodes[node_idx].fetch_state(state_id)
 
-            inputs = [
-                state_obj.get(arg).to_base_units().magnitude for arg in input_args
-            ]
-            output_values = eos_cb(*inputs)
+                inputs = [
+                    state_obj.get(arg).to_base_units().magnitude for arg in input_args
+                ]
+                output_values = eos_cb(*inputs)
 
-            thermo_dict = {}
-            for prop, val in zip(out_props, output_values):
-                thermo_dict[f'{state_id}_{prop}{node_idx}'] = val.toarray().flatten()
+                thermo_dict = {}
+                for prop, val in zip(out_props, output_values):
+                    thermo_dict[f'{state_id}_{prop}{node_idx}'] = (
+                        val.toarray().flatten()
+                    )
 
-            self.nodes[node_idx].write_to_node(thermo_dict, False)
+                self.nodes[node_idx].write_to_node(thermo_dict, False)
 
-            solution_dict.update(thermo_dict)
+                solution_dict.update(thermo_dict)
 
         return solution_dict
 
@@ -1665,7 +1688,7 @@ def perturb_guess(guess, knowns, root_function, delta_pert, num_samples):
 
 def solve_root_problem(
     rootfinder: Any,
-    guess: list[NDArray],
+    guess: list[NDArray] | NDArray,
     knowns: list[NDArray],
     arg_bounds: tuple[cs.DM, cs.DM] | None = None,
     suppress_output: bool = True,
@@ -1683,7 +1706,11 @@ def solve_root_problem(
     with output_manipulator():
         logger.info('Solving the system...')
 
-        guess_cat = np.concatenate(guess)
+        if isinstance(guess, list):
+            guess_cat = np.concatenate(guess)
+        else:
+            guess_cat = guess
+
         knowns_cat = np.concatenate(knowns)
 
         if perturbate_guess:

@@ -117,7 +117,7 @@ class FlowNode(GasPropertiesMixin):
     def get_all_quantities(self, *state_names: NodeStatesNames):
         return self._get_variables_helper(state_names, status='all_quantities')
 
-    def fetch_state(self, state_id: NodeStatesNames) -> VariableContainer:
+    def fetch_state(self, state_id: NodeStatesNames | str) -> VariableContainer:
         if state_id not in get_args(NodeStatesNames):
             raise AttributeError(
                 f'Unknown state {state_id}, valid states '

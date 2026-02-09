@@ -3,6 +3,7 @@
 from copy import deepcopy
 import logging
 
+import CoolProp as cp
 import matplotlib.pyplot as plt
 import numpy as np
 from pint import Quantity
@@ -27,12 +28,12 @@ from adet.equations.nondimensional import (
     TotalStaticLoadingCoefficient,
     TotalTotalExpansionEfficiency,
 )
-from adet.equations.utils import residual_debugger
-from adet.fluid.settings import ExternalFluidModel
+from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import PercentageEntropyLoss, PlaceHolderLoss, ZeroDeviation
+from adet.fluid.symbolic_eos import IdealGasState
+from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.losses.leakage import DentonLeakageLoss
-from adet.losses.mixing import MixingMomentumBalances, SieverdingBasePressure
+from adet.losses.mixing import SieverdingBasePressure
 from adet.losses.profile import DentonProfileLoss
 from adet.losses.secondary import SecondaryBSM
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
@@ -44,8 +45,8 @@ logger = logging.getLogger(__name__)
 
 setup_logger(
     logger,
-    logging.INFO,
-    logging.INFO,
+    logging.DEBUG,
+    logging.DEBUG,
     banned_keywords=['STREAM', 'findfont', 'sBIT'],
 )
 plt.close('all')
@@ -57,18 +58,29 @@ PLOTS = True
 PRINTS = True
 INITIAL_LOSS = PercentageEntropyLoss(0.0)
 
+
 # ________________________________________________
 
 # This counts the number of updates in an attribute
 abs_state = DebugAbstractState('REFPROP', 'MM')
 abs_state.debug_print = False
 
+
+ideal_state = IdealGasState(2.9, 18.0)
+
 real_model = ExternalFluidModel(abs_state)
+ideal_model = AnalyticalFluidModel(ideal_state)
+
 settings = FluidSettings(
     model=real_model,
-    update_variables=('p', 'T'),
+    update_variables=('p', 'hmass', 'T'),
     update_length=2,
 )
+
+fluid_state = settings.model.eos_object
+INLET_PRESSURE = 2.1 * fluid_state.p_critical()
+INLET_TEMPERATURE = 1.1 * fluid_state.T_critical()
+fluid_state.update(cp.PT_INPUTS, INLET_PRESSURE, INLET_TEMPERATURE)
 
 _defreg = DefaultUnitsRegistry()
 _defreg.from_dict(
@@ -81,14 +93,22 @@ _defreg.from_dict(
 )
 _guess_reg = GuessRegistry()
 _guess_reg.reset()
-_guess_reg.set('rhomass', 370)
-_guess_reg.set_fallback_value(0.5)
+_guess_reg.from_dict(
+    {
+        'p': fluid_state.p(),
+        'T': fluid_state.T(),
+        'hmass': fluid_state.hmass(),
+        'smass': fluid_state.smass(),
+        'rhomass': fluid_state.rhomass(),
+    }
+)
+_guess_reg.set_fallback_value(1.5)
 
 _bounds_reg = VariableBoundsRegistry()
 _bounds_reg.reset()
 _bounds_reg.from_dict(
     {
-        'delta_smass_.*': (0.0, 100.0),
+        # 'delta_smass_.*': (0.0, 100.0),
         'mach': (0.0, 1.2),
         'Vm': (1.0, 30.0),
         'eta_tt': (0.8, 0.98),
@@ -103,6 +123,7 @@ shaft = Shaft(
     is_constrained=True,
 )
 
+
 # COMPONENT STACK
 inlet = Inlet(
     {
@@ -115,19 +136,13 @@ inlet = Inlet(
             'height': 0.06,
         },
         'tot': {
-            'p': 2.071 * abs_state.p_critical(),
-            'T': 1.052 * abs_state.T_critical(),
+            'T': abs_state.T(),
+            # 'hmass': abs_state.hmass(),
+            'p': abs_state.p(),
         },
     }
 )
 
-# Set the pressure and temperature guesses just above the inlet ones
-_guess_reg.from_dict(
-    {
-        'p': 1.1 * abs_state.p_critical(),
-        'T': 1.1 * abs_state.T_critical(),
-    }
-)
 
 row = BladeRow(
     name='Stator',
@@ -234,18 +249,20 @@ ntw = ComponentNetwork(
 )
 
 # Make the chords constant
-ntw.system.add_spanwise_constants('geo_chord_ax1', 'geo_chord_ax5')
-ntw.system.add_invariants(('kin_alpha0', 'kin_alpha5'))
+if ntw.num_components > 2:
+    ntw.system.add_spanwise_constants('geo_chord_ax1', 'geo_chord_ax5')
+    ntw.system.add_invariants(('kin_alpha0', 'kin_alpha5'))
 
-if ntw.num_components > 1:
+if ntw.num_components > 2:
     final_node = ntw.num_components * 2 - 1
+
+    # Nondimensional equations
     ntw.system.add_equation(FlowCoefficient(), (0, final_node))
-    # Nondimensional
     ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, final_node))
     ntw.system.add_equation(TotalStaticDegreeOfReaction(), (0, 1, 4, 5))
     ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, final_node))
 
-if ntw.num_components > 2:
+    # Boundary conditions
     # ntw.system.boundary_conditions[5]['kin'].pop('beta')
     # Choose one of the two
     ntw.system.boundary_conditions[5]['oth']['flowCoeff'] = 0.9
@@ -263,7 +280,7 @@ ntw.system.build(SCALED)
 
 # ________________________________________________
 
-rootfinder_is = ntw.system.make_rootfinder('ipopt', opts={'error_on_fail': True})
+rootfinder_is = ntw.system.make_rootfinder('ipopt', opts={'error_on_fail': False})
 
 x0_is = ntw.system.get_scaled_guess()
 kn_is = ntw.system.get_scaled_constraints()
@@ -273,9 +290,9 @@ solution = solve_root_problem(
     x0_is,
     kn_is,
     bnd_is,
-    suppress_output=True,
-    perturbate_guess=False,
-    delta_pert=0.02,
+    suppress_output=False,
+    perturbate_guess=True,
+    delta_pert=1.02,
     num_samples=1000,
 )
 
@@ -292,6 +309,7 @@ if user in ('y', 'Y'):
     )
 
     ntw.system.num_span = int(new_span)
+    ntw.system.fluid_settings.model = real_model
     # = = = AFTER INITIALIZING = = =
     ntw.system.remove_equation(INITIAL_LOSS.__class__, (0, 1))
     ntw.system.add_equation(DentonProfileLoss(), (0, 1))
@@ -477,7 +495,6 @@ if ntw.num_components > 1:
 
     print(f'Incompressible vs actual zeta {zeta_inc}, {zeta_actual}')
 
-print(n5.oth)
 plt.show(block=False)
 input('Press enter to close ')
 plt.close('all')

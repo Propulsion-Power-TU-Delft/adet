@@ -15,14 +15,16 @@ UNSUPPORTED_PAIRS = [13, 17, 30, 32]
 
 
 class SymbolicAbstractState(ABC):
-    solution_cache: dict[int, dict[str, Callable]] = {}
+    solution_cache: dict[tuple[int, float, float], dict[str, Callable]] = {}
 
-    def __init__(self, gamma, gas_constant, viscosity=1e-5):
+    def __init__(self, gamma, gas_constant, viscosity=None):
         # TODO: Add extra optional manual properties input, e.g. viscosity
         # Move gamma and gas_constant to subclasses, make this general
         self.current_state: dict[str, Any] = {}
-        self._gamma = gamma
-        self._gas_constant = gas_constant
+
+        # Round otherwise sympy shits itself
+        self._gamma: float = round(gamma, 1)
+        self._gas_constant: float = round(gas_constant, 1)
 
         self._viscosity = viscosity
         self._cvmass = self._gas_constant / (self._gamma - 1)
@@ -36,27 +38,29 @@ class SymbolicAbstractState(ABC):
     def arguments(self):
         return getfullargspec(self.eos).args[1:]
 
-    def update(self, input_pair, value0, value1):
+    def update(self, input_pair: int, value0, value1):
         if input_pair in UNSUPPORTED_PAIRS:
             pair_name = COOLPROP_PAIRS[input_pair]
             raise NotImplementedError(f'Unsupported pair {pair_name}')
 
         input_vars = pair_tuple_from_id(input_pair)
         other_vars = set(self.arguments).difference(input_vars)
-        logger.debug('Updating {self} with {input_vars}')
+        logger.debug(f'Updating {self} with {input_vars}')
 
         function_inputs = {
             input_vars[0]: value0,
             input_vars[1]: value1,
         }
 
-        cache_hit = input_pair in self.solution_cache
+        cache_key = (input_pair, self._gamma, self._gas_constant)
+        cache_hit = cache_key in self.solution_cache
+        key_name = f'{input_vars}, gamma{self._gamma}, gas_const{self._gas_constant}'
 
         if cache_hit:
-            logger.debug(f'Cache hit for {input_vars}')
-            solution_funcs = self.__class__.solution_cache[input_pair]
+            logger.debug(f'Cache hit for {key_name}')
+            solution_funcs = self.__class__.solution_cache[cache_key]
         else:
-            logger.debug(f'Cache miss for {input_vars}, building symbolic solution')
+            logger.debug(f'Cache miss for {key_name}, building symbolic solution')
             symbols = {arg: sm.Symbol(arg) for arg in self.arguments}
             symbolic_func = self.eos(**symbols)
             symbolic_solution = sm.solve(symbolic_func, other_vars)
@@ -77,7 +81,7 @@ class SymbolicAbstractState(ABC):
             sym: func(**function_inputs) for sym, func in solution_funcs.items()
         }
 
-        self.__class__.solution_cache[input_pair] = solution_funcs
+        self.__class__.solution_cache[cache_key] = solution_funcs
 
     def p(self):
         return self.current_state['p']
@@ -102,6 +106,12 @@ class SymbolicAbstractState(ABC):
 
     def viscosity(self):
         return self._viscosity
+
+    def p_critical(self):
+        return 1
+
+    def T_critical(self):
+        return 1
 
     def speed_sound(self):
         return self.current_state['speed_sound']
@@ -135,13 +145,13 @@ if __name__ == '__main__':
 
     mp.freeze_support()
     eos = IdealGasState(
-        gamma=1.4,
-        gas_constant=287.0,
+        gamma=2.94,
+        gas_constant=18.0,
     )
 
     # Polymorphic
     eos.update(
-        cp.PT_INPUTS,
+        cp.PSmass_INPUTS,
         cs.MX.sym('x'),  # pyright:ignore
         cs.MX.sym('y'),  # pyright:ignore
     )

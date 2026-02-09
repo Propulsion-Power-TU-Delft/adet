@@ -225,8 +225,8 @@ rootfinder_hecc_is = ntw_hecc.system.make_rootfinder(
     opts={
         'error_on_fail': True,
         'ipopt.tol': 1e-5,
-        'ipopt.max_iter': 500,
-        'ipopt.max_wall_time': 100,
+        'ipopt.max_iter': 300,
+        'ipopt.max_wall_time': 30,
     },
 )
 solution_hecc_is = solve_root_problem(
@@ -239,36 +239,34 @@ solution_hecc_is = solve_root_problem(
 sol_is_dict = ntw_hecc.system.solution_to_dict(solution_hecc_is)
 
 #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
+# Increase span and switch to real gas
+ntw_hecc.system.num_span = NUM_SPAN
+ntw_hecc.system.fluid_settings.model = fluid_model_real
+ntw_hecc.system.boundary_conditions[0]['geo']['metal_angle'] = angle_distribution
+
+if ntw_hecc.system.num_span > 1:
+    ntw_hecc.system.remove_equation(MeridionalVariable, 1)
+    ntw_hecc.system.remove_equation(MeridionalUniform, 1)
+    ntw_hecc.system.add_equation(MeridionalVariable(), 1)
+
+ntw_hecc.build()
+#  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
+rootfinder_hecc_multi = ntw_hecc.system.make_rootfinder(
+    'kinsol',
+    opts={'error_on_fail': True},
+)
+x0_multi = ntw_hecc.system.get_scaled_guess(sol_is_dict)
+kn_hecc_multi = ntw_hecc.system.get_scaled_constraints()
+bnd_hecc_multi = ntw_hecc.system.get_arguments_bounds()
+solution_hecc_multi = solve_root_problem(
+    rootfinder_hecc_multi,
+    x0_multi,
+    kn_hecc_multi,
+    bnd_hecc_multi,
+    suppress_output=True,
+)
+sol_multi_dict = ntw_hecc.system.solution_to_dict(solution_hecc_multi)
 if __name__ == '__main__':
-    # Increase span and switch to real gas
-    ntw_hecc.system.num_span = NUM_SPAN
-    ntw_hecc.system.fluid_settings.model = fluid_model_real
-    ntw_hecc.system.add_boundary_conditions(
-        {'geo': {'metal_angle': angle_distribution}}, 0
-    )
-
-    if ntw_hecc.system.num_span > 1:
-        ntw_hecc.system.remove_equation(MeridionalVariable, 1)
-        ntw_hecc.system.remove_equation(MeridionalUniform, 1)
-        ntw_hecc.system.add_equation(MeridionalVariable(), 1)
-
-    ntw_hecc.build()
-    #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
-    rootfinder_hecc_multi = ntw_hecc.system.make_rootfinder(
-        'kinsol',
-        opts={'error_on_fail': True},
-    )
-    x0_multi = ntw_hecc.system.get_scaled_guess(sol_is_dict)
-    kn_hecc_multi = ntw_hecc.system.get_scaled_constraints()
-    bnd_hecc_multi = ntw_hecc.system.get_arguments_bounds()
-    solution_hecc_multi = solve_root_problem(
-        rootfinder_hecc_multi,
-        x0_multi,
-        kn_hecc_multi,
-        bnd_hecc_multi,
-        suppress_output=True,
-    )
-    sol_multi_dict = ntw_hecc.system.solution_to_dict(solution_hecc_multi)
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
     # Remove isentropic and add losses
     for eq, pos in EQS_ISENTROPIC.items():

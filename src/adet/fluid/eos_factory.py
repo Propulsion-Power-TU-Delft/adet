@@ -6,7 +6,7 @@ import casadi as cs
 from adet.fluid.casadi_eos import CasadiEos
 from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidModel
 from adet.fluid.symbolic_eos import SymbolicAbstractState
-from adet.tools.coolprop_utils import get_input_names, pair_tuple_from_id
+from adet.tools.coolprop_utils import inames_from_id, pair_tuple_from_id
 
 
 logger = logging.getLogger(__name__)
@@ -29,13 +29,16 @@ class EosFactory(Generic[M]):
     ):
         eos_obj = self.fluid_model.get_eos_object()
 
+        if not name:
+            name += f'generic_eos_pair{input_pair}'
+
         if isinstance(self.fluid_model, ExternalFluidModel):
             return self.make_external_eos(
                 eos_obj, input_pair, output_quantities, length, name
             )
         elif isinstance(self.fluid_model, AnalyticalFluidModel):
             return self.make_analytical_eos(
-                eos_obj, input_pair, output_quantities, name
+                eos_obj, input_pair, output_quantities, length, name
             )
         else:
             raise TypeError('Unknown fluid model type')
@@ -45,14 +48,16 @@ class EosFactory(Generic[M]):
         eos_object: SymbolicAbstractState,
         input_pair: int,
         output_quantities: tuple[str, ...] | list[str],
-        name: str = '',
+        length: int,
+        name: str,
     ):
-        pair_vars = pair_tuple_from_id(input_pair)
+        pair_vars = inames_from_id(input_pair)
 
-        input_syms = [cs.MX.sym(var) for var in pair_vars]  # pyright: ignore
-        eos_object.update(input_pair, *input_syms)
+        input_syms = [cs.MX.sym(var, length) for var in pair_vars]  # pyright: ignore
+        eos_object.update(input_pair, *input_syms)  # Update with symbols
+        # Extract symbols
         output_syms = [getattr(eos_object, qty)() for qty in output_quantities]
-
+        # Create updater func
         updater_func = cs.Function(
             name, input_syms, output_syms, pair_vars, output_quantities
         )
@@ -65,13 +70,8 @@ class EosFactory(Generic[M]):
         input_pair: int,
         output_quantities: tuple[str, ...] | list[str],
         length: int,
-        name: str = '',
+        name: str,
     ):
-        pair_name = ''.join(get_input_names(input_pair))
-
-        if not name:
-            name = f'eos_{pair_name}_l{length}'
-
         eos_callback = CasadiEos(
             name,
             eos_object,
