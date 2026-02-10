@@ -67,7 +67,7 @@ _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 
 NUM_SPAN = 11
 ENABLE_LOSSES = False
-RUN_MULTI = False
+RUN_MULTI = True
 # +++ Shaftskin_omega0 (node 0) is unknown,
 shaft = Shaft(
     omega=Quantity(21000, 'rpm'),
@@ -84,11 +84,11 @@ fluid_model_real = ExternalFluidModel(
     DebugAbstractState('HEOS', 'Air'),  # This just counts the number of updates
 )
 fluid_model_ideal = AnalyticalFluidModel(
-    IdealGasState(1.4, 287),
+    IdealGasState(1.4, 287, 1.8e-5),
 )
 
 fluid_settings = FluidSettings(
-    model=fluid_model_real,
+    model=fluid_model_ideal,
     update_variables=('p', 'T'),  # Thermodynamic iteration variables
     update_length=2,  # Single phase => Two update vars
 )
@@ -111,7 +111,6 @@ inlet = Inlet(
 
 EQS_ISENTROPIC = {
     ZeroDeviation(): 1,  # No slip
-    # Compute the losses but do not add them
     PercentageEntropyLoss(0.0): (0, 1),
 }
 
@@ -236,7 +235,7 @@ solution_hecc_is = solve_root_problem(
     x0,
     kn_hecc_is,
     bnd_hecc_is,
-    suppress_output=True,
+    suppress_output=False,
 )
 sol_is_dict = ntw_hecc.system.solution_to_dict(solution_hecc_is)
 
@@ -271,7 +270,7 @@ if RUN_MULTI:
         x0_multi,
         kn_hecc_multi,
         bnd_hecc_multi,
-        suppress_output=True,
+        suppress_output=False,
     )
     sol_multi_dict = ntw_hecc.system.solution_to_dict(solution_hecc_multi)
 

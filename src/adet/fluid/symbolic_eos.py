@@ -17,7 +17,7 @@ UNSUPPORTED_PAIRS = [13, 17, 30, 32]
 class SymbolicAbstractState(ABC):
     solution_cache: dict[tuple[int, float, float], dict[str, Callable]] = {}
 
-    def __init__(self, gamma, gas_constant, viscosity=None):
+    def __init__(self, gamma, gas_constant, viscosity):
         # TODO: Add extra optional manual properties input, e.g. viscosity
         # Move gamma and gas_constant to subclasses, make this general
         self.current_state: dict[str, Any] = {}
@@ -132,6 +132,7 @@ def update_func(pair: int):
     eos = IdealGasState(
         gamma=1.4,
         gas_constant=287.0,
+        viscosity=1e-6,
     )
     name = COOLPROP_PAIRS[pair]
     print(f'Update with {name}')
@@ -147,6 +148,7 @@ if __name__ == '__main__':
     eos = IdealGasState(
         gamma=2.94,
         gas_constant=18.0,
+        viscosity=1e-5,
     )
 
     # Polymorphic

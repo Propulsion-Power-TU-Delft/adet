@@ -1331,7 +1331,7 @@ class CasadiSystem(SystemAssembler):
 
     def make_rootfinder(
         self,
-        root_method: Literal['newton', 'ipopt', 'kinsol'],
+        root_method: Literal['newton', 'ipopt', 'lstsq', 'kinsol'],
         opts={},
     ) -> Callable[[ArrayLike, ArrayLike], cs.DM]:
         """
@@ -1349,56 +1349,65 @@ class CasadiSystem(SystemAssembler):
             constraints_symbols,
         )
 
+        # Casadi boilerplate
+        if root_method == 'lstsq':
+            func_spec = {
+                'f': cs.norm_fro(res_expr_partial),
+            }
+        else:
+            func_spec = {
+                'g': res_expr_partial,
+            }
+
         rootfind_problem = {
             'x': free_args_symbols,
             'p': constraints_symbols,
-            'g': res_expr_partial,
+            **func_spec,
         }
 
         # TODO: remove hardcoded options
-        match root_method:
-            case 'newton':
-                # Newton-Raphson solver -> Fast but unstable w/o good guess
-                rootfinder = cs.rootfinder(
-                    'newton_rootfinder',
-                    'newton',
-                    rootfind_problem,
-                    {
-                        'error_on_fail': True,
-                        'print_iteration': False,
-                        **opts,
-                    },
-                )
+        if root_method == 'newton':
+            # Newton-Raphson solver -> Fast but unstable w/o good guess
+            rootfinder = cs.rootfinder(
+                'newton_rootfinder',
+                'newton',
+                rootfind_problem,
+                {
+                    'error_on_fail': True,
+                    'print_iteration': False,
+                    **opts,
+                },
+            )
 
-            case 'ipopt':
-                # IPOPT solver
-                rootfinder = cs.nlpsol(
-                    'ipopt_rootfinder',
-                    'ipopt',
-                    rootfind_problem,
-                    {
-                        'error_on_fail': True,
-                        # Reasonable defaults for IPOPT, overwritten by user
-                        'ipopt.print_level': 3,
-                        'ipopt.max_iter': 1000,
-                        'ipopt.tol': 1e-6,
-                        # NOTE: Superseeded by new implementations, thermo
-                        # derivatives available up to the 3rd order (null)
-                        # 'ipopt.hessian_approximation': 'limited-memory',
-                        **opts,
-                    },
-                )
-            case 'kinsol':
-                # kinsol rootfinder
-                rootfinder = cs.rootfinder(
-                    'kinsol_rootfinder',
-                    'kinsol',
-                    rootfind_problem,
-                    {
-                        'error_on_fail': True,
-                        **opts,
-                    },
-                )
+        elif root_method == 'ipopt' or root_method == 'lstsq':
+            # IPOPT solver
+            rootfinder = cs.nlpsol(
+                'ipopt_rootfinder',
+                'ipopt',
+                rootfind_problem,
+                {
+                    'error_on_fail': True,
+                    # Reasonable defaults for IPOPT, overwritten by user
+                    'ipopt.print_level': 3,
+                    'ipopt.max_iter': 1000,
+                    'ipopt.tol': 1e-6,
+                    # NOTE: Superseeded by new implementations, thermo
+                    # derivatives available up to the 3rd order (null)
+                    # 'ipopt.hessian_approximation': 'limited-memory',
+                    **opts,
+                },
+            )
+        elif root_method == 'kinsol':
+            # kinsol rootfinder
+            rootfinder = cs.rootfinder(
+                'kinsol_rootfinder',
+                'kinsol',
+                rootfind_problem,
+                {
+                    'error_on_fail': True,
+                    **opts,
+                },
+            )
         return rootfinder
 
     def get_arguments_bounds(self):

@@ -66,9 +66,18 @@ abs_state = DebugAbstractState('REFPROP', 'MM')
 abs_state.debug_print = False
 
 
-ideal_state = IdealGasState(2.9, 18.0)
-
 real_model = ExternalFluidModel(abs_state)
+
+fluid_state = real_model.eos_object
+INLET_PRESSURE = 2.1 * fluid_state.p_critical()
+INLET_TEMPERATURE = 1.1 * fluid_state.T_critical()
+fluid_state.update(cp.PT_INPUTS, INLET_PRESSURE, INLET_TEMPERATURE)
+
+ideal_state = IdealGasState(
+    2.9,
+    18.0,
+    abs_state.viscosity(),
+)
 ideal_model = AnalyticalFluidModel(ideal_state)
 
 settings = FluidSettings(
@@ -76,11 +85,6 @@ settings = FluidSettings(
     update_variables=('p', 'hmass', 'T'),
     update_length=2,
 )
-
-fluid_state = settings.model.eos_object
-INLET_PRESSURE = 2.1 * fluid_state.p_critical()
-INLET_TEMPERATURE = 1.1 * fluid_state.T_critical()
-fluid_state.update(cp.PT_INPUTS, INLET_PRESSURE, INLET_TEMPERATURE)
 
 _defreg = DefaultUnitsRegistry()
 _defreg.from_dict(
@@ -102,7 +106,7 @@ _guess_reg.from_dict(
         'rhomass': fluid_state.rhomass(),
     }
 )
-_guess_reg.set_fallback_value(1.5)
+_guess_reg.set_fallback_value(0.5)
 
 _bounds_reg = VariableBoundsRegistry()
 _bounds_reg.reset()
@@ -110,7 +114,7 @@ _bounds_reg.from_dict(
     {
         # 'delta_smass_.*': (0.0, 100.0),
         'mach': (0.0, 1.2),
-        'Vm': (1.0, 30.0),
+        # 'Vm': (1.0, 30.0),
         'eta_tt': (0.8, 0.98),
     }
 )

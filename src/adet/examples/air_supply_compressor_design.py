@@ -93,7 +93,7 @@ realgas_model = ExternalFluidModel(
 )
 
 idealgas_model = AnalyticalFluidModel(
-    IdealGasState(1.4, 287),
+    IdealGasState(1.4, 287, 1.8e-5),
 )
 
 fluid_settings = FluidSettings(
@@ -226,12 +226,10 @@ bnd_ass_is = ntw_ass.system.get_arguments_bounds()
 rootfinder_des_is = ntw_ass.system.make_rootfinder(
     'ipopt',
     opts={
-        'error_on_fail': True,
+        'error_on_fail': False,
+        'ipopt.tol': 1e-6,
         'ipopt.max_iter': 300,
         'ipopt.max_wall_time': 30,
-        'ipopt.acceptable_tol': 1e-6,
-        'ipopt.acceptable_constr_viol_tol': 1e-6,
-        'ipopt.tol': 1e-8,
         # 'ipopt.print_level': 3,
     },
 )
@@ -242,7 +240,7 @@ solution_ass_is = solve_root_problem(
     x0_is,
     kn_ass,
     bnd_ass_is,
-    suppress_output=True,
+    suppress_output=False,
 )
 
 sol_is_dict = ntw_ass.system.write_solution_to_nodes(solution_ass_is)

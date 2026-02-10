@@ -61,7 +61,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 # Simulation settings
 NUM_SPAN = 3  # Number of spanwise stations
 HIGH_RES_MULTIPLIER = 3  # => 9 final spanwise stations
-NUM_STAGES = 6  # Number of turbine stages (stator-rotor pairs)
+NUM_STAGES = 3  # Number of turbine stages (stator-rotor pairs)
 SCALED = True  # Use scaled equations for better numerical conditioning
 PLOTS = True  # Show plots at end
 PRINTS = True  # Print node information
@@ -69,7 +69,7 @@ PRINTS = True  # Print node information
 # === FLUID MODEL SETUP
 # Real gas model using CoolProp (HEOS = Helmholtz Equation of State)
 abs_state = DebugAbstractState('HEOS', 'Air')
-idl_state = IdealGasState(1.4, 287.0)
+idl_state = IdealGasState(1.4, 287.0, 1.8e-5)
 abs_state.debug_print = False
 
 real_model = ExternalFluidModel(abs_state)
@@ -79,7 +79,7 @@ ideal_model = AnalyticalFluidModel(idl_state)
 # Update variables are used to solve for thermodynamic state
 # (p, T) chosen for stability
 settings = FluidSettings(
-    model=ideal_model,
+    model=real_model,
     update_variables=('p', 'T', 'rhomass', 'smass', 'hmass'),
     update_length=2,
 )
@@ -129,7 +129,7 @@ rotating_shaft = Shaft(
 inlet = Inlet(
     {
         'kin': {
-            'Vm': Quantity(75, 'm/s'),  # Meridional velocity
+            'Vm': Quantity(100, 'm/s'),  # Meridional velocity
             'alpha': Quantity(0, 'deg'),  # Flow angle
         },
         'geo': {
@@ -343,10 +343,10 @@ ntw.system.write_solution_to_nodes(sol_highres)
 
 
 # === POST-PROCESSING AND VISUALIZATION
+plt.style.use('dark_background')
 if PLOTS:
     FONTSIZE = 18
     FONTDICT = {'fontsize': FONTSIZE}
-    COLORMAP = plt.get_cmap('viridis')
 
     # Plot velocity triangles for each node
     for i, n in enumerate(ntw.system.nodes):
@@ -393,13 +393,18 @@ if PLOTS:
         ax_chord = n1.geo.get('chord_ax').to_base_units().magnitude[0]
 
         # Plot meridional profile
+        is_stator = (n0_idx // 2) % 2 == 0
+        blade_type = 'Stator' if is_stator else 'Rotor'
+        stage_num = n0_idx // 4
+        color = 'steelblue' if is_stator else 'coral'
+
         lines = plot_from_nodes(
             n0,
             n1,
             False,
             offset,
             ax=ax_merid,
-            color=COLORMAP((n1_idx - 1) // ntw.num_components),
+            color=color,
         )
 
         # Plot camberlines at midspan (3 blades for all rows)
@@ -418,7 +423,7 @@ if PLOTS:
                 inlet_angle,
                 outlet_angle,
                 chord_ax,
-                'k',
+                'w',
                 axial_offset=offset,
                 tangential_offset=blade_num * pitch,
             )
@@ -446,24 +451,15 @@ if PLOTS:
         ['smass'],
         ntw.system.num_span,
     )
-    fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+    fig, ax = plt.subplots(figsize=(5, 5))
 
+    cmap = plt.colormaps.get('OrRd')
     for idx, (n0_idx, n1_idx) in enumerate(blade_rows):
         n0 = ntw.system.nodes[n0_idx]
         n1 = ntw.system.nodes[n1_idx]
 
-        # Extract relative total pressure at inlet and outlet
-        p_rlt_in = n0.rlt.get('p').to('Pa').magnitude
-        p_rlt_out = n1.rlt.get('p').to('Pa').magnitude
-
-        T_rlt_in = n0.rlt.get('T').to('K').magnitude
-        T_rlt_out = n1.rlt.get('T').to('K').magnitude
-
-        smass_in = PT_EOS(p_rlt_in, T_rlt_in)
-        smass_out = PT_EOS(p_rlt_out, T_rlt_out)
-
-        # Calculate pressure increment (normalized by inlet pressure)
-        delta_p_normalized = (p_rlt_out - p_rlt_in) / p_rlt_in
+        smass_in = n0.stc.smass
+        smass_out = n0.stc.smass
 
         # Extract blade height for normalization
         height_in = n0.geo.get('height').to('m').magnitude[0]
@@ -477,35 +473,25 @@ if PLOTS:
         is_stator = (n0_idx // 2) % 2 == 0
         blade_type = 'Stator' if is_stator else 'Rotor'
         stage_num = n0_idx // 4
-        color = 'steelblue' if is_stator else 'coral'
         linestyle = '-' if is_stator else '--'
 
+        color = cmap(idx / (len(ntw.components) - 1))
+
         # Plot
-        ax[0].plot(
-            span_normalized,
-            delta_p_normalized * 100,  # Convert to percentage
-            label=f'Stage {stage_num} {blade_type}',
-            color=color,
-            linestyle=linestyle,
-            linewidth=2,
-            marker='o',
-        )
-        ax[1].plot(
+        ax.plot(
             span_normalized,
             smass_out,  # Convert to percentage
             label=f'Stage {stage_num} {blade_type}',
             color=color,
-            linestyle=linestyle,
+            linestyle='-',
             linewidth=2,
             marker='o',
         )
 
-    ax[0].set_xlabel('Normalized Span (hub=0, tip=1)', FONTDICT)
-    ax[0].set_ylabel('Relative Total Pressure Change [%]', FONTDICT)
-    ax[0].set_title('Relative Total Pressure Increment Across Blade Rows', FONTDICT)
-    ax[1].set_title('Entropy [J / kg / K]', FONTDICT)
-    ax[0].grid(True, alpha=0.3)
-    ax[0].legend(loc='best', fontsize=FONTSIZE // 1.5)
+    ax.set_xlabel('Normalized Span (hub=0, tip=1)', FONTDICT)
+    ax.set_title('Entropy [J / kg / K]', FONTDICT)
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc='best', fontsize=FONTSIZE // 1.5)
     fig.tight_layout()
 
 
