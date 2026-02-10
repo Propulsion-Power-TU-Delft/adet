@@ -24,7 +24,6 @@ from adet.components.network import ComponentNetwork
 from adet.equations.definitions import EffectiveBladeNumber, IsentropicProperties
 from adet.equations.geometrical import LaxByOutradius, MinimalCamberLine
 from adet.equations.nondimensional import (
-    GammaPV,
     SwallowingCapacity,
     TotalTotalCompressionEfficiency,
     WorkCoefficient,
@@ -89,16 +88,16 @@ casing = Shaft(
 )
 
 # +++ Fluid settings
-fluid_model_real = ExternalFluidModel(
+realgas_model = ExternalFluidModel(
     DebugAbstractState('HEOS', 'Air'),  # This just counts the number of updates
 )
 
-fluid_model_ideal = AnalyticalFluidModel(
+idealgas_model = AnalyticalFluidModel(
     IdealGasState(1.4, 287),
 )
 
 fluid_settings = FluidSettings(
-    model=fluid_model_real,
+    model=idealgas_model,
     update_variables=('p', 'T'),  # Thermodynamic iteration variables
     update_length=2,  # Single phase => Two update vars
 )
@@ -230,7 +229,9 @@ rootfinder_des_is = ntw_ass.system.make_rootfinder(
         'error_on_fail': True,
         'ipopt.max_iter': 300,
         'ipopt.max_wall_time': 30,
-        # 'ipopt.tol': 1e-5,
+        'ipopt.acceptable_tol': 1e-6,
+        'ipopt.acceptable_constr_viol_tol': 1e-6,
+        'ipopt.tol': 1e-8,
         # 'ipopt.print_level': 3,
     },
 )
@@ -244,7 +245,7 @@ solution_ass_is = solve_root_problem(
     suppress_output=True,
 )
 
-sol_is_dict = ntw_ass.system.solution_to_dict(solution_ass_is)
+sol_is_dict = ntw_ass.system.write_solution_to_nodes(solution_ass_is)
 
 
 if __name__ == '__main__':

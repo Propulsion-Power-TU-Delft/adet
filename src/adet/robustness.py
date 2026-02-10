@@ -15,7 +15,9 @@ setup_logger(logger, logging.ERROR, logging.ERROR)
 # ============================================================================
 # CONFIGURATION: Select which example to test
 # ============================================================================
-TEST_CASE = 'air_supply'  # Options: 'air_supply', 'nasa_hecc', etc.
+# Options: 'air_supply', 'nasa_hecc', 'nasa_hecc_multi'
+# WARN: Careful you need to take in and out the multi loop from main
+TEST_CASE = 'nasa_hecc'
 # ============================================================================
 
 # Import the appropriate example based on configuration
@@ -32,6 +34,13 @@ elif TEST_CASE == 'nasa_hecc':
         ntw_hecc as NETWORK,
         kn_hecc_is as KNOWNS,
         bnd_hecc_is as BOUNDS,
+    )
+elif TEST_CASE == 'nasa_hecc_multi':
+    from adet.examples.nasa_hecc import (
+        solution_hecc_multi as SOLUTION,
+        ntw_hecc as NETWORK,
+        kn_hecc_multi as KNOWNS,
+        bnd_hecc_multi as BOUNDS,
     )
 else:
     raise ValueError(f'Unknown test case: {TEST_CASE}')
@@ -54,7 +63,7 @@ def process_sample(
 
     try:
         solve_root_problem(
-            rootfinder_cp, x0_perturbed.tolist(), KNOWNS, BOUNDS, suppress_output=True
+            rootfinder_cp, x0_perturbed, KNOWNS, BOUNDS, suppress_output=True
         )
         return 1
     except Exception:
@@ -80,13 +89,14 @@ def test_robustness(
                 )
                 for s in samples
             ]
-            out[pert] = [
-                res.get()
-                for res in track(
-                    multires,
-                    f'|> Progress over samples for perturbation {pert}',
-                )
-            ]
+            for res in track(
+                multires,
+                f'|> Progress over samples for perturbation {pert}',
+            ):
+                try:
+                    out[pert].append(res.get(timeout=55))
+                except mp.TimeoutError:
+                    out[pert].append(0)
 
             print(
                 f'Success rate for perturbation rate {pert} '
@@ -98,25 +108,40 @@ def test_robustness(
 
 if __name__ == '__main__':
     mp.freeze_support()
+
     # Latin Hypercube sampling for testing robustness
     SAMPLES = 100  # For each perturbation level
     NUM_PROCS = 10
-    PERTURBATIONS = np.linspace(0, 3, 11) + 0.05  # Start with 5% offset
+    # PERTURBATIONS = np.arange(0.1, 1, 0.1)  # Start with 10% offset
+    PERTURBATIONS = np.linspace(0, 4, 11) + 0.1
 
     results = test_robustness(SOLUTION, SAMPLES, PERTURBATIONS)
+    success_rate = np.array([sum(res) / SAMPLES for res in results.values()])
 
+    # Save
+    filename = f'./{TEST_CASE}_samples_{SAMPLES}_realgas'
+    out_array = np.stack([PERTURBATIONS, success_rate])
+    np.save(filename, out_array)
+
+    plt.style.use('dark_background')
+    fig, ax = plt.subplots(figsize=(8, 4))
     plt.plot(
         PERTURBATIONS,
-        [100 * sum(res) / SAMPLES for res in results.values()],
+        success_rate * 100,
         '-o',
+        # color='seagreen',
+        color='orange',
     )
     plt.xticks(
         ticks=PERTURBATIONS.tolist(), labels=[f'{100 * o:.0f}%' for o in results.keys()]
     )
     plt.xlabel(f'Perturbation from converged solution, {SAMPLES} samples')
-    plt.ylabel('Convergence rate')
+    plt.ylabel('Success rate')
     plt.ylim(0.0, 110.0)
     plt.grid(alpha=0.3, axis='y')
     plt.plot(PERTURBATIONS, 100 * np.ones(len(PERTURBATIONS)))
     plt.title(TEST_CASE)
-    plt.show()
+
+    from adet.convergence_results import casp_results
+
+    plt.savefig(filename + '.svg')

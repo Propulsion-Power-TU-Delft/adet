@@ -1,3 +1,4 @@
+from copy import deepcopy
 import logging
 from pint import Quantity
 import matplotlib.pyplot as plt
@@ -66,6 +67,7 @@ _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 
 NUM_SPAN = 11
 ENABLE_LOSSES = False
+RUN_MULTI = False
 # +++ Shaftskin_omega0 (node 0) is unknown,
 shaft = Shaft(
     omega=Quantity(21000, 'rpm'),
@@ -86,7 +88,7 @@ fluid_model_ideal = AnalyticalFluidModel(
 )
 
 fluid_settings = FluidSettings(
-    model=fluid_model_ideal,
+    model=fluid_model_real,
     update_variables=('p', 'T'),  # Thermodynamic iteration variables
     update_length=2,  # Single phase => Two update vars
 )
@@ -226,7 +228,7 @@ rootfinder_hecc_is = ntw_hecc.system.make_rootfinder(
         'error_on_fail': True,
         'ipopt.tol': 1e-5,
         'ipopt.max_iter': 300,
-        'ipopt.max_wall_time': 30,
+        'ipopt.max_wall_time': 10,
     },
 )
 solution_hecc_is = solve_root_problem(
@@ -238,35 +240,42 @@ solution_hecc_is = solve_root_problem(
 )
 sol_is_dict = ntw_hecc.system.solution_to_dict(solution_hecc_is)
 
-#  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
-# Increase span and switch to real gas
-ntw_hecc.system.num_span = NUM_SPAN
-ntw_hecc.system.fluid_settings.model = fluid_model_real
-ntw_hecc.system.boundary_conditions[0]['geo']['metal_angle'] = angle_distribution
+if RUN_MULTI:
+    #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
+    # Increase span and switch to real gas
+    ntw_hecc.system.num_span = NUM_SPAN
+    ntw_hecc.system.fluid_settings.model = fluid_model_real
+    ntw_hecc.system.boundary_conditions[0]['geo']['metal_angle'] = angle_distribution
 
-if ntw_hecc.system.num_span > 1:
-    ntw_hecc.system.remove_equation(MeridionalVariable, 1)
-    ntw_hecc.system.remove_equation(MeridionalUniform, 1)
-    ntw_hecc.system.add_equation(MeridionalVariable(), 1)
+    if ntw_hecc.system.num_span > 1:
+        ntw_hecc.system.remove_equation(MeridionalVariable, 1)
+        ntw_hecc.system.remove_equation(MeridionalUniform, 1)
+        ntw_hecc.system.add_equation(MeridionalVariable(), 1)
 
-ntw_hecc.build()
-#  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
-rootfinder_hecc_multi = ntw_hecc.system.make_rootfinder(
-    'kinsol',
-    opts={'error_on_fail': True},
-)
-x0_multi = ntw_hecc.system.get_scaled_guess(sol_is_dict)
-kn_hecc_multi = ntw_hecc.system.get_scaled_constraints()
-bnd_hecc_multi = ntw_hecc.system.get_arguments_bounds()
-solution_hecc_multi = solve_root_problem(
-    rootfinder_hecc_multi,
-    x0_multi,
-    kn_hecc_multi,
-    bnd_hecc_multi,
-    suppress_output=True,
-)
-sol_multi_dict = ntw_hecc.system.solution_to_dict(solution_hecc_multi)
-if __name__ == '__main__':
+    ntw_hecc.build()
+    #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
+    rootfinder_hecc_multi = ntw_hecc.system.make_rootfinder(
+        'ipopt',
+        opts={
+            'error_on_fail': True,
+            'ipopt.tol': 1e-5,
+            'ipopt.max_iter': 300,
+            'ipopt.max_wall_time': 10,
+        },
+    )
+    x0_multi = ntw_hecc.system.get_scaled_guess(sol_is_dict)
+    kn_hecc_multi = ntw_hecc.system.get_scaled_constraints()
+    bnd_hecc_multi = ntw_hecc.system.get_arguments_bounds()
+    solution_hecc_multi = solve_root_problem(
+        rootfinder_hecc_multi,
+        x0_multi,
+        kn_hecc_multi,
+        bnd_hecc_multi,
+        suppress_output=True,
+    )
+    sol_multi_dict = ntw_hecc.system.solution_to_dict(solution_hecc_multi)
+
+if __name__ == '__main__' and RUN_MULTI:
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
     # Remove isentropic and add losses
     for eq, pos in EQS_ISENTROPIC.items():
