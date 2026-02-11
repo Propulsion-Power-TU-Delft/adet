@@ -6,7 +6,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pint import Quantity
 
-from adet.assembly import CasadiSystem, solve_root_problem
+from adet.solution import solve_root_problem
+from adet.assembly import CasadiSystem
 from adet.components import BladeRow, Inlet, Shaft
 from adet.components import ComponentNetwork
 from adet.components.blade_row import DownstreamMixer

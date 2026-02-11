@@ -7,7 +7,8 @@ from pint import Quantity
 
 from adet.components import BladeRow, ComponentNetwork, Inlet
 from adet.components.connections import Shaft
-from adet.assembly import CasadiSystem, solve_root_problem
+from adet.solution import solve_root_problem
+from adet.assembly import CasadiSystem
 from adet.equations.geometrical import MinimalCamberLine
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.fluid.settings import FluidSettings, ExternalFluidModel

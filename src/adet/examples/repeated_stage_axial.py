@@ -20,12 +20,12 @@ import logging
 import matplotlib.pyplot as plt
 from pint import Quantity
 
-from adet.assembly import CasadiSystem, solve_root_problem
+from adet.solution import solve_root_problem
+from adet.assembly import CasadiSystem
 from adet.components import BladeRow, ComponentNetwork, Inlet, Shaft
 from adet.components.blade_row import plot_from_nodes
 from adet.equations.base_equation import EquationBase
 from adet.equations.definitions import RepeatedStage
-from adet.equations.fundamental import ZeroBlockage
 from adet.equations.geometrical import MinimalCamberLine, ParabolicCamberline
 from adet.equations.nondimensional import (
     DegreeOfReaction,

@@ -78,7 +78,7 @@ class ComponentNetwork(Generic[T]):
             outlet_node_idx = 2 * position + 1
 
             for var in comp._constant_variables:
-                self.system.add_invariants(
+                self.system.add_equalities(
                     (f'{var + str(inlet_node_idx)}', f'{var + str(outlet_node_idx)}')
                 )
 
@@ -109,8 +109,8 @@ class ComponentNetwork(Generic[T]):
         # Nomenclature
         # ~~~~~~~~~~~~
         #        ___________________________________
-        #          |         |          _________
-        #          |         |  invar. |         |
+        #          |         |         ,_________,
+        #          |         |  eqlts. |         |
         #          |         |    ^    |         |
         #   V      |  ROW 0  |    |    |  ROW 1  |
         #  -->   0 |         | 1 === 2 |         | 3   <- NODES
@@ -130,7 +130,7 @@ class ComponentNetwork(Generic[T]):
                 inlet_node_idx = 2 * comp_index  # Of the current component
                 outlet_node_idx = inlet_node_idx - 1  # Of the previous component
                 for var in component._from_previous_node:
-                    self.system.add_invariants(
+                    self.system.add_equalities(
                         (
                             f'{var + str(outlet_node_idx)}',
                             f'{var + str(inlet_node_idx)}',

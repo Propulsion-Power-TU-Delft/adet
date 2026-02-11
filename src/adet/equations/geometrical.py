@@ -87,9 +87,9 @@ class EndwallProperties(EquationBase):
         geo_height0,
         geo_rr_midspan0,
         geo_meridional_angle0,
+        geo_hubtip_rrRatio0,
         # Kinematics
         kin_Vt0,
-        kin_Wt0,
         kin_Wm0,
         kin_omega0,
         stc_speed_sound0,
@@ -120,28 +120,19 @@ class EndwallProperties(EquationBase):
         # Residual Equations
         r1 = geo_rr_hub0 - r_hub
         r2 = geo_rr_tip0 - r_tip
+        r3 = geo_hubtip_rrRatio0 - geo_rr_hub0 / geo_rr_tip0
 
-        r3 = kin_W_hub0 - (kin_Wm0[midspan] ** 2 + Wt_hub**2) ** 0.5
-        r4 = kin_W_tip0 - (kin_Wm0[midspan] ** 2 + Wt_tip**2) ** 0.5
+        r4 = kin_W_hub0 - (kin_Wm0[midspan] ** 2 + Wt_hub**2) ** 0.5
+        r5 = kin_W_tip0 - (kin_Wm0[midspan] ** 2 + Wt_tip**2) ** 0.5
 
-        r5 = kin_beta_hub0 - np.atan2(Wt_hub, kin_Wm0[midspan])
-        r6 = kin_beta_tip0 - np.atan2(Wt_tip, kin_Wm0[midspan])
+        r6 = kin_beta_hub0 - np.atan2(Wt_hub, kin_Wm0[midspan])
+        r7 = kin_beta_tip0 - np.atan2(Wt_tip, kin_Wm0[midspan])
 
         # Use closest streamline for speed out sound
-        r7 = stc_speed_sound0[0] * kin_relmach_hub0 - kin_W_hub0
-        r8 = stc_speed_sound0[-1] * kin_relmach_tip0 - kin_W_tip0
+        r8 = stc_speed_sound0[0] * kin_relmach_hub0 - kin_W_hub0
+        r9 = stc_speed_sound0[-1] * kin_relmach_tip0 - kin_W_tip0
 
-        return r1, r2, r3, r4, r5, r6, r7, r8
-
-
-class HubTipRadiusRatio(EquationBase):
-    def residual(
-        self,
-        geo_rr_hub0,
-        geo_rr_tip0,
-        geo_radRatio0,
-    ):
-        return geo_radRatio0 - geo_rr_hub0 / geo_rr_tip0
+        return r1, r2, r3, r4, r5, r6, r7, r8, r9
 
 
 class LaxByOutradius(EquationBase):

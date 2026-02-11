@@ -4,7 +4,8 @@ from pint import Quantity
 import matplotlib.pyplot as plt
 import numpy as np
 
-from adet.assembly import CasadiSystem, solve_root_problem
+from adet.solution import solve_root_problem
+from adet.assembly import CasadiSystem
 from adet.components import BladeRow
 from adet.components.blade_row import VanelessDiffuser, plot_from_nodes
 from adet.components.connections import Inlet, Shaft

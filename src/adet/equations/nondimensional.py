@@ -82,7 +82,7 @@ class TotalStaticLoadingCoefficient(EquationBase):
     input_pair = cp.PSmass_INPUTS
     output_quantities = ('hmass',)
 
-    def residual(self, stc_p1, stc_smass0, oth_ts_loadCoeff1, tot_hmass0, kin_U1):
+    def residual(self, oth_ts_loadCoeff1, stc_p1, stc_smass0, tot_hmass0, kin_U1):
         stc_hmass_is1 = self.eos(stc_p1, stc_smass0)
         return oth_ts_loadCoeff1 - 2 * (tot_hmass0 - stc_hmass_is1) / kin_U1**2
 
@@ -163,7 +163,7 @@ class FlowCoefficient(EquationBase):
 class WorkCoefficient(EquationBase):
     """
     .. math::
-        \\psi = \\frac{L_{eul}}{U_0V_{t0}}
+        \\psi = \\frac{\\Delta h_t}{U_1^2}
 
     Note
     ----
@@ -180,7 +180,7 @@ class SwallowingCapacity(EquationBase):
         \\phi_{t0} = \\frac{\\dot{m}}{\\rho_{t0} D_1^2 U_1}
 
 
-    Taken from pg 254 Casey Turbocompressors
+    pg 254 Casey - Radial Flow Turbocompressors
     """
 
     def residual(
@@ -227,8 +227,10 @@ class SizeParameter(EquationBase):
 
 
 class AbsoluteMachNumber(EquationBase):
-    def residual(self, kin_mach0, kin_V0, stc_speed_sound0):
-        return kin_mach0 * stc_speed_sound0 - kin_V0
+    def residual(self, kin_mach0, kin_mer_mach0, kin_Vm0, kin_V0, stc_speed_sound0):
+        r1 = kin_mach0 * stc_speed_sound0 - kin_V0
+        r2 = kin_mer_mach0 * stc_speed_sound0 - kin_Vm0
+        return r1, r2
 
 
 class RelativeMachNumber(EquationBase):

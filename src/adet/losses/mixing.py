@@ -7,7 +7,6 @@ import casadi as cs
 import numpy as np
 
 from adet.equations.base_equation import EquationBase
-from adet.equations.utils import safe_abs
 from adet.tools.interpolation import make_casadi_interpolant
 
 

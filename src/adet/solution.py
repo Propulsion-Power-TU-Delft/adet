@@ -1,0 +1,101 @@
+import logging
+from typing import Any
+
+import casadi as cs
+import numpy as np
+from numpy.typing import NDArray
+import scipy.stats.qmc as qmc
+
+from adet.tools.context import dummy_context, output_suppression
+
+
+logger = logging.getLogger(__name__)
+
+
+def perturb_guess(guess, knowns, root_function, delta_pert, num_samples):
+    sampler = qmc.LatinHypercube(len(guess))
+    samples = sampler.random(num_samples)
+
+    def norm_function(x):
+        return np.linalg.norm(x, np.inf)
+
+    best_guess = guess
+    best_res_norm = norm_function(
+        root_function(guess, knowns),
+    )
+
+    logger.info(f'Trying out {num_samples} latin hypercube samples for first guess...')
+    for sample in samples:
+        # Perturb the original guess
+        x0 = guess + guess * delta_pert * (-1 + 2 * sample)
+        # Compute first iteration residual
+        try:
+            initial_residual = root_function(x0, knowns)
+        except RuntimeError:
+            continue
+        # Compute the residual norm
+        residual_norm = norm_function(initial_residual)
+        # If the norm is better the the current one, write that guess
+        if residual_norm < best_res_norm:
+            logger.info(
+                f'Found better initial guess norm {residual_norm:.3f} '
+                f'< {best_res_norm:.3f}'
+            )
+            best_guess = x0
+            best_res_norm = residual_norm
+
+    return best_guess
+
+
+def solve_root_problem(
+    rootfinder: Any,
+    guess: list[NDArray] | NDArray,
+    knowns: list[NDArray],
+    arg_bounds: tuple[cs.DM, cs.DM] | None = None,
+    suppress_output: bool = True,
+    # Guess perturbation
+    perturbate_guess: bool = False,
+    delta_pert: float = 0.02,
+    num_samples: int = 100,
+):
+    """Simple utility function for solving rootfinding problems"""
+    if suppress_output:
+        output_manipulator = output_suppression
+    else:
+        output_manipulator = dummy_context
+
+    with output_manipulator():
+        logger.info('Solving the system...')
+
+        if isinstance(guess, list):
+            guess_cat = np.concatenate(guess)
+        else:
+            guess_cat = guess
+
+        knowns_cat = np.concatenate(knowns)
+
+        if perturbate_guess:
+            if rootfinder.n_in() < 2:
+                raise NotImplementedError('Perturbation only implemented for ipopt')
+
+            root_fn = rootfinder.get_function('nlp_g')
+            guess_cat = perturb_guess(
+                guess_cat, knowns_cat, root_fn, delta_pert, num_samples
+            )
+
+        extra_args = {}
+        if rootfinder.n_in() > 2:
+            extra_args.update({'lbg': 0, 'ubg': 0})
+            if arg_bounds:
+                extra_args['lbx'], extra_args['ubx'] = arg_bounds
+
+        sol = rootfinder(
+            x0=guess_cat,
+            p=knowns_cat,
+            **extra_args,
+        )
+
+        if isinstance(sol, dict):
+            sol = sol['x']
+
+        return np.array(sol)

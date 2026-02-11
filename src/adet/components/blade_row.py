@@ -26,7 +26,7 @@ from adet.equations.fundamental import (
 )
 from adet.equations.geometrical import EndwallProperties, MeridionalUniform
 from adet.geometry import BezierCurve, StraightLine
-from adet.losses.basic import PercentageEntropyLoss, PlaceHolderLoss
+from adet.losses.basic import PercentageEntropyLoss, PlaceHolderLoss, ZeroDeviation
 from adet.losses.mixing import MixingMomentumBalances
 from adet.node import FlowNode
 
@@ -170,6 +170,8 @@ class DownstreamMixer(BaseComponent):
         # *** Definition of channel massflow and num_blades
         (BladePitch, 0),
         (BladePitch, 1),
+        # Creates a dummy metal angle (for plots)
+        (ZeroDeviation, 1),
     ]
 
     # Keep the absolute triangle

@@ -3,7 +3,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pint import Quantity
 
-from adet.assembly import CasadiSystem, solve_root_problem
+from adet.solution import solve_root_problem
+from adet.assembly import CasadiSystem
 from adet.equations import EquationBase
 from adet.equations.fundamental import (
     ConstantEnergy,

@@ -16,7 +16,11 @@ from adet.tools.strings import get_arg_state, get_arg_type, get_index
 
 
 def safe_abs(x):
-    return (x**2) ** 0.5
+    if isinstance(x, PlainQuantity):
+        # Unit checks
+        return (x**2) ** 0.5
+    else:
+        return cs.fabs(x)
 
 
 def safe_sum(x):

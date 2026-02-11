@@ -8,7 +8,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pint import Quantity
 
-from adet.assembly import CasadiSystem, solve_root_problem
+from adet.solution import solve_root_problem
+from adet.assembly import CasadiSystem
 from adet.components import BladeRow, Inlet, Shaft
 from adet.components import ComponentNetwork
 from adet.components.blade_row import DownstreamMixer
@@ -21,12 +22,16 @@ from adet.equations.definitions import (
     ReducedThermoQuantities,
 )
 from adet.equations.fundamental import BladeBlockage
-from adet.equations.geometrical import MinimalCamberLine, ParabolicCamberline
+from adet.equations.geometrical import (
+    MinimalCamberLine,
+    ParabolicCamberline,
+)
 from adet.equations.nondimensional import (
     FlowCoefficient,
     TotalStaticDegreeOfReaction,
     TotalStaticLoadingCoefficient,
     TotalTotalExpansionEfficiency,
+    WorkCoefficient,
 )
 from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel
 from adet.fluid.settings import FluidSettings
@@ -45,8 +50,8 @@ logger = logging.getLogger(__name__)
 
 setup_logger(
     logger,
-    logging.DEBUG,
-    logging.DEBUG,
+    logging.INFO,
+    logging.INFO,
     banned_keywords=['STREAM', 'findfont', 'sBIT'],
 )
 plt.close('all')
@@ -68,10 +73,10 @@ abs_state.debug_print = False
 
 real_model = ExternalFluidModel(abs_state)
 
-fluid_state = real_model.eos_object
-INLET_PRESSURE = 2.1 * fluid_state.p_critical()
-INLET_TEMPERATURE = 1.1 * fluid_state.T_critical()
-fluid_state.update(cp.PT_INPUTS, INLET_PRESSURE, INLET_TEMPERATURE)
+abs_state = real_model.eos_object
+INLET_PRESSURE = 2.1 * abs_state.p_critical()
+INLET_TEMPERATURE = 1.1 * abs_state.T_critical()
+abs_state.update(cp.PT_INPUTS, INLET_PRESSURE, INLET_TEMPERATURE)
 
 ideal_state = IdealGasState(
     2.9,
@@ -80,11 +85,6 @@ ideal_state = IdealGasState(
 )
 ideal_model = AnalyticalFluidModel(ideal_state)
 
-settings = FluidSettings(
-    model=real_model,
-    update_variables=('p', 'hmass', 'T'),
-    update_length=2,
-)
 
 _defreg = DefaultUnitsRegistry()
 _defreg.from_dict(
@@ -99,27 +99,39 @@ _guess_reg = GuessRegistry()
 _guess_reg.reset()
 _guess_reg.from_dict(
     {
-        'p': fluid_state.p(),
-        'T': fluid_state.T(),
-        'hmass': fluid_state.hmass(),
-        'smass': fluid_state.smass(),
-        'rhomass': fluid_state.rhomass(),
+        'p': abs_state.p(),
+        'T': abs_state.T(),
+        'hmass': abs_state.hmass(),
+        'smass': abs_state.smass(),
+        'rhomass': abs_state.rhomass(),
+        'workCoeff': -0.5,
     }
 )
-_guess_reg.set_fallback_value(0.5)
 
 _bounds_reg = VariableBoundsRegistry()
 _bounds_reg.reset()
+# VARIABLE BOUNDS!
 _bounds_reg.from_dict(
     {
-        # 'delta_smass_.*': (0.0, 100.0),
-        'mach': (0.0, 1.2),
-        # 'Vm': (1.0, 30.0),
+        'delta_smass_.*': (0.0, 100.0),
+        'deflection': (0.4, 1.5),
+        'mach': (0.05, 0.8),
+        'workCoeff': (-3.0, -0.1),
         'eta_tt': (0.8, 0.98),
+        'U': (-300.0, 0.0),  # Reduce the search area
+        'p': (abs_state.p_critical(), INLET_PRESSURE),
+        'T': (abs_state.T_critical(), INLET_TEMPERATURE),
+        'rhomass': (abs_state.rhomass_critical(), abs_state.rhomass()),
     }
 )
 # ________________________________________________
 # ________________________________________________
+
+settings = FluidSettings(
+    model=real_model,
+    update_variables=('p', 'T', 'hmass'),
+    update_length=2,
+)
 
 # *** Shafts
 shaft = Shaft(
@@ -137,12 +149,12 @@ inlet = Inlet(
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
             'rr_midspan': 0.1,
-            'height': 0.06,
+            'hubtip_rrRatio': 0.5,
         },
         'tot': {
+            'p': abs_state.p(),
             'T': abs_state.T(),
             # 'hmass': abs_state.hmass(),
-            'p': abs_state.p(),
         },
     }
 )
@@ -170,7 +182,7 @@ row = BladeRow(
             # 'aspRatio': 2,
             'flare_angle': Quantity(5, 'deg'),
             # ***
-            # If too low velocity suction explodes!
+            # If too low suction-side velocity explodes!
             'num_blades': 25,
             # 'solidity': 1.3,
             'thick_by_pitch': 0.02,
@@ -230,10 +242,8 @@ class LossMatcher(EquationBase):
 
 mixer = DownstreamMixer(
     'Mixer',
-    # The axial chord is just for plotting it like a row
+    # The axial chord is just for plotting it like a blade row
     out_constraints={'geo': {'chord_ax': 0.01}},
-    # This creates a dummy metal angle for plotting like a blade
-    extra_equations={ZeroDeviation(): 1},
 )
 
 # ________________________________________________
@@ -252,29 +262,33 @@ ntw = ComponentNetwork(
     ],
 )
 
-# Make the chords constant
-if ntw.num_components > 2:
-    ntw.system.add_spanwise_constants('geo_chord_ax1', 'geo_chord_ax5')
-    ntw.system.add_invariants(('kin_alpha0', 'kin_alpha5'))
 
 if ntw.num_components > 2:
     final_node = ntw.num_components * 2 - 1
 
     # Nondimensional equations
     ntw.system.add_equation(FlowCoefficient(), (0, final_node))
+    ntw.system.add_equation(WorkCoefficient(), (0, final_node))
     ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, final_node))
     ntw.system.add_equation(TotalStaticDegreeOfReaction(), (0, 1, 4, 5))
     ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, final_node))
 
     # Boundary conditions
-    # ntw.system.boundary_conditions[5]['kin'].pop('beta')
+    ntw.system.add_equalities(('kin_alpha0', f'kin_alpha{final_node}'))
+    ntw.system.add_spanwise_constants('geo_chord_ax1', f'geo_chord_ax{final_node}')
+
     # Choose one of the two
     ntw.system.boundary_conditions[5]['oth']['flowCoeff'] = 0.9
     ntw.system.boundary_conditions[5]['oth']['reactDegree_ts'] = 0.8
     ntw.system.boundary_conditions[5]['oth']['ts_loadCoeff'] = 3
+    # Direct stator angle constraints
     # ntw.system.boundary_conditions[0]['kin']['alpha'] = Quantity(10, 'deg')
     # ntw.system.boundary_conditions[1]['kin']['alpha'] = Quantity(-50, 'deg')
-    ntw.system.boundary_conditions[0]['kin']['Vm'] = 12  # Impose Mach?
+
+    # Inlet kinematics
+    ntw.system.boundary_conditions[0]['kin']['Vm'] = 16  # Impose Mach?
+    # ntw.system.boundary_conditions[0]['kin']['mach'] = 0.1  # Impose Mach?
+
     # Set second row to rotate - it is 0 otherwise!
     ntw.system.boundary_conditions[5]['kin'].pop('omega')
     # ntw.system.boundary_conditions[5]['kin']['omega'] = 100
@@ -284,7 +298,12 @@ ntw.system.build(SCALED)
 
 # ________________________________________________
 
-rootfinder_is = ntw.system.make_rootfinder('ipopt', opts={'error_on_fail': False})
+rootfinder_is = ntw.system.make_rootfinder(
+    'ipopt',
+    opts={
+        'error_on_fail': False,
+    },
+)
 
 x0_is = ntw.system.get_scaled_guess()
 kn_is = ntw.system.get_scaled_constraints()
@@ -295,8 +314,8 @@ solution = solve_root_problem(
     kn_is,
     bnd_is,
     suppress_output=False,
-    perturbate_guess=True,
-    delta_pert=1.02,
+    perturbate_guess=False,
+    delta_pert=0.001,
     num_samples=1000,
 )
 
@@ -343,16 +362,14 @@ if user in ('y', 'Y'):
         'ipopt',
         opts={
             'error_on_fail': bool(err_on_fail),
-            'ipopt.constr_viol_tol': 1e-7,
         },
     )
     solution = solve_root_problem(
         rootfinder_loss,
         x0_loss,
         kn_loss,
-        bnd_loss,
+        # bnd_loss,
         suppress_output=False,
-        perturbate_guess=False,
     )
     # = = = = = = = = = =
 # ________________________________________________

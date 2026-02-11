@@ -29,7 +29,7 @@ from adet.equations.base_equation import EquationBase
 from adet.errors import ExistingEquationError
 from adet.fluid.casadi_eos import CasadiEos
 from adet.fluid.eos_factory import EosFactory
-from adet.fluid.settings import AnalyticalFluidModel, EmptyFluidModel, FluidSettings
+from adet.fluid.settings import EmptyFluidModel, FluidSettings
 from adet.node import FlowNode
 from adet.registries import (
     GuessRegistry,
@@ -89,7 +89,7 @@ class SystemSharedData:
         self.global_constraints: defaultdict[
             NodeStatesNames, dict[str, ArrayLike | PlainQuantity]
         ] = defaultdict(dict)
-        self.invariants: list[set[str]] = []
+        self.equalities: list[set[str]] = []
         self.spanwise_constants: set[str] = set()
 
         # Units and scaling
@@ -101,8 +101,7 @@ class SystemSharedData:
         self.fluid_settings: FluidSettings = FluidSettings(EmptyFluidModel())
         self.num_span: int = 1
 
-        # EoS tracking
-        self.analytic_eos_equations: list[EquationBase] = []
+        # Thermo update arguments
         self.thermo_updt_args: list[str] = []
 
         # Build status
@@ -208,23 +207,6 @@ class EquationRegistry:
 
         logger.debug(f'Successfully created {len(self.data.nodes)} nodes')
 
-    def add_analytical_eos(self):
-        """Add analytical equations of state to the system if the model calls for it"""
-        fl_model = self.data.fluid_settings.model
-
-        if isinstance(fl_model, AnalyticalFluidModel):
-            for node_idx, _ in enumerate(self.data.nodes):
-                for eq in fl_model.get_eos_object():
-                    try:
-                        self.add_equation(eq, node_idx)
-                        logger.debug(
-                            f'Added EoS equation {eq.__class__.__name__} at {node_idx}'
-                        )
-                        self.data.analytic_eos_equations.append(eq)
-                    except ExistingEquationError:
-                        # If the equation of state is already there just keep going
-                        pass
-
     def build_argument_maps(self) -> tuple[str, ...]:
         """
         1. Get all the available arguments and assign them the correct absolute index.
@@ -290,14 +272,14 @@ class ConstraintManager:
         """Add global constraints that apply to all nodes"""
         self.data.global_constraints.update(bnd_cond)
 
-    def add_invariants(self, *invariants: tuple[str, ...]):
+    def add_equalities(self, *equalities: tuple[str, ...]):
         """
         Each tuple represents a set of variables treated as equal by the system.
         Adding ('a', 'b', 'c') adds the equations: a-b=0, a-c=0, b-c=0
         """
-        for args in invariants:
-            if set(args) not in self.data.invariants:
-                self.data.invariants.append(set(args))
+        for args in equalities:
+            if set(args) not in self.data.equalities:
+                self.data.equalities.append(set(args))
 
     def add_spanwise_constants(self, *arguments: str):
         for arg in arguments:
@@ -520,7 +502,7 @@ class UnitScalingManager:
         else:
             for eq, units in zip(self.data.equations.keys(), self.data.equations_units):
                 if eq.scaling_factor:
-                    logging.debug(
+                    logger.debug(
                         f'Custom scaling factor found for {eq.__class__.__name__}, '
                         f'{eq.scaling_factor}'
                     )
@@ -675,10 +657,6 @@ class SystemAssembler(ABC):
         return self.data.boundary_conditions
 
     @property
-    def _analytic_eos_equations(self):
-        return self.data.analytic_eos_equations
-
-    @property
     def _declared_arguments(self):
         return self.data.declared_arguments
 
@@ -711,8 +689,8 @@ class SystemAssembler(ABC):
         return self.data.global_constraints
 
     @property
-    def _invariants(self):
-        return self.data.invariants
+    def _equalities(self):
+        return self.data.equalities
 
     @property
     def _spanwise_constants(self):
@@ -735,7 +713,7 @@ class SystemAssembler(ABC):
             'boundary_conditions',
             'fluid_settings',
             'global_constraints',
-            'invariants',
+            'equalities',
         ]
 
         out_dict = {}
@@ -792,7 +770,7 @@ class SystemAssembler(ABC):
         """
         self._equation_registry.remove_equation(equation_class, nodal_position)
 
-    def add_invariants(self, *invariants: tuple[str, ...]):
+    def add_equalities(self, *equalities: tuple[str, ...]):
         """
         Each tuple in the list represent a set of variables that are treated
         as equal by the system. This is achieved by adding trivial residual
@@ -802,7 +780,7 @@ class SystemAssembler(ABC):
         a - c = 0
         b - c = 0
         """
-        self._constraint_manager.add_invariants(*invariants)
+        self._constraint_manager.add_equalities(*equalities)
 
     def add_spanwise_constants(self, *arguments: str):
         """
@@ -1172,13 +1150,13 @@ class CasadiSystem(SystemAssembler):
 
         self._all_symbols = {**all_args_products, **casadi_eos_symbols}
 
-    def _build_invariant_expressions(self) -> list[cs.MX]:
+    def _build_equalities_expr(self) -> list[cs.MX]:
         """
         Build expressions for constant quantities, across nodes,
         that can be part of a single or multiple components
         """
-        invariant_expressions = []
-        for args in self._invariants:
+        equalities_expressions = []
+        for args in self._equalities:
             for arg_couples in combinations(args, 2):
                 # If both argument do not appear in the equations, skip to next couple
                 # if one of them is unused by other eqns. it is useless to add it
@@ -1190,9 +1168,9 @@ class CasadiSystem(SystemAssembler):
 
                 # NOTE: We don't care about scaling, they
                 # are just identities, either on scaled or unscaled vars
-                invariant_expressions.append(sym1 - sym0)
+                equalities_expressions.append(sym1 - sym0)
 
-        return invariant_expressions
+        return equalities_expressions
 
     def _build_spanwise_constants(self) -> list[cs.MX]:
         """
@@ -1264,7 +1242,7 @@ class CasadiSystem(SystemAssembler):
             )
         )
 
-        self.residual_expr += self._build_invariant_expressions()
+        self.residual_expr += self._build_equalities_expr()
         self.residual_expr += self._build_spanwise_constants()
         self.residual_expr += self._build_thermo_constraints()
 
@@ -1658,92 +1636,3 @@ def {func_name}(equations, {', '.join(self._declared_arguments)}):
         cas_sys = CasadiSystem()
         cas_sys.from_dict(self.to_dict())
         return cas_sys
-
-
-def perturb_guess(guess, knowns, root_function, delta_pert, num_samples):
-    sampler = qmc.LatinHypercube(len(guess))
-    samples = sampler.random(num_samples)
-
-    def norm_function(x):
-        return np.linalg.norm(x, np.inf)
-
-    best_guess = guess
-    best_res_norm = norm_function(
-        root_function(guess, knowns),
-    )
-
-    logging.info(f'Trying out {num_samples} latin hypercube samples for first guess...')
-    for sample in samples:
-        # Perturb the original guess
-        x0 = guess + guess * delta_pert * (-1 + 2 * sample)
-        # Compute first iteration residual
-        try:
-            initial_residual = root_function(x0, knowns)
-        except RuntimeError:
-            continue
-        # Compute the residual norm
-        residual_norm = norm_function(initial_residual)
-        # If the norm is better the the current one, write that guess
-        if residual_norm < best_res_norm:
-            logger.info(
-                f'Found better initial guess norm {residual_norm:.3f} '
-                f'< {best_res_norm:.3f}'
-            )
-            best_guess = x0
-            best_res_norm = residual_norm
-
-    return best_guess
-
-
-def solve_root_problem(
-    rootfinder: Any,
-    guess: list[NDArray] | NDArray,
-    knowns: list[NDArray],
-    arg_bounds: tuple[cs.DM, cs.DM] | None = None,
-    suppress_output: bool = True,
-    # Guess perturbation
-    perturbate_guess: bool = False,
-    delta_pert: float = 0.02,
-    num_samples: int = 100,
-):
-    """Simple utility function for solving rootfinding problems"""
-    if suppress_output:
-        output_manipulator = output_suppression
-    else:
-        output_manipulator = dummy_context
-
-    with output_manipulator():
-        logger.info('Solving the system...')
-
-        if isinstance(guess, list):
-            guess_cat = np.concatenate(guess)
-        else:
-            guess_cat = guess
-
-        knowns_cat = np.concatenate(knowns)
-
-        if perturbate_guess:
-            if rootfinder.n_in() < 2:
-                raise NotImplementedError('Perturbation only implemented for ipopt')
-
-            root_fn = rootfinder.get_function('nlp_g')
-            guess_cat = perturb_guess(
-                guess_cat, knowns_cat, root_fn, delta_pert, num_samples
-            )
-
-        extra_args = {}
-        if rootfinder.n_in() > 2:
-            extra_args.update({'lbg': 0, 'ubg': 0})
-            if arg_bounds:
-                extra_args['lbx'], extra_args['ubx'] = arg_bounds
-
-        sol = rootfinder(
-            x0=guess_cat,
-            p=knowns_cat,
-            **extra_args,
-        )
-
-        if isinstance(sol, dict):
-            sol = sol['x']
-
-        return np.array(sol)
