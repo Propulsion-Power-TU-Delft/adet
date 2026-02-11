@@ -67,7 +67,7 @@ index_map = {system.free_args.index(arg): idx for idx, arg in enumerate(original
 
 exact_x0 = np.array([exact_sol[arg] for arg in system.free_args])
 
-analyzer = SystemDiagnostics(system, system.constraints_values)
+analyzer = SystemDiagnostics(system, np.concatenate(system.constraints_values))
 
 # === The first guesses are rounded in the paper
 x0_case1 = np.round(exact_x0 - 1e-5 * exact_x0, 5)

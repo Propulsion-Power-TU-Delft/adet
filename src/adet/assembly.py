@@ -346,11 +346,14 @@ class ArgumentResolver:
         Get the real thermodynamic and kinematic arguments needed to complete
         the different states of the node.
         """
-        return tuple(
-            sorted(
-                self._get_effective_arguments(),
-            ),
-        )
+        if isinstance(self.data.fluid_settings.model, EmptyFluidModel):
+            return tuple(set(self.data.declared_arguments) - set(self.data.constraints))
+        else:
+            return tuple(
+                sorted(
+                    self._get_effective_arguments(),
+                ),
+            )
 
     def _get_effective_arguments(self):
         """
