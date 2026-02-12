@@ -31,18 +31,6 @@ class StaticTotalPressRatio(EquationBase):
         return tot_p0 * oth_pRatio_ts1 - stc_p1
 
 
-class MidspanTotalTotalPressRatio(EquationBase):
-    def residual(self, tot_p0, tot_p1, oth_pRatio_tt_midspan1):
-        num_span = max(tot_p0.shape)
-
-        if num_span == 1:
-            midspan = 0
-        else:
-            midspan = num_span // 2
-
-        return tot_p0[midspan] * oth_pRatio_tt_midspan1 - tot_p1[midspan]
-
-
 class TotalTotalExpansionEfficiency(EquationBase):
     manual_units = ('dimensionless',)
     input_pair = cp.PSmass_INPUTS
@@ -119,7 +107,7 @@ class TotalStaticDegreeOfReaction(EquationBase):
         return delta_tot_hmass_stage * oth_reactDegree_ts3 - delta_hmass_rotor
 
 
-class DegreeOfReaction(EquationBase):
+class StaticDegreeOfReaction(EquationBase):
     """
     0 - [Stator] - 1 === 2 - [Rotor] - 3
     This assumes the stator is on nodes 0,1 and the stator on 2,3 is the rotor.

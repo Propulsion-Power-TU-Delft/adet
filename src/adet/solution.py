@@ -52,7 +52,7 @@ def solve_root_problem(
     guess: list[NDArray] | NDArray,
     knowns: list[NDArray],
     arg_bounds: tuple[cs.DM, cs.DM] | None = None,
-    suppress_output: bool = True,
+    suppress_output: bool = False,
     # Guess perturbation
     perturbate_guess: bool = False,
     delta_pert: float = 0.02,

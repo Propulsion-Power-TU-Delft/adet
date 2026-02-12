@@ -74,16 +74,6 @@ _greg.from_dict(
         'gamma_pv': 1.4,
         'delta_hmass_.*': 1000,
         # Kinematics
-        'V': 1e-2,
-        'Vm': 1e-2,
-        'Vt': 1e-2,
-        'W': 1e-2,
-        'Wm': 1e-2,
-        'Wt': 1e-2,
-        'U': 1e-2,
-        'omega': 1e-2,
-        'alpha': 1e-2,
-        'beta': 1e-2,
     }
 )
 _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5

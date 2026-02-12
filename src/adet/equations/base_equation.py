@@ -281,7 +281,7 @@ class EquationBase(ABC):
     def eos(self, eos: CasadiEos | Any):
         cls = self.__class__
         if cls._eos is not None:
-            logger.warning(f'Overwriting EoS for {cls}')
+            logger.debug(f'Overwriting EoS for {cls}')
         cls._eos = eos
 
     def __str__(self):

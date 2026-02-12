@@ -983,7 +983,7 @@ class SystemAssembler(ABC):
 
             if max(guess_value.shape) != self.data.num_span:
                 if max(guess_value.shape) != 1:
-                    logger.warning(
+                    logger.debug(
                         f'Length mismatch in guess for {arg},'
                         f' using the mean value as guess'
                     )
@@ -1373,7 +1373,7 @@ class CasadiSystem(SystemAssembler):
                     'ipopt.max_iter': 1000,
                     'ipopt.tol': 1e-9,
                     'ipopt.acceptable_constr_viol_tol': 1e-6,  # infeasible pts
-                    'ipopt.required_infeasibility_reduction': 0.7,  # recovery
+                    'ipopt.required_infeasibility_reduction': 0.9,  # recovery
                     'ipopt.bound_push': 0.1,
                     # NOTE: Superseeded by new implementations, thermo
                     # derivatives available up to the 3rd order (null)

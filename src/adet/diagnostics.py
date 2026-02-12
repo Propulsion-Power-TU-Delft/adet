@@ -43,7 +43,7 @@ class SystemDiagnostics(Generic[T]):
     def __init__(self, system: T, constraints_stack):
         self._arguments = system.free_args
         self._num_span = system.num_span
-        self.const_stack = constraints_stack
+        self.const_stack = np.concatenate(constraints_stack)
 
         if isinstance(system, CasadiSystem):
             self._build_casadi_functions(system)

@@ -99,6 +99,7 @@ _guess_reg = GuessRegistry()
 _guess_reg.reset()
 _guess_reg.from_dict(
     {
+        'Vm': 0.0,
         'p': abs_state.p(),
         'T': abs_state.T(),
         'hmass': abs_state.hmass(),

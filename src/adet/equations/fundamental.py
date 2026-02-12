@@ -94,8 +94,8 @@ class Kinematics(EquationBase):
         # Only if Vm and Vt are zero the denominator
         # nullifies, but Vm > 0 always, thus the
         # square root should pose no problems
-        r1 = kin_V0 - (kin_Vm0**2 + kin_Vt0**2) ** 0.5
-        r2 = kin_W0 - (kin_Wm0**2 + kin_Wt0**2) ** 0.5
+        r1 = kin_V0**2 - (kin_Vm0**2 + kin_Vt0**2)
+        r2 = kin_W0**2 - (kin_Wm0**2 + kin_Wt0**2)
 
         r3 = kin_Vm0 - kin_Wm0
         r4 = kin_Vt0 - (kin_Wt0 + kin_U0)
