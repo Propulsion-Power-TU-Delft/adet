@@ -1,4 +1,3 @@
-from copy import deepcopy
 import logging
 from pint import Quantity
 import matplotlib.pyplot as plt
@@ -27,7 +26,6 @@ from adet.fluid.symbolic_eos import IdealGasState
 from adet.losses.basic import (
     PercTotalPressureLoss,
     PercentageEntropyLoss,
-    PlaceHolderLoss,
     ZeroDeviation,
 )
 
@@ -43,7 +41,7 @@ from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 
 logger = logging.Logger(__name__)
-# setup_logger(logger)
+setup_logger(logger)
 
 # This makes the missing guesses default to 1
 _bounds_reg = VariableBoundsRegistry()
@@ -51,6 +49,8 @@ _bounds_reg.reset()
 _bounds_reg.from_dict(
     {
         'Vm': (10.0, 200.0),
+        'U': (0, 500),
+        # 'beta': (-1.5, 0.0),
         # 'delta_hmass_.*': (10.0, 1e5),
         # 'delta_hmass_loading': (10.0, 1e4),  # This tends to diverge, bound it
     }
@@ -89,7 +89,7 @@ fluid_model_ideal = AnalyticalFluidModel(
 )
 
 fluid_settings = FluidSettings(
-    model=fluid_model_ideal,
+    model=fluid_model_real,
     update_variables=('p', 'T'),  # Thermodynamic iteration variables
     update_length=2,  # Single phase => Two update vars
 )
@@ -244,7 +244,6 @@ if RUN_MULTI:
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
     # Increase span and switch to real gas
     ntw_hecc.system.num_span = NUM_SPAN
-    ntw_hecc.system.fluid_settings.model = fluid_model_real
     ntw_hecc.system.boundary_conditions[0]['geo']['metal_angle'] = angle_distribution
 
     if ntw_hecc.system.num_span > 1:

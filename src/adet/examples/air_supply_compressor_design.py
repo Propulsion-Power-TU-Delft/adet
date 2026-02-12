@@ -51,7 +51,7 @@ from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 
 logger = logging.Logger(__name__)
-# setup_logger(logger)
+setup_logger(logger)
 
 # Set some bounds
 _bounds_reg = VariableBoundsRegistry()
@@ -60,6 +60,9 @@ _bounds_reg.from_dict(
     {
         'massflow': (0.1, 4.0),
         'delta_hmass_loading': (10.0, 1e4),  # This tends to diverge, bound it
+        'U': (0, 500),
+        'omega': (0, 10000),
+        'beta': (-1.5, 0.0),
     }
 )
 
@@ -68,9 +71,19 @@ _greg = GuessRegistry()
 _greg.reset()
 _greg.from_dict(
     {
-        'beta': -0.5,
         'gamma_pv': 1.4,
         'delta_hmass_.*': 1000,
+        # Kinematics
+        'V': 1e-2,
+        'Vm': 1e-2,
+        'Vt': 1e-2,
+        'W': 1e-2,
+        'Wm': 1e-2,
+        'Wt': 1e-2,
+        'U': 1e-2,
+        'omega': 1e-2,
+        'alpha': 1e-2,
+        'beta': 1e-2,
     }
 )
 _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
@@ -98,7 +111,7 @@ idealgas_model = AnalyticalFluidModel(
 )
 
 fluid_settings = FluidSettings(
-    model=idealgas_model,
+    model=realgas_model,
     update_variables=('p', 'T'),  # Thermodynamic iteration variables
     update_length=2,  # Single phase => Two update vars
 )
@@ -265,7 +278,7 @@ if __name__ == '__main__':
         'ipopt',
         opts={
             'error_on_fail': False,
-            'ipopt.tol': 1e-10,
+            'ipopt.tol': 1e-7,
             'ipopt.print_level': 3,
         },
     )

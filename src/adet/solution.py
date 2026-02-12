@@ -17,7 +17,7 @@ def perturb_guess(guess, knowns, root_function, delta_pert, num_samples):
     samples = sampler.random(num_samples)
 
     def norm_function(x):
-        return np.linalg.norm(x, np.inf)
+        return np.linalg.norm(x, 'fro')
 
     best_guess = guess
     best_res_norm = norm_function(
@@ -27,7 +27,7 @@ def perturb_guess(guess, knowns, root_function, delta_pert, num_samples):
     logger.info(f'Trying out {num_samples} latin hypercube samples for first guess...')
     for sample in samples:
         # Perturb the original guess
-        x0 = guess + guess * delta_pert * (-1 + 2 * sample)
+        x0 = guess + delta_pert * (-1 + 2 * sample)
         # Compute first iteration residual
         try:
             initial_residual = root_function(x0, knowns)

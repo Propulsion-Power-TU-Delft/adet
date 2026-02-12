@@ -78,13 +78,13 @@ class TotalTotalCompressionEfficiency(EquationBase):
 
 
 class TotalStaticLoadingCoefficient(EquationBase):
-    manual_units = ('dimensionless',)
+    manual_units = ('J / kg',)
     input_pair = cp.PSmass_INPUTS
     output_quantities = ('hmass',)
 
     def residual(self, oth_ts_loadCoeff1, stc_p1, stc_smass0, tot_hmass0, kin_U1):
         stc_hmass_is1 = self.eos(stc_p1, stc_smass0)
-        return oth_ts_loadCoeff1 - 2 * (tot_hmass0 - stc_hmass_is1) / kin_U1**2
+        return kin_U1**2 * oth_ts_loadCoeff1 - 2 * (tot_hmass0 - stc_hmass_is1)
 
 
 class StaticStaticPressRatio(EquationBase):
@@ -171,7 +171,7 @@ class WorkCoefficient(EquationBase):
     """
 
     def residual(self, tot_hmass0, tot_hmass1, kin_U1, oth_workCoeff1):
-        return oth_workCoeff1 - (tot_hmass1 - tot_hmass0) / kin_U1**2
+        return kin_U1**2 * oth_workCoeff1 - (tot_hmass1 - tot_hmass0)
 
 
 class SwallowingCapacity(EquationBase):
@@ -227,9 +227,9 @@ class SizeParameter(EquationBase):
 
 
 class AbsoluteMachNumber(EquationBase):
-    def residual(self, kin_mach0, kin_mer_mach0, kin_Vm0, kin_V0, stc_speed_sound0):
+    def residual(self, kin_mach0, kin_mermach0, kin_Vm0, kin_V0, stc_speed_sound0):
         r1 = kin_mach0 * stc_speed_sound0 - kin_V0
-        r2 = kin_mer_mach0 * stc_speed_sound0 - kin_Vm0
+        r2 = kin_mermach0 * stc_speed_sound0 - kin_Vm0
         return r1, r2
 
 

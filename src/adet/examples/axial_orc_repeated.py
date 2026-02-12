@@ -105,6 +105,7 @@ _guess_reg.from_dict(
         'smass': abs_state.smass(),
         'rhomass': abs_state.rhomass(),
         'workCoeff': -0.5,
+        'k_prof': 0.3,  # Profile loading
     }
 )
 
@@ -114,11 +115,10 @@ _bounds_reg.reset()
 _bounds_reg.from_dict(
     {
         'delta_smass_.*': (0.0, 100.0),
-        'deflection': (0.4, 1.5),
-        'mach': (0.05, 0.8),
-        'workCoeff': (-3.0, -0.1),
-        'eta_tt': (0.8, 0.98),
-        'U': (-300.0, 0.0),  # Reduce the search area
+        'deflection': (0.2, 2.5),
+        'workCoeff': (-6.0, -0.1),
+        'eta_tt': (0.7, 1.0),
+        'U': (0.0, 600.0),  # Reduce the search area
         'p': (abs_state.p_critical(), INLET_PRESSURE),
         'T': (abs_state.T_critical(), INLET_TEMPERATURE),
         'rhomass': (abs_state.rhomass_critical(), abs_state.rhomass()),
@@ -180,7 +180,7 @@ row = BladeRow(
             # ***  height <-> chord
             # 'chord_ax': 0.34,
             # 'aspRatio': 2,
-            'flare_angle': Quantity(5, 'deg'),
+            'flare_angle': Quantity(8, 'deg'),
             # ***
             # If too low suction-side velocity explodes!
             'num_blades': 25,
@@ -278,16 +278,16 @@ if ntw.num_components > 2:
     ntw.system.add_spanwise_constants('geo_chord_ax1', f'geo_chord_ax{final_node}')
 
     # Choose one of the two
-    ntw.system.boundary_conditions[5]['oth']['flowCoeff'] = 0.9
-    ntw.system.boundary_conditions[5]['oth']['reactDegree_ts'] = 0.8
+    ntw.system.boundary_conditions[5]['oth']['flowCoeff'] = 0.55
+    ntw.system.boundary_conditions[5]['oth']['reactDegree_ts'] = 0.3
     ntw.system.boundary_conditions[5]['oth']['ts_loadCoeff'] = 3
     # Direct stator angle constraints
     # ntw.system.boundary_conditions[0]['kin']['alpha'] = Quantity(10, 'deg')
     # ntw.system.boundary_conditions[1]['kin']['alpha'] = Quantity(-50, 'deg')
 
     # Inlet kinematics
-    ntw.system.boundary_conditions[0]['kin']['Vm'] = 16  # Impose Mach?
-    # ntw.system.boundary_conditions[0]['kin']['mach'] = 0.1  # Impose Mach?
+    # ntw.system.boundary_conditions[0]['kin']['Vm'] = 50  # Impose Vm
+    ntw.system.boundary_conditions[0]['kin']['mermach'] = 0.3  # Impose Mach
 
     # Set second row to rotate - it is 0 otherwise!
     ntw.system.boundary_conditions[5]['kin'].pop('omega')
@@ -315,14 +315,14 @@ solution = solve_root_problem(
     bnd_is,
     suppress_output=False,
     perturbate_guess=False,
-    delta_pert=0.001,
-    num_samples=1000,
+    delta_pert=0.2,
+    num_samples=20000,
 )
 
 # ________________________________________________
 # ________________________________________________
 
-user = input('INPUT >>> Isentropic problem solved, continue with losses? [y/n] ')
+user = input('INPUT >>> Continue with losses? [y/n] ')
 if user in ('y', 'Y'):
     # Write solution to dict for reading for next solution
     sol_dict_is = ntw.system.solution_to_dict(solution)
