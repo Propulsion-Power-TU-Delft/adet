@@ -24,7 +24,11 @@ from adet.equations.fundamental import (
     MassConservation,
     ZeroBlockage,
 )
-from adet.equations.geometrical import EndwallProperties, MeridionalUniform
+from adet.equations.geometrical import (
+    EndwallProperties,
+    MeridionalUniform,
+    MidspanProperties,
+)
 from adet.geometry import BezierCurve, StraightLine
 from adet.losses.basic import PercentageEntropyLoss, PlaceHolderLoss, ZeroDeviation
 from adet.losses.mixing import MixingMomentumBalances
@@ -67,10 +71,12 @@ class BladeRow(BaseComponent):
         (ZeroBlockage, 0),
         (ZeroBlockage, 1),
         # *** Common definitions
+        (AngleDeflection, (0, 1)),
         (EndwallProperties, 0),
         (EndwallProperties, 1),
+        # (MidspanProperties, 0),
+        # (MidspanProperties, 1),
         (GeometricalRatios, (0, 1)),
-        (AngleDeflection, (0, 1)),
         (MeridionalVelocityRatio, (0, 1)),
         # *** Blade count, pitch, channel massflow
         # |> TODO: Make this user-enabled

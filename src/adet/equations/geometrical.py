@@ -80,6 +80,29 @@ class AnnulusAreas(EquationBase):
         return geo_area0 - 2 * np.pi * geo_rr0 * geo_hh0
 
 
+class MidspanProperties(EquationBase):
+    def residual(
+        self,
+        kin_V0,
+        kin_Vm0,
+        kin_Vt0,
+        kin_V_midspan0,
+        kin_Vm_midspan0,
+        kin_Vt_midspan0,
+    ):
+        num_span = max(kin_V0.shape)
+        if num_span == 1:
+            midspan = 0
+        else:
+            midspan = num_span % 2
+
+        r1 = kin_V_midspan0 - kin_V0[midspan]
+        r2 = kin_Vm_midspan0 - kin_Vm0[midspan]
+        r3 = kin_Vt_midspan0 - kin_Vt0[midspan]
+
+        return r1, r2, r3
+
+
 class EndwallProperties(EquationBase):
     def residual(
         self,

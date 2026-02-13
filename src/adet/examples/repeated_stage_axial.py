@@ -18,13 +18,11 @@ from copy import deepcopy
 import logging
 
 import matplotlib.pyplot as plt
-import numpy as np
 from pint import Quantity
 
 from adet.assembly import CasadiSystem
 from adet.components import BladeRow, ComponentNetwork, Inlet, Shaft
 from adet.components.blade_row import plot_from_nodes
-from adet.diagnostics import SystemDiagnostics
 from adet.equations.base_equation import EquationBase
 from adet.equations.definitions import RepeatedStage
 from adet.equations.fundamental import FreeVortexDistribution
@@ -36,6 +34,7 @@ from adet.equations.nondimensional import (
 )
 from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
+from adet.losses.base_loss import LossModel
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.losses.profile import DentonProfileLoss
 from adet.registries import (
@@ -66,9 +65,8 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 # === CONFIGURATION
 # Simulation settings
-NUM_SPAN = 3  # Number of spanwise stations
-HIGH_RES_MULTIPLIER = 2  # => NUM_SPAN * HIGH_RES_MULTIPLIER = final spanwise stations
-NUM_STAGES = 3  # Number of turbine stages (stator-rotor pairs)
+NUM_SPAN = 11  # Number of spanwise stations
+NUM_STAGES = 5  # Number of turbine stages (stator-rotor pairs)
 SCALED = True  # Use scaled equations for better numerical conditioning
 PLOTS = True  # Show plots at end
 PRINTS = True  # Print node information
@@ -86,8 +84,8 @@ ideal_model = AnalyticalFluidModel(idl_state)
 # Update variables are used to solve for thermodynamic state
 # (p, T) chosen for stability
 settings = FluidSettings(
-    model=real_model,
-    update_variables=('rhomass', 'hmass', 'T', 'rhomass', 'smass', 'hmass'),
+    model=ideal_model,
+    update_variables=('p', 'T'),
     update_length=2,
 )
 
@@ -110,6 +108,14 @@ _gss_reg.from_dict(
     {
         'workCoeff': -0.6,
         'k_prof': 0.8,
+        'Vm': 100,
+        'Vt': 100,
+        'V': 100,
+        'Wm': 100,
+        'Wt': 100,
+        'W': 100,
+        'alpha': 0.3,
+        'beta': -0.3,
     }
 )
 
@@ -118,6 +124,8 @@ _bnd_reg.reset()
 _bnd_reg.from_dict(
     {
         'Vm': (0.0, 110),
+        'U': (0, 500),
+        'workCoeff': (-2.0, -0.5),
     }
 )
 
@@ -139,7 +147,7 @@ rotating_shaft = Shaft(
 inlet = Inlet(
     {
         'kin': {
-            'Vm': Quantity(100, 'm/s'),  # Meridional velocity
+            'mermach': 0.1,
             'alpha': Quantity(0, 'deg'),  # Flow angle
         },
         'geo': {
@@ -148,8 +156,8 @@ inlet = Inlet(
             'height': 0.15,  # Blade height [m]
         },
         'tot': {
-            'T': 1300,  # Total temperature [K]
-            'p': 20e5,  # Total pressure [Pa]
+            'T': 700,  # Total temperature [K]
+            'p': 10e5,  # Total pressure [Pa]
         },
     }
 )
@@ -170,7 +178,7 @@ stator = BladeRow(
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
             'rr_midspan': 0.5,
-            'chord_ax': 0.1,  # Blade chord length [m]
+            'chord': 0.1,  # Blade chord length [m]
             'num_blades': 20,  # Number of blades
             'thick_by_pitch': 0.02,
         },
@@ -193,10 +201,13 @@ rotor = BladeRow(
         },
     },
     out_constraints={
+        'oth': {
+            # 'workCoeff': -1.0,
+        },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
             'rr_midspan': 0.5,
-            'chord_ax': 0.1,
+            'chord': 0.1,
             'num_blades': 20,
             'thick_by_pitch': 0.02,
         },
@@ -230,11 +241,10 @@ ntw = ComponentNetwork(
 ntw.system.add_global_constraints(
     {
         'oth': {
-            # 'disp_thick': 0.0,
-            # Profile loss coefficients
-            # 'Cd_profile': 0.002,
-            # 'xi_by_camb_len_A': 0.375,
-            # 'xi_by_camb_len_B': 0.675,
+            # Profile loss parameters
+            'Cd_profile': 0.002,
+            'xi_by_camb_len_A': 0.375,
+            'xi_by_camb_len_B': 0.675,
         }
     }
 )
@@ -259,7 +269,10 @@ for stage in range(ntw.num_components // 2):
 ntw.system.build(SCALED)
 rootfinder_mean_is = ntw.system.make_rootfinder(
     'ipopt',
-    opts={},
+    opts={
+        'error_on_fail': False,
+        'ipopt.bound_push': 0.8,
+    },
 )
 x0_mean_is = ntw.system.get_scaled_guess()
 kn_mean_is = ntw.system.get_scaled_constraints()
@@ -269,6 +282,9 @@ solution = solve_root_problem(
     x0_mean_is,
     kn_mean_is,
     bnd_mean_is,
+    perturbate_guess=True,
+    delta_pert=0.1,
+    num_samples=1000,
 )
 
 sol_mean_is_dict = ntw.system.write_solution_to_nodes(solution)
@@ -280,6 +296,7 @@ class LossAdder(EquationBase):
         return stc_smass1 - (stc_smass0 + oth_delta_smass_profile1)
 
 
+ntw.system.remove_equation_type(LossModel)
 for nodes in nodes_by_stage:
     # 1. Fix blade heights from meanline solution
     ntw.system.boundary_conditions[nodes[1]]['geo']['height'] = sol_mean_is_dict[
@@ -300,11 +317,19 @@ for nodes in nodes_by_stage:
     ntw.system.boundary_conditions[nodes[3]]['kin']['Vt_midspan'] = sol_mean_is_dict[
         f'kin_Vt{nodes[3]}'
     ]
+
+    # 4. Remove fixed deflection/workCoeff, impose free vortex
+    ntw.system.boundary_conditions[nodes[1]]['kin'].pop('alpha', None)
+    ntw.system.boundary_conditions[nodes[3]]['oth'].pop('workCoeff', None)
+
     ntw.system.add_equation(FreeVortexDistribution(), nodes[1])
     ntw.system.add_equation(FreeVortexDistribution(), nodes[3])
 
-    # ntw.system.boundary_conditions[nodes[0]]['kin'].pop('alpha')
-    ntw.system.boundary_conditions[nodes[1]]['kin'].pop('alpha')
+    # 5. Add profile losses
+    ntw.system.add_equation(DentonProfileLoss(), (nodes[0], nodes[1]))
+    ntw.system.add_equation(LossAdder(), (nodes[0], nodes[1]))
+    ntw.system.add_equation(DentonProfileLoss(), (nodes[2], nodes[3]))
+    ntw.system.add_equation(LossAdder(), (nodes[2], nodes[3]))
 
 
 ntw.system.remove_equation_type(RepeatedStage)
@@ -321,10 +346,7 @@ rootfind_span_is = ntw.system.make_rootfinder(
 )
 
 sol_span_is = solve_root_problem(rootfind_span_is, x0_span_is, kn_span_is, bnd_span_is)
-# if rootfind_span_is.stats()['success']:
 sol_span_is_dict = ntw.system.write_solution_to_nodes(sol_span_is)
-
-# diag = SystemDiagnostics(ntw.system, kn_span_is)
 
 
 # === POST-PROCESSING AND VISUALIZATION
@@ -412,6 +434,23 @@ if PLOTS:
                 axial_offset=offset,
                 tangential_offset=blade_num * pitch,
             )
+        # Plot hub and tip
+        pbl.plot_camber_line(
+            ax_camber,
+            n0.geo.metal_angle[0],
+            n1.geo.metal_angle[0],
+            n1.geo.chord_ax[0],
+            'orange',
+            axial_offset=offset,
+        )
+        pbl.plot_camber_line(
+            ax_camber,
+            n0.geo.metal_angle[-1],
+            n1.geo.metal_angle[-1],
+            n1.geo.chord_ax[-1],
+            'seagreen',
+            axial_offset=offset,
+        )
 
         offset += ax_chord * 1.1
 

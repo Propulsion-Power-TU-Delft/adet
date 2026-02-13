@@ -156,10 +156,8 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'p': 'Pa',
         'p_.*': 'Pa',
         'T': 'K',
-        'T_.*': 'K',
         '.*_T_is': 'K',  # used by isentropic temperature
-        '.*_T_red': 'dimensionless',  # reduced temperature
-        '.*_p_red': 'dimensionless',  # reduced temperature
+        '.*_[a-z]_red': 'dimensionless',  # reduced quantities
         'rhomass': 'kg / m**3',
         '.*hmass.*': 'J / kg',  # Includes delta_hmass
         '.*smass.*': 'J / (kg * K)',  # Includes delta_smass
@@ -186,16 +184,14 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'Cd_.*': 'dimensionless',  # Friction factor
         # Kinematics
         'V': 'm/s',
-        'V_.*': 'm/s',
         'Vt': 'm/s',
-        'Vt_.*': 'm/s',
         'Vm': 'm/s',
         'W': 'm/s',
         'W_.*': 'm/s',
         'Wt': 'm/s',
         'Wm': 'm/s',
-        'W_hub': 'm/s',
-        'W_shroud': 'm/s',
+        'V[mt]?_.*': 'm/s',  # Vm_something, Vt_something, V_something
+        'W[mt]?_.*': 'm/s',
         'U': 'm/s',
         'omega': 'rad/s',
         'beta': 'rad',
@@ -263,7 +259,8 @@ class GuessRegistry(BaseRegistry[str, float]):
         'beta': 1e-2,
         # Secondary kinematics
         'VmRatio': 1.0,
-        'W_.*': 0.01,
+        'V[mt]?_.*': 0.01,  # Vm_something, Vt_something, V_something
+        'W[mt]?_.*': 0.01,
         'beta_.*': -0.3,
         'deflection': 1.0,
         'mach': 0.3,

@@ -117,9 +117,9 @@ if __name__ == '__main__':
     # Latin Hypercube sampling for testing robustness
     SAMPLES = 100  # For each perturbation level
     NUM_PROCS = 10
-    PERTURBATIONS = np.arange(0.1, 0.7, 0.1)  # Start with 10% offset
+    PERTURBATIONS = np.arange(0.0001, 0.7, 0.1)  # Start with 10% offset
     # PERTURBATIONS = np.linspace(0, 4, 11) + 0.1
-    BOUNDED = False
+    BOUNDED = True
 
     results = test_robustness(SOLUTION, SAMPLES, PERTURBATIONS, BOUNDED)
     success_rate = np.array([sum(res) / SAMPLES for res in results.values()])
