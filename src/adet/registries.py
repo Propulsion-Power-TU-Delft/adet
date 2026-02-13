@@ -188,6 +188,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'V': 'm/s',
         'V_.*': 'm/s',
         'Vt': 'm/s',
+        'Vt_.*': 'm/s',
         'Vm': 'm/s',
         'W': 'm/s',
         'W_.*': 'm/s',

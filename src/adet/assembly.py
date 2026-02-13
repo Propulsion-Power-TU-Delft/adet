@@ -9,7 +9,7 @@ Sometimes the CasADi api is slightly cryptic, sorry.
 from abc import ABC, abstractmethod
 from collections import OrderedDict, defaultdict
 from copy import deepcopy
-from itertools import combinations
+from itertools import accumulate, combinations
 import logging
 import sys
 from typing import Any, Callable, Literal, Mapping, Self, Sequence, Type
@@ -21,7 +21,6 @@ import numpy as np
 from numpy.typing import NDArray
 from pint import Quantity
 from pint.facets.plain import PlainQuantity
-from scipy.stats import qmc
 import sympy as sp
 
 from adet.constants import ArrayLike, INVERSE_CP_NAMES_MAP, NodeStatesNames
@@ -37,7 +36,7 @@ from adet.registries import (
     ScalingRegistry,
     VariableBoundsRegistry,
 )
-from adet.tools.context import dummy_context, output_suppression, override_operators
+from adet.tools.context import override_operators
 from adet.tools.coolprop_utils import pair_based_sorting, pair_id_from_tuple
 from adet.tools.strings import get_arg_state, get_arg_type, get_index, rm_end_digits
 
@@ -418,7 +417,28 @@ class ArgumentResolver:
             branch = num_span * [0]
             arguments_struct.append(branch)
 
-        return jax.tree.structure(arguments_struct)
+        return arguments_struct
+
+    def get_args_coordinates(self):
+        arg_struct = self.make_arg_structure(self.data.free_args)
+        arg_lengths = [len(arg) for arg in arg_struct]
+        acc_lengths = [0] + list(accumulate(arg_lengths[:-1]))
+        return arg_lengths, acc_lengths
+
+    def position_from_arg(self, arg_index: int) -> tuple[int, int]:
+        """
+        Return the start and end index of an argument, given its index
+        in the free_args attribute
+        """
+        arg_lengths, acc_lengths = self.get_args_coordinates()
+        start_index = acc_lengths[arg_index]
+        arg_len = arg_lengths[arg_index]
+        if arg_len == 1:
+            end_index = start_index + 1
+        else:
+            end_index = start_index + arg_lengths[arg_index] - 1
+
+        return (start_index, end_index)
 
 
 class UnitScalingManager:
@@ -529,7 +549,8 @@ class SolutionDispatcher:
         arg_resolver = ArgumentResolver(self.data)
         free_args_struct = arg_resolver.make_arg_structure(self.data.free_args)
         solution_values_inflated = jax.tree.unflatten(
-            free_args_struct, solution_values.flatten().tolist()
+            jax.tree.structure(free_args_struct),
+            solution_values.flatten().tolist(),
         )
 
         return list(map(np.array, solution_values_inflated))
@@ -835,6 +856,9 @@ class SystemAssembler(ABC):
             raise RuntimeError(
                 'The system is not built or failed to do so, build it `build()`'
             )
+
+    def get_arg_position(self, arg_index: int):
+        return self._argument_resolver.position_from_arg(arg_index)
 
     @property
     def equations_indices(self):
@@ -1371,9 +1395,9 @@ class CasadiSystem(SystemAssembler):
                     # Reasonable defaults for IPOPT, overwritten by user
                     'ipopt.print_level': 3,
                     'ipopt.max_iter': 1000,
-                    'ipopt.tol': 1e-9,
-                    'ipopt.acceptable_constr_viol_tol': 1e-6,  # infeasible pts
-                    'ipopt.required_infeasibility_reduction': 0.9,  # recovery
+                    'ipopt.tol': 1e-5,
+                    'ipopt.acceptable_constr_viol_tol': 1e-8,  # infeasible pts
+                    'ipopt.required_infeasibility_reduction': 0.99,  # recovery
                     'ipopt.bound_push': 0.1,
                     # NOTE: Superseeded by new implementations, thermo
                     # derivatives available up to the 3rd order (null)

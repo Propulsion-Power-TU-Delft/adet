@@ -27,6 +27,7 @@ from adet.components.blade_row import plot_from_nodes
 from adet.diagnostics import SystemDiagnostics
 from adet.equations.base_equation import EquationBase
 from adet.equations.definitions import RepeatedStage
+from adet.equations.fundamental import FreeVortexDistribution
 from adet.equations.geometrical import MinimalCamberLine, ParabolicCamberline
 from adet.equations.nondimensional import (
     FlowCoefficient,
@@ -65,9 +66,9 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 # === CONFIGURATION
 # Simulation settings
-NUM_SPAN = 5  # Number of spanwise stations
+NUM_SPAN = 3  # Number of spanwise stations
 HIGH_RES_MULTIPLIER = 2  # => NUM_SPAN * HIGH_RES_MULTIPLIER = final spanwise stations
-NUM_STAGES = 6  # Number of turbine stages (stator-rotor pairs)
+NUM_STAGES = 3  # Number of turbine stages (stator-rotor pairs)
 SCALED = True  # Use scaled equations for better numerical conditioning
 PLOTS = True  # Show plots at end
 PRINTS = True  # Print node information
@@ -85,8 +86,8 @@ ideal_model = AnalyticalFluidModel(idl_state)
 # Update variables are used to solve for thermodynamic state
 # (p, T) chosen for stability
 settings = FluidSettings(
-    model=ideal_model,
-    update_variables=('p', 'T', 'rhomass', 'smass', 'hmass'),
+    model=real_model,
+    update_variables=('rhomass', 'hmass', 'T', 'rhomass', 'smass', 'hmass'),
     update_length=2,
 )
 
@@ -229,12 +230,11 @@ ntw = ComponentNetwork(
 ntw.system.add_global_constraints(
     {
         'oth': {
-            # Ideal gas properties (reference)
-            'disp_thick': 0.0,  # Ignore boundary layer blockage
+            # 'disp_thick': 0.0,
             # Profile loss coefficients
-            'Cd_profile': 0.002,
-            'xi_by_camb_len_A': 0.375,
-            'xi_by_camb_len_B': 0.675,
+            # 'Cd_profile': 0.002,
+            # 'xi_by_camb_len_A': 0.375,
+            # 'xi_by_camb_len_B': 0.675,
         }
     }
 )
@@ -281,34 +281,50 @@ class LossAdder(EquationBase):
 
 
 for nodes in nodes_by_stage:
-    # Fix rotational speed from meanline solution
-    ntw.system.boundary_conditions[nodes[3]]['kin']['omega'] = sol_mean_is_dict[
-        f'kin_omega{nodes[3]}'
-    ]
-    # Fix blade heights from meanline solution
+    # 1. Fix blade heights from meanline solution
     ntw.system.boundary_conditions[nodes[1]]['geo']['height'] = sol_mean_is_dict[
         f'geo_height{nodes[1]}'
     ]
     ntw.system.boundary_conditions[nodes[3]]['geo']['height'] = sol_mean_is_dict[
         f'geo_height{nodes[3]}'
     ]
+    # 2. Fix rotational speed from meanline solution
+    ntw.system.boundary_conditions[nodes[3]]['kin']['omega'] = sol_mean_is_dict[
+        f'kin_omega{nodes[3]}'
+    ]
+
+    # 3. Free vortex distribution
+    ntw.system.boundary_conditions[nodes[1]]['kin']['Vt_midspan'] = sol_mean_is_dict[
+        f'kin_Vt{nodes[1]}'
+    ]
+    ntw.system.boundary_conditions[nodes[3]]['kin']['Vt_midspan'] = sol_mean_is_dict[
+        f'kin_Vt{nodes[3]}'
+    ]
+    ntw.system.add_equation(FreeVortexDistribution(), nodes[1])
+    ntw.system.add_equation(FreeVortexDistribution(), nodes[3])
+
+    # ntw.system.boundary_conditions[nodes[0]]['kin'].pop('alpha')
+    ntw.system.boundary_conditions[nodes[1]]['kin'].pop('alpha')
 
 
 ntw.system.remove_equation_type(RepeatedStage)
+ntw.system.remove_equation_type(TotalStaticDegreeOfReaction)
+ntw.system.num_span = NUM_SPAN
 ntw.system.build()
+
 x0_span_is = ntw.system.get_scaled_guess(sol_mean_is_dict)
 kn_span_is = ntw.system.get_scaled_constraints()
 bnd_span_is = ntw.system.get_arguments_bounds()
 rootfind_span_is = ntw.system.make_rootfinder(
     'kinsol',
-    {'error_on_fail': True},
+    {'error_on_fail': False},
 )
 
 sol_span_is = solve_root_problem(rootfind_span_is, x0_span_is, kn_span_is, bnd_span_is)
 # if rootfind_span_is.stats()['success']:
 sol_span_is_dict = ntw.system.write_solution_to_nodes(sol_span_is)
 
-diag = SystemDiagnostics(ntw.system, kn_span_is)
+# diag = SystemDiagnostics(ntw.system, kn_span_is)
 
 
 # === POST-PROCESSING AND VISUALIZATION

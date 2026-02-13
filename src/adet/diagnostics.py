@@ -43,7 +43,7 @@ class SystemDiagnostics(Generic[T]):
     def __init__(self, system: T, constraints_stack):
         self._arguments = system.free_args
         self._num_span = system.num_span
-        self.const_stack = np.concatenate(constraints_stack)
+        self.const_stack = constraints_stack
 
         if isinstance(system, CasadiSystem):
             self._build_casadi_functions(system)
@@ -53,11 +53,13 @@ class SystemDiagnostics(Generic[T]):
         self._arg_mapping = self._remap_arguments()
 
     def _build_casadi_functions(self, system: CasadiSystem):
+        logger.debug('Building casadi functions')
         args_sym = cs.vertcat(*system.free_args_sym)
-        const_values = self.const_stack.flatten()
-        num_args = len(system.free_args)
+        const_values = self.const_stack
+        num_args = len(system.free_args_sym)
 
         # Residual
+        logger.debug('Building residual functions')
         res_func = system.make_residual_function()
         res_expr = res_func(args_sym, const_values)
 

@@ -41,7 +41,7 @@ from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 
 logger = logging.Logger(__name__)
-setup_logger(logger)
+# setup_logger(logger)
 
 # This makes the missing guesses default to 1
 _bounds_reg = VariableBoundsRegistry()
@@ -50,7 +50,7 @@ _bounds_reg.from_dict(
     {
         'Vm': (10.0, 200.0),
         'U': (0, 500),
-        # 'beta': (-1.5, 0.0),
+        'beta': (-1.5, 0.0),
         # 'delta_hmass_.*': (10.0, 1e5),
         # 'delta_hmass_loading': (10.0, 1e4),  # This tends to diverge, bound it
     }
@@ -68,7 +68,7 @@ _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 
 NUM_SPAN = 11
 ENABLE_LOSSES = False
-RUN_MULTI = True
+RUN_MULTI = False
 # +++ Shaftskin_omega0 (node 0) is unknown,
 shaft = Shaft(
     omega=Quantity(21000, 'rpm'),
@@ -89,7 +89,7 @@ fluid_model_ideal = AnalyticalFluidModel(
 )
 
 fluid_settings = FluidSettings(
-    model=fluid_model_real,
+    model=fluid_model_ideal,
     update_variables=('p', 'T'),  # Thermodynamic iteration variables
     update_length=2,  # Single phase => Two update vars
 )
@@ -226,8 +226,7 @@ rootfinder_hecc_is = ntw_hecc.system.make_rootfinder(
     'ipopt',
     opts={
         'error_on_fail': True,
-        'ipopt.tol': 1e-5,
-        'ipopt.max_iter': 300,
+        'ipopt.max_iter': 2000,
         'ipopt.max_wall_time': 10,
     },
 )
@@ -236,13 +235,12 @@ solution_hecc_is = solve_root_problem(
     x0,
     kn_hecc_is,
     bnd_hecc_is,
-    suppress_output=False,
+    suppress_output=True,
 )
 sol_is_dict = ntw_hecc.system.solution_to_dict(solution_hecc_is)
 
 if RUN_MULTI:
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
-    # Increase span and switch to real gas
     ntw_hecc.system.num_span = NUM_SPAN
     ntw_hecc.system.boundary_conditions[0]['geo']['metal_angle'] = angle_distribution
 
@@ -256,10 +254,9 @@ if RUN_MULTI:
     rootfinder_hecc_multi = ntw_hecc.system.make_rootfinder(
         'ipopt',
         opts={
-            'error_on_fail': True,
-            'ipopt.tol': 1e-5,
-            'ipopt.max_iter': 300,
-            'ipopt.max_wall_time': 10,
+            'error_on_fail': False,
+            'ipopt.max_iter': 1000,
+            'ipopt.max_wall_time': 25,
         },
     )
     x0_multi = ntw_hecc.system.get_scaled_guess(sol_is_dict)
@@ -270,9 +267,9 @@ if RUN_MULTI:
         x0_multi,
         kn_hecc_multi,
         bnd_hecc_multi,
-        suppress_output=False,
+        suppress_output=True,
     )
-    sol_multi_dict = ntw_hecc.system.solution_to_dict(solution_hecc_multi)
+    sol_multi_dict = ntw_hecc.system.write_solution_to_nodes(solution_hecc_multi)
 
 if __name__ == '__main__' and RUN_MULTI:
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
@@ -336,8 +333,8 @@ if __name__ == '__main__' and RUN_MULTI:
         offset += c.outlet_node.geo.chord_ax[0]
 
     print(ntw_hecc.system.nodes[1].oth)
+    plt.show(block=True)
     plt.close('all')
-    # plt.show(block=True)
 
     plt.plot(n1.oth.delta_hmass_loading)
     plt.plot(n1.oth.delta_hmass_clearance)

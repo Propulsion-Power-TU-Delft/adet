@@ -190,14 +190,14 @@ class NisRe(EquationBase):
 
 
 class FreeVortexDistribution(EquationBase):
-    def residual(self, geo_rr0, kin_Vt0, geo_rr_midspan0):
+    def residual(self, geo_rr0, kin_Vt0, kin_Vt_midspan0, geo_rr_midspan0):
         num_span = max(geo_rr0.shape)
         if num_span == 1:
             midspan = 0
         else:
             midspan = num_span // 2
 
-        return geo_rr0 * kin_Vt0 - geo_rr_midspan0 * kin_Vt0[midspan]
+        return geo_rr0 * kin_Vt0 - geo_rr_midspan0 * kin_Vt_midspan0
 
 
 class ForcedVortexDistribution(EquationBase):

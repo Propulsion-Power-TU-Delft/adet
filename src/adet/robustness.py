@@ -7,7 +7,7 @@ import numpy as np
 from rich.progress import track
 import matplotlib.pyplot as plt
 from adet.tools.loggers import setup_logger
-from adet.assembly import solve_root_problem
+from adet.solution import solve_root_problem
 
 logger = logging.getLogger(__name__)
 setup_logger(logger, logging.ERROR, logging.ERROR)
@@ -50,11 +50,7 @@ else:
 ROOTFINDER = NETWORK.system.make_rootfinder('ipopt')
 
 
-def process_sample(
-    sample,
-    solution,
-    perturbation,
-):
+def process_sample(sample, solution, perturbation, bounded: bool):
     # Use global rootfinder and deepcopy it for this sample
     rootfinder_cp = deepcopy(ROOTFINDER)
     sample_trans = np.atleast_2d(sample).T
@@ -62,11 +58,19 @@ def process_sample(
     x0_perturbed = solution + delta_x0
 
     try:
-        solve_root_problem(
-            rootfinder_cp, x0_perturbed, KNOWNS, BOUNDS, suppress_output=True
+        bounds = BOUNDS if bounded else None
+        solution = solve_root_problem(
+            rootfinder_cp, x0_perturbed, KNOWNS, bounds, suppress_output=True
         )
-        return 1
-    except Exception:
+        # Check that the solution actually matches
+        if not np.isclose(solution, SOLUTION).all():
+            print('System converged to a spurious solution')
+            return 0
+        else:
+            return 1
+
+    except Exception as e:
+        print(f'reduced system did not converge, error {e}')
         return 0
 
 
@@ -74,6 +78,7 @@ def test_robustness(
     solution,
     num_samples,
     perturbations: Iterable[float],
+    bounded: bool,
 ):
     out = {pert: [] for pert in perturbations}
 
@@ -85,7 +90,7 @@ def test_robustness(
             multires = [
                 pool.apply_async(
                     process_sample,
-                    (s, solution, pert),
+                    (s, solution, pert, bounded),
                 )
                 for s in samples
             ]
@@ -112,16 +117,18 @@ if __name__ == '__main__':
     # Latin Hypercube sampling for testing robustness
     SAMPLES = 100  # For each perturbation level
     NUM_PROCS = 10
-    # PERTURBATIONS = np.arange(0.1, 1, 0.1)  # Start with 10% offset
-    PERTURBATIONS = np.linspace(0, 4, 11) + 0.1
+    PERTURBATIONS = np.arange(0.1, 0.7, 0.1)  # Start with 10% offset
+    # PERTURBATIONS = np.linspace(0, 4, 11) + 0.1
+    BOUNDED = False
 
-    results = test_robustness(SOLUTION, SAMPLES, PERTURBATIONS)
+    results = test_robustness(SOLUTION, SAMPLES, PERTURBATIONS, BOUNDED)
     success_rate = np.array([sum(res) / SAMPLES for res in results.values()])
 
     # Save
-    filename = f'./{TEST_CASE}_samples_{SAMPLES}_realgas'
+    bnd_suffix = 'bounded' if BOUNDED else 'unbounded'
+    FILENAME = f'./figures/{TEST_CASE}_samples_{SAMPLES}' + '_idealgas_' + bnd_suffix
     out_array = np.stack([PERTURBATIONS, success_rate])
-    np.save(filename, out_array)
+    np.save(FILENAME, out_array)
 
     plt.style.use('dark_background')
     fig, ax = plt.subplots(figsize=(8, 4))
@@ -142,6 +149,4 @@ if __name__ == '__main__':
     plt.plot(PERTURBATIONS, 100 * np.ones(len(PERTURBATIONS)))
     plt.title(TEST_CASE)
 
-    from adet.convergence_results import casp_results
-
-    plt.savefig(filename + '.svg')
+    plt.savefig(FILENAME + '.svg')
