@@ -501,6 +501,23 @@ class UnitScalingManager:
         """Build multi-span scaling factors for constraints"""
         return self._argument_scaling_helper(self.data.constraints)
 
+    def get_arguments_bounds(
+        self,
+    ) -> list[tuple[float, float]]:
+        bounds = []
+        for arg, scaling in zip(self.data.free_args, self.get_free_args_scaling()):
+            arg_type = get_arg_type(arg)
+
+            if arg_type not in _bounds_reg:
+                lower_bound = -1e20
+                upper_bound = 1e20
+            else:
+                lower_bound, upper_bound = _bounds_reg.get(arg_type)
+
+            bounds.append((lower_bound / scaling, upper_bound / scaling))
+
+        return bounds
+
     def _argument_scaling_helper(self, arguments: Sequence[str]) -> list[float]:
         """Returns the arguments scales for a sequence of system arguments"""
         if not self.data.scaled:
@@ -1418,21 +1435,14 @@ class CasadiSystem(SystemAssembler):
         return rootfinder
 
     def get_arguments_bounds(self):
+        bounds_by_arg = self._scaling_manager.get_arguments_bounds()
         lbx = []
         ubx = []
-        for arg, scaling in zip(self.free_args_sym, self.free_args_scaling):
-            arg_type = get_arg_type(arg.name())
 
-            if arg_type not in _bounds_reg:
-                lower_bound = -1e20
-                upper_bound = 1e20
-            else:
-                lower_bound, upper_bound = _bounds_reg.get(arg_type)
-
-            arg_size = max(arg.shape)
-
-            lbx += arg_size * [lower_bound / scaling]
-            ubx += arg_size * [upper_bound / scaling]
+        for arg, scales in zip(self.free_args, bounds_by_arg):
+            arg_size = max(self._all_symbols[arg].shape)
+            lbx += arg_size * [scales[0]]
+            ubx += arg_size * [scales[1]]
 
         return cs.vertcat(*lbx), cs.vertcat(*ubx)
 

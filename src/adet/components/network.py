@@ -1,7 +1,8 @@
-from typing import Generic, Sequence, TypeVar
+from typing import Generic, Mapping, Sequence, TypeVar
 
 from adet.assembly import SystemAssembler
 from adet.components import BaseComponent
+from adet.constants import ArrayLike
 from adet.fluid.settings import FluidSettings
 from adet.components.connections import Inlet
 
@@ -147,6 +148,15 @@ class ComponentNetwork(Generic[T]):
 
             component.inlet_node = self.system.nodes[inlet_node_idx]
             component.outlet_node = self.system.nodes[outlet_node_idx]
+
+    def get_scaled_guess(self, manual_values: Mapping[str, ArrayLike]):
+        self.system.get_scaled_guess(manual_values)
+
+    def get_scaled_constraints(self):
+        self.system.get_scaled_constraints()
+
+    def get_(self):
+        self.system.get_arguments_bounds()
 
     def print_structure(self):
         component_repr = '@ = node\n\nInlet == @0'

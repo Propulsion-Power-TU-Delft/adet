@@ -41,7 +41,7 @@ from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 
 logger = logging.Logger(__name__)
-# setup_logger(logger)
+setup_logger(logger)
 
 # This makes the missing guesses default to 1
 _bounds_reg = VariableBoundsRegistry()
@@ -68,7 +68,7 @@ _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 
 NUM_SPAN = 11
 ENABLE_LOSSES = False
-RUN_MULTI = False
+RUN_MULTI = True
 # +++ Shaftskin_omega0 (node 0) is unknown,
 shaft = Shaft(
     omega=Quantity(21000, 'rpm'),
@@ -226,8 +226,8 @@ rootfinder_hecc_is = ntw_hecc.system.make_rootfinder(
     'ipopt',
     opts={
         'error_on_fail': True,
-        'ipopt.max_iter': 2000,
-        'ipopt.max_wall_time': 10,
+        # 'ipopt.max_iter': 2000,
+        # 'ipopt.max_wall_time': 10,
     },
 )
 solution_hecc_is = solve_root_problem(
