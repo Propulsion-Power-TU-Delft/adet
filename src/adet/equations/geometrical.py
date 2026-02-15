@@ -103,6 +103,34 @@ class MidspanProperties(EquationBase):
         return r1, r2, r3
 
 
+class GeometricalRatios(EquationBase):
+    def residual(
+        self,
+        geo_height0,
+        geo_height1,
+        geo_heightRatio1,
+        geo_flare_angle1,
+        geo_chord_ax1,
+        geo_rr_midspan0,
+        geo_rr_midspan1,
+        geo_radiusRatio1,
+        geo_aspRatio1,
+    ):
+        num_span = max(geo_chord_ax1.shape)
+        if num_span == 1:
+            midspan = 0
+        else:
+            midspan = num_span // 2
+
+        r1 = geo_heightRatio1 - geo_height1 / geo_height0
+        r2 = np.tan(geo_flare_angle1) - (geo_height1 - geo_height0) / (
+            2 * geo_chord_ax1[midspan]
+        )
+        r3 = geo_rr_midspan0 * geo_radiusRatio1 - geo_rr_midspan1
+        r4 = geo_chord_ax1[midspan] * geo_aspRatio1 - geo_height0
+        return r1, r2, r3, r4
+
+
 class EndwallProperties(EquationBase):
     def residual(
         self,
@@ -110,7 +138,7 @@ class EndwallProperties(EquationBase):
         geo_height0,
         geo_rr_midspan0,
         geo_meridional_angle0,
-        geo_hubtip_rrRatio0,
+        geo_hubtipRatio0,
         # Kinematics
         kin_Vt0,
         kin_Wm0,
@@ -143,7 +171,7 @@ class EndwallProperties(EquationBase):
         # Residual Equations
         r1 = geo_rr_hub0 - r_hub
         r2 = geo_rr_tip0 - r_tip
-        r3 = geo_hubtip_rrRatio0 - geo_rr_hub0 / geo_rr_tip0
+        r3 = geo_hubtipRatio0 - geo_rr_hub0 / geo_rr_tip0
 
         r4 = kin_W_hub0 - (kin_Wm0[midspan] ** 2 + Wt_hub**2) ** 0.5
         r5 = kin_W_tip0 - (kin_Wm0[midspan] ** 2 + Wt_tip**2) ** 0.5

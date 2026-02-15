@@ -11,7 +11,6 @@ from adet.equations.definitions import (
     AngleDeflection,
     BladePitch,
     DeviationAngle,
-    GeometricalRatios,
     MeridionalVelocityRatio,
     Solidity,
     ThicknessToPitch,
@@ -28,6 +27,7 @@ from adet.equations.geometrical import (
     EndwallProperties,
     MeridionalUniform,
     MidspanProperties,
+    GeometricalRatios,
 )
 from adet.equations.nondimensional import EnthalpyDropCoefficient
 from adet.geometry import BezierCurve, StraightLine
@@ -135,6 +135,7 @@ class BladeRow(BaseComponent):
             self.out_constraints['kin']['omega'] = shaft.omega
 
         # This is to be read by the network to improve guesses and bounds
+        self.shaft = shaft
         self.row_type = row_type
 
 

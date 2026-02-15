@@ -14,10 +14,10 @@ logger = logging.getLogger(__name__)
 
 def perturb_guess(guess, knowns, root_function, delta_pert, num_samples):
     sampler = qmc.LatinHypercube(len(guess))
-    samples = sampler.random(num_samples)
+    samples = qmc.scale(sampler.random(num_samples), -delta_pert, delta_pert)
 
     def norm_function(x):
-        return np.linalg.norm(x, 'fro')
+        return np.linalg.norm(x, 2)
 
     best_guess = guess
     best_res_norm = norm_function(
@@ -27,7 +27,7 @@ def perturb_guess(guess, knowns, root_function, delta_pert, num_samples):
     logger.info(f'Trying out {num_samples} latin hypercube samples for first guess...')
     for sample in samples:
         # Perturb the original guess
-        x0 = guess + delta_pert * (-1 + 2 * sample)
+        x0 = guess + sample
         # Compute first iteration residual
         try:
             initial_residual = root_function(x0, knowns)
@@ -43,6 +43,10 @@ def perturb_guess(guess, knowns, root_function, delta_pert, num_samples):
             )
             best_guess = x0
             best_res_norm = residual_norm
+
+        if (best_guess == guess).all():
+            logger.info('No better solution found, using random perturbation')
+            best_guess = x0 + delta_pert * np.random.ranf(len(x0))
 
     return best_guess
 

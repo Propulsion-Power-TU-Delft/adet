@@ -65,13 +65,13 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 # === CONFIGURATION
 # Simulation settings
-NUM_SPAN = 11  # Number of spanwise stations
-NUM_STAGES = 5  # Number of turbine stages (stator-rotor pairs)
+NUM_SPAN = 3  # Number of spanwise stations
+NUM_STAGES = 2  # Number of turbine stages (stator-rotor pairs)
 # Runtime options
 RUN_MULTI = False  # Run the multi streamline case
 SCALED = True  # Use scaled equations for better numerical conditioning
-PLOTS = False  # Show plots at end
-PRINTS = True  # Print node information
+PLOTS = True  # Show plots at end
+PRINTS = False  # Print node information
 
 # === FLUID MODEL SETUP
 # Real gas model using CoolProp (HEOS = Helmholtz Equation of State)
@@ -108,15 +108,8 @@ _dfu_reg.from_dict(
 _gss_reg.reset()
 _gss_reg.from_dict(
     {
-        'workCoeff': -0.6,
-        'k_prof': 0.8,
-        'Vm': 100,
-        'Vt': 100,
-        'V': 100,
-        'Wm': 100,
-        'Wt': 100,
-        'W': 100,
-        'U': 200,
+        'workCoeff': -0.9,
+        'k_prof': 0.2,
         'hdropCoeff': -2.0,
     }
 )
@@ -125,9 +118,8 @@ _bnd_reg = VariableBoundsRegistry()
 _bnd_reg.reset()
 _bnd_reg.from_dict(
     {
-        'Vm': (0.0, 110),
         'U': (0, 500),
-        'hdropCoeff': (-6.0, -0.2),
+        'hdropCoeff': (-6.0, -0.1),
     }
 )
 
@@ -144,18 +136,16 @@ rotating_shaft = Shaft(
     is_constrained=False,
 )
 
-# === COMPONENT DEFINITIONS
+#  =  =  =  =  =  =  =  =  =  =  =  =  =  =  COMPONENT DEFINITIONS
 # Inlet conditions
 inlet = Inlet(
     {
         'kin': {
-            'mermach': 0.1,
             'alpha': Quantity(0, 'deg'),  # Flow angle
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
-            'rr_midspan': 0.5,  # Mid-span radius [m]
-            'height': 0.15,  # Blade height [m]
+            'hubtipRatio': 0.7,
         },
         'tot': {
             'T': 700,  # Total temperature [K]
@@ -179,11 +169,10 @@ stator = BladeRow(
             # 'alpha': Quantity(70, 'deg'),  # Exit flow angle
         },
         'geo': {
-            'meridional_angle': Quantity(0, 'deg'),
-            'rr_midspan': 0.5,
-            'chord': 0.1,  # Blade chord length [m]
-            'num_blades': 20,  # Number of blades
+            'aspRatio': 2.0,
+            'num_blades': 20,
             'thick_by_pitch': 0.02,
+            'meridional_angle': Quantity(0, 'deg'),
         },
     },
     extra_equations={
@@ -205,15 +194,11 @@ rotor = BladeRow(
         },
     },
     out_constraints={
-        'oth': {
-            'workCoeff': -1.0,
-        },
         'geo': {
-            'meridional_angle': Quantity(0, 'deg'),
-            'rr_midspan': 0.5,
-            'chord': 0.1,
+            'aspRatio': 2.0,
             'num_blades': 20,
             'thick_by_pitch': 0.02,
+            'meridional_angle': Quantity(0, 'deg'),
         },
     },
     extra_equations={
@@ -264,8 +249,18 @@ for stage in range(ntw.num_components // 2):
     ntw.system.add_equation(RepeatedStage(), nodes)
     # Degree of reaction constraint
     ntw.system.add_equation(TotalStaticDegreeOfReaction(), nodes)
-    # Set 50% degree of reaction
-    ntw.system.add_boundary_conditions({'oth': {'reactDegree_ts': 0.5}}, nodes[-1])
+    # Set nondimensional design parameters
+    ntw.system.add_boundary_conditions(
+        {
+            'oth': {
+                'reactDegree_ts': 0.5,
+                'workCoeff': -1.0,
+            },
+        },
+        nodes[3],
+    )
+
+ntw.system.boundary_conditions[3]['oth']['flowCoeff'] = 0.8
 
 
 # === SOLVE STAGE 1: Meanline isentropic with minimal camberline ===
@@ -275,7 +270,6 @@ rootfinder_mean_is = ntw.system.make_rootfinder(
     'ipopt',
     opts={
         'error_on_fail': False,
-        'ipopt.bound_push': 0.8,
     },
 )
 x0_mean_is = ntw.get_scaled_guess()
@@ -287,28 +281,43 @@ solution = solve_root_problem(
     kn_mean_is,
     bnd_mean_is,
     perturbate_guess=False,
-    delta_pert=0.1,
-    num_samples=1000,
+    delta_pert=0.01,
+    num_samples=100,
 )
 
 sol_mean_is_dict = ntw.system.write_solution_to_nodes(solution)
 
 
+# # # # # # # # # # # # # #
 if RUN_MULTI:
     # Only use profile
     class LossAdder(EquationBase):
         def residual(self, stc_smass0, stc_smass1, oth_delta_smass_profile1):
             return stc_smass1 - (stc_smass0 + oth_delta_smass_profile1)
 
-    ntw.system.remove_equation_type(LossModel)
+    # ntw.system.remove_equation_type(LossModel)
+    ntw.system.boundary_conditions[0]['geo'].pop('hubtipRatio')
     for nodes in nodes_by_stage:
         # 1. Fix blade heights from meanline solution
+        ntw.system.boundary_conditions[nodes[0]]['geo']['height'] = sol_mean_is_dict[
+            f'geo_height{nodes[0]}'
+        ]
         ntw.system.boundary_conditions[nodes[1]]['geo']['height'] = sol_mean_is_dict[
             f'geo_height{nodes[1]}'
         ]
         ntw.system.boundary_conditions[nodes[3]]['geo']['height'] = sol_mean_is_dict[
             f'geo_height{nodes[3]}'
         ]
+        ntw.system.boundary_conditions[nodes[0]]['geo']['rr_midspan'] = (
+            sol_mean_is_dict[f'geo_rr_midspan{nodes[0]}']
+        )
+        ntw.system.boundary_conditions[nodes[1]]['geo']['rr_midspan'] = (
+            sol_mean_is_dict[f'geo_rr_midspan{nodes[1]}']
+        )
+        ntw.system.boundary_conditions[nodes[3]]['geo']['rr_midspan'] = (
+            sol_mean_is_dict[f'geo_rr_midspan{nodes[3]}']
+        )
+
         # 2. Fix rotational speed from meanline solution
         ntw.system.boundary_conditions[nodes[3]]['kin']['omega'] = sol_mean_is_dict[
             f'kin_omega{nodes[3]}'
@@ -323,20 +332,21 @@ if RUN_MULTI:
         )
 
         # 4. Remove fixed deflection/workCoeff, impose free vortex
-        ntw.system.boundary_conditions[nodes[1]]['kin'].pop('alpha', None)
+        # ntw.system.boundary_conditions[nodes[1]]['kin'].pop('alpha', None)
+        ntw.system.boundary_conditions[nodes[3]]['oth'].pop('reactDegree_ts', None)
         ntw.system.boundary_conditions[nodes[3]]['oth'].pop('workCoeff', None)
+        ntw.system.boundary_conditions[nodes[3]]['oth'].pop('flowCoeff', None)
 
         ntw.system.add_equation(FreeVortexDistribution(), nodes[1])
         ntw.system.add_equation(FreeVortexDistribution(), nodes[3])
 
         # 5. Add profile losses
-        ntw.system.add_equation(DentonProfileLoss(), (nodes[0], nodes[1]))
-        ntw.system.add_equation(LossAdder(), (nodes[0], nodes[1]))
-        ntw.system.add_equation(DentonProfileLoss(), (nodes[2], nodes[3]))
-        ntw.system.add_equation(LossAdder(), (nodes[2], nodes[3]))
+        # ntw.system.add_equation(DentonProfileLoss(), (nodes[0], nodes[1]))
+        # ntw.system.add_equation(LossAdder(), (nodes[0], nodes[1]))
+        # ntw.system.add_equation(DentonProfileLoss(), (nodes[2], nodes[3]))
+        # ntw.system.add_equation(LossAdder(), (nodes[2], nodes[3]))
 
     ntw.system.remove_equation_type(RepeatedStage)
-    ntw.system.remove_equation_type(TotalStaticDegreeOfReaction)
     ntw.system.num_span = NUM_SPAN
     ntw.system.build()
 
@@ -512,20 +522,20 @@ if PLOTS:
 
 
 # === PRINT NODE INFORMATION
-if PRINTS:
-    for i, node in enumerate(ntw.system.nodes):
-        # For simpler access set n0, n1, n2, ...
-        globals()[f'n{i}'] = node
+for i, node in enumerate(ntw.system.nodes):
+    # For simpler access set n0, n1, n2, ...
+    globals()[f'n{i}'] = node
+
+    if PRINTS:
         to_print = f"""
 ##################
 ##### NODE {i} #####
 ##################
-    {node}\n
-    """
+        {node}\n
+        """
         print(to_print)
 
-    ntw.print_structure()
-
+ntw.print_structure()
 
 # === DISPLAY PLOTS
 if PLOTS:

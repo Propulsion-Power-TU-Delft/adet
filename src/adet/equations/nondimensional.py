@@ -163,8 +163,8 @@ class WorkCoefficient(EquationBase):
 
 
 class EnthalpyDropCoefficient(EquationBase):
-    def residual(self, stc_hmass0, stc_hmass1, kin_V1, oth_hdropCoeff):
-        return kin_V1**2 * oth_hdropCoeff - (stc_hmass1 - stc_hmass0)
+    def residual(self, stc_hmass0, stc_hmass1, kin_V1, oth_hdropCoeff1):
+        return kin_V1**2 * oth_hdropCoeff1 - (stc_hmass1 - stc_hmass0)
 
 
 class SwallowingCapacity(EquationBase):

@@ -150,7 +150,7 @@ inlet = Inlet(
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
             'rr_midspan': 0.1,
-            'hubtip_rrRatio': 0.5,
+            'hubtipRatio': 0.5,
         },
         'tot': {
             'p': abs_state.p(),

@@ -31,49 +31,34 @@ class DeviationAngle(EquationBase):
         return kin_dev_angle1 + np.sign(geo_metal_angle0) * (kin_beta1 - kin_beta0)
 
 
-class GeometricalRatios(EquationBase):
-    def residual(
-        self,
-        geo_height0,
-        geo_height1,
-        geo_heightRatio1,
-        geo_flare_angle1,
-        geo_chord_ax1,
-        geo_rr_midspan0,
-        geo_rr_midspan1,
-        geo_radiusRatio1,
-        geo_aspRatio1,
-    ):
-        num_span = max(geo_chord_ax1.shape)
-        if num_span == 1:
-            midspan = 0
-        else:
-            midspan = num_span // 2
-
-        r1 = geo_heightRatio1 - geo_height1 / geo_height0
-        r2 = np.tan(geo_flare_angle1) - (geo_height1 - geo_height0) / (
-            2 * geo_chord_ax1[midspan]
-        )
-        r3 = geo_rr_midspan0 * geo_radiusRatio1 - geo_rr_midspan1
-        r4 = geo_chord_ax1[midspan] * geo_aspRatio1 - geo_height0
-        return r1, r2, r3, r4
-
-
 class AreaAveragePressure(EquationBase):
     def residual(self, oth_p_AreaAve0, stc_p0, geo_area0):
         return safe_sum(geo_area0) * oth_p_AreaAve0 - safe_sum(geo_area0 * stc_p0)
 
 
-# TODO: Vm constant or height ratio
 class RepeatedStage(EquationBase):
     """0 - [Stator] - 1 = 2 - [Rotor] - 3"""
 
-    def residual(self, kin_alpha0, kin_alpha3, kin_Vm0, kin_Vm1, kin_Vm2, kin_Vm3):
+    def residual(
+        self,
+        geo_rr_midspan0,
+        geo_rr_midspan1,
+        geo_rr_midspan2,
+        geo_rr_midspan3,
+        kin_alpha0,
+        kin_alpha3,
+        kin_Vm0,
+        kin_Vm1,
+        kin_Vm2,
+        kin_Vm3,
+    ):
         r1 = kin_alpha0 - kin_alpha3
         r2 = kin_Vm3 - kin_Vm2
         r3 = kin_Vm1 - kin_Vm0
+        r4 = geo_rr_midspan3 - geo_rr_midspan2
+        r5 = geo_rr_midspan1 - geo_rr_midspan0
 
-        return r1, r2, r3
+        return r1, r2, r3, r4, r5
 
 
 class MeridionalVelocityRatio(EquationBase):

@@ -273,7 +273,7 @@ class GuessRegistry(BaseRegistry[str, float]):
         'cum_massflow': 20.0,
         'ch_massflow': 1.0,
         # GEOMETRY
-        'hubtip_rrRatio': 0.5,
+        'hubtipRatio': 0.5,
         'area': 0.1,
         'eff_area': 0.1,
         'cum_area': 0.3,
@@ -388,7 +388,7 @@ class ScalarsRegistry(BaseRegistry[str, int]):
         'flare_angle': -1,
         'heightRatio': -1,
         'radiusRatio': -1,
-        'hubtip_rrRatio': -1,
+        'hubtipRatio': -1,
         'aspRatio': -1,
         'cum_.*': -1,
         'meridional_angle': -1,
