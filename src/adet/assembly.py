@@ -502,19 +502,28 @@ class UnitScalingManager:
         return self._argument_scaling_helper(self.data.constraints)
 
     def get_arguments_bounds(
-        self,
+        self, custom_bounds: dict[str, tuple[float, float]] = {}
     ) -> list[tuple[float, float]]:
+        """The custom bounds are to be provided dimensionally"""
         bounds = []
         for arg, scaling in zip(self.data.free_args, self.get_free_args_scaling()):
-            arg_type = get_arg_type(arg)
-
-            if arg_type not in _bounds_reg:
-                lower_bound = -1e20
-                upper_bound = 1e20
+            if arg in custom_bounds:
+                lower_bound, upper_bound = custom_bounds[arg]
             else:
-                lower_bound, upper_bound = _bounds_reg.get(arg_type)
+                arg_type = get_arg_type(arg)
 
-            bounds.append((lower_bound / scaling, upper_bound / scaling))
+                if arg_type not in _bounds_reg:
+                    lower_bound = -1e20
+                    upper_bound = 1e20
+                else:
+                    lower_bound, upper_bound = _bounds_reg.get(arg_type)
+
+            bounds.append(
+                (
+                    lower_bound / scaling,
+                    upper_bound / scaling,
+                )
+            )
 
         return bounds
 
@@ -972,6 +981,9 @@ class SystemAssembler(ABC):
     def make_residual_function(self):
         self._check_built()
 
+    def get_arguments_bounds(self, custom_bounds={}):
+        self._scaling_manager.get_arguments_bounds(custom_bounds)
+
     def get_scaled_constraints(self) -> list[NDArray]:
         return jax.tree.map(
             lambda x, y: x / y,
@@ -1413,7 +1425,7 @@ class CasadiSystem(SystemAssembler):
                     'ipopt.print_level': 3,
                     'ipopt.max_iter': 1000,
                     'ipopt.tol': 1e-8,
-                    'ipopt.acceptable_constr_viol_tol': 1e-8,  # infeasible pts
+                    'ipopt.acceptable_constr_viol_tol': 1e-13,  # infeasible pts
                     'ipopt.bound_push': 0.3,
                     # NOTE: Superseeded by new implementations, thermo
                     # derivatives available up to the 3rd order (null)
@@ -1434,8 +1446,8 @@ class CasadiSystem(SystemAssembler):
             )
         return rootfinder
 
-    def get_arguments_bounds(self):
-        bounds_by_arg = self._scaling_manager.get_arguments_bounds()
+    def get_arguments_bounds(self, custom_bounds={}):
+        bounds_by_arg = self._scaling_manager.get_arguments_bounds(custom_bounds)
         lbx = []
         ubx = []
 

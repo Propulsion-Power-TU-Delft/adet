@@ -138,6 +138,7 @@ angle_distribution = Quantity(a * x**2 + b * x + c, 'deg')
 rotor = BladeRow(
     name='rotor',
     shaft=shaft,
+    row_type='rotor',
     in_constraints={
         'geo': {
             # *** Meridional geometry

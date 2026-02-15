@@ -158,6 +158,7 @@ def create_blade_row(row_name: str, shaft_connection: Shaft, num_span: int):
     return BladeRow(
         row_name,
         shaft=shaft_connection,
+        row_type='rotor',
         in_constraints={
             'geo': {
                 'rr_midspan': rr_midspan_inlet,

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from matplotlib.lines import Line2D
 import numpy as np
@@ -29,6 +29,7 @@ from adet.equations.geometrical import (
     MeridionalUniform,
     MidspanProperties,
 )
+from adet.equations.nondimensional import EnthalpyDropCoefficient
 from adet.geometry import BezierCurve, StraightLine
 from adet.losses.basic import PercentageEntropyLoss, PlaceHolderLoss, ZeroDeviation
 from adet.losses.mixing import MixingMomentumBalances
@@ -74,6 +75,7 @@ class BladeRow(BaseComponent):
         (AngleDeflection, (0, 1)),
         (EndwallProperties, 0),
         (EndwallProperties, 1),
+        (EnthalpyDropCoefficient, (0, 1)),
         # (MidspanProperties, 0),
         # (MidspanProperties, 1),
         (GeometricalRatios, (0, 1)),
@@ -98,6 +100,7 @@ class BladeRow(BaseComponent):
         self,
         name: str,
         shaft: Shaft,
+        row_type: Literal['stator', 'rotor'],
         in_constraints: dict[
             str,
             dict[str, Any],
@@ -115,7 +118,10 @@ class BladeRow(BaseComponent):
     ):
         """
         Class that represents a blade row, compressor/turbine,
-        stator/rotor
+        stator/rotor.
+        Note that the row type only influences the guesses and
+        bounds that are enforced on the kinematic variables for
+        that specific blare row.
         """
         super().__init__(
             name,
@@ -127,6 +133,9 @@ class BladeRow(BaseComponent):
         )
         if shaft.is_constrained:
             self.out_constraints['kin']['omega'] = shaft.omega
+
+        # This is to be read by the network to improve guesses and bounds
+        self.row_type = row_type
 
 
 class VanelessDiffuser(BaseComponent):

@@ -67,8 +67,10 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 # Simulation settings
 NUM_SPAN = 11  # Number of spanwise stations
 NUM_STAGES = 5  # Number of turbine stages (stator-rotor pairs)
+# Runtime options
+RUN_MULTI = False  # Run the multi streamline case
 SCALED = True  # Use scaled equations for better numerical conditioning
-PLOTS = True  # Show plots at end
+PLOTS = False  # Show plots at end
 PRINTS = True  # Print node information
 
 # === FLUID MODEL SETUP
@@ -114,8 +116,8 @@ _gss_reg.from_dict(
         'Wm': 100,
         'Wt': 100,
         'W': 100,
-        'alpha': 0.3,
-        'beta': -0.3,
+        'U': 200,
+        'hdropCoeff': -2.0,
     }
 )
 
@@ -125,7 +127,7 @@ _bnd_reg.from_dict(
     {
         'Vm': (0.0, 110),
         'U': (0, 500),
-        'workCoeff': (-2.0, -0.5),
+        'hdropCoeff': (-6.0, -0.2),
     }
 )
 
@@ -166,6 +168,7 @@ inlet = Inlet(
 stator = BladeRow(
     'Stator',
     shaft=casing,
+    row_type='stator',
     in_constraints={
         'geo': {
             'thick_by_pitch': 0.04,
@@ -173,7 +176,7 @@ stator = BladeRow(
     },
     out_constraints={
         'kin': {
-            'alpha': Quantity(70, 'deg'),  # Exit flow angle
+            # 'alpha': Quantity(70, 'deg'),  # Exit flow angle
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
@@ -195,6 +198,7 @@ stator = BladeRow(
 rotor = BladeRow(
     'Rotor',
     shaft=rotating_shaft,
+    row_type='rotor',
     in_constraints={
         'geo': {
             'thick_by_pitch': 0.04,
@@ -202,7 +206,7 @@ rotor = BladeRow(
     },
     out_constraints={
         'oth': {
-            # 'workCoeff': -1.0,
+            'workCoeff': -1.0,
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
@@ -274,15 +278,15 @@ rootfinder_mean_is = ntw.system.make_rootfinder(
         'ipopt.bound_push': 0.8,
     },
 )
-x0_mean_is = ntw.system.get_scaled_guess()
-kn_mean_is = ntw.system.get_scaled_constraints()
-bnd_mean_is = ntw.system.get_arguments_bounds()
+x0_mean_is = ntw.get_scaled_guess()
+kn_mean_is = ntw.get_scaled_constraints()
+bnd_mean_is = ntw.get_arguments_bounds()
 solution = solve_root_problem(
     rootfinder_mean_is,
     x0_mean_is,
     kn_mean_is,
     bnd_mean_is,
-    perturbate_guess=True,
+    perturbate_guess=False,
     delta_pert=0.1,
     num_samples=1000,
 )
@@ -290,67 +294,68 @@ solution = solve_root_problem(
 sol_mean_is_dict = ntw.system.write_solution_to_nodes(solution)
 
 
-# Only use profile
-class LossAdder(EquationBase):
-    def residual(self, stc_smass0, stc_smass1, oth_delta_smass_profile1):
-        return stc_smass1 - (stc_smass0 + oth_delta_smass_profile1)
+if RUN_MULTI:
+    # Only use profile
+    class LossAdder(EquationBase):
+        def residual(self, stc_smass0, stc_smass1, oth_delta_smass_profile1):
+            return stc_smass1 - (stc_smass0 + oth_delta_smass_profile1)
 
+    ntw.system.remove_equation_type(LossModel)
+    for nodes in nodes_by_stage:
+        # 1. Fix blade heights from meanline solution
+        ntw.system.boundary_conditions[nodes[1]]['geo']['height'] = sol_mean_is_dict[
+            f'geo_height{nodes[1]}'
+        ]
+        ntw.system.boundary_conditions[nodes[3]]['geo']['height'] = sol_mean_is_dict[
+            f'geo_height{nodes[3]}'
+        ]
+        # 2. Fix rotational speed from meanline solution
+        ntw.system.boundary_conditions[nodes[3]]['kin']['omega'] = sol_mean_is_dict[
+            f'kin_omega{nodes[3]}'
+        ]
 
-ntw.system.remove_equation_type(LossModel)
-for nodes in nodes_by_stage:
-    # 1. Fix blade heights from meanline solution
-    ntw.system.boundary_conditions[nodes[1]]['geo']['height'] = sol_mean_is_dict[
-        f'geo_height{nodes[1]}'
-    ]
-    ntw.system.boundary_conditions[nodes[3]]['geo']['height'] = sol_mean_is_dict[
-        f'geo_height{nodes[3]}'
-    ]
-    # 2. Fix rotational speed from meanline solution
-    ntw.system.boundary_conditions[nodes[3]]['kin']['omega'] = sol_mean_is_dict[
-        f'kin_omega{nodes[3]}'
-    ]
+        # 3. Free vortex distribution
+        ntw.system.boundary_conditions[nodes[1]]['kin']['Vt_midspan'] = (
+            sol_mean_is_dict[f'kin_Vt{nodes[1]}']
+        )
+        ntw.system.boundary_conditions[nodes[3]]['kin']['Vt_midspan'] = (
+            sol_mean_is_dict[f'kin_Vt{nodes[3]}']
+        )
 
-    # 3. Free vortex distribution
-    ntw.system.boundary_conditions[nodes[1]]['kin']['Vt_midspan'] = sol_mean_is_dict[
-        f'kin_Vt{nodes[1]}'
-    ]
-    ntw.system.boundary_conditions[nodes[3]]['kin']['Vt_midspan'] = sol_mean_is_dict[
-        f'kin_Vt{nodes[3]}'
-    ]
+        # 4. Remove fixed deflection/workCoeff, impose free vortex
+        ntw.system.boundary_conditions[nodes[1]]['kin'].pop('alpha', None)
+        ntw.system.boundary_conditions[nodes[3]]['oth'].pop('workCoeff', None)
 
-    # 4. Remove fixed deflection/workCoeff, impose free vortex
-    ntw.system.boundary_conditions[nodes[1]]['kin'].pop('alpha', None)
-    ntw.system.boundary_conditions[nodes[3]]['oth'].pop('workCoeff', None)
+        ntw.system.add_equation(FreeVortexDistribution(), nodes[1])
+        ntw.system.add_equation(FreeVortexDistribution(), nodes[3])
 
-    ntw.system.add_equation(FreeVortexDistribution(), nodes[1])
-    ntw.system.add_equation(FreeVortexDistribution(), nodes[3])
+        # 5. Add profile losses
+        ntw.system.add_equation(DentonProfileLoss(), (nodes[0], nodes[1]))
+        ntw.system.add_equation(LossAdder(), (nodes[0], nodes[1]))
+        ntw.system.add_equation(DentonProfileLoss(), (nodes[2], nodes[3]))
+        ntw.system.add_equation(LossAdder(), (nodes[2], nodes[3]))
 
-    # 5. Add profile losses
-    ntw.system.add_equation(DentonProfileLoss(), (nodes[0], nodes[1]))
-    ntw.system.add_equation(LossAdder(), (nodes[0], nodes[1]))
-    ntw.system.add_equation(DentonProfileLoss(), (nodes[2], nodes[3]))
-    ntw.system.add_equation(LossAdder(), (nodes[2], nodes[3]))
+    ntw.system.remove_equation_type(RepeatedStage)
+    ntw.system.remove_equation_type(TotalStaticDegreeOfReaction)
+    ntw.system.num_span = NUM_SPAN
+    ntw.system.build()
 
+    x0_span_is = ntw.system.get_scaled_guess(sol_mean_is_dict)
+    kn_span_is = ntw.system.get_scaled_constraints()
+    bnd_span_is = ntw.system.get_arguments_bounds()
+    rootfind_span_is = ntw.system.make_rootfinder(
+        'kinsol',
+        {'error_on_fail': False},
+    )
 
-ntw.system.remove_equation_type(RepeatedStage)
-ntw.system.remove_equation_type(TotalStaticDegreeOfReaction)
-ntw.system.num_span = NUM_SPAN
-ntw.system.build()
-
-x0_span_is = ntw.system.get_scaled_guess(sol_mean_is_dict)
-kn_span_is = ntw.system.get_scaled_constraints()
-bnd_span_is = ntw.system.get_arguments_bounds()
-rootfind_span_is = ntw.system.make_rootfinder(
-    'kinsol',
-    {'error_on_fail': False},
-)
-
-sol_span_is = solve_root_problem(rootfind_span_is, x0_span_is, kn_span_is, bnd_span_is)
-sol_span_is_dict = ntw.system.write_solution_to_nodes(sol_span_is)
+    sol_span_is = solve_root_problem(
+        rootfind_span_is, x0_span_is, kn_span_is, bnd_span_is
+    )
+    sol_span_is_dict = ntw.system.write_solution_to_nodes(sol_span_is)
 
 
 # === POST-PROCESSING AND VISUALIZATION
-plt.style.use('dark_background')
+# plt.style.use('dark_background')
 if PLOTS:
     FONTSIZE = 18
     FONTDICT = {'fontsize': FONTSIZE}

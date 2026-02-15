@@ -2,6 +2,7 @@ from typing import Generic, Mapping, Sequence, TypeVar
 
 from adet.assembly import SystemAssembler
 from adet.components import BaseComponent
+from adet.components.blade_row import BladeRow
 from adet.constants import ArrayLike
 from adet.fluid.settings import FluidSettings
 from adet.components.connections import Inlet
@@ -149,14 +150,47 @@ class ComponentNetwork(Generic[T]):
             component.inlet_node = self.system.nodes[inlet_node_idx]
             component.outlet_node = self.system.nodes[outlet_node_idx]
 
-    def get_scaled_guess(self, manual_values: Mapping[str, ArrayLike]):
-        self.system.get_scaled_guess(manual_values)
+    def get_scaled_guess(self, manual_values: Mapping[str, ArrayLike] = {}):
+        """Simple passthrough"""
+        physical_guesses = {}
+        for cmp_idx, comp in enumerate(self.components):
+            if not isinstance(comp, BladeRow):
+                continue
+            else:
+                node_in_idx = 2 * cmp_idx
+                node_out_idx = node_in_idx + 1
+
+                if comp.row_type == 'stator':
+                    physical_guesses[f'kin_U{node_in_idx}'] = 0.0
+                    physical_guesses[f'kin_U{node_out_idx}'] = 0.0
+                    physical_guesses[f'kin_alpha{node_in_idx}'] = 0.0
+                    physical_guesses[f'kin_alpha{node_out_idx}'] = 1.20
+                elif comp.row_type == 'rotor':
+                    physical_guesses[f'kin_alpha{node_in_idx}'] = 1.20
+                    physical_guesses[f'kin_alpha{node_in_idx}'] = 0.0
+
+        manual_values = {**physical_guesses, **manual_values}
+        return self.system.get_scaled_guess(manual_values)
 
     def get_scaled_constraints(self):
-        self.system.get_scaled_constraints()
+        """Simple passthrough"""
+        return self.system.get_scaled_constraints()
 
-    def get_(self):
-        self.system.get_arguments_bounds()
+    def get_arguments_bounds(self, custom_bounds: dict[str, tuple[float, float]] = {}):
+        physical_bounds = {}
+        for cmp_idx, comp in enumerate(self.components):
+            if not isinstance(comp, BladeRow):
+                continue
+            else:
+                node_in_idx = 2 * cmp_idx
+                node_out_idx = node_in_idx + 1
+
+                if comp.row_type == 'stator':
+                    physical_bounds[f'kin_U{node_in_idx}'] = (-20, 20)
+                    physical_bounds[f'kin_U{node_out_idx}'] = (-20, 20)
+
+        custom_bounds = {**physical_bounds, **custom_bounds}
+        return self.system.get_arguments_bounds(custom_bounds)
 
     def print_structure(self):
         component_repr = '@ = node\n\nInlet == @0'
