@@ -158,7 +158,7 @@ class ComponentNetwork(Generic[T]):
         shafts_outnodes: dict[Shaft, list[int]] = defaultdict(list)
         for comp_index, component in enumerate(self.components):
             inlet_node_idx = 2 * comp_index  # Of the current component
-            outlet_node_idx = inlet_node_idx - 1  # Of the previous component
+            outlet_node_idx = inlet_node_idx + 1  # Of the previous component
 
             if isinstance(component, BladeRow):
                 # Constrained ones are enfored in BladeRow

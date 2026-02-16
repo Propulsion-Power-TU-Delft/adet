@@ -141,11 +141,11 @@ rotating_shaft = Shaft(
 inlet = Inlet(
     {
         'kin': {
+            'Vm': 100,
             'alpha': Quantity(0, 'deg'),  # Flow angle
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
-            'hubtipRatio': 0.7,
         },
         'tot': {
             'T': 700,  # Total temperature [K]
@@ -165,10 +165,8 @@ stator = BladeRow(
         },
     },
     out_constraints={
-        'kin': {
-            # 'alpha': Quantity(70, 'deg'),  # Exit flow angle
-        },
         'geo': {
+            'rr_midspan': 0.1,
             'aspRatio': 2.0,
             'num_blades': 20,
             'thick_by_pitch': 0.02,
@@ -195,6 +193,7 @@ rotor = BladeRow(
     },
     out_constraints={
         'geo': {
+            'rr_midspan': 0.1,
             'aspRatio': 2.0,
             'num_blades': 20,
             'thick_by_pitch': 0.02,
@@ -254,13 +253,12 @@ for stage in range(ntw.num_components // 2):
         {
             'oth': {
                 'reactDegree_ts': 0.5,
-                'workCoeff': -1.0,
+                # 'flowCoeff': 0.6,
             },
         },
         nodes[3],
     )
-
-ntw.system.boundary_conditions[3]['oth']['flowCoeff'] = 0.8
+    ntw.system.boundary_conditions[nodes[2]]['kin']['alpha'] = Quantity(60, 'deg')
 
 
 # === SOLVE STAGE 1: Meanline isentropic with minimal camberline ===
@@ -296,7 +294,7 @@ if RUN_MULTI:
             return stc_smass1 - (stc_smass0 + oth_delta_smass_profile1)
 
     # ntw.system.remove_equation_type(LossModel)
-    ntw.system.boundary_conditions[0]['geo'].pop('hubtipRatio')
+    ntw.system.boundary_conditions[3]['kin']['omega'] = sol_mean_is_dict['kin_omega3']
     for nodes in nodes_by_stage:
         # 1. Fix blade heights from meanline solution
         ntw.system.boundary_conditions[nodes[0]]['geo']['height'] = sol_mean_is_dict[
@@ -308,20 +306,6 @@ if RUN_MULTI:
         ntw.system.boundary_conditions[nodes[3]]['geo']['height'] = sol_mean_is_dict[
             f'geo_height{nodes[3]}'
         ]
-        ntw.system.boundary_conditions[nodes[0]]['geo']['rr_midspan'] = (
-            sol_mean_is_dict[f'geo_rr_midspan{nodes[0]}']
-        )
-        ntw.system.boundary_conditions[nodes[1]]['geo']['rr_midspan'] = (
-            sol_mean_is_dict[f'geo_rr_midspan{nodes[1]}']
-        )
-        ntw.system.boundary_conditions[nodes[3]]['geo']['rr_midspan'] = (
-            sol_mean_is_dict[f'geo_rr_midspan{nodes[3]}']
-        )
-
-        # 2. Fix rotational speed from meanline solution
-        ntw.system.boundary_conditions[nodes[3]]['kin']['omega'] = sol_mean_is_dict[
-            f'kin_omega{nodes[3]}'
-        ]
 
         # 3. Free vortex distribution
         ntw.system.boundary_conditions[nodes[1]]['kin']['Vt_midspan'] = (
@@ -332,10 +316,8 @@ if RUN_MULTI:
         )
 
         # 4. Remove fixed deflection/workCoeff, impose free vortex
-        # ntw.system.boundary_conditions[nodes[1]]['kin'].pop('alpha', None)
-        ntw.system.boundary_conditions[nodes[3]]['oth'].pop('reactDegree_ts', None)
-        ntw.system.boundary_conditions[nodes[3]]['oth'].pop('workCoeff', None)
-        ntw.system.boundary_conditions[nodes[3]]['oth'].pop('flowCoeff', None)
+        ntw.system.boundary_conditions[nodes[2]]['kin'].pop('alpha')
+        ntw.system.boundary_conditions[nodes[3]]['oth'].pop('reactDegree_ts')
 
         ntw.system.add_equation(FreeVortexDistribution(), nodes[1])
         ntw.system.add_equation(FreeVortexDistribution(), nodes[3])

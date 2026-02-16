@@ -274,7 +274,7 @@ class ConstraintManager:
     def add_equalities(self, *equalities: tuple[str, ...]):
         """
         Each tuple represents a set of variables treated as equal by the system.
-        Adding ('a', 'b', 'c') adds the equations: a-b=0, a-c=0, b-c=0
+        Adding ('a', 'b', 'c') adds the equations: a-b=0, a-c=0
         """
         for args in equalities:
             if set(args) not in self.data.equalities:
@@ -1212,15 +1212,17 @@ class CasadiSystem(SystemAssembler):
         that can be part of a single or multiple components
         """
         equalities_expressions = []
-        for args in self._equalities:
-            for arg_couples in combinations(args, 2):
+        for equal_args in self._equalities:
+            equal_args = sorted(equal_args)
+            arg_couples = [(equal_args[0], arg) for arg in equal_args[1:]]
+            for arg_tuple in arg_couples:
                 # If both argument do not appear in the equations, skip to next couple
                 # if one of them is unused by other eqns. it is useless to add it
-                if not set(arg_couples).issubset(self._all_symbols):
+                if not set(arg_tuple).issubset(self._all_symbols):
                     continue
 
-                sym0 = self._all_symbols[arg_couples[0]]
-                sym1 = self._all_symbols[arg_couples[1]]
+                sym0 = self._all_symbols[arg_tuple[0]]
+                sym1 = self._all_symbols[arg_tuple[1]]
 
                 # NOTE: We don't care about scaling, they
                 # are just identities, either on scaled or unscaled vars

@@ -41,10 +41,6 @@ class RepeatedStage(EquationBase):
 
     def residual(
         self,
-        geo_rr_midspan0,
-        geo_rr_midspan1,
-        geo_rr_midspan2,
-        geo_rr_midspan3,
         kin_alpha0,
         kin_alpha3,
         kin_Vm0,
@@ -55,10 +51,8 @@ class RepeatedStage(EquationBase):
         r1 = kin_alpha0 - kin_alpha3
         r2 = kin_Vm3 - kin_Vm2
         r3 = kin_Vm1 - kin_Vm0
-        r4 = geo_rr_midspan3 - geo_rr_midspan2
-        r5 = geo_rr_midspan1 - geo_rr_midspan0
 
-        return r1, r2, r3, r4, r5
+        return r1, r2, r3
 
 
 class MeridionalVelocityRatio(EquationBase):
