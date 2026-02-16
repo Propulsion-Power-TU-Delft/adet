@@ -7,7 +7,7 @@ import CoolProp as cp
 import numpy as np
 
 from adet.equations.base_equation import EquationBase
-from adet.equations.utils import safe_sum, safe_abs
+from adet.equations.utils import get_midspan_idx, safe_sum, safe_abs
 
 
 class AngleDeflection(EquationBase):
@@ -47,12 +47,19 @@ class RepeatedStage(EquationBase):
         kin_Vm1,
         kin_Vm2,
         kin_Vm3,
+        geo_rr_midspan0,
+        geo_rr_midspan2,
+        geo_rr_midspan3,
     ):
-        r1 = kin_alpha0 - kin_alpha3
+        midspan = get_midspan_idx(kin_alpha0)
+
+        r1 = kin_alpha0[midspan] - kin_alpha3[midspan]
         r2 = kin_Vm3 - kin_Vm2
         r3 = kin_Vm1 - kin_Vm0
+        r4 = geo_rr_midspan3 - geo_rr_midspan0
+        r5 = geo_rr_midspan2 - geo_rr_midspan0
 
-        return r1, r2, r3
+        return r1, r2, r3, r4, r5
 
 
 class MeridionalVelocityRatio(EquationBase):

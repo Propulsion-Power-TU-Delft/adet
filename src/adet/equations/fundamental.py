@@ -3,7 +3,7 @@
 import numpy as np
 
 from adet.equations import EquationBase
-from adet.equations.utils import safe_sum, span_fin_diff
+from adet.equations.utils import get_midspan_idx, safe_sum, span_fin_diff
 from adet.equations.base_equation import MeridAreaBlockage
 
 
@@ -94,8 +94,8 @@ class Kinematics(EquationBase):
         # Only if Vm and Vt are zero the denominator
         # nullifies, but Vm > 0 always, thus the
         # square root should pose no problems
-        r1 = kin_V0**2 - (kin_Vm0**2 + kin_Vt0**2)
-        r2 = kin_W0**2 - (kin_Wm0**2 + kin_Wt0**2)
+        r1 = kin_V0 - (kin_Vm0**2 + kin_Vt0**2) ** 0.5
+        r2 = kin_W0 - (kin_Wm0**2 + kin_Wt0**2) ** 0.5
 
         r3 = kin_Vm0 - kin_Wm0
         r4 = kin_Vt0 - (kin_Wt0 + kin_U0)
@@ -190,14 +190,13 @@ class NisRe(EquationBase):
 
 
 class FreeVortexDistribution(EquationBase):
-    def residual(self, geo_rr0, kin_Vt0, kin_Vt_midspan0, geo_rr_midspan0):
-        num_span = max(geo_rr0.shape)
-        if num_span == 1:
-            midspan = 0
-        else:
-            midspan = num_span // 2
+    def residual(self, geo_rr0, kin_Vt0):
+        midspan = get_midspan_idx(geo_rr0)
+        rVt_mid = geo_rr0[midspan] * kin_Vt0[midspan]
 
-        return geo_rr0 * kin_Vt0 - geo_rr_midspan0 * kin_Vt_midspan0
+        r1 = geo_rr0[:midspan] * kin_Vt0[:midspan] - rVt_mid
+        r2 = geo_rr0[midspan + 1 :] * kin_Vt0[midspan + 1 :] - rVt_mid
+        return r1, r2
 
 
 class ForcedVortexDistribution(EquationBase):

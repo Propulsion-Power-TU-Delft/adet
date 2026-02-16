@@ -15,6 +15,15 @@ from adet.node import FlowNode
 from adet.tools.strings import get_arg_state, get_arg_type, get_index
 
 
+def get_midspan_idx(var):
+    num_span = max(var.shape)
+    if num_span == 1:
+        midspan = 0
+    else:
+        midspan = num_span // 2
+    return midspan
+
+
 def safe_abs(x):
     if isinstance(x, PlainQuantity):
         # Unit checks

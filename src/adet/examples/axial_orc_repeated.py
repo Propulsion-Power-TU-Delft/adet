@@ -28,7 +28,7 @@ from adet.equations.geometrical import (
 )
 from adet.equations.nondimensional import (
     FlowCoefficient,
-    TotalStaticDegreeOfReaction,
+    StaticTotalDegreeOfReaction,
     TotalStaticLoadingCoefficient,
     TotalTotalExpansionEfficiency,
     WorkCoefficient,
@@ -272,7 +272,7 @@ if ntw.num_components > 2:
     ntw.system.add_equation(FlowCoefficient(), (0, final_node))
     ntw.system.add_equation(WorkCoefficient(), (0, final_node))
     ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, final_node))
-    ntw.system.add_equation(TotalStaticDegreeOfReaction(), (0, 1, 4, 5))
+    ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, 4, 5))
     ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, final_node))
 
     # Boundary conditions

@@ -1307,7 +1307,7 @@ class CasadiSystem(SystemAssembler):
         num_vars = max(cs.vertcat(*self.free_args_sym).shape)
         num_residuals = max(cs.vertcat(*self.residual_expr).shape)
         logger.info(
-            f'System info: {num_vars} total variables, {num_residuals} total equations'
+            f'System info: {num_residuals} total equations, {num_vars} total variables'
         )
 
         if num_vars != num_residuals:

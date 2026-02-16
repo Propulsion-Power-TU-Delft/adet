@@ -48,7 +48,7 @@ _bounds_reg = VariableBoundsRegistry()
 _bounds_reg.reset()
 _bounds_reg.from_dict(
     {
-        'Vm': (10.0, 200.0),
+        'Vm': (10.0, 500.0),
         'U': (0, 500),
         'beta': (-1.5, 0.0),
         # 'delta_hmass_.*': (10.0, 1e5),
@@ -67,6 +67,7 @@ _greg.from_dict(
 _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 
 NUM_SPAN = 11
+PLOTS = True
 ENABLE_LOSSES = False
 RUN_MULTI = True
 # +++ Shaftskin_omega0 (node 0) is unknown,
@@ -236,9 +237,9 @@ solution_hecc_is = solve_root_problem(
     x0,
     kn_hecc_is,
     bnd_hecc_is,
-    suppress_output=True,
+    suppress_output=False,
 )
-sol_is_dict = ntw_hecc.system.solution_to_dict(solution_hecc_is)
+sol_is_dict = ntw_hecc.system.write_solution_to_nodes(solution_hecc_is)
 
 if RUN_MULTI:
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
@@ -272,76 +273,78 @@ if RUN_MULTI:
     )
     sol_multi_dict = ntw_hecc.system.write_solution_to_nodes(solution_hecc_multi)
 
-if __name__ == '__main__' and RUN_MULTI:
-    #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
-    # Remove isentropic and add losses
-    for eq, pos in EQS_ISENTROPIC.items():
-        ntw_hecc.system.remove_equation(eq.__class__, pos)
-    for eq, pos in EQS_WITH_LOSSES.items():
-        ntw_hecc.system.add_equation(eq, pos)
-    ntw_hecc.build()
+if __name__ == '__main__':
+    if RUN_MULTI:
+        #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
+        # Remove isentropic and add losses
+        for eq, pos in EQS_ISENTROPIC.items():
+            ntw_hecc.system.remove_equation(eq.__class__, pos)
+        for eq, pos in EQS_WITH_LOSSES.items():
+            ntw_hecc.system.add_equation(eq, pos)
+        ntw_hecc.build()
 
-    rootfinder_hecc_loss = ntw_hecc.system.make_rootfinder(
-        'ipopt',
-        opts={'error_on_fail': True},
-    )
-    x0_loss = ntw_hecc.system.get_scaled_guess(sol_multi_dict)
-    kn_loss = ntw_hecc.system.get_scaled_constraints()
-    bnd_loss = ntw_hecc.system.get_arguments_bounds()
-    solution_loss = solve_root_problem(
-        rootfinder_hecc_loss,
-        x0_loss,
-        kn_loss,
-        bnd_loss,
-        suppress_output=True,
-    )
-    sol_loss_dict = ntw_hecc.system.write_solution_to_nodes(solution_loss)
-    #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
+        rootfinder_hecc_loss = ntw_hecc.system.make_rootfinder(
+            'ipopt',
+            opts={'error_on_fail': True},
+        )
+        x0_loss = ntw_hecc.system.get_scaled_guess(sol_multi_dict)
+        kn_loss = ntw_hecc.system.get_scaled_constraints()
+        bnd_loss = ntw_hecc.system.get_arguments_bounds()
+        solution_loss = solve_root_problem(
+            rootfinder_hecc_loss,
+            x0_loss,
+            kn_loss,
+            bnd_loss,
+            suppress_output=True,
+        )
+        sol_loss_dict = ntw_hecc.system.write_solution_to_nodes(solution_loss)
+        #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 
-    # ---------------- PLOT ---------------------
+        # ---------------- PLOT ---------------------
     n0 = ntw_hecc.system.nodes[0]
     n1 = ntw_hecc.system.nodes[1]
 
-    fig, axs = plt.subplots(2, 2, figsize=(8, 20))
-    for cmp_idx, cmp in enumerate(ntw_hecc.components):
-        if cmp.inlet_node is None or cmp.outlet_node is None:
-            raise ValueError('Missing nodes')
+    if PLOTS:
+        fig, axs = plt.subplots(2, 2, figsize=(8, 20))
+        for cmp_idx, cmp in enumerate(ntw_hecc.components):
+            if cmp.inlet_node is None or cmp.outlet_node is None:
+                raise ValueError('Missing nodes')
 
-        node_idx = 0
-        for n in (cmp.inlet_node, cmp.outlet_node):
-            ax = axs[cmp_idx][node_idx]
+            node_idx = 0
+            for n in (cmp.inlet_node, cmp.outlet_node):
+                ax = axs[cmp_idx][node_idx]
 
-            ax.set_title(f'Node number {2 * cmp_idx + node_idx}')
-            ax.set_aspect('equal')
-            n.kin.plot(n.geo, 8, ax)
+                ax.set_title(f'Node number {2 * cmp_idx + node_idx}')
+                ax.set_aspect('equal')
+                n.kin.plot(n.geo, 8, ax)
 
-            node_idx += 1
+                node_idx += 1
 
-    fig, ax = plt.subplots()
-    ax.set_aspect('equal')
-    offset = 0.0
-    for c in ntw_hecc.components:
-        if not c.inlet_node or not c.outlet_node:
-            raise ValueError('missing nodes')
+        fig, ax = plt.subplots()
+        ax.set_aspect('equal')
+        offset = 0.0
+        for c in ntw_hecc.components:
+            if not c.inlet_node or not c.outlet_node:
+                raise ValueError('missing nodes')
 
-        lines = plot_from_nodes(
-            c.inlet_node,
-            c.outlet_node,
-            False,
-            offset,
-        )
+            lines = plot_from_nodes(
+                c.inlet_node,
+                c.outlet_node,
+                False,
+                offset,
+            )
 
-        offset += c.outlet_node.geo.chord_ax[0]
+            offset += c.outlet_node.geo.chord_ax[0]
 
-    print(ntw_hecc.system.nodes[1].oth)
-    plt.show(block=True)
-    plt.close('all')
+        print(ntw_hecc.system.nodes[1].oth)
+        plt.show(block=True)
+        # plt.close('all')
 
-    plt.plot(n1.oth.delta_hmass_loading)
-    plt.plot(n1.oth.delta_hmass_clearance)
-    plt.plot(n1.oth.delta_hmass_skin)
-    plt.ylabel('Enthalpy loss [J / kg / K]')
-    plt.xlabel('Spanwise station []')
-    plt.legend(['loading', 'clearance', 'skin'])
-    plt.grid()
-    plt.show()
+        plt.plot(n1.oth.delta_hmass_loading)
+        plt.plot(n1.oth.delta_hmass_clearance)
+        plt.plot(n1.oth.delta_hmass_skin)
+        plt.ylabel('Enthalpy loss [J / kg / K]')
+        plt.xlabel('Spanwise station []')
+        plt.legend(['loading', 'clearance', 'skin'])
+        plt.grid()
+        plt.show()

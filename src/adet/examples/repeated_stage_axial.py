@@ -29,7 +29,7 @@ from adet.equations.fundamental import FreeVortexDistribution
 from adet.equations.geometrical import MinimalCamberLine, ParabolicCamberline
 from adet.equations.nondimensional import (
     FlowCoefficient,
-    TotalStaticDegreeOfReaction,
+    StaticTotalDegreeOfReaction,
     WorkCoefficient,
 )
 from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidSettings
@@ -65,8 +65,8 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 # === CONFIGURATION
 # Simulation settings
-NUM_SPAN = 3  # Number of spanwise stations
-NUM_STAGES = 2  # Number of turbine stages (stator-rotor pairs)
+NUM_SPAN = 5  # Number of spanwise stations
+NUM_STAGES = 4  # Number of turbine stages (stator-rotor pairs)
 # Runtime options
 RUN_MULTI = False  # Run the multi streamline case
 SCALED = True  # Use scaled equations for better numerical conditioning
@@ -119,7 +119,8 @@ _bnd_reg.reset()
 _bnd_reg.from_dict(
     {
         'U': (0, 500),
-        'hdropCoeff': (-6.0, -0.1),
+        'hdropCoeff': (-6.0, -0.2),
+        'workCoeff': (-2.0, -0.8),  # It must be -1.0
     }
 )
 
@@ -142,13 +143,15 @@ inlet = Inlet(
     {
         'kin': {
             'Vm': 100,
-            'alpha': Quantity(0, 'deg'),  # Flow angle
+            'Vt_midspan': Quantity(0, 'm/s'),  # Flow angle
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
+            'hubtipRatio': 0.7,
+            'rr_midspan': 0.1,
         },
         'tot': {
-            'T': 700,  # Total temperature [K]
+            'T': 1200,  # Total temperature [K]
             'p': 10e5,  # Total pressure [Pa]
         },
     }
@@ -166,7 +169,6 @@ stator = BladeRow(
     },
     out_constraints={
         'geo': {
-            'rr_midspan': 0.1,
             'aspRatio': 2.0,
             'num_blades': 20,
             'thick_by_pitch': 0.02,
@@ -193,7 +195,6 @@ rotor = BladeRow(
     },
     out_constraints={
         'geo': {
-            'rr_midspan': 0.1,
             'aspRatio': 2.0,
             'num_blades': 20,
             'thick_by_pitch': 0.02,
@@ -240,26 +241,35 @@ ntw.system.add_global_constraints(
 # === STAGE-LEVEL EQUATIONS
 # Apply repeated stage and degree of reaction constraints
 # Each stage consists of 4 nodes: stator_in, stator_out, rotor_in, rotor_out
-nodes_by_stage = list(grouper(range(2 * ntw.num_components), 4, incomplete='strict'))
+nodes_by_stage = list(
+    grouper(
+        range(2 * ntw.num_components),
+        4,
+        incomplete='strict',
+    )
+)
 for stage in range(ntw.num_components // 2):
     nodes = nodes_by_stage[stage]
     # Repeated stage: inlet conditions same as outlet of previous stage
-    # Constant meridional velocity
+    ntw.system.add_spanwise_constants(
+        f'geo_chord_ax{nodes[1]}',
+        f'geo_chord_ax{nodes[3]}',
+    )
+    # Constant Vm, rr_midspan, alpha_0 = alpha_3
     ntw.system.add_equation(RepeatedStage(), nodes)
     # Degree of reaction constraint
-    ntw.system.add_equation(TotalStaticDegreeOfReaction(), nodes)
+    ntw.system.add_equation(StaticTotalDegreeOfReaction(), nodes)
     # Set nondimensional design parameters
     ntw.system.add_boundary_conditions(
         {
             'oth': {
                 'reactDegree_ts': 0.5,
-                # 'flowCoeff': 0.6,
             },
         },
         nodes[3],
     )
-    ntw.system.boundary_conditions[nodes[2]]['kin']['alpha'] = Quantity(60, 'deg')
 
+ntw.system.boundary_conditions[3]['oth']['flowCoeff'] = 0.4
 
 # === SOLVE STAGE 1: Meanline isentropic with minimal camberline ===
 # This determines the rotational speed at midspan (single spanwise station)
@@ -279,12 +289,11 @@ solution = solve_root_problem(
     kn_mean_is,
     bnd_mean_is,
     perturbate_guess=False,
-    delta_pert=0.01,
-    num_samples=100,
+    delta_pert=0.1,
+    num_samples=1000,
 )
 
 sol_mean_is_dict = ntw.system.write_solution_to_nodes(solution)
-
 
 # # # # # # # # # # # # # #
 if RUN_MULTI:
@@ -294,33 +303,8 @@ if RUN_MULTI:
             return stc_smass1 - (stc_smass0 + oth_delta_smass_profile1)
 
     # ntw.system.remove_equation_type(LossModel)
-    ntw.system.boundary_conditions[3]['kin']['omega'] = sol_mean_is_dict['kin_omega3']
     for nodes in nodes_by_stage:
-        # 1. Fix blade heights from meanline solution
-        ntw.system.boundary_conditions[nodes[0]]['geo']['height'] = sol_mean_is_dict[
-            f'geo_height{nodes[0]}'
-        ]
-        ntw.system.boundary_conditions[nodes[1]]['geo']['height'] = sol_mean_is_dict[
-            f'geo_height{nodes[1]}'
-        ]
-        ntw.system.boundary_conditions[nodes[3]]['geo']['height'] = sol_mean_is_dict[
-            f'geo_height{nodes[3]}'
-        ]
-
-        # 3. Free vortex distribution
-        ntw.system.boundary_conditions[nodes[1]]['kin']['Vt_midspan'] = (
-            sol_mean_is_dict[f'kin_Vt{nodes[1]}']
-        )
-        ntw.system.boundary_conditions[nodes[3]]['kin']['Vt_midspan'] = (
-            sol_mean_is_dict[f'kin_Vt{nodes[3]}']
-        )
-
-        # 4. Remove fixed deflection/workCoeff, impose free vortex
-        ntw.system.boundary_conditions[nodes[2]]['kin'].pop('alpha')
-        ntw.system.boundary_conditions[nodes[3]]['oth'].pop('reactDegree_ts')
-
         ntw.system.add_equation(FreeVortexDistribution(), nodes[1])
-        ntw.system.add_equation(FreeVortexDistribution(), nodes[3])
 
         # 5. Add profile losses
         # ntw.system.add_equation(DentonProfileLoss(), (nodes[0], nodes[1]))
@@ -328,7 +312,6 @@ if RUN_MULTI:
         # ntw.system.add_equation(DentonProfileLoss(), (nodes[2], nodes[3]))
         # ntw.system.add_equation(LossAdder(), (nodes[2], nodes[3]))
 
-    ntw.system.remove_equation_type(RepeatedStage)
     ntw.system.num_span = NUM_SPAN
     ntw.system.build()
 
@@ -336,7 +319,7 @@ if RUN_MULTI:
     kn_span_is = ntw.system.get_scaled_constraints()
     bnd_span_is = ntw.system.get_arguments_bounds()
     rootfind_span_is = ntw.system.make_rootfinder(
-        'kinsol',
+        'ipopt',
         {'error_on_fail': False},
     )
 
@@ -427,7 +410,7 @@ if PLOTS:
                 inlet_angle,
                 outlet_angle,
                 chord_ax,
-                'w',
+                'k',
                 axial_offset=offset,
                 tangential_offset=blade_num * pitch,
             )

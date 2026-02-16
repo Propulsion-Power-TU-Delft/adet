@@ -76,8 +76,8 @@ class BladeRow(BaseComponent):
         (EndwallProperties, 0),
         (EndwallProperties, 1),
         (EnthalpyDropCoefficient, (0, 1)),
-        # (MidspanProperties, 0),
-        # (MidspanProperties, 1),
+        (MidspanProperties, 0),
+        (MidspanProperties, 1),
         (GeometricalRatios, (0, 1)),
         (MeridionalVelocityRatio, (0, 1)),
         # *** Blade count, pitch, channel massflow

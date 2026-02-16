@@ -8,7 +8,7 @@ import casadi as cs
 import CoolProp as cp
 
 from adet.equations import EquationBase
-from adet.equations.utils import safe_abs, thermo_deriv
+from adet.equations.utils import get_midspan_idx, safe_abs, thermo_deriv
 
 
 class TotalTotalPressureRatio(EquationBase):
@@ -85,7 +85,7 @@ class StaticStaticPressRatio(EquationBase):
         return stc_p0 * oth_pRatio_ss1 - stc_p1
 
 
-class TotalStaticDegreeOfReaction(EquationBase):
+class StaticTotalDegreeOfReaction(EquationBase):
     """
     0 - [Stator] - 1 === 2 - [Rotor] - 3
     This assumes the stator is on nodes 0,1 and the stator on 2,3 is the rotor.
@@ -101,10 +101,15 @@ class TotalStaticDegreeOfReaction(EquationBase):
         tot_hmass3,
         oth_reactDegree_ts3,
     ):
+        midspan = get_midspan_idx(tot_hmass0)
+
         delta_hmass_rotor = stc_hmass3 - stc_hmass2
         delta_tot_hmass_stage = tot_hmass3 - tot_hmass0
 
-        return delta_tot_hmass_stage * oth_reactDegree_ts3 - delta_hmass_rotor
+        return (
+            delta_tot_hmass_stage[midspan] * oth_reactDegree_ts3
+            - delta_hmass_rotor[midspan]
+        )
 
 
 class StaticDegreeOfReaction(EquationBase):
@@ -145,7 +150,9 @@ class FlowCoefficient(EquationBase):
     """
 
     def residual(self, kin_Vm0, kin_U1, oth_flowCoeff1):
-        return safe_abs(kin_U1) * oth_flowCoeff1 - kin_Vm0
+        midspan = get_midspan_idx(kin_Vm0)
+
+        return safe_abs(kin_U1[midspan]) * oth_flowCoeff1 - kin_Vm0[midspan]
 
 
 class WorkCoefficient(EquationBase):

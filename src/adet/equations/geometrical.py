@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from adet.equations.base_equation import CamberLineGeom, EquationBase, MeridionalGeom
-from adet.equations.utils import safe_min_clip, safe_sum
+from adet.equations.utils import get_midspan_idx, safe_min_clip, safe_sum
 
 
 # NOTE:
@@ -94,7 +94,7 @@ class MidspanProperties(EquationBase):
         if num_span == 1:
             midspan = 0
         else:
-            midspan = num_span % 2
+            midspan = num_span // 2
 
         r1 = kin_V_midspan0 - kin_V0[midspan]
         r2 = kin_Vm_midspan0 - kin_Vm0[midspan]
@@ -116,11 +116,7 @@ class GeometricalRatios(EquationBase):
         geo_radiusRatio1,
         geo_aspRatio1,
     ):
-        num_span = max(geo_chord_ax1.shape)
-        if num_span == 1:
-            midspan = 0
-        else:
-            midspan = num_span // 2
+        midspan = get_midspan_idx(geo_chord_ax1)
 
         r1 = geo_heightRatio1 - geo_height1 / geo_height0
         r2 = np.tan(geo_flare_angle1) - (geo_height1 - geo_height0) / (
@@ -154,11 +150,7 @@ class EndwallProperties(EquationBase):
         kin_beta_hub0,
         kin_beta_tip0,
     ):
-        num_span = max(geo_rr_midspan0.shape)
-        if num_span == 1:
-            midspan = 0
-        else:
-            midspan = num_span % 2
+        midspan = get_midspan_idx(kin_Vt0)
 
         # Auxiliary variables
         delta_radius = geo_height0 / 2 * np.cos(geo_meridional_angle0)

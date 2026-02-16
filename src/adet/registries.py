@@ -394,6 +394,9 @@ class ScalarsRegistry(BaseRegistry[str, int]):
         'meridional_angle': -1,
         'num_blades': -1,
         '.*AreaAve': -1,
+        # Coefficients
+        'flowCoeff': -1,
+        'reactDegree.*': -1,
     }
 
 
