@@ -51,9 +51,9 @@ class RepeatedStage(EquationBase):
         geo_rr_midspan2,
         geo_rr_midspan3,
     ):
-        midspan = get_midspan_idx(kin_alpha0)
+        # midspan = get_midspan_idx(kin_alpha0)
 
-        r1 = kin_alpha0[midspan] - kin_alpha3[midspan]
+        r1 = kin_alpha0 - kin_alpha3
         r2 = kin_Vm3 - kin_Vm2
         r3 = kin_Vm1 - kin_Vm0
         r4 = geo_rr_midspan3 - geo_rr_midspan0

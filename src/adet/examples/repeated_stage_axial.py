@@ -26,7 +26,12 @@ from adet.components.blade_row import plot_from_nodes
 from adet.equations.base_equation import EquationBase
 from adet.equations.definitions import RepeatedStage
 from adet.equations.fundamental import FreeVortexDistribution
-from adet.equations.geometrical import MinimalCamberLine, ParabolicCamberline
+from adet.equations.geometrical import (
+    MeridionalUniform,
+    MeridionalVariable,
+    MinimalCamberLine,
+    ParabolicCamberline,
+)
 from adet.equations.nondimensional import (
     FlowCoefficient,
     StaticTotalDegreeOfReaction,
@@ -65,10 +70,10 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 # === CONFIGURATION
 # Simulation settings
-NUM_SPAN = 5  # Number of spanwise stations
-NUM_STAGES = 4  # Number of turbine stages (stator-rotor pairs)
+NUM_SPAN = 7  # Number of spanwise stations
+NUM_STAGES = 3  # Number of turbine stages (stator-rotor pairs)
 # Runtime options
-RUN_MULTI = False  # Run the multi streamline case
+RUN_LOSS = True  # Run the multi streamline case
 SCALED = True  # Use scaled equations for better numerical conditioning
 PLOTS = True  # Show plots at end
 PRINTS = False  # Print node information
@@ -143,7 +148,7 @@ inlet = Inlet(
     {
         'kin': {
             'Vm': 100,
-            'Vt_midspan': Quantity(0, 'm/s'),  # Flow angle
+            'alpha': Quantity(0, 'm/s'),  # Flow angle
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
@@ -204,6 +209,7 @@ rotor = BladeRow(
     extra_equations={
         PercentageEntropyLoss(0.0): (0, 1),
         MinimalCamberLine(): (0, 1),
+        MeridionalVariable(): 1,
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
         # Work and flow coefficients defined only on rotor
@@ -221,7 +227,7 @@ rows = list(map(deepcopy, NUM_STAGES * stage_obj))
 ntw = ComponentNetwork(
     settings,  # Fluid settings
     inlet,  # Inlet conditions
-    CasadiSystem(num_span=1),  # Backend (single spanwise station)
+    CasadiSystem(num_span=NUM_SPAN),  # Backend (single spanwise station)
     rows,
 )
 
@@ -296,21 +302,19 @@ solution = solve_root_problem(
 sol_mean_is_dict = ntw.system.write_solution_to_nodes(solution)
 
 # # # # # # # # # # # # # #
-if RUN_MULTI:
+if RUN_LOSS:
     # Only use profile
     class LossAdder(EquationBase):
         def residual(self, stc_smass0, stc_smass1, oth_delta_smass_profile1):
             return stc_smass1 - (stc_smass0 + oth_delta_smass_profile1)
 
-    # ntw.system.remove_equation_type(LossModel)
+    ntw.system.remove_equation_type(LossModel)
     for nodes in nodes_by_stage:
-        ntw.system.add_equation(FreeVortexDistribution(), nodes[1])
-
-        # 5. Add profile losses
-        # ntw.system.add_equation(DentonProfileLoss(), (nodes[0], nodes[1]))
-        # ntw.system.add_equation(LossAdder(), (nodes[0], nodes[1]))
-        # ntw.system.add_equation(DentonProfileLoss(), (nodes[2], nodes[3]))
-        # ntw.system.add_equation(LossAdder(), (nodes[2], nodes[3]))
+        # Add profile losses
+        ntw.system.add_equation(DentonProfileLoss(), (nodes[0], nodes[1]))
+        ntw.system.add_equation(LossAdder(), (nodes[0], nodes[1]))
+        ntw.system.add_equation(DentonProfileLoss(), (nodes[2], nodes[3]))
+        ntw.system.add_equation(LossAdder(), (nodes[2], nodes[3]))
 
     ntw.system.num_span = NUM_SPAN
     ntw.system.build()
