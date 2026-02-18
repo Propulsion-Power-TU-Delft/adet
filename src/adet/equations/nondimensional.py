@@ -166,7 +166,11 @@ class WorkCoefficient(EquationBase):
     """
 
     def residual(self, tot_hmass0, tot_hmass1, kin_U1, oth_workCoeff1):
-        return kin_U1**2 * oth_workCoeff1 - (tot_hmass1 - tot_hmass0)
+        midspan = get_midspan_idx(tot_hmass0)
+
+        return kin_U1[midspan] ** 2 * oth_workCoeff1 - (
+            tot_hmass1[midspan] - tot_hmass0[midspan]
+        )
 
 
 class EnthalpyDropCoefficient(EquationBase):

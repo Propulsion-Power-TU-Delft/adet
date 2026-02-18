@@ -2,13 +2,10 @@ from inspect import getfullargspec
 from abc import ABC, abstractmethod
 import logging
 import re
-from typing import ClassVar, get_args, cast, Self, Any
-import ast
-import inspect
-import textwrap
+from typing import Callable, ClassVar, get_args, cast, Self, Any
 
 import sympy as sp
-import numpy as np
+import casadi as cs
 
 from adet.fluid.casadi_eos import CasadiEos
 from adet.tools.strings import verify_string_pattern, get_arg_state
@@ -34,7 +31,7 @@ class EquationBase(ABC):
     # EoS accessories
     input_pair: ClassVar[int] = 0
     output_quantities: ClassVar[tuple[str, ...]] = ()
-    _eos: None | CasadiEos = None
+    _eos: None | CasadiEos | cs.Function = None
 
     def __init__(self, scaling_factor: list[float] | None = None):
         """
@@ -54,21 +51,14 @@ class EquationBase(ABC):
 
         # TODO: Move scaling factor to class attribute
         self.scaling_factor = scaling_factor
-
         self._num_equations: int | None = None
-
-        # If the unit are not checked, make sure the user added units correclty
-        if self.manual_units:
-            eq_name = self.__class__.__name__
-            if self.num_equations != len(self.manual_units):
-                raise ValueError(
-                    f'Mismatch in equation `{eq_name}` between manual '
-                    f'units length ({len(self.manual_units)}) {self.manual_units} '
-                    f'and number of equations ({self.num_equations})'
-                )
+        self.assign_generic_eos()
 
     def __call__(self, *args):
         return self.residual(*args)
+
+    def assign_generic_eos(self):
+        self.eos = cs.Function
 
     @abstractmethod
     def residual(self, *args) -> Any | tuple[Any, ...]:
@@ -87,69 +77,14 @@ class EquationBase(ABC):
 
     @property
     def num_equations(self):
-        # Maybe add a setter for manually imposing num
-        # equations?
-        if not self._num_equations:
-            try:
-                # Avoid printing if fails
-                # in particular CoolProp stuff
-                with output_suppression():
-                    self._num_equations = self._count_equations_arg_inj()
-            except Exception:
-                self._num_equations = self._count_equations_ast()
-
-        return self._num_equations
+        raise NotImplementedError(
+            'This method has been deprecated, the number of equations '
+            'is free to change depending on the structure of the arguments'
+        )
 
     @property
     def num_args(self):
         return len(self._arguments)
-
-    def _count_equations_arg_inj(self):
-        """
-        Count how many residual equations are contained
-        in this residual formulation by argument
-        injection
-        """
-        num_args = len(self.arguments)
-        dummy_args = np.full((num_args, 1), np.nan)
-        dummy_res = self.residual(*dummy_args)
-
-        if isinstance(dummy_res, tuple):
-            num_equations = len(dummy_res)
-        else:
-            num_equations = 1
-
-        return num_equations
-
-    def _count_equations_ast(self):
-        """
-        Count the number of residual equation using
-        abstract syntax trees
-        """
-        method = self.residual.__func__
-
-        try:
-            src = inspect.getsource(method)
-            # Remove class indentation
-            src = textwrap.dedent(src)
-        except (OSError, TypeError):
-            raise RuntimeError(
-                f'Could not get source code for residual function in'
-                f' {self.__class__.__name__}'
-            )
-
-        tree = ast.parse(src)
-        num_ret = 0  # number of returns
-
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Return):
-                v = node.value
-                if isinstance(v, ast.Tuple):
-                    num_ret += len(v.elts)
-                else:
-                    num_ret += 1
-
-        return num_ret
 
     def _read_and_validate_arguments(self, all_arguments: list[str]):
         # The 1 is removed because it is the self instance
@@ -274,11 +209,11 @@ class EquationBase(ABC):
         if cls._eos is None:
             raise AttributeError(f'Missing equation of state for {cls}')
 
-        return cls._eos
+        return cast(Callable[[Any, Any], tuple[Any, ...]], cls._eos)
 
     # TODO: Fix typing here for analytical/symbolic EoS
     @eos.setter
-    def eos(self, eos: CasadiEos | Any):
+    def eos(self, eos: CasadiEos | cs.Function | Any):
         cls = self.__class__
         if cls._eos is not None:
             logger.debug(f'Overwriting EoS for {cls}')

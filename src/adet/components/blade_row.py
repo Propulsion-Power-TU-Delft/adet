@@ -27,6 +27,7 @@ from adet.equations.geometrical import (
     EndwallProperties,
     MeridionalUniform,
     GeometricalRatios,
+    MeridionalVariable,
     MidspanVelocities,
 )
 from adet.equations.nondimensional import EnthalpyDropCoefficient
@@ -54,9 +55,6 @@ rotating frame (omega)
 
 # Geometry
 GEOM_LINK = [
-    # NEW -> Distributed values
-    # 'geo_rr',
-    # OLD -> Mean values
     'geo_height',
     'geo_meridional_angle',
     'geo_rr_midspan',
@@ -69,8 +67,8 @@ class BladeRow(BaseComponent):
         (EulerEquation, (0, 1)),  # Adiabatic and steady
         (MassConservation, (0, 1)),
         # *** Meridional streamtube distributions
-        (MeridionalUniform, 0),
-        (MeridionalUniform, 1),
+        (MeridionalVariable, 0),
+        (MeridionalVariable, 1),
         # *** Blockage - Zero by default
         (ZeroBlockage, 0),
         (ZeroBlockage, 1),

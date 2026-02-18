@@ -9,7 +9,7 @@ Sometimes the CasADi api is slightly cryptic, sorry.
 from abc import ABC, abstractmethod
 from collections import OrderedDict, defaultdict
 from copy import deepcopy
-from itertools import accumulate, combinations
+from itertools import accumulate
 import logging
 import sys
 from typing import Any, Callable, Literal, Mapping, Self, Sequence, Type
@@ -251,10 +251,6 @@ class EquationRegistry:
 
         return tuple(system_arguments)
 
-    @property
-    def num_equations(self):
-        return sum(eq.num_equations for eq in self.data.equations)
-
 
 class ConstraintManager:
     """Handles all forms of constraints and boundary conditions"""
@@ -468,19 +464,30 @@ class UnitScalingManager:
 
         logger.debug('Units for the residual equations successfully verified')
 
+    def _test_equation_units(
+        self,
+        equation: EquationBase,
+        kwmap: dict[str, str],
+    ):
+        args = []
+        for arg in equation.arguments:
+            absolute_argument = kwmap[arg]
+            units = self.data.arguments_units[absolute_argument]
+            if arg in self.data.scalar_arguments:
+                dummy_value = Quantity(np.nan, units)
+            else:
+                dummy_value = Quantity(self.data.num_span * [np.nan], units)
+
+            args.append(dummy_value)
+
+        return equation.residual(*args)
+
     def _get_eq_units(self, equation: EquationBase, kwmap: dict[str, str]) -> list[str]:
         """Get units for a single equation"""
         if equation.manual_units:
             return list(equation.manual_units)
 
-        args = []
-        for arg in equation.arguments:
-            absolute_argument = kwmap[arg]
-            units = self.data.arguments_units[absolute_argument]
-            dummy_value = Quantity([np.nan], units)
-            args.append(dummy_value)
-
-        res = equation.residual(*args)
+        res = self._test_equation_units(equation, kwmap)
 
         if not isinstance(res, (list, tuple)):
             res = (res,)
@@ -544,8 +551,7 @@ class UnitScalingManager:
         """Build multi-span scaling factors for equations"""
         eq_scales = []
 
-        num_equations = sum(eq.num_equations for eq in self.data.equations)
-
+        num_equations = jax.tree.leaves(self.data.equations_units).__len__()
         if not self.data.scaled:
             scales = np.ones(num_equations)
         else:
@@ -679,7 +685,7 @@ class SystemAssembler(ABC):
 
     @property
     def num_equations(self):
-        return self._equation_registry.num_equations
+        return jax.tree.leaves(self.data.equations_units).__len__()
 
     # Expose context properties for backward compatibility
     @property
@@ -859,8 +865,10 @@ class SystemAssembler(ABC):
         self._equation_registry.create_nodes()
         self.data.declared_arguments = self._equation_registry.build_argument_maps()
 
-        # self._equation_registry.add_analytical_eos()
+        # TODO: This write-extraction step seems a bit fickle, could be reworked
+        # Nodes deal with of unit management and state dispatch
         self._constraint_manager.write_to_nodes()
+        # Re-extract the validated data
         (
             self.data.constraints,
             self.data.constraints_values,
@@ -1117,7 +1125,7 @@ class CasadiSystem(SystemAssembler):
         fl_model = self.fluid_settings.model
 
         # TODO: Fix typing here for analytical eos
-        self._eos_callbacks: dict[int, dict[str, CasadiEos | Any]] = {
+        self._eos_callbacks: dict[int, dict[str, cs.Function | CasadiEos | Any]] = {
             n_idx: {} for n_idx, _ in enumerate(self.nodes)
         }
 
@@ -1289,7 +1297,11 @@ class CasadiSystem(SystemAssembler):
 
             # overridden_eq = override_operators(eq.residual, 'numpy', cs)
             overridden_eq = eq.residual
-            residuals.append(overridden_eq(*args))
+            res_syms = overridden_eq(*args)
+            if eq.manual_units:
+                self._manual_units_check(eq, res_syms)
+
+            residuals.append(res_syms)
 
         # Divide each residual expression by its scaling symbol
         self.residual_expr = list(
@@ -1317,6 +1329,26 @@ class CasadiSystem(SystemAssembler):
             )
             if answer not in ('y', 'Y', 'yes'):
                 sys.exit()
+
+    def _manual_units_check(
+        self,
+        equation: EquationBase,
+        residual_symbols: cs.MX | tuple[cs.MX, ...] | list[cs.MX],
+    ):
+        """
+        Check the matching between residual and manual units
+        """
+
+        if not isinstance(residual_symbols, (tuple, list)):
+            residual_symbols = (residual_symbols,)
+        eq_name = equation.__class__.__name__
+        if len(equation.manual_units) != len(residual_symbols):
+            raise ValueError(
+                f'Mismatch in equation `{eq_name}` between manual '
+                f'units length ({len(equation.manual_units)}) '
+                f'{equation.manual_units} and number of equations '
+                f'({len(residual_symbols)})'
+            )
 
     def make_residual_function(self):
         """
@@ -1480,6 +1512,9 @@ class CasadiSystem(SystemAssembler):
                 ]
                 output_values = eos_cb(*inputs)
 
+                if not output_values:
+                    raise ValueError(f'{eos_cb} returned no output values')
+
                 thermo_dict = {}
                 for prop, val in zip(out_props, output_values):
                     thermo_dict[f'{state_id}_{prop}{node_idx}'] = (
@@ -1573,10 +1608,9 @@ class JaxSystem(SystemAssembler):
         curr_index = 0
         residual_indices = []
         for eq in self.equations:
-            residual_indices.append(
-                tuple(curr_index + j for j in range(eq.num_equations))
-            )
-            curr_index += eq.num_equations
+            num_eqs = eq.num_equations
+            residual_indices.append(tuple(curr_index + j for j in range(num_eqs)))
+            curr_index += num_eqs
 
         return residual_indices
 

@@ -36,6 +36,14 @@ def safe_sum(x):
     return (x**0).T @ x
 
 
+def safe_cumsum(x):
+    if isinstance(x, PlainQuantity):
+        # For unit checks
+        return x
+    else:
+        return cs.cumsum(x)
+
+
 def safe_mean(x):
     size = max(x.shape)
     return safe_sum(x) / size

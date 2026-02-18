@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from adet.equations.base_equation import CamberLineGeom, EquationBase, MeridionalGeom
-from adet.equations.utils import get_midspan_idx, safe_min_clip, safe_sum
+from adet.equations.utils import get_midspan_idx, safe_cumsum, safe_min_clip, safe_sum
 
 
 # NOTE:
@@ -25,19 +25,26 @@ class MeridionalVariable(MeridionalGeom):
         geo_rr_midspan0,
         geo_meridional_angle0,
     ):
+        residuals = []
+
         _min_radius = geo_rr_midspan0 - (geo_height0 - geo_hh0[0]) / 2 * np.cos(
             geo_meridional_angle0
         )
 
-        r1 = (
-            geo_rr0[:-1]
-            + (geo_hh0[:-1] + geo_hh0[1:]) / 2 * np.cos(geo_meridional_angle0)
-            - geo_rr0[1:]
-        )
+        if max(geo_rr0.shape) > 1:
+            r1 = (
+                geo_rr0[:-1]
+                + (geo_hh0[:-1] + geo_hh0[1:]) / 2 * np.cos(geo_meridional_angle0)
+                - geo_rr0[1:]
+            )
+            residuals.append(r1)
+
         r2 = geo_rr0[0] - _min_radius
         r3 = safe_sum(geo_hh0) - geo_height0
 
-        return r1, r2, r3
+        residuals.extend([r2, r3])
+
+        return residuals
 
 
 class MeridionalUniform(MeridionalGeom):

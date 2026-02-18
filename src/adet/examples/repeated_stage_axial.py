@@ -74,7 +74,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 NUM_SPAN = 5  # Number of spanwise stations
 NUM_STAGES = 1  # Number of turbine stages (stator-rotor pairs)
 # Runtime options
-RUN_LOSS = True  # Run the multi streamline case
+RUN_LOSS = False  # Run the multi streamline case
 SCALED = True  # Use scaled equations for better numerical conditioning
 PLOTS = True  # Show plots at end
 PRINTS = False  # Print node information
@@ -150,7 +150,8 @@ inlet = Inlet(
             'cum_massflow': 1,
         },
         'kin': {
-            'Vm': 100,
+            'mermach': 0.2,
+            # 'Vm': 100,
             # 'Vt_midspan': 0.0,  # Flow angle
         },
         'geo': {
@@ -178,7 +179,6 @@ stator = BladeRow(
     },
     out_constraints={
         'geo': {
-            'flare_angle': Quantity(3, 'deg'),
             'aspRatio': 2.0,
             'num_blades': 20,
             'thick_by_pitch': 0.02,
@@ -189,7 +189,7 @@ stator = BladeRow(
         PercentageEntropyLoss(0.0): (0, 1),
         MinimalCamberLine(): (0, 1),
         # --- Single shot free vortex design
-        MeridionalUniform(): 0,
+        MeridionalVariable(): 0,
         MeridionalVariable(): 1,
         FreeVortexDistribution(): 1,
         # ---
@@ -210,7 +210,13 @@ rotor = BladeRow(
         },
     },
     out_constraints={
+        'oth': {
+            # Directly use midspan work coefficient
+            'workCoeff': -0.8,
+        },
         'geo': {
+            # This indirectly sets the work coefficient
+            # 'flare_angle': Quantity(12, 'deg'),
             'aspRatio': 2.0,
             'num_blades': 20,
             'thick_by_pitch': 0.02,
@@ -223,6 +229,7 @@ rotor = BladeRow(
         # --- Single shot free vortex design
         MeridionalVariable(): 0,
         MeridionalVariable(): 1,
+        FreeVortexDistribution(): 0,
         FreeVortexDistribution(): 1,
         # ---
         ZeroDeviation(): 0,
@@ -233,15 +240,7 @@ rotor = BladeRow(
     },
     constant_variables=['geo_rr_midspan'],
 )
-rotor._from_previous_node = [
-    'kin_Vm',
-    'kin_Vt',
-    'tot_hmass',
-    'stc_smass',
-    'geo_hh',
-    'geo_meridional_angle',
-    'geo_rr_midspan',
-]
+
 
 # === NETWORK ASSEMBLY
 # Replicate stage (stator-rotor pair) NUM_STAGES times
@@ -271,6 +270,12 @@ ntw.system.add_global_constraints(
     }
 )
 
+# Impose effectively a meridional uniform distribution
+# NOTE: This completely overrides the meridional uniform stuff!!
+
+# Alternative 1
+ntw.system.add_spanwise_constants('geo_hh0')
+
 # === STAGE-LEVEL EQUATIONS
 # Apply repeated stage and degree of reaction constraints
 # Each stage consists of 4 nodes: stator_in, stator_out, rotor_in, rotor_out
@@ -292,6 +297,9 @@ for stage in range(ntw.num_components // 2):
     ntw.system.add_equation(RepeatedStage(), nodes)
     # Degree of reaction constraint
     ntw.system.add_equation(StaticTotalDegreeOfReaction(), nodes)
+    # if nodes[0] > 0:
+    #     ntw.system.add_equation(FreeVortexDistribution(), nodes[0])
+
     # Set nondimensional design parameters
     ntw.system.add_boundary_conditions(
         {
@@ -302,7 +310,7 @@ for stage in range(ntw.num_components // 2):
         nodes[3],
     )
 
-ntw.system.boundary_conditions[3]['oth']['flowCoeff'] = 0.5
+ntw.system.boundary_conditions[3]['oth']['flowCoeff'] = 0.4
 
 # === SOLVE STAGE 1: Meanline isentropic with minimal camberline ===
 # This determines the rotational speed at midspan (single spanwise station)
@@ -556,10 +564,9 @@ for i, node in enumerate(ntw.system.nodes):
 
 ntw.print_structure()
 
-globals().update(residual_debugger(MeridionalUniform(), (n2, n3)))
 # === DISPLAY PLOTS
 if PLOTS:
-    plt.show(block=False)
+    plt.show(block=True)
 else:
     plt.close('all')
 
