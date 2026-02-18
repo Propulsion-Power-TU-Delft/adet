@@ -26,8 +26,8 @@ from adet.equations.fundamental import (
 from adet.equations.geometrical import (
     EndwallProperties,
     MeridionalUniform,
-    MidspanProperties,
     GeometricalRatios,
+    MidspanVelocities,
 )
 from adet.equations.nondimensional import EnthalpyDropCoefficient
 from adet.geometry import BezierCurve, StraightLine
@@ -52,11 +52,14 @@ full variable transfer except for the
 rotating frame (omega)
 """
 
+# Geometry
 GEOM_LINK = [
-    # Geometry
+    # NEW -> Distributed values
+    # 'geo_rr',
+    # OLD -> Mean values
     'geo_height',
-    'geo_rr_midspan',
     'geo_meridional_angle',
+    'geo_rr_midspan',
 ]
 
 
@@ -75,9 +78,9 @@ class BladeRow(BaseComponent):
         (AngleDeflection, (0, 1)),
         (EndwallProperties, 0),
         (EndwallProperties, 1),
+        (MidspanVelocities, 0),
+        (MidspanVelocities, 1),
         (EnthalpyDropCoefficient, (0, 1)),
-        (MidspanProperties, 0),
-        (MidspanProperties, 1),
         (GeometricalRatios, (0, 1)),
         (MeridionalVelocityRatio, (0, 1)),
         # *** Blade count, pitch, channel massflow

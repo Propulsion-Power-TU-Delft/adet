@@ -200,14 +200,13 @@ class FreeVortexDistribution(EquationBase):
 
 
 class ForcedVortexDistribution(EquationBase):
-    def residual(self, geo_rr0, kin_Vt0, geo_rr_midspan0):
-        num_span = max(geo_rr0.shape)
-        if num_span == 1:
-            midspan = 0
-        else:
-            midspan = num_span // 2
+    def residual(self, geo_rr0, kin_Vt0):
+        midspan = get_midspan_idx(geo_rr0)
+        Vt_by_r_mid = kin_Vt0[midspan] / geo_rr0[midspan]
 
-        return kin_Vt0 / geo_rr0 - kin_Vt0[midspan] / geo_rr_midspan0
+        r1 = kin_Vt0[:midspan] / geo_rr0[:midspan] - Vt_by_r_mid
+        r2 = kin_Vt0[midspan + 1 :] / geo_rr0[midspan + 1 :] - Vt_by_r_mid
+        return r1, r2
 
 
 class GeneralWhirl(EquationBase):

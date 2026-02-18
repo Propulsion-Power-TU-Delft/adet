@@ -50,7 +50,9 @@ class MeridionalUniform(MeridionalGeom):
         geo_meridional_angle0,
     ):
         num_span = max(geo_rr0.shape)
-        if num_span == 1:
+        midspan = get_midspan_idx(geo_rr0)
+
+        if midspan == 0:
             r1 = geo_rr0 - geo_rr_midspan0
         else:
             unit_space = np.linspace(0, 1, num_span)
@@ -71,8 +73,8 @@ class MeridionalUniform(MeridionalGeom):
 class AnnulusAreas(EquationBase):
     # Circular annuli at various spanwise
     def residual(self, geo_area0, geo_rr0, geo_hh0):
-        # I realized that in the equation above only the mid terms of the binomial
-        # square do not elide
+        # I realized that in the equation above only the midle terms
+        # of the binomial square do not elide
         # return geo_area0 - np.pi * (
         #     (geo_rr0 + geo_hh0 / 2) ** 2 - (geo_rr0 - geo_hh0 / 2) ** 2
         # )
@@ -80,7 +82,7 @@ class AnnulusAreas(EquationBase):
         return geo_area0 - 2 * np.pi * geo_rr0 * geo_hh0
 
 
-class MidspanProperties(EquationBase):
+class MidspanVelocities(EquationBase):
     def residual(
         self,
         kin_V0,

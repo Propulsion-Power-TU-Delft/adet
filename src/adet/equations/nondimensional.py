@@ -75,7 +75,7 @@ class TotalStaticLoadingCoefficient(EquationBase):
         return kin_U1**2 * oth_ts_loadCoeff1 - 2 * (tot_hmass0 - stc_hmass_is1)
 
 
-class StaticStaticPressRatio(EquationBase):
+class StaticPressRatio(EquationBase):
     """
     .. math::
         \\beta_{tt} = \\frac{p_{t1}}{p_{t,0}}

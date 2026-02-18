@@ -97,6 +97,8 @@ class BaseComponent(ABC):
         # This checks that the user has not defined multiple
         # incompatible unique equations
         self._check_duplicate_equations()
+        # Check that at least 1 LossModel was added
+        # you can use DummyLoss to forecefully pass this check
         self._check_loss_model()
 
         # Post-init for child classes
@@ -132,7 +134,7 @@ class BaseComponent(ABC):
                     user_pos = set(ensure_iterable(user_pos))
                     user_eq_parent = user_eq.__class__.__base__
                     # > If there are
-                    # > And they are in the same position
+                    # > AND they are in the same position
                     if user_eq_parent == base_eq_parent and user_pos == base_pos:
                         logger.warning(
                             f'Overwriting {base_eq.__class__} with {user_eq.__class__} '
