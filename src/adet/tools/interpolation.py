@@ -28,6 +28,16 @@ def make_casadi_interpolant(
     return cs.interpolant(name, method, [x, y], data_flat)
 
 
+def resample_linear(arr, n):
+    x_old = np.linspace(0, 1, len(arr))
+    x_new = np.linspace(0, 1, n)
+    return np.interp(x_new, x_old, arr)
+
+
+resample_linear([1, 4, 12], 7)
+# array([ 1.,  2.,  3.,  4.,  6.67, 9.33, 12.])
+
+
 class TransfiniteInterpolator:
     def __init__(self, curve0, curve1, nu=20, nv=10):
         """

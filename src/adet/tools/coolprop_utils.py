@@ -137,6 +137,9 @@ class DebugAbstractState(cp.AbstractState):
         return super().update(*args, **kwargs)
 
 
+# WARN:
+# These two functions are ripped directly from CoolProp,
+# proceed with caution
 def plot_contours(grid, luts, properties, levels=20, cmap='viridis'):
     """
     Plot contour maps of lookup table properties.

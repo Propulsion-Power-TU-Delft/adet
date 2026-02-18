@@ -2,10 +2,12 @@ from pathlib import Path
 from art import tprint
 from datetime import datetime
 
-FOOTER = f"""
-| ~ | Developed and maintained by Francesco Vaccari
-| ~ | Propulsion & Power, Faculty of Aerospace Engineering, TU Delft
-| ~ | 2024-{datetime.now().year}
+current_year = datetime.now().year
+
+FOOTER = """
+| >>> | Developed and maintained by Francesco Vaccari
+| >>> | Propulsion & Power, Faculty of Aerospace Engineering, TU Delft
+| >>> | 2024-2026
 """
 
 

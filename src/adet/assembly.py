@@ -38,6 +38,7 @@ from adet.registries import (
 )
 from adet.tools.context import override_operators
 from adet.tools.coolprop_utils import pair_based_sorting, pair_id_from_tuple
+from adet.tools.interpolation import resample_linear
 from adet.tools.strings import get_arg_state, get_arg_type, get_index, rm_end_digits
 
 
@@ -646,7 +647,7 @@ class SystemAssembler(ABC):
     and returning the residuals dispatched to the equations it is made
     out of.
 
-    This class now uses a composition-based architecture with specialized
+    This class uses a composition-based architecture with specialized
     managers handling different responsibilities.
     """
 
@@ -656,10 +657,10 @@ class SystemAssembler(ABC):
         self.num_span = num_span
 
         # Initialize managers
-        self._equation_registry = EquationRegistry(self.data)
-        self._constraint_manager = ConstraintManager(self.data)
-        self._argument_resolver = ArgumentResolver(self.data)
         self._scaling_manager = UnitScalingManager(self.data)
+        self._equation_registry = EquationRegistry(self.data)
+        self._argument_resolver = ArgumentResolver(self.data)
+        self._constraint_manager = ConstraintManager(self.data)
         self._solution_dispatcher = SolutionDispatcher(self.data)
 
     @property
@@ -1043,15 +1044,17 @@ class SystemAssembler(ABC):
             guess_value = np.atleast_1d(guess_value)
 
             if max(guess_value.shape) != self.data.num_span:
-                if max(guess_value.shape) != 1:
-                    logger.debug(
-                        f'Length mismatch in guess for {arg},'
-                        f' using the mean value as guess'
-                    )
-                    guess_value = np.mean(guess_value)
+                logger.debug(
+                    f'Length mismatch in guess for {arg}, using linear resampling'
+                )
+                # This simply repeats the single value when 1 -> N
+                guess_value = resample_linear(
+                    guess_value.flatten(),
+                    self.data.num_span,
+                )
 
-                if arg not in self.data.scalar_arguments:
-                    guess_value = np.repeat(guess_value, self.data.num_span)
+                if arg in self.data.scalar_arguments:
+                    guess_value = np.array([guess_value[0]])
 
             # Scale
             scaling_factor = scaling[idx]
@@ -1544,6 +1547,8 @@ class JaxSystem(SystemAssembler):
 
     def __init__(self, num_span: int) -> None:
         logger.warning('*** jax backend is not maintained, proceed with caution ***')
+        input('I understand the jax interface is not working, press enter to proceed')
+
         super().__init__(num_span)
 
     def _build_stack_composer(self):

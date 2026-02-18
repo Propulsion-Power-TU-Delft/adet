@@ -1,6 +1,5 @@
 """
-Functions to override local packages within functions, so that thay can be used
-with jax numpy wrapping or converted to sympy expressions
+Functions that act as context managers
 """
 
 from typing import Callable
@@ -59,6 +58,7 @@ def override_operators(
 
 @contextmanager
 def output_suppression():
+    """Suppress all stdout and stderr"""
     with open(os.devnull, 'w') as devnull:
         old_stdout = sys.stdout
         old_stderr = sys.stderr
@@ -73,6 +73,22 @@ def output_suppression():
 
 @contextmanager
 def dummy_context():
+    """
+    Does nothing, useful for if expressions.
+
+    Example:
+    --------
+    ```
+    if use_context:
+        cont_manager = some_manager
+    else:
+        cont_manager = dummy_context
+
+    with cont_manager():
+        ...
+    ```
+    """
+
     try:
         yield
     finally:

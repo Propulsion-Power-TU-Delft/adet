@@ -27,8 +27,6 @@ from adet.equations.base_equation import EquationBase
 from adet.equations.definitions import RepeatedStage
 from adet.equations.fundamental import FreeVortexDistribution
 from adet.equations.geometrical import (
-    MeridionalUniform,
-    MeridionalVariable,
     MinimalCamberLine,
     ParabolicCamberline,
 )
@@ -37,7 +35,6 @@ from adet.equations.nondimensional import (
     StaticTotalDegreeOfReaction,
     WorkCoefficient,
 )
-from adet.equations.utils import residual_debugger
 from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
 from adet.losses.base_loss import LossModel
@@ -57,6 +54,7 @@ from adet.tools.loggers import setup_logger
 
 # === LOGGING SETUP
 logger = logging.getLogger(__name__)
+plt.close('all')
 
 setup_logger(
     logger,
@@ -65,16 +63,15 @@ setup_logger(
     suppress_modules=['matplotlib', 'jax'],
     banned_keywords=['STREAM', 'findfont', 'sBIT'],
 )
-plt.close('all')
 logging.getLogger('jax').setLevel(logging.WARNING)
 
 
 # === CONFIGURATION
 # Simulation settings
-NUM_SPAN = 5  # Number of spanwise stations
+NUM_SPAN = 21  # Number of spanwise stations
 NUM_STAGES = 1  # Number of turbine stages (stator-rotor pairs)
 # Runtime options
-RUN_LOSS = False  # Run the multi streamline case
+RUN_LOSS = True  # Run the multi streamline case
 SCALED = True  # Use scaled equations for better numerical conditioning
 PLOTS = True  # Show plots at end
 PRINTS = False  # Print node information
@@ -150,15 +147,12 @@ inlet = Inlet(
             'cum_massflow': 1,
         },
         'kin': {
-            'mermach': 0.2,
-            # 'Vm': 100,
-            # 'Vt_midspan': 0.0,  # Flow angle
+            # 'mermach': 0.2,
+            'Vm': 100,
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
             'hubtipRatio': 0.6,
-            # 'height': 0.1,
-            # 'rr_midspan': 0.1,
         },
         'tot': {
             'T': 1000,  # Total temperature [K]
@@ -188,11 +182,6 @@ stator = BladeRow(
     extra_equations={
         PercentageEntropyLoss(0.0): (0, 1),
         MinimalCamberLine(): (0, 1),
-        # --- Single shot free vortex design
-        MeridionalVariable(): 0,
-        MeridionalVariable(): 1,
-        FreeVortexDistribution(): 1,
-        # ---
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
     },
@@ -210,10 +199,6 @@ rotor = BladeRow(
         },
     },
     out_constraints={
-        'oth': {
-            # Directly use midspan work coefficient
-            'workCoeff': -0.8,
-        },
         'geo': {
             # This indirectly sets the work coefficient
             # 'flare_angle': Quantity(12, 'deg'),
@@ -226,12 +211,6 @@ rotor = BladeRow(
     extra_equations={
         PercentageEntropyLoss(0.0): (0, 1),
         MinimalCamberLine(): (0, 1),
-        # --- Single shot free vortex design
-        MeridionalVariable(): 0,
-        MeridionalVariable(): 1,
-        FreeVortexDistribution(): 0,
-        FreeVortexDistribution(): 1,
-        # ---
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
         # Work and flow coefficients defined only on rotor
@@ -253,7 +232,7 @@ rows = list(
 ntw = ComponentNetwork(
     settings,  # Fluid settings
     inlet,  # Inlet conditions
-    CasadiSystem(num_span=NUM_SPAN),  # Backend
+    CasadiSystem(num_span=3),  # Backend
     rows,
 )
 
@@ -273,7 +252,7 @@ ntw.system.add_global_constraints(
 # Impose effectively a meridional uniform distribution
 # NOTE: This completely overrides the meridional uniform stuff!!
 
-# Alternative 1
+# Streamtubes arrive parallel
 ntw.system.add_spanwise_constants('geo_hh0')
 
 # === STAGE-LEVEL EQUATIONS
@@ -297,20 +276,17 @@ for stage in range(ntw.num_components // 2):
     ntw.system.add_equation(RepeatedStage(), nodes)
     # Degree of reaction constraint
     ntw.system.add_equation(StaticTotalDegreeOfReaction(), nodes)
-    # if nodes[0] > 0:
-    #     ntw.system.add_equation(FreeVortexDistribution(), nodes[0])
+    if NUM_SPAN > 1:
+        if nodes[0] > 0:
+            ntw.system.add_equation(FreeVortexDistribution(), nodes[0])
+        ntw.system.add_equation(FreeVortexDistribution(), nodes[1])
+        ntw.system.add_equation(FreeVortexDistribution(), nodes[2])
+        ntw.system.add_equation(FreeVortexDistribution(), nodes[3])
 
-    # Set nondimensional design parameters
-    ntw.system.add_boundary_conditions(
-        {
-            'oth': {
-                'reactDegree_ts': 0.5,
-            },
-        },
-        nodes[3],
-    )
 
+ntw.system.boundary_conditions[3]['oth']['reactDegree_ts'] = 0.5
 ntw.system.boundary_conditions[3]['oth']['flowCoeff'] = 0.4
+ntw.system.boundary_conditions[3]['oth']['workCoeff'] = -0.8
 
 # === SOLVE STAGE 1: Meanline isentropic with minimal camberline ===
 # This determines the rotational speed at midspan (single spanwise station)
@@ -329,7 +305,7 @@ solution = solve_root_problem(
     x0_mean_is,
     kn_mean_is,
     bnd_mean_is,
-    perturbate_guess=True,
+    perturbate_guess=False,
     delta_pert=0.05,
     num_samples=1000,
 )
@@ -338,6 +314,8 @@ sol_mean_is_dict = ntw.system.write_solution_to_nodes(solution)
 
 # # # # # # # # # # # # # #
 if RUN_LOSS:
+    ntw.system.num_span = NUM_SPAN
+
     # Only use profile
     class LossAdder(EquationBase):
         def residual(self, stc_smass0, stc_smass1, oth_delta_smass_profile1):
@@ -432,31 +410,36 @@ if PLOTS:
             ax=ax_merid,
             color=color,
         )
-        if ntw.system.num_span > 1:
-            ax_merid.plot(NUM_SPAN * [offset], n0.geo.rr, 'o', color='r')
-            ax_merid.plot(NUM_SPAN * [offset] + ax_chord, n1.geo.rr, 'o', color='r')
+        ax_merid.plot(NUM_SPAN * [offset], n0.geo.rr, 'o', color='r')
+        ax_merid.plot(NUM_SPAN * [offset] + ax_chord, n1.geo.rr, 'o', color='r')
 
-            ax_merid.plot(
-                NUM_SPAN * [offset], n0.geo.rr + n0.geo.hh / 2, '*', color='g'
-            )
-            ax_merid.plot(
-                NUM_SPAN * [offset], n0.geo.rr - n0.geo.hh / 2, '*', color='b'
-            )
+        ax_merid.plot(
+            NUM_SPAN * [offset],
+            n0.geo.rr + n0.geo.hh / 2,
+            '_',
+            color='g',
+        )
+        ax_merid.plot(
+            NUM_SPAN * [offset],
+            n0.geo.rr - n0.geo.hh / 2,
+            '_',
+            color='b',
+        )
 
-            ax_merid.plot(
-                NUM_SPAN * [offset] + ax_chord,
-                n1.geo.rr + n1.geo.hh / 2,
-                '*',
-                color='g',
-            )
-            ax_merid.plot(
-                NUM_SPAN * [offset] + ax_chord,
-                n1.geo.rr - n1.geo.hh / 2,
-                '*',
-                color='b',
-            )
+        ax_merid.plot(
+            NUM_SPAN * [offset] + ax_chord,
+            n1.geo.rr + n1.geo.hh / 2,
+            '_',
+            color='g',
+        )
+        ax_merid.plot(
+            NUM_SPAN * [offset] + ax_chord,
+            n1.geo.rr - n1.geo.hh / 2,
+            '_',
+            color='b',
+        )
 
-            # Plot camberlines at midspan (3 blades for all rows)
+        # Plot camberlines at midspan (3 blades for all rows)
         midspan_idx = ntw.system.num_span // 2
         inlet_angle = n0.geo.metal_angle[midspan_idx]  # pyright:ignore
         outlet_angle = n1.geo.metal_angle[midspan_idx]  # pyright:ignore
@@ -565,10 +548,9 @@ for i, node in enumerate(ntw.system.nodes):
 ntw.print_structure()
 
 # === DISPLAY PLOTS
-if PLOTS:
-    plt.show(block=True)
-else:
-    plt.close('all')
+answ = input('Display figures [y/n] ')
+if answ in ('y', 'Y', '1'):
+    plt.show(block=False)
+    answ = input('Press enter to close the figures')
 
-
-# Print bound violation
+plt.close('all')
