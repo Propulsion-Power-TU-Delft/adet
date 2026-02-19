@@ -38,6 +38,7 @@ from adet.losses.compressors import (
 )
 from adet.registries import GuessRegistry, VariableBoundsRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
+from adet.tools.interpolation import resample_linear
 from adet.tools.loggers import setup_logger
 
 logger = logging.Logger(__name__)
@@ -51,6 +52,7 @@ _bounds_reg.from_dict(
         'Vm': (10.0, 500.0),
         'U': (0, 500),
         'beta': (-1.5, 0.0),
+        'relmach': (0.0, 1.04),
         # 'delta_hmass_.*': (10.0, 1e5),
         # 'delta_hmass_loading': (10.0, 1e4),  # This tends to diverge, bound it
     }
@@ -130,9 +132,8 @@ losses = EQS_WITH_LOSSES if ENABLE_LOSSES else EQS_ISENTROPIC
 # - # - # - # - #
 # Metal angle distribution
 METAL_ANGLE = [-30, -44, -53]
-a, b, c = np.polyfit([0, NUM_SPAN // 2, NUM_SPAN - 1], METAL_ANGLE, 2)
-x = np.linspace(0, NUM_SPAN - 1, NUM_SPAN)
-angle_distribution = Quantity(a * x**2 + b * x + c, 'deg')
+angle_values = resample_linear(np.array(METAL_ANGLE), NUM_SPAN)
+angle_distribution = Quantity(angle_values, 'deg')
 # - # - # - # - #
 
 # +++ Components

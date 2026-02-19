@@ -132,6 +132,7 @@ class BladeRow(BaseComponent):
             from_previous_node,
             constant_variables,
         )
+        # Fix omega at the outlet node
         if shaft.is_constrained:
             self.out_constraints['kin']['omega'] = shaft.omega
 

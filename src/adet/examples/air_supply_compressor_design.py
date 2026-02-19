@@ -63,6 +63,7 @@ _bounds_reg.from_dict(
         'U': (0, 500),
         'omega': (0, 10000),
         'beta': (-1.5, 0.0),
+        'relmach': (0.0, 1.04),
     }
 )
 
@@ -101,7 +102,7 @@ idealgas_model = AnalyticalFluidModel(
 )
 
 fluid_settings = FluidSettings(
-    model=realgas_model,
+    model=idealgas_model,
     update_variables=('p', 'T'),  # Thermodynamic iteration variables
     update_length=2,  # Single phase => Two update vars
 )

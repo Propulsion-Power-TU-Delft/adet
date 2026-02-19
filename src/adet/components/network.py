@@ -1,6 +1,5 @@
 from collections import defaultdict
-import numpy as np
-from typing import Generic, Mapping, Optional, Sequence, TypeVar
+from typing import Generic, Mapping, Sequence, TypeVar
 
 from adet.assembly import SystemAssembler
 from adet.components import BaseComponent
@@ -161,7 +160,7 @@ class ComponentNetwork(Generic[T]):
             outlet_node_idx = inlet_node_idx + 1  # Of the previous component
 
             if isinstance(component, BladeRow):
-                # Constrained ones are enfored in BladeRow
+                # Constrained ones are enfored as omega constraints
                 if not component.shaft.is_constrained:
                     shafts_outnodes[component.shaft].append(outlet_node_idx)
 

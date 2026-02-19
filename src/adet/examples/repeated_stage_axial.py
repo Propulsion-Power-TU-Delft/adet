@@ -68,10 +68,11 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 # === CONFIGURATION
 # Simulation settings
-NUM_SPAN = 21  # Number of spanwise stations
-NUM_STAGES = 1  # Number of turbine stages (stator-rotor pairs)
+NUM_SPAN = 7  # Number of spanwise stations
+NUM_STAGES = 2  # Number of turbine stages (stator-rotor pairs)
 # Runtime options
-RUN_LOSS = True  # Run the multi streamline case
+RUN_MULTI = True  # Run the multi streamline case
+ADD_LOSSES = True
 SCALED = True  # Use scaled equations for better numerical conditioning
 PLOTS = True  # Show plots at end
 PRINTS = False  # Print node information
@@ -112,6 +113,7 @@ _gss_reg.reset()
 _gss_reg.from_dict(
     {
         'workCoeff': -0.9,
+        'reactDegree_ts': 0.5,
         'k_prof': 0.2,
         'hdropCoeff': -2.0,
     }
@@ -121,8 +123,8 @@ _bnd_reg = VariableBoundsRegistry()
 _bnd_reg.reset()
 _bnd_reg.from_dict(
     {
-        'U': (0, 500),
-        'hdropCoeff': (-6.0, -0.2),
+        'U': (0, 700.0),
+        'hdropCoeff': (-6.0, 0.9),
     }
 )
 
@@ -139,16 +141,23 @@ rotating_shaft = Shaft(
     is_constrained=False,
 )
 
+
 #  =  =  =  =  =  =  =  =  =  =  =  =  =  =  COMPONENT DEFINITIONS
+# Only use profile
+class LossAdder(EquationBase):
+    def residual(self, stc_smass0, stc_smass1, oth_delta_smass_profile1):
+        return stc_smass1 - (stc_smass0 + oth_delta_smass_profile1)
+
+
 # Inlet conditions
 inlet = Inlet(
     {
         'oth': {
-            'cum_massflow': 1,
+            'cum_massflow': 100,
         },
         'kin': {
-            # 'mermach': 0.2,
-            'Vm': 100,
+            'mermach': 0.15,
+            # 'Vm': 100,
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
@@ -223,78 +232,86 @@ rotor = BladeRow(
 
 # === NETWORK ASSEMBLY
 # Replicate stage (stator-rotor pair) NUM_STAGES times
-stage_obj = [stator, rotor]
-rows = list(
-    map(deepcopy, NUM_STAGES * stage_obj),
-)
+def build_network(num_stages, num_span, add_losses: bool = False):
+    stage_obj = [stator, rotor]
+    rows = list(
+        map(deepcopy, num_stages * stage_obj),
+    )
 
-# Create component network
-ntw = ComponentNetwork(
-    settings,  # Fluid settings
-    inlet,  # Inlet conditions
-    CasadiSystem(num_span=3),  # Backend
-    rows,
-)
+    # Create component network
+    ntw = ComponentNetwork(
+        settings,  # Fluid settings
+        inlet,  # Inlet conditions
+        CasadiSystem(num_span=num_span),  # Backend
+        rows,
+    )
 
-# === GLOBAL CONSTRAINTS
-# Add ideal gas reference and loss model coefficients
-ntw.system.add_global_constraints(
-    {
-        'oth': {
-            # Profile loss parameters
-            'Cd_profile': 0.002,
-            'xi_by_camb_len_A': 0.375,
-            'xi_by_camb_len_B': 0.675,
+    # === GLOBAL CONSTRAINTS
+    # Add ideal gas reference and loss model coefficients
+    ntw.system.add_global_constraints(
+        {
+            'oth': {
+                # Profile loss parameters
+                'Cd_profile': 0.002,
+                'xi_by_camb_len_A': 0.375,
+                'xi_by_camb_len_B': 0.675,
+            }
         }
-    }
-)
-
-# Impose effectively a meridional uniform distribution
-# NOTE: This completely overrides the meridional uniform stuff!!
-
-# Streamtubes arrive parallel
-ntw.system.add_spanwise_constants('geo_hh0')
-
-# === STAGE-LEVEL EQUATIONS
-# Apply repeated stage and degree of reaction constraints
-# Each stage consists of 4 nodes: stator_in, stator_out, rotor_in, rotor_out
-nodes_by_stage = list(
-    grouper(
-        range(2 * ntw.num_components),
-        4,
-        incomplete='strict',
     )
-)
-for stage in range(ntw.num_components // 2):
-    nodes = nodes_by_stage[stage]
-    # Repeated stage: inlet conditions same as outlet of previous stage
-    ntw.system.add_spanwise_constants(
-        f'geo_chord_ax{nodes[1]}',
-        f'geo_chord_ax{nodes[3]}',
+
+    # Impose effectively a meridional uniform distribution
+    ntw.system.add_spanwise_constants('geo_hh0')
+
+    # === STAGE-LEVEL EQUATIONS
+    # Apply repeated stage and degree of reaction constraints
+    # Each stage consists of 4 nodes: stator_in, stator_out, rotor_in, rotor_out
+    nodes_by_stage = list(
+        grouper(
+            range(2 * ntw.num_components),
+            n=4,
+            incomplete='strict',
+        )
     )
-    # Constant Vm, rr_midspan, alpha_0 = alpha_3
-    ntw.system.add_equation(RepeatedStage(), nodes)
-    # Degree of reaction constraint
-    ntw.system.add_equation(StaticTotalDegreeOfReaction(), nodes)
-    if NUM_SPAN > 1:
-        if nodes[0] > 0:
-            ntw.system.add_equation(FreeVortexDistribution(), nodes[0])
-        ntw.system.add_equation(FreeVortexDistribution(), nodes[1])
-        ntw.system.add_equation(FreeVortexDistribution(), nodes[2])
-        ntw.system.add_equation(FreeVortexDistribution(), nodes[3])
+
+    for stage in range(ntw.num_components // 2):
+        nodes = nodes_by_stage[stage]
+        # Repeated stage: inlet conditions same as outlet of previous stage
+        ntw.system.add_spanwise_constants(
+            f'geo_chord_ax{nodes[1]}',
+            f'geo_chord_ax{nodes[3]}',
+        )
+        ntw.system.add_equation(RepeatedStage(), nodes)
+        ntw.system.add_equation(StaticTotalDegreeOfReaction(), nodes)
+        ntw.system.boundary_conditions[nodes[3]]['oth']['workCoeff'] = -1.0
+        if num_span > 1:
+            if stage > 0:
+                ntw.system.add_equation(FreeVortexDistribution(), nodes[0])
+            else:
+                ntw.system.add_equation(FreeVortexDistribution(), nodes[3])
+            ntw.system.add_equation(FreeVortexDistribution(), nodes[1])
+            ntw.system.add_equation(FreeVortexDistribution(), nodes[2])
+
+    ntw.system.boundary_conditions[3]['oth']['reactDegree_ts'] = 0.5
+    ntw.system.boundary_conditions[3]['oth']['flowCoeff'] = 0.4
+
+    if add_losses:
+        ntw.system.remove_equation_type(LossModel)
+        for nodes in nodes_by_stage:
+            # Add profile losses
+            ntw.system.add_equation(DentonProfileLoss(), (nodes[0], nodes[1]))
+            ntw.system.add_equation(LossAdder(), (nodes[0], nodes[1]))
+            ntw.system.add_equation(DentonProfileLoss(), (nodes[2], nodes[3]))
+            ntw.system.add_equation(LossAdder(), (nodes[2], nodes[3]))
+
+    ntw.system.build(SCALED)
+    return ntw
 
 
-ntw.system.boundary_conditions[3]['oth']['reactDegree_ts'] = 0.5
-ntw.system.boundary_conditions[3]['oth']['flowCoeff'] = 0.4
-ntw.system.boundary_conditions[3]['oth']['workCoeff'] = -0.8
-
-# === SOLVE STAGE 1: Meanline isentropic with minimal camberline ===
-# This determines the rotational speed at midspan (single spanwise station)
-ntw.system.build(SCALED)
+ntw = build_network(NUM_STAGES, 1, add_losses=False)
 rootfinder_mean_is = ntw.system.make_rootfinder(
     'ipopt',
     opts={
-        'error_on_fail': False,
+        'error_on_fail': True,
     },
 )
 x0_mean_is = ntw.get_scaled_guess()
@@ -313,31 +330,17 @@ solution = solve_root_problem(
 sol_mean_is_dict = ntw.system.write_solution_to_nodes(solution)
 
 # # # # # # # # # # # # # #
-if RUN_LOSS:
-    ntw.system.num_span = NUM_SPAN
+if RUN_MULTI:
+    ntw = build_network(NUM_STAGES, NUM_SPAN, ADD_LOSSES)
 
-    # Only use profile
-    class LossAdder(EquationBase):
-        def residual(self, stc_smass0, stc_smass1, oth_delta_smass_profile1):
-            return stc_smass1 - (stc_smass0 + oth_delta_smass_profile1)
-
-    ntw.system.remove_equation_type(LossModel)
-    for nodes in nodes_by_stage:
-        # Add profile losses
-        ntw.system.add_equation(DentonProfileLoss(), (nodes[0], nodes[1]))
-        ntw.system.add_equation(LossAdder(), (nodes[0], nodes[1]))
-        ntw.system.add_equation(DentonProfileLoss(), (nodes[2], nodes[3]))
-        ntw.system.add_equation(LossAdder(), (nodes[2], nodes[3]))
-
-    ntw.system.num_span = NUM_SPAN
     ntw.system.build()
 
     x0_span_is = ntw.system.get_scaled_guess(sol_mean_is_dict)
     kn_span_is = ntw.system.get_scaled_constraints()
     bnd_span_is = ntw.system.get_arguments_bounds()
     rootfind_span_is = ntw.system.make_rootfinder(
-        'kinsol',
-        {'error_on_fail': False},
+        'ipopt',
+        {'error_on_fail': True},
     )
 
     sol_span_is = solve_root_problem(
