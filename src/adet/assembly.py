@@ -121,7 +121,7 @@ class EquationRegistry:
     ):
         """Add an equation to the system in the specified position"""
         if isinstance(nodal_position, int):
-            nodal_position = [nodal_position]
+            nodal_position = (nodal_position,)
 
         # Check that the provided position has the same length as equation arguments
         local_indices = {get_index(arg) for arg in equation.arguments}
@@ -259,6 +259,12 @@ class ConstraintManager:
     def __init__(self, data: SystemSharedData):
         self.data = data
 
+    def _check_arg_declaration(self, arg: str):
+        if arg not in self.data.declared_arguments:
+            logger.warning(
+                f'Imposing a condition on {arg}, but it is not declared in any equation'
+            )
+
     def add_boundary_conditions(self, bnd_cond: dict, node_idx: int):
         """Add boundary conditions for a specific node"""
         for state_id, state_bnd_cond in bnd_cond.items():
@@ -274,6 +280,8 @@ class ConstraintManager:
         Adding ('a', 'b', 'c') adds the equations: a-b=0, a-c=0
         """
         for args in equalities:
+            if len(args) < 2:
+                logger.warning(f'Single variable equality detected for {args}')
             if set(args) not in self.data.equalities:
                 self.data.equalities.append(set(args))
 
@@ -318,8 +326,8 @@ class ConstraintManager:
         for node_idx, node in enumerate(self.data.nodes):
             for arg_no_idx, value in node.get_constraints().items():
                 arg = arg_no_idx + str(node_idx)
-                if arg not in self.data.declared_arguments:
-                    logger.warning(f'Unused constraint {arg}')
+                self._check_arg_declaration(arg)
+
                 constraint_names.append(arg)
                 constr_value = value.to_base_units().magnitude
 
@@ -329,6 +337,23 @@ class ConstraintManager:
                 constraint_values.append(constr_value)
 
         return tuple(constraint_names), constraint_values
+
+    def check_constraints_effectiveness(self):
+        """
+        Check if the arguments used in equalities and spanwise_constants
+        appear as declared arguments
+        """
+        # TODO: Could even check if they are free
+        args_to_check = []
+
+        for equality in self.data.equalities:
+            args_to_check += list(equality)
+
+        for arg in self.data.spanwise_constants:
+            args_to_check.append(arg)
+
+        for arg in args_to_check:
+            self._check_arg_declaration(arg)
 
 
 class ArgumentResolver:
@@ -874,6 +899,7 @@ class SystemAssembler(ABC):
             self.data.constraints,
             self.data.constraints_values,
         ) = self._constraint_manager.extract_constraints()
+        self._constraint_manager.check_constraints_effectiveness()
 
         # Arguments manipulation
         self.data.free_args = self._argument_resolver.identify_free_arguments()
@@ -1463,7 +1489,7 @@ class CasadiSystem(SystemAssembler):
                     'ipopt.max_iter': 1000,
                     'ipopt.tol': 1e-8,
                     'ipopt.acceptable_constr_viol_tol': 1e-13,  # infeasible pts
-                    'ipopt.bound_push': 0.3,
+                    'ipopt.bound_push': 0.1,
                     # NOTE: Superseeded by new implementations, thermo
                     # derivatives available up to the 3rd order (null)
                     # 'ipopt.hessian_approximation': 'limited-memory',

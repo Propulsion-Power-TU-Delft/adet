@@ -44,9 +44,9 @@ def perturb_guess(guess, knowns, root_function, delta_pert, num_samples):
             best_guess = x0
             best_res_norm = residual_norm
 
-        if (best_guess == guess).all():
-            logger.info('No better solution found, using random perturbation')
-            best_guess = x0 + delta_pert * np.random.ranf(len(x0))
+    if (best_guess == guess).all():
+        logger.info('No better solution found, using random perturbation')
+        best_guess = x0 + delta_pert * np.random.ranf(len(x0))
 
     return best_guess
 
@@ -57,6 +57,7 @@ def solve_root_problem(
     knowns: list[NDArray],
     arg_bounds: tuple[cs.DM, cs.DM] | None = None,
     suppress_output: bool = False,
+    *,
     # Guess perturbation
     perturbate_guess: bool = False,
     delta_pert: float = 0.02,

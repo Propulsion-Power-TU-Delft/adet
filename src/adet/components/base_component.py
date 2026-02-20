@@ -90,10 +90,12 @@ class BaseComponent(ABC):
         self._equations = self._merge_unique_equations(
             base_equation_instances, extra_equations
         )
+        self._equation_checks()
 
         self.inlet_node: FlowNode | None = None
         self.outlet_node: FlowNode | None = None
 
+    def _equation_checks(self):
         # This checks that the user has not defined multiple
         # incompatible unique equations
         self._check_duplicate_equations()
@@ -222,3 +224,24 @@ class BaseComponent(ABC):
             raise AttributeError(
                 f'No loss model found for `{self.name}` component instance'
             )
+
+    def add_equation(self, equation: EquationBase, position: int | tuple[int, ...]):
+        self._equations[equation] = position
+        self._equation_checks()
+
+    def remove_equation(
+        self,
+        equation_class: Type[EquationBase],
+        position: int | tuple[int, ...],
+    ):
+        if isinstance(position, int):
+            position = (position,)
+
+        for eq, pos in self._equations.items():
+            if isinstance(pos, int):
+                pos = (pos,)
+
+            if isinstance(eq.__class__, equation_class) and set(pos) == set(position):
+                pass
+
+            self._equations.pop(eq)

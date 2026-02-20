@@ -154,10 +154,11 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
     DEFAULTS = {
         # Thermodynamics
         'p': 'Pa',
-        'p_.*': 'Pa',
+        'p_.*': 'Pa',  # WARN: this could catch unwanted stuff
         'T': 'K',
+        'T_critical': 'K',
         '.*_T_is': 'K',  # used by isentropic temperature
-        '.*_[a-z]_red': 'dimensionless',  # reduced quantities
+        '.*_[a-zA-Z]_red': 'dimensionless',  # reduced quantities
         'rhomass': 'kg / m**3',
         '.*hmass.*': 'J / kg',  # Includes delta_hmass
         '.*smass.*': 'J / (kg * K)',  # Includes delta_smass
@@ -397,6 +398,7 @@ class ScalarsRegistry(BaseRegistry[str, int]):
         # Coefficients
         'flowCoeff': -1,
         'workCoeff': -1,
+        'ts_loadCoeff': -1,
         'reactDegree.*': -1,
     }
 

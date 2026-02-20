@@ -71,8 +71,8 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 NUM_SPAN = 1  # Number of spanwise stations
 NUM_STAGES = 1  # Number of turbine stages (stator-rotor pairs)
 # Runtime options
-RUN_MULTI = True  # Run the multi streamline case
-ADD_LOSSES = True
+RUN_MULTI = False  # Run the multi streamline case
+ADD_LOSSES = False
 SCALED = True  # Use scaled equations for better numerical conditioning
 PLOTS = True  # Show plots at end
 PRINTS = False  # Print node information
@@ -90,7 +90,7 @@ ideal_model = AnalyticalFluidModel(idl_state)
 # Update variables are used to solve for thermodynamic state
 # (p, T) chosen for stability
 settings = FluidSettings(
-    model=real_model,
+    model=ideal_model,
     update_variables=('p', 'T'),
     update_length=2,
 )
@@ -136,7 +136,7 @@ casing = Shaft(
 )
 
 # Rotating shaft for rotors (angular velocity to be determined)
-rotating_shaft = Shaft(
+shaft = Shaft(
     Quantity(-1, 'rpm'),
     is_constrained=False,
 )
@@ -200,7 +200,7 @@ stator = BladeRow(
 # Rotor blade row definition
 rotor = BladeRow(
     'Rotor',
-    shaft=rotating_shaft,
+    shaft=shaft,
     row_type='rotor',
     in_constraints={
         'geo': {
@@ -348,7 +348,7 @@ if RUN_MULTI:
     kn_span_is = ntw.system.get_scaled_constraints()
     bnd_span_is = ntw.system.get_arguments_bounds()
     rootfind_span_is = ntw.system.make_rootfinder(
-        'ipopt',
+        'kinsol',
         {'error_on_fail': True},
     )
 

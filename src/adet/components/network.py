@@ -161,12 +161,13 @@ class ComponentNetwork(Generic[T]):
 
             if isinstance(component, BladeRow):
                 # Constrained ones are enfored as omega constraints
-                if not component.shaft.is_constrained:
-                    shafts_outnodes[component.shaft].append(outlet_node_idx)
+                if not component._shaft.is_constrained:
+                    shafts_outnodes[component._shaft].append(outlet_node_idx)
 
         for nodes in shafts_outnodes.values():
             linked_omegas = tuple(f'kin_omega{n}' for n in nodes)
-            self.system.add_equalities(linked_omegas)
+            if len(linked_omegas) > 1:
+                self.system.add_equalities(linked_omegas)
 
     def build(self, scaled: bool = True):
         self.system.build(scaled)

@@ -71,8 +71,11 @@ class TotalStaticLoadingCoefficient(EquationBase):
     output_quantities = ('hmass',)
 
     def residual(self, oth_ts_loadCoeff1, stc_p1, stc_smass0, tot_hmass0, kin_U1):
-        stc_hmass_is1 = self.eos(stc_p1, stc_smass0)
-        return kin_U1**2 * oth_ts_loadCoeff1 - 2 * (tot_hmass0 - stc_hmass_is1)
+        midspan = get_midspan_idx(stc_p1)
+        stc_hmass_is1 = self.eos(stc_p1, stc_smass0)[midspan]
+        return kin_U1[midspan] ** 2 * oth_ts_loadCoeff1 - 2 * (
+            tot_hmass0[midspan] - stc_hmass_is1
+        )
 
 
 class StaticPressRatio(EquationBase):

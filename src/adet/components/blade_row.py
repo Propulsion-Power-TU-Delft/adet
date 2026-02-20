@@ -132,13 +132,23 @@ class BladeRow(BaseComponent):
             from_previous_node,
             constant_variables,
         )
+        self._shaft = None
+        # This uses the setter logic
+        self.shaft = shaft
+        self.row_type: Literal['stator', 'rotor'] = row_type
+
+    @property
+    def shaft(self) -> Shaft | None:
+        return self._shaft
+
+    @shaft.setter
+    def shaft(self, shaft: Shaft):
         # Fix omega at the outlet node
         if shaft.is_constrained:
             self.out_constraints['kin']['omega'] = shaft.omega
-
-        # This is to be read by the network to improve guesses and bounds
-        self.shaft = shaft
-        self.row_type = row_type
+        else:
+            self.out_constraints['kin'].pop('omega', None)
+        self._shaft = shaft
 
 
 class VanelessDiffuser(BaseComponent):

@@ -4,19 +4,18 @@ In general we will call 'constraints' all the quantities that are fixed by desig
 parameter, while 'variables' are all the quantities that are not fixed.
 """
 
-from typing import ClassVar, Optional, Literal, get_args, Iterator
 from itertools import combinations
 import logging
+from typing import ClassVar, Iterator, Literal, Optional, get_args
 
 import numpy as np
 from numpy.typing import NDArray
-
+from pint import Quantity, Unit
 from pint.facets.plain import PlainQuantity
-from pint.registry import Quantity
 
+from adet.constants import ArrayLike
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
 from adet.registries import DefaultUnitsRegistry
-from adet.constants import ArrayLike
 from adet.tools.plotting import plot_velocity_triangles
 
 
@@ -128,7 +127,7 @@ class VariableContainer:
         self,
         var_type: str,
         magnitude: Optional[ArrayLike],
-        units: str | None,
+        units: str | Unit | None,
         is_fixed: bool,
     ) -> None:
         if units is None:
@@ -151,12 +150,15 @@ class VariableContainer:
         self,
         var_type: str,
         magnitude: Optional[float | ArrayLike] = None,
-        units: str | None = None,
+        units: str | None | Unit = None,
     ) -> None:
         self._add_variable_helper(var_type, magnitude, units, is_fixed=False)
 
     def add_constraint(
-        self, var_type: str, magnitude: float | ArrayLike, units: str | None = None
+        self,
+        var_type: str,
+        magnitude: float | ArrayLike,
+        units: str | Unit | None = None,
     ) -> None:
         self._add_variable_helper(var_type, magnitude, units, is_fixed=True)
 
