@@ -27,6 +27,7 @@ from adet.equations.base_equation import EquationBase
 from adet.equations.definitions import RepeatedStage
 from adet.equations.fundamental import FreeVortexDistribution
 from adet.equations.geometrical import (
+    MeridionalVariable,
     MinimalCamberLine,
     ParabolicCamberline,
 )
@@ -51,7 +52,6 @@ from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.iter import grouper
 from adet.tools.loggers import setup_logger
 
-
 # === LOGGING SETUP
 logger = logging.getLogger(__name__)
 plt.close('all')
@@ -68,8 +68,8 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 # === CONFIGURATION
 # Simulation settings
-NUM_SPAN = 7  # Number of spanwise stations
-NUM_STAGES = 2  # Number of turbine stages (stator-rotor pairs)
+NUM_SPAN = 1  # Number of spanwise stations
+NUM_STAGES = 1  # Number of turbine stages (stator-rotor pairs)
 # Runtime options
 RUN_MULTI = True  # Run the multi streamline case
 ADD_LOSSES = True
@@ -90,7 +90,7 @@ ideal_model = AnalyticalFluidModel(idl_state)
 # Update variables are used to solve for thermodynamic state
 # (p, T) chosen for stability
 settings = FluidSettings(
-    model=ideal_model,
+    model=real_model,
     update_variables=('p', 'T'),
     update_length=2,
 )
@@ -284,12 +284,21 @@ def build_network(num_stages, num_span, add_losses: bool = False):
         ntw.system.add_equation(StaticTotalDegreeOfReaction(), nodes)
         ntw.system.boundary_conditions[nodes[3]]['oth']['workCoeff'] = -1.0
         if num_span > 1:
-            if stage > 0:
-                ntw.system.add_equation(FreeVortexDistribution(), nodes[0])
-            else:
+            if stage == 0:
                 ntw.system.add_equation(FreeVortexDistribution(), nodes[3])
+            else:
+                ntw.system.remove_equation(MeridionalVariable, nodes[0])
+                ntw.system.add_equalities(
+                    (f'geo_hh{nodes[0] - 1}', f'geo_hh{nodes[0]}'),
+                    (f'geo_rr{nodes[0] - 1}', f'geo_rr{nodes[0]}'),
+                )
+
             ntw.system.add_equation(FreeVortexDistribution(), nodes[1])
-            ntw.system.add_equation(FreeVortexDistribution(), nodes[2])
+            ntw.system.remove_equation(MeridionalVariable, nodes[2])
+            ntw.system.add_equalities(
+                (f'geo_hh{nodes[1]}', f'geo_hh{nodes[2]}'),
+                (f'geo_rr{nodes[1]}', f'geo_rr{nodes[2]}'),
+            )
 
     ntw.system.boundary_conditions[3]['oth']['reactDegree_ts'] = 0.5
     ntw.system.boundary_conditions[3]['oth']['flowCoeff'] = 0.4
@@ -493,7 +502,7 @@ if PLOTS:
 
     fig, ax = plt.subplots(figsize=(5, 5))
 
-    cmap = plt.colormaps.get('OrRd')
+    cmap = plt.colormaps.get('autumn')
     for idx, (n0_idx, n1_idx) in enumerate(blade_rows):
         n0 = ntw.system.nodes[n0_idx]
         n1 = ntw.system.nodes[n1_idx]
@@ -512,14 +521,25 @@ if PLOTS:
         is_stator = (n0_idx // 2) % 2 == 0
         blade_type = 'Stator' if is_stator else 'Rotor'
         stage_num = n0_idx // 4
-        linestyle = '-' if is_stator else '--'
 
-        color = cmap(idx / (len(ntw.components) - 1))
+        color = cmap(idx / (len(ntw.components) - 0.8))  # pyright:ignore
+
+        # Plot
+        if idx == 0:
+            ax.plot(
+                span_normalized,
+                smass_in,
+                label='Inlet',
+                color='blue',
+                linestyle='-',
+                linewidth=2,
+                marker='o',
+            )
 
         # Plot
         ax.plot(
             span_normalized,
-            smass_out,  # Convert to percentage
+            smass_out,
             label=f'Stage {stage_num} {blade_type}',
             color=color,
             linestyle='-',
