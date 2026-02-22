@@ -2,6 +2,7 @@
 from copy import deepcopy
 import logging
 from pathlib import Path
+from typing import Type
 
 import CoolProp as cp
 import matplotlib.pyplot as plt
@@ -11,7 +12,12 @@ from pint import Quantity
 from adet.assembly import CasadiSystem
 from adet.components import BladeRow, Inlet, Shaft
 from adet.components import ComponentNetwork
+from adet.components.blade_row import RowGeometry
+from adet.equations.base_equation import EquationBase, LossApplier
 from adet.equations.definitions import (
+    BoundaryLayerRatios,
+    ClearanceByHeight,
+    IsentropicProperties,
     RepeatedStage,
 )
 from adet.equations.geometrical import MinimalCamberLine, ParabolicCamberline
@@ -24,6 +30,10 @@ from adet.equations.nondimensional import (
 )
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
+from adet.losses.leakage import DentonLeakageLoss
+from adet.losses.mixing import SieverdingBasePressure
+from adet.losses.profile import DentonProfileLoss
+from adet.losses.secondary import SecondaryBSM
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
@@ -44,6 +54,49 @@ plt.close('all')
 NUM_SPAN = 1
 SCALED = True
 INITIAL_LOSS = PercentageEntropyLoss(0.0)
+
+# ================================================
+# *** Loss transition helpers
+
+
+class LossMatcher(LossApplier):
+    def __init__(
+        self,
+        tip_gap: bool,
+        scaling_factor: list[float] | None = None,
+    ):
+        super().__init__(scaling_factor)
+        self.tip_gap = tip_gap
+
+    def residual(
+        self,
+        stc_smass0,
+        stc_smass1,
+        oth_delta_smass_leakage1,
+        oth_delta_smass_profile1,
+        oth_delta_smass_secondary1,
+    ):
+        if self.tip_gap:
+            return stc_smass1 - (
+                stc_smass0
+                + oth_delta_smass_leakage1
+                + oth_delta_smass_profile1
+                + oth_delta_smass_secondary1
+            )
+        return stc_smass1 - (
+            stc_smass0 + oth_delta_smass_profile1 + oth_delta_smass_secondary1
+        )
+
+
+EXTRA_EQUATIONS: dict[Type[EquationBase], int | tuple[int, ...]] = {
+    ClearanceByHeight: 1,
+    IsentropicProperties: (0, 1),
+    BoundaryLayerRatios: 1,
+    SieverdingBasePressure: (0, 1),
+    SecondaryBSM: (0, 1),
+    DentonProfileLoss: (0, 1),
+    DentonLeakageLoss: (0, 1),
+}
 
 # === DESIGN MAP PARAMETERS
 N_PHI = 20
@@ -199,16 +252,12 @@ ntw.system.build(SCALED)
 flow_coeff_name = f'oth_flowCoeff{final_node}'
 load_coeff_name = f'oth_ts_loadCoeff{final_node}'
 
+# Constraint indices for the isentropic system (re-fetched after loss rebuild below)
 flow_coeff_idx = ntw.system.constraints.index(flow_coeff_name)
 load_coeff_idx = ntw.system.constraints.index(load_coeff_name)
 
-logger.info(
-    f'Constraint indices: {flow_coeff_name}={flow_coeff_idx}, '
-    f'{load_coeff_name}={load_coeff_idx}'
-)
-
 # ================================================
-# Initial IPOPT solve
+# Isentropic initial IPOPT solve
 rootfinder_ipopt = ntw.system.make_rootfinder(
     'ipopt',
     opts={'error_on_fail': False, 'ipopt.max_iter': 1000},
@@ -218,13 +267,48 @@ x0 = ntw.system.get_scaled_guess()
 kn = ntw.system.get_scaled_constraints()
 bnd = ntw.system.get_arguments_bounds()
 
-logger.info(f'Solving initial point: phi={PHI_RANGE[0]:.3f}, psi={PSI_RANGE[0]:.3f}')
+logger.info(f'Solving isentropic initial point: phi={PHI_RANGE[0]:.3f}, psi={PSI_RANGE[0]:.3f}')
 solution = solve_root_problem(
     rootfinder_ipopt, x0, kn, bnd, suppress_output=False, perturbate_guess=False
 )
 
 # ================================================
-# Kinsol for the sweep
+# Transition to losses (mirrors axial_orc.py second phase)
+sol_dict_is = ntw.system.solution_to_dict(solution)
+
+ntw.system.remove_equation_type(LossApplier)
+rotor.remove_equation(INITIAL_LOSS.__class__, (0, 1))
+stator.remove_equation(INITIAL_LOSS.__class__, (0, 1))
+for eq, pos in EXTRA_EQUATIONS.items():
+    rotor.add_equation(eq(), pos)
+    stator.add_equation(eq(), pos)
+rotor.add_equation(LossMatcher(tip_gap=True), (0, 1))
+stator.add_equation(LossMatcher(tip_gap=False), (0, 1))
+ntw.build()
+
+# Re-fetch constraint indices after rebuild
+flow_coeff_idx = ntw.system.constraints.index(flow_coeff_name)
+load_coeff_idx = ntw.system.constraints.index(load_coeff_name)
+logger.info(
+    f'Loss system constraint indices: {flow_coeff_name}={flow_coeff_idx}, '
+    f'{load_coeff_name}={load_coeff_idx}'
+)
+
+# Solve loss initial point with IPOPT (using isentropic solution as warm start)
+x0_loss = ntw.system.get_scaled_guess(sol_dict_is)
+kn_loss = ntw.system.get_scaled_constraints()
+bnd_loss = ntw.system.get_arguments_bounds()
+rootfinder_ipopt_loss = ntw.system.make_rootfinder(
+    'ipopt',
+    opts={'error_on_fail': False, 'ipopt.max_iter': 1000},
+)
+logger.info(f'Solving loss initial point: phi={PHI_RANGE[0]:.3f}, psi={PSI_RANGE[0]:.3f}')
+solution = solve_root_problem(
+    rootfinder_ipopt_loss, x0_loss, kn_loss, bnd_loss, suppress_output=False, perturbate_guess=False
+)
+
+# ================================================
+# Kinsol for the loss sweep
 rootfinder_kinsol = ntw.system.make_rootfinder(
     'kinsol',
     opts={'error_on_fail': False},
@@ -266,6 +350,9 @@ def extract_meridional():
         xc = np.linspace(0, chord_ax, N_CAMBER_PTS)
         yc = a * xc**2 + b * xc
 
+        mer_angle_in = float(n0.geo.get('meridional_angle').to_base_units().magnitude[0])
+        mer_angle_out = float(n1.geo.get('meridional_angle').to_base_units().magnitude[0])
+
         camberlines.append(
             {
                 'x_offset': x_offset,
@@ -274,7 +361,17 @@ def extract_meridional():
                 'yc': yc,
                 'alpha_in': alpha_in,
                 'alpha_out': alpha_out,
+                'alpha_hub_in': float(n0.geo.metal_angle[0]),
+                'alpha_hub_out': float(n1.geo.metal_angle[0]),
+                'alpha_tip_in': float(n0.geo.metal_angle[-1]),
+                'alpha_tip_out': float(n1.geo.metal_angle[-1]),
                 'chord_ax': chord_ax,
+                'rr0': rr0,
+                'rr1': rr1,
+                'hh0': hh0,
+                'hh1': hh1,
+                'mer_angle_in': mer_angle_in,
+                'mer_angle_out': mer_angle_out,
             }
         )
 
@@ -290,24 +387,24 @@ def extract_meridional():
 
 
 # ================================================
-# Design map sweep
-work_coeff_map = np.full((N_PHI, N_PSI), np.nan)
+# Design map sweep (loss system)
+eta_tt_map = np.full((N_PHI, N_PSI), np.nan)
 converged_map = np.zeros((N_PHI, N_PSI), dtype=bool)
 meridional_data = {}  # keyed by (i_phi, j_psi)
 
-work_coeff_key = f'oth_workCoeff{final_node}'
+eta_tt_key = f'oth_eta_tt{final_node}'
 
 
-def extract_work_coeff(sol):
+def extract_eta_tt(sol):
     sol_dict = ntw.system.solution_to_dict(sol)
-    if work_coeff_key in sol_dict:
-        return float(sol_dict[work_coeff_key][0])
+    if eta_tt_key in sol_dict:
+        return float(sol_dict[eta_tt_key][0])
     return np.nan
 
 
 prev_solution = solution
 converged_map[0, 0] = True
-work_coeff_map[0, 0] = extract_work_coeff(solution)
+eta_tt_map[0, 0] = extract_eta_tt(solution)
 
 # Save meridional at (0,0)
 if 0 in MERID_INDICES:
@@ -331,7 +428,7 @@ for i, phi in enumerate(PHI_RANGE):
             sol = solve_root_problem(
                 rootfinder_kinsol, prev_solution, kn, suppress_output=True
             )
-            work_coeff_map[i, j] = extract_work_coeff(sol)
+            eta_tt_map[i, j] = extract_eta_tt(sol)
             converged_map[i, j] = True
             prev_solution = sol
 
@@ -343,7 +440,7 @@ for i, phi in enumerate(PHI_RANGE):
         except Exception as e:
             logger.warning(f'Failed at phi={phi:.3f}, psi={psi:.3f}: {e}')
 
-logger.info(f'Converged {converged_map.sum()} / {N_PHI * N_PSI} points')
+logger.info(f'Converged {converged_map.sum()} / {N_PHI * N_PSI} points (loss sweep)')
 
 # ================================================
 # Save meridional + camberline data
@@ -368,23 +465,45 @@ np.savez(Path(__file__).parent / 'meridional_channels.npz', **merid_save)
 logger.info(f'Saved {len(meridional_data)} meridional channels with camberlines')
 
 # ================================================
-# Plot meridional channels
+# Plot meridional channels  (axial_orc.py style: blade outlines, stator/rotor colors)
 NR = len(MERID_INDICES)
-fig_m, ax_m = plt.subplots(NR, NR, figsize=(4 * NR, 3 * NR), sharex=False, sharey=True)
+row_colors = ['steelblue', 'coral']  # stator, rotor
+
+fig_m, ax_m = plt.subplots(NR, NR, figsize=(5 * NR, 4 * NR), sharex=False, sharey=False)
 fig_m.suptitle('Meridional channels', fontsize=14)
 
-cmap_m = plt.colormaps.get('plasma')
 for row, i in enumerate(MERID_INDICES):
     for col, j in enumerate(MERID_INDICES):
         ax = ax_m[row, col]
         key = (i, j)
         if key in meridional_data:
             d = meridional_data[key]
-            color = cmap_m(col / max(NR - 1, 1))
-            ax.fill_between(d['x'], d['r_hub'], d['r_tip'], alpha=0.3, color=color)
-            ax.plot(d['x'], d['r_hub'], color=color, linewidth=1.5)
-            ax.plot(d['x'], d['r_tip'], color=color, linewidth=1.5)
-            ax.plot(d['x'], d['r_mid'], color=color, linewidth=1.0, linestyle='--')
+            x_offset_plot = 0.0
+            for br_idx, cl in enumerate(d['camberlines']):
+                color = row_colors[br_idx % len(row_colors)]
+                geom = RowGeometry(
+                    r_in=cl['rr0'],
+                    r_out=cl['rr1'],
+                    height_in=cl['hh0'],
+                    height_out=cl['hh1'],
+                    mer_angle_in=cl['mer_angle_in'],
+                    mer_angle_out=cl['mer_angle_out'],
+                    axial_chord=cl['chord_ax'],
+                    axial_offset=x_offset_plot,
+                )
+                for line in geom.plot_meridional_profile(color, ax=ax):
+                    line.set_linewidth(2.5)
+                # Midspan dots at LE and TE
+                ax.plot(x_offset_plot, cl['rr0'], 'o', color='r', markersize=4)
+                ax.plot(x_offset_plot + cl['chord_ax'], cl['rr1'], 'o', color='r', markersize=4)
+                # Hub (blue) and tip (green) tick markers
+                ax.plot(x_offset_plot, cl['rr0'] - cl['hh0'] / 2, '_', color='b', markersize=8)
+                ax.plot(x_offset_plot, cl['rr0'] + cl['hh0'] / 2, '_', color='g', markersize=8)
+                ax.plot(x_offset_plot + cl['chord_ax'], cl['rr1'] - cl['hh1'] / 2, '_', color='b', markersize=8)
+                ax.plot(x_offset_plot + cl['chord_ax'], cl['rr1'] + cl['hh1'] / 2, '_', color='g', markersize=8)
+                x_offset_plot += cl['chord_ax'] * 1.1
+            # Axis reference line
+            ax.plot([0.0, x_offset_plot], [0.0, 0.0], color='r', linestyle='dashdot', linewidth=1.5)
             ax.set_title(
                 rf'$\phi$={PHI_RANGE[i]:.2f}, $\psi_{{ts}}$={PSI_RANGE[j]:.1f}',
                 fontsize=9,
@@ -400,11 +519,9 @@ fig_m.tight_layout()
 fig_m.savefig(Path(__file__).parent / 'meridional_channels.png', dpi=150)
 
 # ================================================
-# Plot camberlines
+# Plot camberlines  (axial_orc.py style: midspan=black, hub=orange, tip=seagreen)
 fig_c, ax_c = plt.subplots(NR, NR, figsize=(4 * NR, 3 * NR), sharex=False, sharey=False)
 fig_c.suptitle('Camberlines at midspan (3 blades per row)', fontsize=14)
-
-row_colors = ['steelblue', 'coral']  # stator, rotor
 
 for row, i in enumerate(MERID_INDICES):
     for col, j in enumerate(MERID_INDICES):
@@ -413,14 +530,22 @@ for row, i in enumerate(MERID_INDICES):
         if key in meridional_data:
             d = meridional_data[key]
             for br_idx, cl in enumerate(d['camberlines']):
-                color = row_colors[br_idx % len(row_colors)]
+                # Midspan blades in black
                 for blade_num in range(N_BLADES_PLOT):
                     ax.plot(
                         cl['x_offset'] + cl['xc'],
                         blade_num * cl['pitch'] + cl['yc'],
-                        color=color,
+                        color='k',
                         linewidth=1.5,
                     )
+                # Hub camberline (orange)
+                a_h, b_h, _ = _pbl._compute_parabola(cl['alpha_hub_in'], cl['alpha_hub_out'], cl['chord_ax'])
+                yc_h = a_h * cl['xc'] ** 2 + b_h * cl['xc']
+                ax.plot(cl['x_offset'] + cl['xc'], yc_h, color='orange', linewidth=1.5)
+                # Tip camberline (seagreen)
+                a_t, b_t, _ = _pbl._compute_parabola(cl['alpha_tip_in'], cl['alpha_tip_out'], cl['chord_ax'])
+                yc_t = a_t * cl['xc'] ** 2 + b_t * cl['xc']
+                ax.plot(cl['x_offset'] + cl['xc'], yc_t, color='seagreen', linewidth=1.5)
             ax.set_title(
                 rf'$\phi$={PHI_RANGE[i]:.2f}, $\psi_{{ts}}$={PSI_RANGE[j]:.1f}',
                 fontsize=9,
@@ -439,20 +564,20 @@ fig_c.savefig(Path(__file__).parent / 'camberlines.png', dpi=150)
 # Plot design map  (phi on x-axis, psi on y-axis)
 fig, ax = plt.subplots(figsize=(8, 6))
 
-wc_masked = np.where(converged_map, work_coeff_map, np.nan)
+eta_masked = np.where(converged_map, eta_tt_map, np.nan)
 
-# Transpose: work_coeff_map[i_phi, j_psi] -> contourf(phi, psi, map.T)
-cf = ax.contourf(PHI_RANGE, PSI_RANGE, wc_masked.T, levels=15, cmap='viridis')
+# Transpose: eta_tt_map[i_phi, j_psi] -> contourf(phi, psi, map.T)
+cf = ax.contourf(PHI_RANGE, PSI_RANGE, eta_masked.T, levels=15, cmap='viridis')
 cs = ax.contour(
     PHI_RANGE,
     PSI_RANGE,
-    wc_masked.T,
+    eta_masked.T,
     levels=15,
     colors='w',
     linewidths=0.5,
     alpha=0.6,
 )
-ax.clabel(cs, fmt='%.2f', fontsize=8)
+ax.clabel(cs, fmt='%.3f', fontsize=8)
 
 # Mark the meridional sample points
 for i in MERID_INDICES:
@@ -460,11 +585,11 @@ for i in MERID_INDICES:
         ax.plot(PHI_RANGE[i], PSI_RANGE[j], 'w+', markersize=8, markeredgewidth=1.5)
 
 cbar = fig.colorbar(cf, ax=ax)
-cbar.set_label(r'Work coefficient $\psi_w$ [-]', fontsize=14)
+cbar.set_label(r'Total-to-total efficiency $\eta_{tt}$ [-]', fontsize=14)
 
 ax.set_xlabel(r'Flow coefficient $\phi$ [-]', fontsize=14)
 ax.set_ylabel(r'Loading coefficient $\psi_{ts}$ [-]', fontsize=14)
-ax.set_title('ORC Axial Turbine — Isentropic Design Map', fontsize=15)
+ax.set_title('ORC Axial Turbine — Loss-Based Design Map', fontsize=15)
 ax.grid(True, alpha=0.3)
 ax.plot(PHI_RANGE[0], PSI_RANGE[0], 'w*', markersize=12, label='Reference design')
 ax.legend(fontsize=11)
