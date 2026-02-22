@@ -23,6 +23,7 @@ class BaseRegistry(Generic[K, V]):
 
     _defaults: dict[K, V]
     _user_values: dict[K, V]
+    _ignore_defaults: bool
     _fallback_value: V | None
     _forced_value: V | None
 
@@ -37,6 +38,7 @@ class BaseRegistry(Generic[K, V]):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._defaults = dict(cls.DEFAULTS)
+            cls._ignore_defaults = False
 
             # Initialize
             cls._user_values = {}
@@ -52,6 +54,14 @@ class BaseRegistry(Generic[K, V]):
     def set_forced_value(self, value: V):
         """Set a value that overriddes all defaults and user-defined values"""
         self._forced_value = value
+
+    @property
+    def ignore_defaults(self):
+        return self._ignore_defaults
+
+    @ignore_defaults.setter
+    def ignore_defaults(self, flag: bool):
+        self._ignore_defaults = flag
 
     def set(self, key: K, value: V) -> None:
         self._user_values[key] = value
@@ -113,7 +123,10 @@ class BaseRegistry(Generic[K, V]):
 
     @property
     def _all_values(self) -> dict[K, V]:
-        return {**self._defaults, **self._user_values}
+        if self._ignore_defaults:
+            return self._user_values
+        else:
+            return {**self._defaults, **self._user_values}
 
     def from_dict(self, input: dict[K, V]):
         for k, v in input.items():
@@ -130,6 +143,8 @@ class BaseRegistry(Generic[K, V]):
 
         # Remove custom values
         cls._instance.clear()
+        # Restore defaults
+        cls._instance._ignore_defaults = False
         # Reset fallback and forced values
         cls._instance._fallback_value = None
         cls._instance._forced_value = None

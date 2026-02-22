@@ -2,7 +2,7 @@ import numpy as np
 
 from adet.equations.utils import safe_abs
 from adet.losses.base_loss import LossModel
-from adet.equations.base_equation import DeviationModel, EquationBase
+from adet.equations.base_equation import DeviationModel, EquationBase, LossApplier
 
 
 class WorkCoefficientEstimate(EquationBase):
@@ -21,7 +21,7 @@ class WorkCoefficientEstimate(EquationBase):
 
 
 # TODO: This can be generalized instead of using the
-# ideal gas expressions with gamma_pv
+# ideal gas expressions with gamma(pv)
 class CaseyRushInletFunc(EquationBase):
     def residual(
         self,
@@ -260,7 +260,7 @@ class SkinFrictionJansen(LossModel):
         return r1, r2, r3
 
 
-class LossAdder(EquationBase):
+class LossAdder(LossApplier):
     def residual(
         self,
         tot_hmass0,

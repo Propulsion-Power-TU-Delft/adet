@@ -5,6 +5,7 @@ import logging
 from typing import ClassVar, TypeAlias, Type, Any
 
 from adet.equations import EquationBase, UniqueEquation
+from adet.equations.base_equation import LossApplier
 from adet.losses import LossModel
 from adet.node import FlowNode
 from adet.tools.iter import ensure_iterable
@@ -214,15 +215,17 @@ class BaseComponent(ABC):
                         )
 
     def _check_loss_model(self):
+        # The duplicate instances of LossApplier should
+        # be caught by duplicate eqution checking
         loss_model_seen = False
         for eq in self._equations:
-            if isinstance(eq, LossModel):
+            if isinstance(eq, LossApplier):
                 loss_model_seen = True
                 break
 
         if not loss_model_seen:
             raise AttributeError(
-                f'No loss model found for `{self.name}` component instance'
+                f'No loss applier function for `{self.name}` component instance'
             )
 
     def add_equation(self, equation: EquationBase, position: int | tuple[int, ...]):

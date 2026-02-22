@@ -235,21 +235,11 @@ class UniqueEquation(EquationBase):
         super().__init__(scaling_factor)
 
 
-class DeviationModel(UniqueEquation):
-    pass
-
-
-class IncidenceModel(UniqueEquation):
-    pass
-
-
-class CamberLineGeom(UniqueEquation):
-    pass
-
-
-class MeridAreaBlockage(UniqueEquation):
-    pass
-
-
-class MeridionalGeom(UniqueEquation):
-    pass
+# fmt: off
+class LossApplier(UniqueEquation): ...
+class DeviationModel(UniqueEquation): ...
+class IncidenceModel(UniqueEquation): ...
+class CamberLineGeom(UniqueEquation): ...
+class MeridionalGeom(UniqueEquation): ...
+class MeridAreaBlockage(UniqueEquation): ...
+# fmt: on

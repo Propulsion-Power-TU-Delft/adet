@@ -657,11 +657,13 @@ class SolutionDispatcher:
         logger.debug(f'Writing arguments to node: {arg_print}')
 
         for node, args_to_write in split_arg_dictionaries.items():
+            node_writer = {}
             node_idx = str(self.data.nodes.index(node))
-            node.write_to_node(
-                {arg: solution_dict[arg + node_idx] for arg in args_to_write},
-                fixed=False,
-            )
+            for arg in args_to_write:
+                node_writer[arg] = solution_dict[arg + node_idx]
+
+            logger.debug(f'Writing {node_writer} to node {node_idx}')
+            node.write_to_node(node_writer, fixed=False)
 
         return solution_dict
 

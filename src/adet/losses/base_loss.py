@@ -11,7 +11,6 @@ from adet.equations import EquationBase
 LossType: TypeAlias = Literal['delta_smass', 'delta_tot_p', 'delta_tot_hmass']
 
 
-# TODO: Restore full implementation, for now loss model is just use as an identifier
 class LossModel(EquationBase):
     pass
 

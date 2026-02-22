@@ -1,8 +1,8 @@
-from adet.equations.base_equation import DeviationModel
-from adet.losses import LossModel
+from adet.equations.base_equation import DeviationModel, LossApplier
+from adet.equations.utils import get_midspan_idx
 
 
-class PercTotalPressureLoss(LossModel):
+class PercTotalPressureLoss(LossApplier):
     """
     .. math::
 
@@ -19,7 +19,7 @@ class PercTotalPressureLoss(LossModel):
         return rlt_p1 - rlt_p0 * (1 - self.loss_coeff)
 
 
-class TotalPressureLoss(LossModel):
+class TotalPressureLoss(LossApplier):
     """
     .. math::
 
@@ -34,7 +34,7 @@ class TotalPressureLoss(LossModel):
         return (rlt_p0 - rlt_p1) - (rlt_p0 - stc_p0) * self.loss_coeff
 
 
-class PlaceHolderLoss(LossModel):
+class PlaceHolderLoss(LossApplier):
     """
     Use when defining efficiency through eta_tt for example instead of direct
     row-based loss coefficients. This is because I made components raise
@@ -45,7 +45,7 @@ class PlaceHolderLoss(LossModel):
         return ()
 
 
-class PercentageEntropyLoss(LossModel):
+class PercentageEntropyLoss(LossApplier):
     """
     Percentage increase of entropy w.r.t. the inlet conditions
 
@@ -66,7 +66,7 @@ class PercentageEntropyLoss(LossModel):
         return stc_smass1 - stc_smass0 * (1 + self.entropy_gen)
 
 
-class FixedEnthalpyLoss(LossModel):
+class FixedEnthalpyLoss(LossApplier):
     def __init__(self, enthalpy_generated: float = 0.0):
         super().__init__()
         self.enth_gen = enthalpy_generated
@@ -85,10 +85,5 @@ class ZeroDeviation(DeviationModel):
 
 class ZeroMidspanDeviation(DeviationModel):
     def residual(self, kin_beta0, geo_metal_angle0):
-        num_span = max(kin_beta0.shape)
-        if num_span == 1:
-            midspan = 0
-        else:
-            midspan = num_span // 2
-
+        midspan = get_midspan_idx(kin_beta0)
         return kin_beta0[midspan] - geo_metal_angle0[midspan]

@@ -160,9 +160,11 @@ class ComponentNetwork(Generic[T]):
             outlet_node_idx = inlet_node_idx + 1  # Of the previous component
 
             if isinstance(component, BladeRow):
+                if component.shaft is None:
+                    raise AttributeError('Missing shaft')
                 # Constrained ones are enfored as omega constraints
-                if not component._shaft.is_constrained:
-                    shafts_outnodes[component._shaft].append(outlet_node_idx)
+                if not component.shaft.is_constrained:
+                    shafts_outnodes[component.shaft].append(outlet_node_idx)
 
         for nodes in shafts_outnodes.values():
             linked_omegas = tuple(f'kin_omega{n}' for n in nodes)

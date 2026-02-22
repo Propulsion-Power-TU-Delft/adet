@@ -4,6 +4,8 @@ import logging
 
 import CoolProp as cp
 import matplotlib.pyplot as plt
+import numpy as np
+import jax
 from pint import Quantity
 
 from adet.assembly import CasadiSystem
@@ -32,15 +34,16 @@ from adet.equations.nondimensional import (
     TotalTotalExpansionEfficiency,
     WorkCoefficient,
 )
-from adet.fluid.settings import ExternalFluidModel
+from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel
 from adet.fluid.settings import FluidSettings
+from adet.fluid.symbolic_eos import IdealGasState
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.losses.leakage import DentonLeakageLoss
 from adet.losses.mixing import SieverdingBasePressure
 from adet.losses.profile import DentonProfileLoss
 from adet.losses.secondary import SecondaryBSM
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
-from adet.solution import solve_root_problem
+from adet.solution import multi_solver, solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.iter import grouper
 from adet.tools.loggers import setup_logger
@@ -70,9 +73,10 @@ abs_state.debug_print = False
 
 
 real_model = ExternalFluidModel(abs_state)
-INLET_PRESSURE = 2.1 * abs_state.p_critical()
-INLET_TEMPERATURE = 1.1 * abs_state.T_critical()
+INLET_PRESSURE = 2.071 * abs_state.p_critical()
+INLET_TEMPERATURE = 1.052 * abs_state.T_critical()
 abs_state.update(cp.PT_INPUTS, INLET_PRESSURE, INLET_TEMPERATURE)
+
 
 fluid_settings = FluidSettings(
     model=real_model,
@@ -112,10 +116,10 @@ _bounds_reg = VariableBoundsRegistry()
 _bounds_reg.reset()
 _bounds_reg.from_dict(
     {
-        'delta_smass_.*': (0.0, 100.0),
-        'hdropCoeff': (-5.0, -0.3),
-        'eta_tt': (0.7, 1.0),
-        'U': (0.0, 500.0),  # Reduce the search area
+        # 'delta_smass_.*': (0.0, 100.0),
+        'hdropCoeff': (-8.0, -0.4),
+        # 'eta_tt': (0.7, 1.0),
+        'U': (0.0, 200.0),  # Reduce the search area
     }
 )
 if fluid_settings.model == real_model:
@@ -123,7 +127,7 @@ if fluid_settings.model == real_model:
         {
             'p': (abs_state.p_critical(), INLET_PRESSURE),
             'T': (abs_state.T_critical(), INLET_TEMPERATURE),
-            'hmass': (abs_state.hmass() - 4 * 600**2, abs_state.hmass()),
+            'hmass': (abs_state.hmass() - 2 * 60**2, 1.2 * abs_state.hmass()),
         }
     )
 
@@ -151,12 +155,12 @@ inlet = Inlet(
             'cum_massflow': 1,
         },
         'kin': {
-            'mermach': 0.14,
+            'mermach': 0.1,
             # 'Vm': 100,
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
-            'hubtipRatio': 0.6,
+            'hubtipRatio': 0.7,
         },
         'tot': {
             'p': abs_state.p(),
@@ -253,10 +257,10 @@ ntw = ComponentNetwork(
     components=[stator, rotor],
 )
 
-ntw.system.boundary_conditions[3]['oth']['flowCoeff'] = 0.6
-ntw.system.boundary_conditions[3]['oth']['reactDegree_ts'] = 0.45
-# ntw.system.boundary_conditions[3]['oth']['workCoeff'] = -1.0
-ntw.system.boundary_conditions[3]['oth']['ts_loadCoeff'] = 4
+ntw.system.boundary_conditions[3]['oth']['flowCoeff'] = 0.4
+ntw.system.boundary_conditions[3]['oth']['reactDegree_ts'] = 0.3
+ntw.system.boundary_conditions[3]['oth']['ts_loadCoeff'] = 3
+# ntw.system.boundary_conditions[3]['oth']['workCoeff'] = -1.3
 
 final_node = ntw.num_components * 2 - 1
 
@@ -285,6 +289,8 @@ rootfinder_is = ntw.system.make_rootfinder(
     'ipopt',
     opts={
         'error_on_fail': False,
+        'ipopt.max_iter': 1000,
+        # 'ipopt.hessian_approximation': 'limited-memory',
     },
 )
 
@@ -297,7 +303,7 @@ solution = solve_root_problem(
     kn_is,
     bnd_is,
     suppress_output=False,
-    perturbate_guess=True,
+    perturbate_guess=False,
     delta_pert=0.001,
     num_samples=1,
 )
@@ -355,15 +361,8 @@ if user in ('y', 'Y'):
 # ________________________________________________
 
 
-ntw.system.write_solution_to_nodes(solution)
+final_sol_dict = ntw.system.write_solution_to_nodes(solution)
 ntw.print_structure()
-
-nodes = {}
-for i, node in enumerate(ntw.system.nodes):
-    # For simpler access set n0, n1, n2, ...
-    nodes[i] = node
-n0 = nodes[0]
-n1 = nodes[1]
 
 
 # ------------ PLOTS ---------------------
@@ -411,57 +410,57 @@ if PLOTS:
     pbl = ParabolicCamberline()
     offset = 0.0
     for n0_idx, n1_idx in grouper(num_nodes, 2, incomplete='ignore'):
-        n0 = ntw.system.nodes[n0_idx]
-        n1 = ntw.system.nodes[n1_idx]
-        ax_chord = n1.geo.get('chord_ax').to_base_units().magnitude[0]
+        inl_node = ntw.system.nodes[n0_idx]
+        out_node = ntw.system.nodes[n1_idx]
+        ax_chord = out_node.geo.get('chord_ax').to_base_units().magnitude[0]
 
         # Plot meridional profile
         is_stator = (n0_idx // 2) % 2 == 0
         color = 'steelblue' if is_stator else 'coral'
 
         lines = plot_from_nodes(
-            n0,
-            n1,
+            inl_node,
+            out_node,
             False,
             offset,
             ax=ax_merid,
             color=color,
         )
-        ax_merid.plot(NUM_SPAN * [offset], n0.geo.rr, 'o', color='r')
-        ax_merid.plot(NUM_SPAN * [offset] + ax_chord, n1.geo.rr, 'o', color='r')
+        ax_merid.plot(NUM_SPAN * [offset], inl_node.geo.rr, 'o', color='r')
+        ax_merid.plot(NUM_SPAN * [offset] + ax_chord, out_node.geo.rr, 'o', color='r')
 
         ax_merid.plot(
             NUM_SPAN * [offset],
-            n0.geo.rr + n0.geo.hh / 2,
+            inl_node.geo.rr + inl_node.geo.hh / 2,
             '_',
             color='g',
         )
         ax_merid.plot(
             NUM_SPAN * [offset],
-            n0.geo.rr - n0.geo.hh / 2,
+            inl_node.geo.rr - inl_node.geo.hh / 2,
             '_',
             color='b',
         )
 
         ax_merid.plot(
             NUM_SPAN * [offset] + ax_chord,
-            n1.geo.rr + n1.geo.hh / 2,
+            out_node.geo.rr + out_node.geo.hh / 2,
             '_',
             color='g',
         )
         ax_merid.plot(
             NUM_SPAN * [offset] + ax_chord,
-            n1.geo.rr - n1.geo.hh / 2,
+            out_node.geo.rr - out_node.geo.hh / 2,
             '_',
             color='b',
         )
 
         # Plot camberlines at midspan (3 blades for all rows)
         midspan_idx = ntw.system.num_span // 2
-        inlet_angle = n0.geo.metal_angle[midspan_idx]  # pyright:ignore
-        outlet_angle = n1.geo.metal_angle[midspan_idx]  # pyright:ignore
-        chord_ax = n1.geo.chord_ax[midspan_idx]  # pyright:ignore
-        pitch = n1.geo.pitch[midspan_idx]  # pyright:ignore
+        inlet_angle = inl_node.geo.metal_angle[midspan_idx]  # pyright:ignore
+        outlet_angle = out_node.geo.metal_angle[midspan_idx]  # pyright:ignore
+        chord_ax = out_node.geo.chord_ax[midspan_idx]  # pyright:ignore
+        pitch = out_node.geo.pitch[midspan_idx]  # pyright:ignore
 
         num_blades = 3
 
@@ -478,17 +477,17 @@ if PLOTS:
         # Plot hub and tip camberlines
         pbl.plot_camber_line(
             ax_camber,
-            n0.geo.metal_angle[0],
-            n1.geo.metal_angle[0],
-            n1.geo.chord_ax[0],
+            inl_node.geo.metal_angle[0],
+            out_node.geo.metal_angle[0],
+            out_node.geo.chord_ax[0],
             'orange',
             axial_offset=offset,
         )
         pbl.plot_camber_line(
             ax_camber,
-            n0.geo.metal_angle[-1],
-            n1.geo.metal_angle[-1],
-            n1.geo.chord_ax[-1],
+            inl_node.geo.metal_angle[-1],
+            out_node.geo.metal_angle[-1],
+            out_node.geo.chord_ax[-1],
             'seagreen',
             axial_offset=offset,
         )
@@ -508,17 +507,17 @@ if PLOTS:
 
     cmap = plt.colormaps.get('autumn')
     for idx, (n0_idx, n1_idx) in enumerate(blade_rows):
-        n0 = ntw.system.nodes[n0_idx]
-        n1 = ntw.system.nodes[n1_idx]
+        inl_node = ntw.system.nodes[n0_idx]
+        out_node = ntw.system.nodes[n1_idx]
 
-        smass_in = n0.stc.smass
-        smass_out = n1.stc.smass
+        smass_in = inl_node.stc.smass
+        smass_out = out_node.stc.smass
 
         # Extract blade height for normalization
-        height_in = n0.geo.height
+        height_in = inl_node.geo.height
         # Normalize radial positions by blade height (hub = 0, tip = 1)
-        radii = n0.geo.rr
-        rr_midspan = n0.geo.rr_midspan
+        radii = inl_node.geo.rr
+        rr_midspan = inl_node.geo.rr_midspan
         span_normalized = (radii - (rr_midspan - height_in / 2)) / height_in
 
         # Determine blade type and color
@@ -559,7 +558,15 @@ if PLOTS:
 # _________________ PRINTS _______________________
 
 print(f'Num updates = {real_model.eos_object.num_updates}')
+
 # A little staircase :)
+nodes = {}
+for i, node in enumerate(ntw.system.nodes):
+    # For simpler access set n0, n1, n2, ...
+    nodes[i] = node
+
+n0 = nodes[0]
+n1 = nodes[1]
 if ntw.num_components > 1:
     n2 = nodes[2]
     n3 = nodes[3]
@@ -592,6 +599,6 @@ if answer in ('Y', 'y'):
     input('Press enter to close ')
 plt.close('all')
 
-print(f'Inlet mach is {n0.kin.mach}')
+print(f'Inlet mach is {inl_node.kin.mach}')
 
 # globals().update(residual_debugger(MixingMomentumBalances(), [n6, n7]))

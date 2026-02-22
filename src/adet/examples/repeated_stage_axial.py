@@ -23,7 +23,7 @@ from pint import Quantity
 from adet.assembly import CasadiSystem
 from adet.components import BladeRow, ComponentNetwork, Inlet, Shaft
 from adet.components.blade_row import plot_from_nodes
-from adet.equations.base_equation import EquationBase
+from adet.equations.base_equation import LossApplier
 from adet.equations.definitions import RepeatedStage
 from adet.equations.fundamental import FreeVortexDistribution
 from adet.equations.geometrical import (
@@ -144,7 +144,7 @@ shaft = Shaft(
 
 #  =  =  =  =  =  =  =  =  =  =  =  =  =  =  COMPONENT DEFINITIONS
 # Only use profile
-class LossAdder(EquationBase):
+class LossAdder(LossApplier):
     def residual(self, stc_smass0, stc_smass1, oth_delta_smass_profile1):
         return stc_smass1 - (stc_smass0 + oth_delta_smass_profile1)
 

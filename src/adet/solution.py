@@ -12,9 +12,39 @@ from adet.tools.context import dummy_context, output_suppression
 logger = logging.getLogger(__name__)
 
 
-def perturb_guess(guess, knowns, root_function, delta_pert, num_samples):
+def generate_perturbated_samples(guess, num_samples, delta_pert):
     sampler = qmc.LatinHypercube(len(guess))
     samples = qmc.scale(sampler.random(num_samples), -delta_pert, delta_pert)
+
+    if isinstance(guess, list):
+        return np.concatenate(guess).flatten() + samples
+    else:
+        return guess + samples
+
+
+def multi_solver(rootfinder, guess, knowns, bounds, delta_pert, num_samples):
+    guesses = generate_perturbated_samples(guess, num_samples, delta_pert)
+
+    for x0 in guesses:
+        try:
+            solution = solve_root_problem(
+                rootfinder,
+                x0,
+                knowns,
+                bounds,
+                suppress_output=True,
+            )
+        except RuntimeError:
+            continue
+
+        if solution:
+            break
+
+    return solution
+
+
+def best_first_iter(guess, knowns, root_function, delta_pert, num_samples):
+    guesses = generate_perturbated_samples(guess, num_samples, delta_pert)
 
     def norm_function(x):
         return np.linalg.norm(x, 2)
@@ -25,9 +55,8 @@ def perturb_guess(guess, knowns, root_function, delta_pert, num_samples):
     )
 
     logger.info(f'Trying out {num_samples} latin hypercube samples for first guess...')
-    for sample in samples:
+    for x0 in guesses:
         # Perturb the original guess
-        x0 = guess + sample
         # Compute first iteration residual
         try:
             initial_residual = root_function(x0, knowns)
@@ -84,7 +113,7 @@ def solve_root_problem(
                 raise NotImplementedError('Perturbation only implemented for ipopt')
 
             root_fn = rootfinder.get_function('nlp_g')
-            guess_cat = perturb_guess(
+            guess_cat = best_first_iter(
                 guess_cat, knowns_cat, root_fn, delta_pert, num_samples
             )
 
