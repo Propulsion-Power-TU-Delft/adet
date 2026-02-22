@@ -68,10 +68,10 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 # === CONFIGURATION
 # Simulation settings
-NUM_SPAN = 1  # Number of spanwise stations
-NUM_STAGES = 1  # Number of turbine stages (stator-rotor pairs)
+NUM_SPAN = 3  # Number of spanwise stations
+NUM_STAGES = 3  # Number of turbine stages (stator-rotor pairs)
 # Runtime options
-RUN_MULTI = False  # Run the multi streamline case
+RUN_MULTI = True  # Run the multi streamline case
 ADD_LOSSES = False
 SCALED = True  # Use scaled equations for better numerical conditioning
 PLOTS = True  # Show plots at end
@@ -312,7 +312,7 @@ def build_network(num_stages, num_span, add_losses: bool = False):
             ntw.system.add_equation(DentonProfileLoss(), (nodes[2], nodes[3]))
             ntw.system.add_equation(LossAdder(), (nodes[2], nodes[3]))
 
-    ntw.system.build(SCALED)
+    ntw.build(SCALED)
     return ntw
 
 

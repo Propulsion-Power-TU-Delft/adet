@@ -241,7 +241,7 @@ def extract_meridional():
     nodes = ntw.system.nodes
     midspan = ntw.system.num_span // 2
     x, r_hub, r_tip, r_mid = [], [], [], []
-    camberlines = []   # list of dicts, one per blade row
+    camberlines = []  # list of dicts, one per blade row
     x_offset = 0.0
 
     for n0_idx, n1_idx in grouper(range(len(nodes)), 2, incomplete='ignore'):
@@ -266,15 +266,17 @@ def extract_meridional():
         xc = np.linspace(0, chord_ax, N_CAMBER_PTS)
         yc = a * xc**2 + b * xc
 
-        camberlines.append({
-            'x_offset': x_offset,
-            'pitch': pitch,
-            'xc': xc,
-            'yc': yc,
-            'alpha_in': alpha_in,
-            'alpha_out': alpha_out,
-            'chord_ax': chord_ax,
-        })
+        camberlines.append(
+            {
+                'x_offset': x_offset,
+                'pitch': pitch,
+                'xc': xc,
+                'yc': yc,
+                'alpha_in': alpha_in,
+                'alpha_out': alpha_out,
+                'chord_ax': chord_ax,
+            }
+        )
 
         x_offset += chord_ax * 1.1
 
@@ -402,7 +404,7 @@ fig_m.savefig(Path(__file__).parent / 'meridional_channels.png', dpi=150)
 fig_c, ax_c = plt.subplots(NR, NR, figsize=(4 * NR, 3 * NR), sharex=False, sharey=False)
 fig_c.suptitle('Camberlines at midspan (3 blades per row)', fontsize=14)
 
-row_colors = ['steelblue', 'coral']   # stator, rotor
+row_colors = ['steelblue', 'coral']  # stator, rotor
 
 for row, i in enumerate(MERID_INDICES):
     for col, j in enumerate(MERID_INDICES):
@@ -442,8 +444,13 @@ wc_masked = np.where(converged_map, work_coeff_map, np.nan)
 # Transpose: work_coeff_map[i_phi, j_psi] -> contourf(phi, psi, map.T)
 cf = ax.contourf(PHI_RANGE, PSI_RANGE, wc_masked.T, levels=15, cmap='viridis')
 cs = ax.contour(
-    PHI_RANGE, PSI_RANGE, wc_masked.T,
-    levels=15, colors='w', linewidths=0.5, alpha=0.6,
+    PHI_RANGE,
+    PSI_RANGE,
+    wc_masked.T,
+    levels=15,
+    colors='w',
+    linewidths=0.5,
+    alpha=0.6,
 )
 ax.clabel(cs, fmt='%.2f', fontsize=8)
 

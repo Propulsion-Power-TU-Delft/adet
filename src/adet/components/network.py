@@ -5,6 +5,7 @@ from adet.assembly import SystemAssembler
 from adet.components import BaseComponent
 from adet.components.blade_row import BladeRow
 from adet.constants import ArrayLike
+from adet.equations.base_equation import EquationBase
 from adet.fluid.settings import FluidSettings
 from adet.components.connections import Inlet, Shaft
 
@@ -60,32 +61,39 @@ class ComponentNetwork(Generic[T]):
         self.system = backend
         self.system.fluid_settings = fluid_settings
 
+        self.inlet = inlet
         self.components = components
         self.num_components = len(components)
 
         self.system = backend
         self.system.fluid_settings = fluid_settings
 
-        # Add inlet boundary conditions
-        self.system.add_boundary_conditions(inlet.boundary_conditions, 0)
-
-        # Read components
-        self._read_components(components)
+        self._frozen_equations: dict[EquationBase, tuple[int, ...]] = {}
 
         self._add_single_node_eqs(self.num_components)
+
+        # First write step, for manipulation before building
+        self._write_to_system(inlet, components)
+
+    def _write_to_system(
+        self,
+        inlet: Inlet,
+        components: Sequence[BaseComponent],
+    ):
+        # Add inlet boundary conditions
+        self.system.add_boundary_conditions(inlet.boundary_conditions, 0)
+        # Read components
+        self._dispatch_components(components)
         self._link_components()
         self._link_shafts()
+        self._frozen_equations = self.system.equations.copy()
 
-    def _read_components(self, components: Sequence[BaseComponent]):
+    def _dispatch_components(self, components: Sequence[BaseComponent]):
         for comp_index, comp in enumerate(components):
             inlet_node_idx = 2 * comp_index
             outlet_node_idx = 2 * comp_index + 1
 
-            for var in comp._constant_variables:
-                self.system.add_equalities(
-                    (f'{var + str(inlet_node_idx)}', f'{var + str(outlet_node_idx)}')
-                )
-
+            # Add boundary conditions
             self.system.add_boundary_conditions(
                 comp.in_constraints,
                 inlet_node_idx,
@@ -96,37 +104,40 @@ class ComponentNetwork(Generic[T]):
                 outlet_node_idx,
             )
 
+            for var in comp._constant_variables:
+                equality = (
+                    f'{var + str(inlet_node_idx)}',
+                    f'{var + str(outlet_node_idx)}',
+                )
+                self.system.add_equalities(equality)
+
             for equation, node_pos in comp._equations.items():
                 if isinstance(node_pos, int):
                     traslated_pos = inlet_node_idx + node_pos
                 else:
                     traslated_pos = [inlet_node_idx + pos for pos in node_pos]
 
-                self.system.add_equation(equation, traslated_pos)
+                if equation not in self._frozen_equations:
+                    self.system.add_equation(equation, traslated_pos)
 
     def _add_single_node_eqs(self, comp_stack_length: int):
         for node_idx in range(2 * comp_stack_length):
             # Single node relationships, make instances!
-            [self.system.add_equation(eq(), node_idx) for eq in _SINGLE_NODE_EQUATIONS]
+            for eq in _SINGLE_NODE_EQUATIONS:
+                self.system.add_equation(eq(), node_idx)
 
     def _link_components(self):
         # Nomenclature
         # ~~~~~~~~~~~~
-        #        ___________________________________
-        #          |         |         ,_________,
+        #          ._________.         ._________.
         #          |         |  eqlts. |         |
         #          |         |    ^    |         |
         #   V      |  ROW 0  |    |    |  ROW 1  |
         #  -->   0 |         | 1 === 2 |         | 3   <- NODES
-        #        N |         | N     N |         | N
         #        __|_________|_________|_________|__
         #        ///////////////////////////////////
         #        \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
-        #        ///////////////////////////////////
         #       _ . _ . _ . _ . _ . _ . _ . _ . _ . _
-        #
-        # * components couples : (0, 1), (2, 3), ...
-        # * link couples : (1, 2), ...
 
         # Add invariants from one node to the next
         if len(self.components) > 1:
@@ -171,7 +182,22 @@ class ComponentNetwork(Generic[T]):
             if len(linked_omegas) > 1:
                 self.system.add_equalities(linked_omegas)
 
+    def _sync_components(self):
+        # TODO: Add a watcher pattern for netw and components
+        # In general the syncronization is fickle.
+        # Should encourage working on components and not directly
+        # on the system.
+        for comp in self.components:
+            for eq in comp._equations.copy():
+                # If it was added from the components
+                if eq not in self.system.equations:
+                    # but it's not there anymore
+                    if eq in self._frozen_equations:
+                        comp._equations.pop(eq, None)
+
     def build(self, scaled: bool = True):
+        self._sync_components()
+        self._write_to_system(self.inlet, self.components)
         self.system.build(scaled)
 
         # Write nodes on components for easier access

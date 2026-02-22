@@ -1,11 +1,10 @@
 # === IMPORTS
 from copy import deepcopy
 import logging
+from typing import Type
 
 import CoolProp as cp
 import matplotlib.pyplot as plt
-import numpy as np
-import jax
 from pint import Quantity
 
 from adet.assembly import CasadiSystem
@@ -13,15 +12,14 @@ from adet.components import BladeRow, Inlet, Shaft
 from adet.components import ComponentNetwork
 from adet.components.blade_row import DownstreamMixer
 from adet.components.blade_row import plot_from_nodes
-from adet.equations.base_equation import EquationBase
+from adet.equations.base_equation import EquationBase, LossApplier
 from adet.equations.definitions import (
     BoundaryLayerRatios,
     ClearanceByHeight,
     IsentropicProperties,
-    ReducedThermoQuantities,
     RepeatedStage,
 )
-from adet.equations.fundamental import BladeBlockage, FreeVortexDistribution
+from adet.equations.fundamental import FreeVortexDistribution
 from adet.equations.geometrical import (
     MeridionalVariable,
     MinimalCamberLine,
@@ -34,16 +32,15 @@ from adet.equations.nondimensional import (
     TotalTotalExpansionEfficiency,
     WorkCoefficient,
 )
-from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel
+from adet.fluid.settings import ExternalFluidModel
 from adet.fluid.settings import FluidSettings
-from adet.fluid.symbolic_eos import IdealGasState
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.losses.leakage import DentonLeakageLoss
 from adet.losses.mixing import SieverdingBasePressure
 from adet.losses.profile import DentonProfileLoss
 from adet.losses.secondary import SecondaryBSM
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
-from adet.solution import multi_solver, solve_root_problem
+from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.iter import grouper
 from adet.tools.loggers import setup_logger
@@ -138,13 +135,50 @@ shaft = Shaft(-1, is_constrained=False)
 
 # ================================================
 # *** Extra equations - Added after the first step
-EXTRA_EQUATIONS = {
+
+
+class LossMatcher(LossApplier):
+    def __init__(
+        self,
+        tip_gap: bool,
+        scaling_factor: list[float] | None = None,
+    ):
+        super().__init__(scaling_factor)
+        self.tip_gap = tip_gap
+
+    def residual(
+        self,
+        stc_smass0,
+        stc_smass1,
+        oth_delta_smass_leakage1,
+        oth_delta_smass_profile1,
+        oth_delta_smass_secondary1,
+    ):
+        if self.tip_gap:
+            return stc_smass1 - (
+                stc_smass0
+                + oth_delta_smass_leakage1
+                + oth_delta_smass_profile1
+                + oth_delta_smass_secondary1
+            )
+        return stc_smass1 - (
+            stc_smass0 + oth_delta_smass_profile1 + oth_delta_smass_secondary1
+        )
+
+
+EXTRA_EQUATIONS: dict[
+    Type[EquationBase],
+    int | tuple[int, ...],
+] = {
     ClearanceByHeight: 1,
     IsentropicProperties: (0, 1),
     BoundaryLayerRatios: 1,
-    BladeBlockage: 1,
+    # ReducedThermoQuantities: 0,
     SieverdingBasePressure: (0, 1),
-    ReducedThermoQuantities: 0,
+    SecondaryBSM: (0, 1),
+    DentonProfileLoss: (0, 1),
+    DentonLeakageLoss: (0, 1),
+    # BladeBlockage: 1,
 }
 
 # ================================================
@@ -225,23 +259,6 @@ rotor._equations.update(
 )
 
 
-class LossMatcher(EquationBase):
-    def residual(
-        self,
-        stc_smass0,
-        stc_smass1,
-        oth_delta_smass_leakage1,
-        oth_delta_smass_profile1,
-        oth_delta_smass_secondary1,
-    ):
-        return stc_smass1 - (
-            stc_smass0
-            + oth_delta_smass_leakage1
-            + oth_delta_smass_profile1
-            + oth_delta_smass_secondary1
-        )
-
-
 mixer = DownstreamMixer(
     'Mixer',
     # The axial chord is just for plotting it like a blade row
@@ -314,28 +331,18 @@ if user in ('y', 'Y'):
     # Write solution to dict for reading for next solution
     sol_dict_is = ntw.system.solution_to_dict(solution)
 
+    # Remove the first computation loss
+    ntw.system.remove_equation_type(LossApplier)
+
+    rotor.remove_equation(INITIAL_LOSS.__class__, (0, 1))
+    stator.remove_equation(INITIAL_LOSS.__class__, (0, 1))
     for eq, pos in EXTRA_EQUATIONS.items():
-        stator.add_equation(eq(), pos)
         rotor.add_equation(eq(), pos)
+        stator.add_equation(eq(), pos)
 
-    # = = = AFTER INITIALIZING = = =
-    ntw.system.remove_equation(INITIAL_LOSS.__class__, (0, 1))
-    ntw.system.add_equation(DentonProfileLoss(), (0, 1))
-    ntw.system.add_equation(DentonLeakageLoss(), (0, 1))
-    ntw.system.add_equation(SecondaryBSM(), (0, 1))
-    # ntw.system.add_equation(LossMatcher(), (0, 1))  # For losses
-    ntw.system.add_equation(PercentageEntropyLoss(0.0), (0, 1))  # Compute w/o adding
-
-    if ntw.num_components > 1:
-        # Add equations to second row
-        ntw.system.remove_equation(INITIAL_LOSS.__class__, (2, 3))
-        ntw.system.add_equation(DentonProfileLoss(), (2, 3))
-        ntw.system.add_equation(DentonLeakageLoss(), (2, 3))
-        ntw.system.add_equation(SecondaryBSM(), (2, 3))
-        # ntw.system.add_equation(LossMatcher(), (2, 3))
-        ntw.system.add_equation(PercentageEntropyLoss(0.0), (2, 3))
-
-    ntw.system.build()
+    rotor.add_equation(LossMatcher(tip_gap=True), (0, 1))
+    stator.add_equation(LossMatcher(tip_gap=False), (0, 1))
+    ntw.build()
 
     x0_loss = ntw.system.get_scaled_guess(sol_dict_is)
     kn_loss = ntw.system.get_scaled_constraints()

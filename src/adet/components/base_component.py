@@ -97,12 +97,12 @@ class BaseComponent(ABC):
         self.outlet_node: FlowNode | None = None
 
     def _equation_checks(self):
-        # This checks that the user has not defined multiple
+        # 1. This checks that the user has not defined multiple
         # incompatible unique equations
         self._check_duplicate_equations()
-        # Check that at least 1 LossModel was added
+        # 2. Check that at least 1 LossModel was added
         # you can use DummyLoss to forecefully pass this check
-        self._check_loss_model()
+        # self._check_loss_model()
 
         # Post-init for child classes
         self._post_init()
@@ -121,10 +121,12 @@ class BaseComponent(ABC):
         parametrization), but if the user specifies it, the new
         camberline equations should substitute the existing one.
         """
-        base_eqs_orig = base_eqs.copy()
+        # WARN: This intentionally only merges the base and user
+        # equations, but not an arbitrary single dictionary, because
+        # it is not clear which of two instances to keep
 
         # > Loop over the base equations
-        for base_eq, base_pos in base_eqs_orig.items():
+        for base_eq, base_pos in base_eqs.copy().items():
             # > If one of the base equations is a unique eq.
             if isinstance(base_eq, UniqueEquation):
                 # > Get its parent class and position
@@ -156,12 +158,6 @@ class BaseComponent(ABC):
             raise TypeError(f'{cls.__name__} must define `base_equations`')
 
         cls._verify_base_equation_format()
-
-        # if not hasattr(cls, 'from_previous_node'):
-        #     raise TypeError(
-        #         f'{cls.__name__} must define `from_previous_node` '
-        #         f'for component interface'
-        #     )
 
     @classmethod
     def _verify_base_equation_format(cls):
@@ -240,7 +236,7 @@ class BaseComponent(ABC):
         if isinstance(position, int):
             position = (position,)
 
-        for eq, pos in self._equations.items():
+        for eq, pos in self._equations.copy().items():
             if isinstance(pos, int):
                 pos = (pos,)
 

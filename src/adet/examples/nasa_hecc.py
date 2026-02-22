@@ -210,9 +210,7 @@ ntw_hecc = ComponentNetwork(
     components=[rotor],
 )
 
-ntw_hecc.system.add_spanwise_constants('kin_Vm0')
-ntw_hecc.system.add_spanwise_constants('stc_p1')
-
+ntw_hecc.system.add_spanwise_constants('kin_Vm0', 'stc_p1', 'geo_hh0')
 
 if ntw_hecc.system.num_span > 1:
     ntw_hecc.system.remove_equation(MeridionalUniform, 1)
@@ -246,14 +244,7 @@ sol_is_dict = ntw_hecc.system.write_solution_to_nodes(solution_hecc_is)
 if RUN_MULTI:
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
     ntw_hecc.system.num_span = NUM_SPAN
-    # Meridional uniform inlet
-    ntw_hecc.system.add_spanwise_constants('geo_hh0')
     ntw_hecc.system.boundary_conditions[0]['geo']['metal_angle'] = angle_distribution
-
-    if ntw_hecc.system.num_span > 1:
-        ntw_hecc.system.remove_equation(MeridionalVariable, 1)
-        ntw_hecc.system.remove_equation(MeridionalUniform, 1)
-        ntw_hecc.system.add_equation(MeridionalVariable(), 1)
 
     ntw_hecc.build()
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -

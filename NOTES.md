@@ -1,8 +1,12 @@
 # Future wishlist
-- Make instantiating equations of state within an equation more flexible
-- Rework argument injection for unit validation, it is messy and needs too many exceptions
+- [x] Make instantiating equations of state within an equation more flexible
+- [x] Rework argument injection for unit validation, it is messy and needs too many exceptions
     - Assume functions use casadi objects as inputs
     - OR add unit support to equations of state
-- Add units inference using regexp 
+- [x] Add units inference using regexp 
     - e.g. delta_tot_hmass.* => Always assigned to J / kg
-- Make
+- [ ] Act on components rather than on the system
+    - ensure sync between component and system
+    - Watcher pattern?
+- [ ] Ensure that all the mandatory types have been added to a certain component
+    - Do this as a final step, otherwise it raises exceptions every time equations are added
