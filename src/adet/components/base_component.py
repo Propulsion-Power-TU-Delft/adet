@@ -262,16 +262,27 @@ class BaseComponent(ABC):
         rel_position = ensure_tuple(rel_position)
 
         logger.debug(f'Requested removal of {equation_class} from {self}')
+        equation_found = None
         for eq, pos in self._equations.copy().items():
             pos = ensure_tuple(pos)
             if isinstance(eq, equation_class) and pos == rel_position:
                 logger.debug('Instance found, removing from component')
-                self._equations.pop(eq)
+                equation_found = eq
+                break
 
+        if equation_found is not None:
             for ntw in self._attached_networks:
-                abs_position = self.get_absolute_eq_position(eq, ntw)
+                abs_position = self.get_absolute_eq_position(equation_found, ntw)
                 logger.debug(
-                    f'Removing {eq} in position {abs_position} '
+                    f'Removing {equation_found} in position {abs_position} '
                     f'from network {ntw} attached to {self} '
                 )
                 ntw.system.remove_equation(equation_class, abs_position)
+            # Remove it from the component itself as a final step
+            self._equations.pop(equation_found)
+        else:
+            logger.warning(
+                f'No equation {equation_class} found in'
+                f' {self} at position {rel_position}'
+            )
+            pass

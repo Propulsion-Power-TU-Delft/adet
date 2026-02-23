@@ -91,6 +91,7 @@ class ComponentNetwork(Generic[T]):
 
     def _dispatch_components(self, components: Sequence[BaseComponent]):
         for comp in components:
+            comp.attach_network(self)
             inl_idx, out_idx = self._get_abs_indices(comp)
 
             # Add boundary conditions
