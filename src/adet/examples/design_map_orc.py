@@ -234,13 +234,14 @@ ntw = ComponentNetwork(
     components=[stator, rotor],
 )
 
-ntw.system.boundary_conditions[3]['oth']['flowCoeff'] = PHI_RANGE[0]
-ntw.system.boundary_conditions[3]['oth']['reactDegree_ts'] = 0.3
-ntw.system.boundary_conditions[3]['oth']['ts_loadCoeff'] = PSI_RANGE[0]
+rotor.set_boundary_cond('oth_flowCoeff1', PHI_RANGE[0])
+rotor.set_boundary_cond('oth_reactDegree_ts1', 0.3)
+rotor.set_boundary_cond('oth_ts_loadCoeff1', PSI_RANGE[0])
 
 final_node = ntw.num_components * 2 - 1
 
-ntw.system.add_spanwise_constants('geo_hh0', 'geo_chord_ax1', 'geo_chord_ax3')
+stator.set_spanwise_constant('geo_hh0', 'geo_chord_ax1')
+rotor.set_spanwise_constant('geo_chord_ax1')
 ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, final_node))
 ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, 2, 3))
 ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, final_node))

@@ -234,8 +234,11 @@ rotor = BladeRow(
 # Replicate stage (stator-rotor pair) NUM_STAGES times
 def build_network(num_stages, num_span, add_losses: bool = False):
     stage_obj = [stator, rotor]
-    rows = list(
-        map(deepcopy, num_stages * stage_obj),
+    rows: list[BladeRow] = list(
+        map(
+            deepcopy,
+            num_stages * stage_obj,
+        ),
     )
 
     # Create component network
@@ -245,6 +248,23 @@ def build_network(num_stages, num_span, add_losses: bool = False):
         CasadiSystem(num_span=num_span),  # Backend
         rows,
     )
+
+    # =============== Manipulate rows ===============
+    # |> Impose effectively a meridional uniform distribution
+    rows[0].set_spanwise_constant('geo_hh0')
+    for r in rows:
+        r.set_spanwise_constant('geo_chord_ax1')
+        if r.row_type == 'rotor':
+            r.set_boundary_cond('oth_workCoeff1', -1.0)
+
+    if num_span > 1:
+        rows[0].add_equation(FreeVortexDistribution(), 1)
+        rows[1].add_equation(FreeVortexDistribution(), 1)
+        for r in rows[1:]:
+            if r.row_type == 'stator':
+                r.add_equation(FreeVortexDistribution(), 1)
+            r.remove_equation(MeridionalVariable, 0)
+            r.copy_from_previous('geo_hh', 'geo_rr')
 
     # === GLOBAL CONSTRAINTS
     # Add ideal gas reference and loss model coefficients
@@ -258,9 +278,6 @@ def build_network(num_stages, num_span, add_losses: bool = False):
             }
         }
     )
-
-    # Impose effectively a meridional uniform distribution
-    ntw.system.add_spanwise_constants('geo_hh0')
 
     # === STAGE-LEVEL EQUATIONS
     # Apply repeated stage and degree of reaction constraints
@@ -276,29 +293,8 @@ def build_network(num_stages, num_span, add_losses: bool = False):
     for stage in range(ntw.num_components // 2):
         nodes = nodes_by_stage[stage]
         # Repeated stage: inlet conditions same as outlet of previous stage
-        ntw.system.add_spanwise_constants(
-            f'geo_chord_ax{nodes[1]}',
-            f'geo_chord_ax{nodes[3]}',
-        )
         ntw.system.add_equation(RepeatedStage(), nodes)
         ntw.system.add_equation(StaticTotalDegreeOfReaction(), nodes)
-        ntw.system.boundary_conditions[nodes[3]]['oth']['workCoeff'] = -1.0
-        if num_span > 1:
-            if stage == 0:
-                ntw.system.add_equation(FreeVortexDistribution(), nodes[3])
-            else:
-                ntw.system.remove_equation(MeridionalVariable, nodes[0])
-                ntw.system.add_equalities(
-                    (f'geo_hh{nodes[0] - 1}', f'geo_hh{nodes[0]}'),
-                    (f'geo_rr{nodes[0] - 1}', f'geo_rr{nodes[0]}'),
-                )
-
-            ntw.system.add_equation(FreeVortexDistribution(), nodes[1])
-            ntw.system.remove_equation(MeridionalVariable, nodes[2])
-            ntw.system.add_equalities(
-                (f'geo_hh{nodes[1]}', f'geo_hh{nodes[2]}'),
-                (f'geo_rr{nodes[1]}', f'geo_rr{nodes[2]}'),
-            )
 
     ntw.system.boundary_conditions[3]['oth']['reactDegree_ts'] = 0.5
     ntw.system.boundary_conditions[3]['oth']['flowCoeff'] = 0.4

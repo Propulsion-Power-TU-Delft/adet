@@ -274,14 +274,15 @@ ntw = ComponentNetwork(
     components=[stator, rotor],
 )
 
-ntw.system.boundary_conditions[3]['oth']['flowCoeff'] = 0.4
-ntw.system.boundary_conditions[3]['oth']['reactDegree_ts'] = 0.3
-ntw.system.boundary_conditions[3]['oth']['ts_loadCoeff'] = 3
-# ntw.system.boundary_conditions[3]['oth']['workCoeff'] = -1.3
+rotor.set_boundary_cond('oth_flowCoeff1', 0.4)
+rotor.set_boundary_cond('oth_reactDegree_ts1', 0.3)
+rotor.set_boundary_cond('oth_ts_loadCoeff1', 3)
+# rotor.set_boundary_cond('oth_workCoeff1', -1.3)
 
 final_node = ntw.num_components * 2 - 1
 
-ntw.system.add_spanwise_constants('geo_hh0', 'geo_chord_ax1', 'geo_chord_ax3')
+stator.set_spanwise_constant('geo_hh0', 'geo_chord_ax1')
+rotor.set_spanwise_constant('geo_chord_ax1')
 ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, final_node))
 ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, 2, 3))
 ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, final_node))
@@ -289,14 +290,11 @@ ntw.system.add_equation(RepeatedStage(), (0, 1, 2, 3))
 
 if NUM_SPAN > 1:
     # Free vortex at stator and rotor outlets
-    ntw.system.add_equation(FreeVortexDistribution(), 1)
-    ntw.system.add_equation(FreeVortexDistribution(), final_node)
+    stator.add_equation(FreeVortexDistribution(), 1)
+    rotor.add_equation(FreeVortexDistribution(), 1)
     # Rotor inlet geometry is continuous with stator outlet (no MeridionalVariable)
-    ntw.system.remove_equation(MeridionalVariable, 2)
-    ntw.system.add_equalities(
-        ('geo_hh1', 'geo_hh2'),
-        ('geo_rr1', 'geo_rr2'),
-    )
+    rotor.remove_equation(MeridionalVariable, 0)
+    rotor.copy_from_previous('geo_hh', 'geo_rr')
 
 ntw.system.build(SCALED)
 

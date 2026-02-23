@@ -70,3 +70,10 @@ def get_arg_state(argument: str, prefix_length: int = 3) -> NodeStatesNames:
         return state_id
     else:
         raise ValueError(f'Unknown variable type {state_id}')
+
+
+def get_arg_specs(argument: str) -> tuple[NodeStatesNames, str, int]:
+    arg_idx = get_index(argument)
+    arg_type = get_arg_type(argument)
+    arg_state = get_arg_state(argument)
+    return arg_state, arg_type, arg_idx

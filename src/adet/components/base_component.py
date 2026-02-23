@@ -2,13 +2,17 @@ from abc import ABC
 import inspect
 from collections import defaultdict
 import logging
-from typing import TYPE_CHECKING, ClassVar, TypeAlias, Type, Any
+from typing import TYPE_CHECKING, ClassVar, Literal, TypeAlias, Type, Any
+
+from adet.constants import ArrayLike
+from pint.facets.plain import PlainQuantity
 
 from adet.assembly import CasadiSystem
 from adet.equations import EquationBase, UniqueEquation
 from adet.equations.base_equation import LossApplier
 from adet.node import FlowNode
 from adet.tools.iter import ensure_tuple
+from adet.tools.strings import get_arg_specs, get_arg_state, get_arg_type
 
 if TYPE_CHECKING:
     from adet.assembly import CasadiSystem
@@ -86,7 +90,7 @@ class BaseComponent(ABC):
 
         # Careful, This makes equations non-reusable, because when
         # added to a system the instance is used for dictionary keys
-        base_eqs_instances = self._create_base_instances()
+        base_eqs_instances = {eq(): pos for eq, pos in self.base_equations}
 
         # Superseed base equations of the component with user
         # defined ones
@@ -95,21 +99,47 @@ class BaseComponent(ABC):
         )
         self._equation_checks()
 
-        self._attached_networks: set[ComponentNetwork[CasadiSystem]] = set()
         self.inlet_node: FlowNode | None = None
         self.outlet_node: FlowNode | None = None
+        self._attached_networks: set[ComponentNetwork[CasadiSystem]] = set()
+        self._network_maps: dict['ComponentNetwork', dict[int, int]] = {}
 
         # Post-init for child classes
         self._post_init()
 
+    def _post_init(self):
+        pass
+
     def attach_network(self, network: 'ComponentNetwork'):
+        logger.debug('Attached network {network} to {self}')
         self._attached_networks.add(network)
 
-    def _create_base_instances(self):
-        base_eqs_instances: dict[EquationBase, int | tuple[int, ...]] = {}
-        for eq, pos in self.base_equations:
-            base_eqs_instances[eq()] = pos
-        return base_eqs_instances
+    @property
+    def network_maps(self):
+        if not self._attached_networks.issubset(self._network_maps):
+            self._build_network_maps()
+        return self._network_maps
+
+    def _check_attached_network(self, *, strict: bool = True):
+        if not self._attached_networks:
+            message = f'Modifying {self} with no networks attached'
+            if strict:
+                raise AttributeError(message)
+            logger.warning(message)
+
+    def _build_network_maps(self):
+        for ntw in self._attached_networks:
+            for eq in self._equations:
+                abs_pos = self.get_absolute_eq_position(eq, ntw)
+                if len(abs_pos) == 2:
+                    rel_pos = ensure_tuple(self._equations[eq])
+                    break
+            else:
+                raise RuntimeError(
+                    f'No two-node equation found in {self} '
+                    f'to build network map for {ntw}'
+                )
+            self._network_maps[ntw] = dict(zip(rel_pos, abs_pos))
 
     def _equation_checks(self):
         # 1. This checks that the user has not defined multiple
@@ -118,9 +148,6 @@ class BaseComponent(ABC):
         # 2. Check that at least 1 LossModel was added
         # you can use DummyLoss to forecefully pass this check
         # self._check_loss_model()
-
-    def _post_init(self):
-        pass
 
     def _merge_unique_equations(
         self,
@@ -206,9 +233,7 @@ class BaseComponent(ABC):
         unique_types_seen = {}
         logger.debug(f'Checking for duplicate equations in {self}')
         for eq, eq_pos in self._equations.items():
-            if not isinstance(eq, UniqueEquation):
-                pass
-            else:
+            if isinstance(eq, UniqueEquation):
                 eq_pos = ensure_tuple(eq_pos)
 
                 eq_base_cls = eq.__class__.__base__
@@ -248,8 +273,10 @@ class BaseComponent(ABC):
         return tuple(index_map[idx] for idx in rel_position)
 
     def add_equation(self, equation: EquationBase, rel_position: int | tuple[int, ...]):
+        # Add to component
         self._equations[equation] = rel_position
         self._equation_checks()
+        # Add to attached networks
         for ntw in self._attached_networks:
             abs_position = self.get_absolute_eq_position(equation, ntw)
             ntw.system.add_equation(equation, abs_position)
@@ -259,9 +286,9 @@ class BaseComponent(ABC):
         equation_class: Type[EquationBase],
         rel_position: int | tuple[int, ...],
     ):
-        rel_position = ensure_tuple(rel_position)
-
         logger.debug(f'Requested removal of {equation_class} from {self}')
+
+        rel_position = ensure_tuple(rel_position)
         equation_found = None
         for eq, pos in self._equations.copy().items():
             pos = ensure_tuple(pos)
@@ -271,6 +298,7 @@ class BaseComponent(ABC):
                 break
 
         if equation_found is not None:
+            # Remove it to all attached networks
             for ntw in self._attached_networks:
                 abs_position = self.get_absolute_eq_position(equation_found, ntw)
                 logger.debug(
@@ -286,3 +314,57 @@ class BaseComponent(ABC):
                 f' {self} at position {rel_position}'
             )
             pass
+
+    def set_boundary_cond(self, argument: str, value: ArrayLike | PlainQuantity):
+        self._system_interaction_daemon('set', argument, value)
+
+    def rm_boundary_cond(self, argument: str):
+        self._system_interaction_daemon('rm', argument)
+
+    def set_component_constant(self, argument: str):
+        self._system_interaction_daemon('const', argument)
+
+    def set_spanwise_constant(self, *arguments: str):
+        for arg in arguments:
+            self._system_interaction_daemon('span', arg)
+
+    def copy_from_previous(self, *arguments: str):
+        for arg in arguments:
+            self._system_interaction_daemon('prev', arg)
+
+    def _system_interaction_daemon(
+        self,
+        mode: Literal['set', 'rm', 'span', 'const', 'prev'],
+        argument: str,
+        value: ArrayLike | PlainQuantity = -1,
+    ):
+        # Only `set` and `rm` you can work unattached
+        self._check_attached_network(strict=mode not in ('set', 'rm'))
+        for ntw in self._attached_networks:
+            if mode in ('const', 'prev'):
+                arg_state = get_arg_state(argument)
+                arg_type = get_arg_type(argument)
+                abs_indices = self.network_maps[ntw].values()
+                if mode == 'const':
+                    ntw.system.add_equalities(
+                        tuple(f'{arg_state}_{arg_type}{i}' for i in abs_indices)
+                    )
+                else:
+                    inl_idx = min(abs_indices)
+                    ntw.system.add_equalities(
+                        (
+                            f'{arg_state}_{arg_type}{inl_idx - 1}',
+                            f'{arg_state}_{arg_type}{inl_idx}',
+                        )
+                    )
+            else:
+                arg_state, arg_type, rel_idx = get_arg_specs(argument)
+                abs_idx = self.network_maps[ntw][rel_idx]
+                if mode == 'set':
+                    ntw.system.boundary_conditions[abs_idx][arg_state][arg_type] = value
+                elif mode == 'rm':
+                    ntw.system.boundary_conditions[abs_idx][arg_state].pop(arg_type)
+                elif mode == 'span':
+                    ntw.system.add_spanwise_constants(
+                        f'{arg_state}_{arg_type}{abs_idx}'
+                    )

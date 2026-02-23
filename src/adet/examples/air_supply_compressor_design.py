@@ -257,9 +257,9 @@ if __name__ == '__main__':
 
     # Remove isentropic and add losses
     for eq, pos in EQS_ISENTROPIC.items():
-        ntw_ass.system.remove_equation(eq.__class__, pos)
+        rotor.remove_equation(eq.__class__, pos)
     for eq, pos in EQS_WITH_LOSSES.items():
-        ntw_ass.system.add_equation(eq, pos)
+        rotor.add_equation(eq, pos)
 
     ntw_ass.build()  # Rebuild
 

@@ -209,11 +209,7 @@ ntw_hecc = ComponentNetwork(
     components=[rotor],
 )
 
-ntw_hecc.system.add_spanwise_constants('kin_Vm0', 'stc_p1', 'geo_hh0')
-
-if ntw_hecc.system.num_span > 1:
-    ntw_hecc.system.remove_equation(MeridionalUniform, 1)
-    ntw_hecc.system.add_equation(MeridionalVariable(), 1)
+rotor.set_spanwise_constant('kin_Vm0', 'stc_p1', 'geo_hh0')
 
 ntw_hecc.build()
 
@@ -243,7 +239,7 @@ sol_is_dict = ntw_hecc.system.write_solution_to_nodes(solution_hecc_is)
 if RUN_MULTI:
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
     ntw_hecc.system.num_span = NUM_SPAN
-    ntw_hecc.system.boundary_conditions[0]['geo']['metal_angle'] = angle_distribution
+    rotor.set_boundary_cond('geo_metal_angle0', angle_distribution)
 
     ntw_hecc.build()
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
@@ -272,9 +268,9 @@ if __name__ == '__main__':
         #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
         # Remove isentropic and add losses
         for eq, pos in EQS_ISENTROPIC.items():
-            ntw_hecc.system.remove_equation(eq.__class__, pos)
+            rotor.remove_equation(eq.__class__, pos)
         for eq, pos in EQS_WITH_LOSSES.items():
-            ntw_hecc.system.add_equation(eq, pos)
+            rotor.add_equation(eq, pos)
         ntw_hecc.build()
 
         rootfinder_hecc_loss = ntw_hecc.system.make_rootfinder(
