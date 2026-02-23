@@ -2,13 +2,17 @@ from abc import ABC
 import inspect
 from collections import defaultdict
 import logging
-from typing import ClassVar, TypeAlias, Type, Any
+from typing import TYPE_CHECKING, ClassVar, TypeAlias, Type, Any
 
+from adet.assembly import CasadiSystem
 from adet.equations import EquationBase, UniqueEquation
 from adet.equations.base_equation import LossApplier
-from adet.losses import LossModel
 from adet.node import FlowNode
-from adet.tools.iter import ensure_iterable
+from adet.tools.iter import ensure_tuple
+
+if TYPE_CHECKING:
+    from adet.assembly import CasadiSystem
+    from adet.components.network import ComponentNetwork
 
 BaseEquationsFormat: TypeAlias = list[
     tuple[
@@ -82,19 +86,30 @@ class BaseComponent(ABC):
 
         # Careful, This makes equations non-reusable, because when
         # added to a system the instance is used for dictionary keys
-        base_equation_instances = {
-            equation(): position for equation, position in self.base_equations
-        }
+        base_eqs_instances = self._create_base_instances()
 
         # Superseed base equations of the component with user
         # defined ones
         self._equations = self._merge_unique_equations(
-            base_equation_instances, extra_equations
+            base_eqs_instances, extra_equations
         )
         self._equation_checks()
 
+        self._attached_networks: set[ComponentNetwork[CasadiSystem]] = set()
         self.inlet_node: FlowNode | None = None
         self.outlet_node: FlowNode | None = None
+
+        # Post-init for child classes
+        self._post_init()
+
+    def attach_network(self, network: 'ComponentNetwork'):
+        self._attached_networks.add(network)
+
+    def _create_base_instances(self):
+        base_eqs_instances: dict[EquationBase, int | tuple[int, ...]] = {}
+        for eq, pos in self.base_equations:
+            base_eqs_instances[eq()] = pos
+        return base_eqs_instances
 
     def _equation_checks(self):
         # 1. This checks that the user has not defined multiple
@@ -103,9 +118,6 @@ class BaseComponent(ABC):
         # 2. Check that at least 1 LossModel was added
         # you can use DummyLoss to forecefully pass this check
         # self._check_loss_model()
-
-        # Post-init for child classes
-        self._post_init()
 
     def _post_init(self):
         pass
@@ -131,12 +143,12 @@ class BaseComponent(ABC):
             if isinstance(base_eq, UniqueEquation):
                 # > Get its parent class and position
                 base_eq_parent = base_eq.__class__.__base__
-                base_pos = set(ensure_iterable(base_pos))
+                base_pos = set(ensure_tuple(base_pos))
 
                 # > Check that there are no user equations
                 # that superseed that unique equation
                 for user_eq, user_pos in user_eqs.items():
-                    user_pos = set(ensure_iterable(user_pos))
+                    user_pos = set(ensure_tuple(user_pos))
                     user_eq_parent = user_eq.__class__.__base__
                     # > If there are
                     # > AND they are in the same position
@@ -192,11 +204,12 @@ class BaseComponent(ABC):
 
     def _check_duplicate_equations(self):
         unique_types_seen = {}
+        logger.debug(f'Checking for duplicate equations in {self}')
         for eq, eq_pos in self._equations.items():
             if not isinstance(eq, UniqueEquation):
                 pass
             else:
-                eq_pos = ensure_iterable(eq_pos)
+                eq_pos = ensure_tuple(eq_pos)
 
                 eq_base_cls = eq.__class__.__base__
 
@@ -224,23 +237,41 @@ class BaseComponent(ABC):
                 f'No loss applier function for `{self.name}` component instance'
             )
 
-    def add_equation(self, equation: EquationBase, position: int | tuple[int, ...]):
-        self._equations[equation] = position
+    def get_absolute_eq_position(
+        self, equation: EquationBase, network: 'ComponentNetwork'
+    ):
+        rel_position = self._equations[equation]
+        rel_position = ensure_tuple(rel_position)
+
+        inl_idx, out_idx = network._get_abs_indices(self)
+        index_map = {0: inl_idx, 1: out_idx}
+        return tuple(index_map[idx] for idx in rel_position)
+
+    def add_equation(self, equation: EquationBase, rel_position: int | tuple[int, ...]):
+        self._equations[equation] = rel_position
         self._equation_checks()
+        for ntw in self._attached_networks:
+            abs_position = self.get_absolute_eq_position(equation, ntw)
+            ntw.system.add_equation(equation, abs_position)
 
     def remove_equation(
         self,
         equation_class: Type[EquationBase],
-        position: int | tuple[int, ...],
+        rel_position: int | tuple[int, ...],
     ):
-        if isinstance(position, int):
-            position = (position,)
+        rel_position = ensure_tuple(rel_position)
 
+        logger.debug(f'Requested removal of {equation_class} from {self}')
         for eq, pos in self._equations.copy().items():
-            if isinstance(pos, int):
-                pos = (pos,)
+            pos = ensure_tuple(pos)
+            if isinstance(eq, equation_class) and pos == rel_position:
+                logger.debug('Instance found, removing from component')
+                self._equations.pop(eq)
 
-            if isinstance(eq.__class__, equation_class) and set(pos) == set(position):
-                pass
-
-            self._equations.pop(eq)
+            for ntw in self._attached_networks:
+                abs_position = self.get_absolute_eq_position(eq, ntw)
+                logger.debug(
+                    f'Removing {eq} in position {abs_position} '
+                    f'from network {ntw} attached to {self} '
+                )
+                ntw.system.remove_equation(equation_class, abs_position)

@@ -39,6 +39,7 @@ from adet.registries import (
 from adet.tools.context import override_operators
 from adet.tools.coolprop_utils import pair_based_sorting, pair_id_from_tuple
 from adet.tools.interpolation import resample_linear
+from adet.tools.iter import ensure_tuple
 from adet.tools.strings import get_arg_state, get_arg_type, get_index, rm_end_digits
 
 
@@ -67,7 +68,7 @@ class SystemSharedData:
 
     def __init__(self):
         # Core structures
-        self.equations: OrderedDict[EquationBase, tuple[int, ...]] = OrderedDict()
+        self.equations: dict[EquationBase, tuple[int, ...]] = {}
         self.nodes: tuple[FlowNode, ...] = ()
         self._arg_maps: dict[EquationBase, dict[str, str]] = {}
 
@@ -117,37 +118,36 @@ class EquationRegistry:
     def add_equation(
         self,
         equation: EquationBase,
-        nodal_position: int | list[int] | tuple[int, ...],
+        abs_position: int | list[int] | tuple[int, ...],
     ):
         """Add an equation to the system in the specified position"""
-        if isinstance(nodal_position, int):
-            nodal_position = (nodal_position,)
+        abs_position = ensure_tuple(abs_position)
 
         # Check that the provided position has the same length as equation arguments
         local_indices = {get_index(arg) for arg in equation.arguments}
-        if len(local_indices) != len(nodal_position):
+        if len(local_indices) != len(abs_position):
             raise ValueError(
                 f'Detected indices in the definition of '
                 f'`{equation.__class__.__name__}` {tuple(local_indices)} '
                 f'is not equal to the length of the prescribed '
-                f'absolute nodal position {nodal_position}'
+                f'absolute nodal position {abs_position}'
             )
 
         # Check that an equation of the same type does not exist at the same location
         for eq_instance, eq_nodes in self.data.equations.items():
             if isinstance(eq_instance, equation.__class__) and (
-                set(eq_nodes) == set(nodal_position)
+                set(eq_nodes) == set(abs_position)
             ):
                 raise ExistingEquationError(
                     f'Duplicate equation entry for {equation.__class__.__name__}'
-                    f' at position {nodal_position}'
+                    f' at position {abs_position}'
                 )
 
-        self.data.equations[equation] = tuple(nodal_position)
+        self.data.equations[equation] = tuple(abs_position)
 
         logger.debug(
             f'Added equation {equation.__class__.__name__} to system '
-            f'in position {nodal_position}'
+            f'in position {abs_position}'
         )
 
     def remove_equation_type(self, *equation_class: Type[EquationBase]):
@@ -160,25 +160,23 @@ class EquationRegistry:
 
     def remove_equation(
         self,
-        equation_class: Type[EquationBase],
-        nodal_position: int | tuple[int, ...],
+        equation: Type[EquationBase],
+        abs_position: int | tuple[int, ...],
     ):
         """Remove equation from the system"""
-        if isinstance(nodal_position, int):
-            nodal_position = (nodal_position,)
+        if isinstance(abs_position, int):
+            abs_position = (abs_position,)
 
-        equation_found = False
-        for eq_instance, eq_position in self.data.equations.copy().items():
-            if isinstance(eq_instance, equation_class) and (
-                set(eq_position) == set(nodal_position)
-            ):
-                equation_found = True
-                self.data.equations.pop(eq_instance)
+        to_remove = None
+        for eq, pos in self.data.equations.items():
+            if isinstance(eq, equation) and set(pos) == set(abs_position):
+                to_remove = eq
+                break
 
-        if not equation_found:
-            logger.warning(
-                f'No equation {equation_class} found to remove in {nodal_position}'
-            )
+        if to_remove is None:
+            logger.warning(f'No equation {equation} found to remove at {abs_position}')
+        else:
+            self.data.equations.pop(to_remove)
 
     def create_nodes(self):
         """Create nodes based on the nodal positions of the equations"""

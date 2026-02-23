@@ -332,8 +332,6 @@ if user in ('y', 'Y'):
     sol_dict_is = ntw.system.solution_to_dict(solution)
 
     # Remove the first computation loss
-    ntw.system.remove_equation_type(LossApplier)
-
     rotor.remove_equation(INITIAL_LOSS.__class__, (0, 1))
     stator.remove_equation(INITIAL_LOSS.__class__, (0, 1))
     for eq, pos in EXTRA_EQUATIONS.items():

@@ -20,6 +20,7 @@ from adet.equations.fundamental import (
     TotalStaticMatching,
 )
 
+from adet.tools.iter import ensure_tuple
 from adet.tools.printing import print_logo
 
 T = TypeVar('T', bound=SystemAssembler)
@@ -89,36 +90,24 @@ class ComponentNetwork(Generic[T]):
         self._frozen_equations = self.system.equations.copy()
 
     def _dispatch_components(self, components: Sequence[BaseComponent]):
-        for comp_index, comp in enumerate(components):
-            inlet_node_idx = 2 * comp_index
-            outlet_node_idx = 2 * comp_index + 1
+        for comp in components:
+            inl_idx, out_idx = self._get_abs_indices(comp)
 
             # Add boundary conditions
-            self.system.add_boundary_conditions(
-                comp.in_constraints,
-                inlet_node_idx,
-            )
-
-            self.system.add_boundary_conditions(
-                comp.out_constraints,
-                outlet_node_idx,
-            )
+            self.system.add_boundary_conditions(comp.in_constraints, inl_idx)
+            self.system.add_boundary_conditions(comp.out_constraints, out_idx)
 
             for var in comp._constant_variables:
                 equality = (
-                    f'{var + str(inlet_node_idx)}',
-                    f'{var + str(outlet_node_idx)}',
+                    f'{var + str(inl_idx)}',
+                    f'{var + str(out_idx)}',
                 )
                 self.system.add_equalities(equality)
 
             for equation, node_pos in comp._equations.items():
-                if isinstance(node_pos, int):
-                    traslated_pos = inlet_node_idx + node_pos
-                else:
-                    traslated_pos = [inlet_node_idx + pos for pos in node_pos]
-
-                if equation not in self._frozen_equations:
-                    self.system.add_equation(equation, traslated_pos)
+                node_pos = ensure_tuple(node_pos)
+                traslated_pos = [inl_idx + pos for pos in node_pos]
+                self.system.add_equation(equation, traslated_pos)
 
     def _add_single_node_eqs(self, comp_stack_length: int):
         for node_idx in range(2 * comp_stack_length):
@@ -142,18 +131,24 @@ class ComponentNetwork(Generic[T]):
         # Add invariants from one node to the next
         if len(self.components) > 1:
             # NOTE: Starts from 1 because the inlet is not linked
-            for comp_index, component in enumerate(self.components[1:], 1):
-                inlet_node_idx = 2 * comp_index  # Of the current component
-                outlet_node_idx = inlet_node_idx - 1  # Of the previous component
+            for compt in self.components[1:]:
+                inl_idx, _ = self._get_abs_indices(compt)
+                out_idx_prev = inl_idx - 1
 
                 # Link from previous node
-                for var in component._from_previous_node:
+                for var in compt._from_previous_node:
                     self.system.add_equalities(
                         (
-                            f'{var + str(outlet_node_idx)}',
-                            f'{var + str(inlet_node_idx)}',
+                            f'{var + str(out_idx_prev)}',
+                            f'{var + str(inl_idx)}',
                         )
                     )
+
+    def _get_abs_indices(self, component: BaseComponent):
+        comp_idx = self.components.index(component)
+        inlet_node_idx = 2 * comp_idx
+        outlet_node_idx = 2 * comp_idx + 1
+        return inlet_node_idx, outlet_node_idx
 
     def _link_shafts(self):
         """Link all of the outlet omegas that belong to the same shaft"""
@@ -166,38 +161,22 @@ class ComponentNetwork(Generic[T]):
         #                      +---------------------+ <- Linked by this method
 
         shafts_outnodes: dict[Shaft, list[int]] = defaultdict(list)
-        for comp_index, component in enumerate(self.components):
-            inlet_node_idx = 2 * comp_index  # Of the current component
-            outlet_node_idx = inlet_node_idx + 1  # Of the previous component
+        for comp in self.components:
+            _, out_idx = self._get_abs_indices(comp)
 
-            if isinstance(component, BladeRow):
-                if component.shaft is None:
+            if isinstance(comp, BladeRow):
+                if comp.shaft is None:
                     raise AttributeError('Missing shaft')
                 # Constrained ones are enfored as omega constraints
-                if not component.shaft.is_constrained:
-                    shafts_outnodes[component.shaft].append(outlet_node_idx)
+                if not comp.shaft.is_constrained:
+                    shafts_outnodes[comp.shaft].append(out_idx)
 
         for nodes in shafts_outnodes.values():
             linked_omegas = tuple(f'kin_omega{n}' for n in nodes)
             if len(linked_omegas) > 1:
                 self.system.add_equalities(linked_omegas)
 
-    def _sync_components(self):
-        # TODO: Add a watcher pattern for netw and components
-        # In general the syncronization is fickle.
-        # Should encourage working on components and not directly
-        # on the system.
-        for comp in self.components:
-            for eq in comp._equations.copy():
-                # If it was added from the components
-                if eq not in self.system.equations:
-                    # but it's not there anymore
-                    if eq in self._frozen_equations:
-                        comp._equations.pop(eq, None)
-
     def build(self, scaled: bool = True):
-        self._sync_components()
-        self._write_to_system(self.inlet, self.components)
         self.system.build(scaled)
 
         # Write nodes on components for easier access
@@ -218,16 +197,15 @@ class ComponentNetwork(Generic[T]):
 
     def get_arguments_bounds(self, custom_bounds: dict[str, tuple[float, float]] = {}):
         physical_bounds = {}
-        for comp_idx, comp in enumerate(self.components):
+        for comp in self.components:
             if not isinstance(comp, BladeRow):
                 continue
             else:
-                node_in_idx = 2 * comp_idx
-                node_out_idx = node_in_idx + 1
+                inl_idx, out_idx = self._get_abs_indices(comp)
 
                 if comp.row_type == 'stator':
-                    physical_bounds[f'kin_U{node_in_idx}'] = (-0.1, 0.1)
-                    physical_bounds[f'kin_U{node_out_idx}'] = (-0.1, 0.1)
+                    physical_bounds[f'kin_U{inl_idx}'] = (-0.1, 0.1)
+                    physical_bounds[f'kin_U{out_idx}'] = (-0.1, 0.1)
 
         custom_bounds = {**physical_bounds, **custom_bounds}
         return self.system.get_arguments_bounds(custom_bounds)
@@ -235,10 +213,9 @@ class ComponentNetwork(Generic[T]):
     def print_structure(self):
         component_repr = '@ = node\n\nInlet == @0'
 
-        for comp_idx, comp in enumerate(self.components):
+        for comp in self.components:
+            inl_idx, out_idx = self._get_abs_indices(comp)
             comp_name = comp.name
-            component_repr += (
-                f'\n== @{2 * comp_idx}--|[ {comp_name} ]|--@{2 * comp_idx + 1} =='
-            )
+            component_repr += f'\n== @{inl_idx}--|[ {comp_name} ]|--@{out_idx} =='
 
         print(component_repr)

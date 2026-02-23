@@ -1,4 +1,5 @@
 import logging
+from pprint import PrettyPrinter
 from pint import Quantity
 import matplotlib.pyplot as plt
 import numpy as np
@@ -127,8 +128,6 @@ EQS_WITH_LOSSES = {
 }
 
 
-losses = EQS_WITH_LOSSES if ENABLE_LOSSES else EQS_ISENTROPIC
-
 # - # - # - # - #
 # Metal angle distribution
 METAL_ANGLE = [-30, -44, -53]
@@ -185,7 +184,7 @@ rotor = BladeRow(
         # Definitions
         WorkCoefficient(): (0, 1),
         TotalTotalPressureRatio(): (0, 1),
-        **losses,
+        **EQS_ISENTROPIC,
     },
 )
 

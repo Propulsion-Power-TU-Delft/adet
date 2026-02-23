@@ -9,7 +9,7 @@ import casadi as cs
 
 from adet.fluid.casadi_eos import CasadiEos
 from adet.tools.strings import verify_string_pattern, get_arg_state
-from adet.tools.context import override_operators, output_suppression
+from adet.tools.context import override_operators
 from adet.constants import NodeStatesNames
 
 
@@ -52,13 +52,9 @@ class EquationBase(ABC):
         # TODO: Move scaling factor to class attribute
         self.scaling_factor = scaling_factor
         self._num_equations: int | None = None
-        self.assign_generic_eos()
 
     def __call__(self, *args):
         return self.residual(*args)
-
-    def assign_generic_eos(self):
-        self.eos = cs.Function
 
     @abstractmethod
     def residual(self, *args) -> Any | tuple[Any, ...]:
@@ -218,9 +214,6 @@ class EquationBase(ABC):
         if cls._eos is not None:
             logger.debug(f'Overwriting EoS for {cls}')
         cls._eos = eos
-
-    def __str__(self):
-        return str(self.to_symbolic()) + ' = 0'
 
 
 class UniqueEquation(EquationBase):
