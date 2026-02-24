@@ -40,7 +40,7 @@ from adet.tools.context import override_operators
 from adet.tools.coolprop_utils import pair_based_sorting, pair_id_from_tuple
 from adet.tools.interpolation import resample_linear
 from adet.tools.iter import ensure_tuple
-from adet.tools.strings import get_arg_state, get_arg_type, get_index, rm_end_digits
+from adet.tools.strings import get_arg_state, get_arg_type, get_index, rm_index
 
 
 logger = logging.getLogger(__name__)
@@ -231,7 +231,7 @@ class EquationRegistry:
                 arg_abs_idx = index_map[arg_rel_idx]
 
                 arg_type = get_arg_type(arg)
-                arg_no_digit = rm_end_digits(arg)
+                arg_no_digit = rm_index(arg)
 
                 system_arg = arg_no_digit + str(eq_position[arg_rel_idx])
                 system_arguments.append(system_arg)
@@ -642,7 +642,7 @@ class SolutionDispatcher:
 
         for arg in set(arguments):
             node = self.data.nodes[get_index(arg)]
-            node_by_args[node].append(rm_end_digits(arg))
+            node_by_args[node].append(rm_index(arg))
 
         return node_by_args
 

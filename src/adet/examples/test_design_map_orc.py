@@ -7,6 +7,7 @@ to keep runtime reasonable.  Run before and after changes to design_map_orc.py:
                   (the loss logic lives here, not in the script under test)
   After changes:  both tests still pass — they validate shared infrastructure
 """
+
 from copy import deepcopy
 from typing import Type
 
@@ -187,7 +188,7 @@ def _setup_orc_system():
     rotor = deepcopy(stator)
     rotor.shaft = shaft
     rotor.row_type = 'rotor'
-    rotor._equations.update(
+    rotor.equations_from_dict(
         {
             WorkCoefficient(): (0, 1),
             FlowCoefficient(): (0, 1),

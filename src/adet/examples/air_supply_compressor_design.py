@@ -203,8 +203,8 @@ rotor = BladeRow(
 
 vaneless_diff = VanelessDiffuser(
     'diffuser',
-    in_constraints={},
-    out_constraints={
+    inlet_bc={},
+    outlet_bc={
         'geo': {'heightRatio': 1.0},  # Constant diffuser height
         'oth': {'prFactor': 0.5},
     },

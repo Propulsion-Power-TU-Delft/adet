@@ -13,7 +13,7 @@ def split_by_uppercase(arg: str):
     return re.findall(r'[A-Z][a-z]*', arg)
 
 
-def rm_end_digits(argument: str) -> str:
+def rm_index(argument: str) -> str:
     """
     Remove digits from the argument
     """
@@ -55,7 +55,7 @@ def get_arg_type(argument: str, prefix_length: int = 4) -> str:
     """
     Isolate the var type, removing digits and prefixes
     """
-    var_type = rm_end_digits(argument)[prefix_length:]
+    var_type = rm_index(argument)[prefix_length:]
     return var_type
 
 

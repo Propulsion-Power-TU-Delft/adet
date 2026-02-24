@@ -162,7 +162,7 @@ row = BladeRow(
 
 mixer = DownstreamMixer(
     'Mixer',
-    out_constraints={
+    outlet_bc={
         'geo': {
             # PLOTTING for sanity checks, no physical meaning
             'chord_ax': 0.05,
@@ -198,7 +198,7 @@ ntw.system.build(SCALED)
 
 rootfinder = ntw.system.make_rootfinder(
     'ipopt',
-    opts={'ipopt.tol': 1e-7, 'error_on_fail': True},
+    opts={'error_on_fail': True},
 )
 x0 = ntw.system.get_scaled_guess()
 kn = ntw.system.get_scaled_constraints()

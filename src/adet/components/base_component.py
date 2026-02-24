@@ -58,11 +58,11 @@ class BaseComponent(ABC):
     def __init__(
         self,
         name: str,
-        in_constraints: dict[
+        inlet_bc: dict[
             str,
             dict[str, Any],
         ] = {},
-        out_constraints: dict[
+        outlet_bc: dict[
             str,
             dict[str, Any],
         ] = {},
@@ -75,34 +75,40 @@ class BaseComponent(ABC):
     ):
         self.name = name
 
-        self._from_previous_node = self.__class__.from_previous_node.copy()
-        self._constant_variables = self.__class__.constant_variables.copy()
-        if from_previous_node:
-            self._from_previous_node += from_previous_node
-        if constant_variables:
-            self._constant_variables += constant_variables
+        # === Network syncronization
+        self._attached_networks: set[ComponentNetwork[CasadiSystem]] = set()
+        self._network_maps: dict['ComponentNetwork', dict[int, int]] = {}
 
-        # Update the constraint dictionaries
-        self.in_constraints = defaultdict(dict)
-        self.in_constraints.update(in_constraints)
-        self.out_constraints = defaultdict(dict)
-        self.out_constraints.update(out_constraints)
+        # === Store
+        self._spanwise_constants: set[str] = set()
 
-        # Careful, This makes equations non-reusable, because when
-        # added to a system the instance is used for dictionary keys
+        # === Get all the variables to copy from previous node
+        self._from_prev_node: set[str] = set(
+            self.__class__.from_previous_node + from_previous_node
+        )
+        # === Write the constant variables
+        self._const_variables: set[str] = set(
+            self.__class__.constant_variables + constant_variables
+        )
+
+        # === Constraint dictionaries
+        self._boundary_conditions = {0: defaultdict(dict), 1: defaultdict(dict)}
+        self.inlet_bc.update(inlet_bc)
+        self.outlet_bc.update(outlet_bc)
+
+        # === Equation management
         base_eqs_instances = {eq(): pos for eq, pos in self.base_equations}
-
-        # Superseed base equations of the component with user
-        # defined ones
+        # Superseed base equations of the component with user-defined
         self._equations = self._merge_unique_equations(
             base_eqs_instances, extra_equations
         )
+
+        # Check for duplicates
         self._equation_checks()
 
+        # === Convenient node access
         self.inlet_node: FlowNode | None = None
         self.outlet_node: FlowNode | None = None
-        self._attached_networks: set[ComponentNetwork[CasadiSystem]] = set()
-        self._network_maps: dict['ComponentNetwork', dict[int, int]] = {}
 
         # Post-init for child classes
         self._post_init()
@@ -110,9 +116,23 @@ class BaseComponent(ABC):
     def _post_init(self):
         pass
 
+    def _write_equalities(self, copy_from_prev: list[str], comp_const: list[str]):
+        for arg in copy_from_prev:
+            self.copy_from_previous(arg)
+        for arg in comp_const:
+            self.set_component_constant(arg)
+
     def attach_network(self, network: 'ComponentNetwork'):
-        logger.debug('Attached network {network} to {self}')
+        logger.debug(f'Attached network {network} to {self}')
         self._attached_networks.add(network)
+
+    @property
+    def inlet_bc(self):
+        return self._boundary_conditions[0]
+
+    @property
+    def outlet_bc(self):
+        return self._boundary_conditions[1]
 
     @property
     def network_maps(self):
@@ -122,7 +142,7 @@ class BaseComponent(ABC):
 
     def _check_attached_network(self, *, strict: bool = True):
         if not self._attached_networks:
-            message = f'Modifying {self} with no networks attached'
+            message = f'Modifying {self}, `{self.name}` with no networks attached'
             if strict:
                 raise AttributeError(message)
             logger.warning(message)
@@ -230,23 +250,21 @@ class BaseComponent(ABC):
         logger.debug(f'Base equations format in {cls.__name__} verifiedx')
 
     def _check_duplicate_equations(self):
-        unique_types_seen = {}
+        unique_types_seen = []
         logger.debug(f'Checking for duplicate equations in {self}')
         for eq, eq_pos in self._equations.items():
             if isinstance(eq, UniqueEquation):
-                eq_pos = ensure_tuple(eq_pos)
+                eq_pos = set(ensure_tuple(eq_pos))
 
                 eq_base_cls = eq.__class__.__base__
 
-                if eq_base_cls not in unique_types_seen:
-                    unique_types_seen[eq_base_cls] = set(eq_pos)
+                type_key = (eq_base_cls, eq_pos)
+                if type_key not in unique_types_seen:
+                    unique_types_seen.append(type_key)
                 else:
-                    if set(eq_pos) != unique_types_seen[eq_base_cls]:
-                        pass
-                    else:
-                        raise KeyError(
-                            f'Duplicate equation type for {eq_base_cls} in {self}'
-                        )
+                    raise KeyError(
+                        f'Duplicate equation type for {eq_base_cls} in {self}'
+                    )
 
     def _check_loss_model(self):
         # The duplicate instances of LossApplier should
@@ -262,6 +280,7 @@ class BaseComponent(ABC):
                 f'No loss applier function for `{self.name}` component instance'
             )
 
+    # ================== Interaction with the system
     def get_absolute_eq_position(
         self, equation: EquationBase, network: 'ComponentNetwork'
     ):
@@ -272,19 +291,31 @@ class BaseComponent(ABC):
         index_map = {0: inl_idx, 1: out_idx}
         return tuple(index_map[idx] for idx in rel_position)
 
-    def add_equation(self, equation: EquationBase, rel_position: int | tuple[int, ...]):
-        # Add to component
+    def add_equation(
+        self,
+        equation: EquationBase,
+        rel_position: int | tuple[int, ...],
+    ):
+        # Add to self (component)
         self._equations[equation] = rel_position
         self._equation_checks()
         # Add to attached networks
+        self._check_attached_network(strict=False)
         for ntw in self._attached_networks:
             abs_position = self.get_absolute_eq_position(equation, ntw)
+            logger.debug(
+                f'Adding {equation} in position {abs_position} '
+                f'to network {ntw} attached to {self} '
+            )
             ntw.system.add_equation(equation, abs_position)
 
+    def equations_from_dict(self, equations: dict[EquationBase, int | tuple[int, ...]]):
+        """Simple method for multiple equations"""
+        for eq, pos in equations.items():
+            self.add_equation(eq, pos)
+
     def remove_equation(
-        self,
-        equation_class: Type[EquationBase],
-        rel_position: int | tuple[int, ...],
+        self, equation_class: Type[EquationBase], rel_position: int | tuple[int, ...]
     ):
         logger.debug(f'Requested removal of {equation_class} from {self}')
 
@@ -316,25 +347,25 @@ class BaseComponent(ABC):
             pass
 
     def set_boundary_cond(self, argument: str, value: ArrayLike | PlainQuantity):
-        self._system_interaction_daemon('set', argument, value)
+        self._system_interaction_helper('set_bc', argument, value)
 
     def rm_boundary_cond(self, argument: str):
-        self._system_interaction_daemon('rm', argument)
+        self._system_interaction_helper('rm_bc', argument)
 
     def set_component_constant(self, argument: str):
-        self._system_interaction_daemon('const', argument)
+        self._system_interaction_helper('const', argument)
 
     def set_spanwise_constant(self, *arguments: str):
         for arg in arguments:
-            self._system_interaction_daemon('span', arg)
+            self._system_interaction_helper('span', arg)
 
     def copy_from_previous(self, *arguments: str):
         for arg in arguments:
-            self._system_interaction_daemon('prev', arg)
+            self._system_interaction_helper('prev', arg)
 
-    def _system_interaction_daemon(
+    def _system_interaction_helper(
         self,
-        mode: Literal['set', 'rm', 'span', 'const', 'prev'],
+        mode: Literal['set_bc', 'rm_bc', 'span', 'const', 'prev'],
         argument: str,
         value: ArrayLike | PlainQuantity = -1,
     ):
@@ -345,26 +376,32 @@ class BaseComponent(ABC):
                 arg_state = get_arg_state(argument)
                 arg_type = get_arg_type(argument)
                 abs_indices = self.network_maps[ntw].values()
+                arg_no_idx = f'{arg_state}_{arg_type}'
                 if mode == 'const':
-                    ntw.system.add_equalities(
-                        tuple(f'{arg_state}_{arg_type}{i}' for i in abs_indices)
-                    )
-                else:
+                    abs_equality = tuple(f'{arg_no_idx}{i}' for i in abs_indices)
+                    ntw.system.add_equalities(abs_equality)  # Add to system
+                    self._const_variables.add(arg_no_idx)  # Add to self
+                elif mode == 'prev':
                     inl_idx = min(abs_indices)
                     ntw.system.add_equalities(
                         (
-                            f'{arg_state}_{arg_type}{inl_idx - 1}',
-                            f'{arg_state}_{arg_type}{inl_idx}',
+                            f'{arg_state}_{arg_type}{inl_idx - 1}',  # Out previous
+                            f'{arg_state}_{arg_type}{inl_idx}',  # Inlet self
                         )
                     )
+                    self._from_prev_node.add(arg_no_idx)
+
             else:
                 arg_state, arg_type, rel_idx = get_arg_specs(argument)
                 abs_idx = self.network_maps[ntw][rel_idx]
-                if mode == 'set':
+                if mode == 'set_bc':
                     ntw.system.boundary_conditions[abs_idx][arg_state][arg_type] = value
-                elif mode == 'rm':
+                    self._boundary_conditions[rel_idx][arg_state][arg_type] = value
+                elif mode == 'rm_bc':
                     ntw.system.boundary_conditions[abs_idx][arg_state].pop(arg_type)
+                    self._boundary_conditions[rel_idx][arg_state].pop(arg_type)
                 elif mode == 'span':
                     ntw.system.add_spanwise_constants(
                         f'{arg_state}_{arg_type}{abs_idx}'
                     )
+                    self._spanwise_constants.add(f'{arg_state}_{arg_type}{rel_idx}')

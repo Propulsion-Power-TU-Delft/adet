@@ -19,7 +19,11 @@ from adet.equations.definitions import (
     IsentropicProperties,
     RepeatedStage,
 )
-from adet.equations.fundamental import FreeVortexDistribution
+from adet.equations.fundamental import (
+    BladeBlockage,
+    FreeVortexDistribution,
+    ZeroBlockage,
+)
 from adet.equations.geometrical import (
     MeridionalVariable,
     MinimalCamberLine,
@@ -49,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 setup_logger(
     logger,
-    logging.INFO,
+    logging.DEBUG,
     logging.INFO,
     banned_keywords=['STREAM', 'findfont', 'sBIT'],
 )
@@ -172,13 +176,13 @@ EXTRA_EQUATIONS: dict[
 ] = {
     ClearanceByHeight: 1,
     IsentropicProperties: (0, 1),
+    BladeBlockage: 1,
     BoundaryLayerRatios: 1,
     # ReducedThermoQuantities: 0,
     SieverdingBasePressure: (0, 1),
     SecondaryBSM: (0, 1),
     DentonProfileLoss: (0, 1),
     DentonLeakageLoss: (0, 1),
-    # BladeBlockage: 1,
 }
 
 # ================================================
@@ -235,6 +239,10 @@ stator = BladeRow(
             'xi_by_camb_len_B': 0.675,
             # *** Tip leakage discharge coeff
             'dischCoeff': 0.35,
+            # *** Duty coefficients
+            'flowCoeff': 0.4,
+            'reactDegree_ts': 0.3,
+            'ts_loadCoeff': 3,
         },
     },
     extra_equations={
@@ -248,64 +256,62 @@ stator = BladeRow(
 )
 
 
+# ============ Modify before creating copies
 rotor = deepcopy(stator)  # Reuse the ratios from stator
 rotor.shaft = shaft  # Assign the rotating shaft
 rotor.row_type = 'rotor'
-rotor._equations.update(
+rotor.equations_from_dict(
     {
         WorkCoefficient(): (0, 1),
         FlowCoefficient(): (0, 1),
     }
 )
 
-
 mixer = DownstreamMixer(
     'Mixer',
     # The axial chord is just for plotting it like a blade row
-    out_constraints={'geo': {'chord_ax': 0.01}},
+    outlet_bc={'geo': {'chord_ax': 0.01}},
 )
 
+backend = CasadiSystem(num_span=NUM_SPAN)
 # ================================================
 # Create network
 ntw = ComponentNetwork(
     fluid_settings,  # Fluid settings
     inlet,  # Inlet conditions
-    CasadiSystem(num_span=NUM_SPAN),  # Backend
+    backend,
     components=[stator, rotor],
 )
 
-rotor.set_boundary_cond('oth_flowCoeff1', 0.4)
-rotor.set_boundary_cond('oth_reactDegree_ts1', 0.3)
-rotor.set_boundary_cond('oth_ts_loadCoeff1', 3)
-# rotor.set_boundary_cond('oth_workCoeff1', -1.3)
-
 final_node = ntw.num_components * 2 - 1
 
-stator.set_spanwise_constant('geo_hh0', 'geo_chord_ax1')
 rotor.set_spanwise_constant('geo_chord_ax1')
-ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, final_node))
-ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, 2, 3))
-ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, final_node))
-ntw.system.add_equation(RepeatedStage(), (0, 1, 2, 3))
+stator.set_spanwise_constant('geo_hh0', 'geo_chord_ax1')
 
 if NUM_SPAN > 1:
     # Free vortex at stator and rotor outlets
     stator.add_equation(FreeVortexDistribution(), 1)
     rotor.add_equation(FreeVortexDistribution(), 1)
-    # Rotor inlet geometry is continuous with stator outlet (no MeridionalVariable)
-    rotor.remove_equation(MeridionalVariable, 0)
+    # Rotor inlet geometry is continuous with stator outlet
     rotor.copy_from_previous('geo_hh', 'geo_rr')
+    rotor.remove_equation(MeridionalVariable, 0)
 
+# Multi-component relations
+ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
+ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, 2, 3))
+ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, 3))
+ntw.system.add_equation(RepeatedStage(), (0, 1, 2, 3))
+
+# Build
 ntw.system.build(SCALED)
 
-
-# ================================================
+# ============ Solution ==========================
 rootfinder_is = ntw.system.make_rootfinder(
     'ipopt',
     opts={
         'error_on_fail': False,
         'ipopt.max_iter': 1000,
-        # 'ipopt.hessian_approximation': 'limited-memory',
+        'ipopt.hessian_approximation': 'limited-memory',  # Saves updates
     },
 )
 
@@ -323,31 +329,53 @@ solution = solve_root_problem(
     num_samples=1,
 )
 
+# Write solution to dict for reading for next solution
+sol_dict_is = ntw.system.write_solution_to_nodes(solution)
 # ================================================
 user = input('INPUT >>> Continue with losses? [y/n] ')
 if user in ('y', 'Y'):
-    # Write solution to dict for reading for next solution
-    sol_dict_is = ntw.system.solution_to_dict(solution)
+    # Reboot the system
+    ntw = ComponentNetwork(
+        ntw.system.fluid_settings, inlet, CasadiSystem(NUM_SPAN), [stator, rotor]
+    )
+    if mixer in ntw.components:
+        rotor_in, rotor_out = (4, 5)
+    else:
+        rotor_in, rotor_out = (2, 3)
+
+    ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, rotor_in, rotor_out))
+    ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, rotor_out))
+    ntw.system.add_equation(RepeatedStage(), (0, 1, rotor_in, rotor_out))
+
+    ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, rotor_out))
+
+    # sol_dict_is_translate = {
+    #     k.replace('2', '4').replace('3', '5'): v for k, v in sol_dict_is.items()
+    # }
+    sol_dict_is_translate = sol_dict_is
 
     # Remove the first computation loss
     rotor.remove_equation(INITIAL_LOSS.__class__, (0, 1))
+    rotor.remove_equation(ZeroBlockage, 1)
     stator.remove_equation(INITIAL_LOSS.__class__, (0, 1))
+    stator.remove_equation(ZeroBlockage, 1)
     for eq, pos in EXTRA_EQUATIONS.items():
-        rotor.add_equation(eq(), pos)
         stator.add_equation(eq(), pos)
+        rotor.add_equation(eq(), pos)
 
-    rotor.add_equation(LossMatcher(tip_gap=True), (0, 1))
     stator.add_equation(LossMatcher(tip_gap=False), (0, 1))
+    rotor.add_equation(LossMatcher(tip_gap=True), (0, 1))
+
     ntw.build()
 
-    x0_loss = ntw.system.get_scaled_guess(sol_dict_is)
+    x0_loss = ntw.system.get_scaled_guess(sol_dict_is_translate)
     kn_loss = ntw.system.get_scaled_constraints()
     bnd_loss = ntw.system.get_arguments_bounds()
     err_on_fail = int(
         input('INPUT >>> Fail on rootfinding error? [0/1] '),
     )
     rootfinder_loss = ntw.system.make_rootfinder(
-        'ipopt',
+        'kinsol',
         opts={
             'error_on_fail': bool(err_on_fail),
         },

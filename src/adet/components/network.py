@@ -1,5 +1,6 @@
+import re
 from collections import defaultdict
-from typing import Generic, Mapping, Sequence, TypeVar
+from typing import Generic, Mapping, Sequence, Type, TypeVar
 
 from adet.assembly import SystemAssembler
 from adet.components import BaseComponent
@@ -22,6 +23,7 @@ from adet.equations.fundamental import (
 
 from adet.tools.iter import ensure_tuple
 from adet.tools.printing import print_logo
+from adet.tools.strings import get_index, rm_index
 
 T = TypeVar('T', bound=SystemAssembler)
 
@@ -95,15 +97,22 @@ class ComponentNetwork(Generic[T]):
             inl_idx, out_idx = self._get_abs_indices(comp)
 
             # Add boundary conditions
-            self.system.add_boundary_conditions(comp.in_constraints, inl_idx)
-            self.system.add_boundary_conditions(comp.out_constraints, out_idx)
+            self.system.add_boundary_conditions(comp.inlet_bc, inl_idx)
+            self.system.add_boundary_conditions(comp.outlet_bc, out_idx)
 
-            for var in comp._constant_variables:
+            # Write equalities (constant variables)
+            for arg in comp._const_variables:
                 equality = (
-                    f'{var + str(inl_idx)}',
-                    f'{var + str(out_idx)}',
+                    f'{arg}{inl_idx}',
+                    f'{arg}{out_idx}',
                 )
                 self.system.add_equalities(equality)
+
+            for arg in comp._spanwise_constants:
+                rel_idx = get_index(arg)
+                abs_idx = inl_idx if rel_idx == 0 else out_idx
+                abs_arg = f'{rm_index(arg) + str(abs_idx)}'
+                self.system.add_spanwise_constants(abs_arg)
 
             for equation, node_pos in comp._equations.items():
                 node_pos = ensure_tuple(node_pos)
@@ -132,12 +141,12 @@ class ComponentNetwork(Generic[T]):
         # Add invariants from one node to the next
         if len(self.components) > 1:
             # NOTE: Starts from 1 because the inlet is not linked
-            for compt in self.components[1:]:
-                inl_idx, _ = self._get_abs_indices(compt)
+            for comp in self.components[1:]:
+                inl_idx, _ = self._get_abs_indices(comp)
                 out_idx_prev = inl_idx - 1
 
                 # Link from previous node
-                for var in compt._from_previous_node:
+                for var in comp._from_prev_node:
                     self.system.add_equalities(
                         (
                             f'{var + str(out_idx_prev)}',

@@ -145,9 +145,9 @@ class BladeRow(BaseComponent):
     def shaft(self, shaft: Shaft):
         # Fix omega at the outlet node
         if shaft.is_constrained:
-            self.out_constraints['kin']['omega'] = shaft.omega
+            self.outlet_bc['kin']['omega'] = shaft.omega
         else:
-            self.out_constraints['kin'].pop('omega', None)
+            self.outlet_bc['kin'].pop('omega', None)
         self._shaft = shaft
 
 
@@ -176,8 +176,8 @@ class VanelessDiffuser(BaseComponent):
 
     def _post_init(self):
         # WARN: Hypothesis => Null axial chord = exactly radial diffuser
-        self.out_constraints['geo']['chord_ax'] = 0
-        self.in_constraints['kin']['omega'] = 0
+        self.outlet_bc['geo']['chord_ax'] = 0
+        self.inlet_bc['kin']['omega'] = 0
 
 
 class DownstreamMixer(BaseComponent):
@@ -192,9 +192,6 @@ class DownstreamMixer(BaseComponent):
         # *** Blockage
         (BladeBlockage, 0),
         (ZeroBlockage, 1),  # No blockage mixed out
-        # Uniform meridional distribution
-        (MeridionalUniform, 0),
-        (MeridionalUniform, 1),
         # *** Definition of channel massflow and num_blades
         (BladePitch, 0),
         (BladePitch, 1),
@@ -208,6 +205,9 @@ class DownstreamMixer(BaseComponent):
         ABSOLUTE_LINK
         + GEOM_LINK
         + [
+            # Copy the geometry
+            'geo_hh',
+            'geo_rr',
             # Get the base pressure
             'oth_p_base',
             # Stay in the same MRF as blade row
@@ -223,6 +223,9 @@ class DownstreamMixer(BaseComponent):
     )
 
     constant_variables = [
+        # Keep the span geometry constant
+        'geo_hh',
+        'geo_rr',
         # Keep reference frame alive
         'kin_omega',
         # Keep geometry

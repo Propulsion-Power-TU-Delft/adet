@@ -68,11 +68,11 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 # === CONFIGURATION
 # Simulation settings
-NUM_SPAN = 3  # Number of spanwise stations
+NUM_SPAN = 9  # Number of spanwise stations
 NUM_STAGES = 3  # Number of turbine stages (stator-rotor pairs)
 # Runtime options
 RUN_MULTI = True  # Run the multi streamline case
-ADD_LOSSES = False
+ADD_LOSSES = True
 SCALED = True  # Use scaled equations for better numerical conditioning
 PLOTS = True  # Show plots at end
 PRINTS = False  # Print node information
@@ -234,7 +234,7 @@ rotor = BladeRow(
 # Replicate stage (stator-rotor pair) NUM_STAGES times
 def build_network(num_stages, num_span, add_losses: bool = False):
     stage_obj = [stator, rotor]
-    rows: list[BladeRow] = list(
+    blade_rows: list[BladeRow] = list(
         map(
             deepcopy,
             num_stages * stage_obj,
@@ -246,25 +246,29 @@ def build_network(num_stages, num_span, add_losses: bool = False):
         settings,  # Fluid settings
         inlet,  # Inlet conditions
         CasadiSystem(num_span=num_span),  # Backend
-        rows,
+        blade_rows,
     )
 
     # =============== Manipulate rows ===============
     # |> Impose effectively a meridional uniform distribution
-    rows[0].set_spanwise_constant('geo_hh0')
-    for r in rows:
-        r.set_spanwise_constant('geo_chord_ax1')
-        if r.row_type == 'rotor':
-            r.set_boundary_cond('oth_workCoeff1', -1.0)
+    blade_rows[0].set_spanwise_constant('geo_hh0')
+    for row in blade_rows:
+        row.set_spanwise_constant('geo_chord_ax1')
+        if row.row_type == 'rotor':
+            row.set_boundary_cond('oth_workCoeff1', -0.7)
+
+    # First stage boundary conditions
+    blade_rows[1].set_boundary_cond('oth_reactDegree_ts1', 0.5)
+    blade_rows[1].set_boundary_cond('oth_flowCoeff1', 0.4)
 
     if num_span > 1:
-        rows[0].add_equation(FreeVortexDistribution(), 1)
-        rows[1].add_equation(FreeVortexDistribution(), 1)
-        for r in rows[1:]:
-            if r.row_type == 'stator':
-                r.add_equation(FreeVortexDistribution(), 1)
-            r.remove_equation(MeridionalVariable, 0)
-            r.copy_from_previous('geo_hh', 'geo_rr')
+        blade_rows[0].add_equation(FreeVortexDistribution(), 1)
+        blade_rows[1].add_equation(FreeVortexDistribution(), 1)
+        for row in blade_rows[1:]:
+            if row.row_type == 'stator':
+                row.add_equation(FreeVortexDistribution(), 1)
+            row.remove_equation(MeridionalVariable, 0)
+            row.copy_from_previous('geo_hh', 'geo_rr')
 
     # === GLOBAL CONSTRAINTS
     # Add ideal gas reference and loss model coefficients
@@ -296,11 +300,8 @@ def build_network(num_stages, num_span, add_losses: bool = False):
         ntw.system.add_equation(RepeatedStage(), nodes)
         ntw.system.add_equation(StaticTotalDegreeOfReaction(), nodes)
 
-    ntw.system.boundary_conditions[3]['oth']['reactDegree_ts'] = 0.5
-    ntw.system.boundary_conditions[3]['oth']['flowCoeff'] = 0.4
-
     if add_losses:
-        ntw.system.remove_equation_type(LossModel)
+        ntw.system.remove_equation_type(LossApplier)
         for nodes in nodes_by_stage:
             # Add profile losses
             ntw.system.add_equation(DentonProfileLoss(), (nodes[0], nodes[1]))
@@ -336,7 +337,7 @@ sol_mean_is_dict = ntw.system.write_solution_to_nodes(solution)
 
 # # # # # # # # # # # # # #
 if RUN_MULTI:
-    ntw = build_network(NUM_STAGES, NUM_SPAN, ADD_LOSSES)
+    ntw = build_network(NUM_STAGES, 3, add_losses=False)
 
     ntw.system.build()
 
@@ -353,10 +354,28 @@ if RUN_MULTI:
     )
     sol_span_is_dict = ntw.system.write_solution_to_nodes(sol_span_is)
 
+    # Final run with losses
+    ntw = build_network(NUM_STAGES, NUM_SPAN, ADD_LOSSES)
+    ntw.system.build()
+
+    x0_span_loss = ntw.system.get_scaled_guess(sol_span_is_dict)
+    kn_span_loss = ntw.system.get_scaled_constraints()
+    bnd_span_loss = ntw.system.get_arguments_bounds()
+    rootfind_span_loss = ntw.system.make_rootfinder(
+        'ipopt',
+        {'error_on_fail': True},
+    )
+
+    sol_span_loss = solve_root_problem(
+        rootfind_span_loss, x0_span_loss, kn_span_loss, bnd_span_loss
+    )
+    sol_span_loss_dict = ntw.system.write_solution_to_nodes(sol_span_loss)
+
 
 # === POST-PROCESSING AND VISUALIZATION
 # plt.style.use('dark_background')
 if PLOTS:
+    plt.style.use('dark_background')
     FONTSIZE = 18
     FONTDICT = {'fontsize': FONTSIZE}
 
@@ -391,7 +410,7 @@ if PLOTS:
     ax_merid.set_title('Meridional profile', {'fontsize': 18})
 
     # Configure camberline subplot
-    ax_camber.set_title('Camberlines at midspan', {'fontsize': 18})
+    ax_camber.set_title('Camberlines', {'fontsize': 18})
     ax_camber.axis('equal')
     ax_camber.tick_params('both', labelsize=18)
     ax_camber.grid()
@@ -418,8 +437,10 @@ if PLOTS:
             ax=ax_merid,
             color=color,
         )
-        ax_merid.plot(NUM_SPAN * [offset], n0.geo.rr, 'o', color='r')
-        ax_merid.plot(NUM_SPAN * [offset] + ax_chord, n1.geo.rr, 'o', color='r')
+        ax_merid.plot(NUM_SPAN * [offset], n0.geo.rr, 'o', color='r', markersize=1.8)
+        ax_merid.plot(
+            NUM_SPAN * [offset] + ax_chord, n1.geo.rr, 'o', color='r', markersize=1.8
+        )
 
         ax_merid.plot(
             NUM_SPAN * [offset],
@@ -463,7 +484,7 @@ if PLOTS:
                 inlet_angle,
                 outlet_angle,
                 chord_ax,
-                'k',
+                'w',
                 axial_offset=offset,
                 tangential_offset=blade_num * pitch,
             )

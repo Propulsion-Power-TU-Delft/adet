@@ -219,7 +219,7 @@ stator = BladeRow(
 rotor = deepcopy(stator)
 rotor.shaft = shaft
 rotor.row_type = 'rotor'
-rotor._equations.update(
+rotor.equations_from_dict(
     {
         WorkCoefficient(): (0, 1),
         FlowCoefficient(): (0, 1),
@@ -268,7 +268,9 @@ x0 = ntw.system.get_scaled_guess()
 kn = ntw.system.get_scaled_constraints()
 bnd = ntw.system.get_arguments_bounds()
 
-logger.info(f'Solving isentropic initial point: phi={PHI_RANGE[0]:.3f}, psi={PSI_RANGE[0]:.3f}')
+logger.info(
+    f'Solving isentropic initial point: phi={PHI_RANGE[0]:.3f}, psi={PSI_RANGE[0]:.3f}'
+)
 solution = solve_root_problem(
     rootfinder_ipopt, x0, kn, bnd, suppress_output=False, perturbate_guess=False
 )
@@ -303,9 +305,16 @@ rootfinder_ipopt_loss = ntw.system.make_rootfinder(
     'ipopt',
     opts={'error_on_fail': False, 'ipopt.max_iter': 1000},
 )
-logger.info(f'Solving loss initial point: phi={PHI_RANGE[0]:.3f}, psi={PSI_RANGE[0]:.3f}')
+logger.info(
+    f'Solving loss initial point: phi={PHI_RANGE[0]:.3f}, psi={PSI_RANGE[0]:.3f}'
+)
 solution = solve_root_problem(
-    rootfinder_ipopt_loss, x0_loss, kn_loss, bnd_loss, suppress_output=False, perturbate_guess=False
+    rootfinder_ipopt_loss,
+    x0_loss,
+    kn_loss,
+    bnd_loss,
+    suppress_output=False,
+    perturbate_guess=False,
 )
 
 # ================================================
@@ -351,8 +360,12 @@ def extract_meridional():
         xc = np.linspace(0, chord_ax, N_CAMBER_PTS)
         yc = a * xc**2 + b * xc
 
-        mer_angle_in = float(n0.geo.get('meridional_angle').to_base_units().magnitude[0])
-        mer_angle_out = float(n1.geo.get('meridional_angle').to_base_units().magnitude[0])
+        mer_angle_in = float(
+            n0.geo.get('meridional_angle').to_base_units().magnitude[0]
+        )
+        mer_angle_out = float(
+            n1.geo.get('meridional_angle').to_base_units().magnitude[0]
+        )
 
         camberlines.append(
             {
@@ -496,15 +509,51 @@ for row, i in enumerate(MERID_INDICES):
                     line.set_linewidth(2.5)
                 # Midspan dots at LE and TE
                 ax.plot(x_offset_plot, cl['rr0'], 'o', color='r', markersize=4)
-                ax.plot(x_offset_plot + cl['chord_ax'], cl['rr1'], 'o', color='r', markersize=4)
+                ax.plot(
+                    x_offset_plot + cl['chord_ax'],
+                    cl['rr1'],
+                    'o',
+                    color='r',
+                    markersize=4,
+                )
                 # Hub (blue) and tip (green) tick markers
-                ax.plot(x_offset_plot, cl['rr0'] - cl['hh0'] / 2, '_', color='b', markersize=8)
-                ax.plot(x_offset_plot, cl['rr0'] + cl['hh0'] / 2, '_', color='g', markersize=8)
-                ax.plot(x_offset_plot + cl['chord_ax'], cl['rr1'] - cl['hh1'] / 2, '_', color='b', markersize=8)
-                ax.plot(x_offset_plot + cl['chord_ax'], cl['rr1'] + cl['hh1'] / 2, '_', color='g', markersize=8)
+                ax.plot(
+                    x_offset_plot,
+                    cl['rr0'] - cl['hh0'] / 2,
+                    '_',
+                    color='b',
+                    markersize=8,
+                )
+                ax.plot(
+                    x_offset_plot,
+                    cl['rr0'] + cl['hh0'] / 2,
+                    '_',
+                    color='g',
+                    markersize=8,
+                )
+                ax.plot(
+                    x_offset_plot + cl['chord_ax'],
+                    cl['rr1'] - cl['hh1'] / 2,
+                    '_',
+                    color='b',
+                    markersize=8,
+                )
+                ax.plot(
+                    x_offset_plot + cl['chord_ax'],
+                    cl['rr1'] + cl['hh1'] / 2,
+                    '_',
+                    color='g',
+                    markersize=8,
+                )
                 x_offset_plot += cl['chord_ax'] * 1.1
             # Axis reference line
-            ax.plot([0.0, x_offset_plot], [0.0, 0.0], color='r', linestyle='dashdot', linewidth=1.5)
+            ax.plot(
+                [0.0, x_offset_plot],
+                [0.0, 0.0],
+                color='r',
+                linestyle='dashdot',
+                linewidth=1.5,
+            )
             ax.set_title(
                 rf'$\phi$={PHI_RANGE[i]:.2f}, $\psi_{{ts}}$={PSI_RANGE[j]:.1f}',
                 fontsize=9,
@@ -540,13 +589,19 @@ for row, i in enumerate(MERID_INDICES):
                         linewidth=1.5,
                     )
                 # Hub camberline (orange)
-                a_h, b_h, _ = _pbl._compute_parabola(cl['alpha_hub_in'], cl['alpha_hub_out'], cl['chord_ax'])
+                a_h, b_h, _ = _pbl._compute_parabola(
+                    cl['alpha_hub_in'], cl['alpha_hub_out'], cl['chord_ax']
+                )
                 yc_h = a_h * cl['xc'] ** 2 + b_h * cl['xc']
                 ax.plot(cl['x_offset'] + cl['xc'], yc_h, color='orange', linewidth=1.5)
                 # Tip camberline (seagreen)
-                a_t, b_t, _ = _pbl._compute_parabola(cl['alpha_tip_in'], cl['alpha_tip_out'], cl['chord_ax'])
+                a_t, b_t, _ = _pbl._compute_parabola(
+                    cl['alpha_tip_in'], cl['alpha_tip_out'], cl['chord_ax']
+                )
                 yc_t = a_t * cl['xc'] ** 2 + b_t * cl['xc']
-                ax.plot(cl['x_offset'] + cl['xc'], yc_t, color='seagreen', linewidth=1.5)
+                ax.plot(
+                    cl['x_offset'] + cl['xc'], yc_t, color='seagreen', linewidth=1.5
+                )
             ax.set_title(
                 rf'$\phi$={PHI_RANGE[i]:.2f}, $\psi_{{ts}}$={PSI_RANGE[j]:.1f}',
                 fontsize=9,
