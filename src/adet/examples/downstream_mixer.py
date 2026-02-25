@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pint import Quantity
 
+from adet.fluid.symbolic_eos import IdealGasState
 from adet.solution import solve_root_problem
 from adet.assembly import CasadiSystem
 from adet.components import BladeRow, Inlet, Shaft
@@ -16,20 +17,16 @@ from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
 from adet.equations.fundamental import BladeBlockage
 from adet.equations.geometrical import ParabolicCamberline
 from adet.equations.nondimensional import (
-    RelativeMachNumber,
-    RelativeMachWithChoke,
     TotalTotalExpansionEfficiency,
 )
 from adet.equations.utils import residual_debugger
-from adet.fluid.settings import ExternalFluidModel
+from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.losses.mixing import (
-    MixingMomentumBalances,
     SieverdingBasePressure,
     SimplifiedMixingBalances,
 )
-from adet.losses.profile import RectVelocityIncompressible
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.iter import grouper
@@ -54,10 +51,13 @@ INITIAL_LOSS = PercentageEntropyLoss(0.0)
 # This counts the number of updates in an attribute
 abs_state = DebugAbstractState('REFPROP', 'Air')
 abs_state.debug_print = False
+id_state = IdealGasState(1.4, 287, 1.8e5)
 
 real_model = ExternalFluidModel(abs_state)
+ideal_model = AnalyticalFluidModel(id_state)
+
 settings = FluidSettings(
-    model=real_model,
+    model=ideal_model,
     update_variables=('p', 'T'),
     update_length=2,
 )
@@ -121,6 +121,7 @@ row = BladeRow(
     out_constraints={
         'kin': {
             # 'alpha': Quantity(70, 'deg'),
+            'alpha': Quantity(40, 'deg'),
         },
         'geo': {
             # Meridional
@@ -152,32 +153,15 @@ row = BladeRow(
         ZeroDeviation(): 1,
         # PercentageEntropyLoss(0.0): (0, 1),
         # |> Boundary layer properties
-        BoundaryLayerRatios(): 1,
         BladeBlockage(): 1,
+        BoundaryLayerRatios(): 1,
         SieverdingBasePressure(): (0, 1),
         INITIAL_LOSS: (0, 1),
         # Efficiency measures
     },
 )
 
-mixer = DownstreamMixer(
-    'Mixer',
-    outlet_bc={
-        'geo': {
-            # PLOTTING for sanity checks, no physical meaning
-            'chord_ax': 0.05,
-        },
-        'kin': {
-            'alpha': Quantity(40, 'deg'),
-            # 'relmach': 1.24,
-        },
-    },
-    extra_equations={
-        ZeroDeviation(): 1,  # Creates a fake metal angle for plotting
-        # PercentageEntropyLoss(0.0): (0, 1),
-    },
-)
-
+mixer = DownstreamMixer('twitch')
 
 # Create network
 ntw = ComponentNetwork(
@@ -189,6 +173,8 @@ ntw = ComponentNetwork(
         mixer,
     ],
 )
+
+row.set_spanwise_constant('geo_hh0')
 
 if ntw.num_components == 2:
     ntw.system.add_equation(IsentropicProperties(), (0, 3))
@@ -211,7 +197,8 @@ solution = solve_root_problem(
     bnd,
     suppress_output=False,
     perturbate_guess=True,
-    delta_pert=0.01,
+    delta_pert=0.001,
+    num_samples=10,
 )
 
 ntw.system.write_solution_to_nodes(solution)
@@ -340,8 +327,8 @@ if ntw.num_components > 1:
 
     print(f'Incompressible vs actual zeta {zeta_inc}, {zeta_actual}')
 
-# plt.show()
-plt.close('all')
+plt.show()
+# plt.close('all')
 
 globals().update(
     residual_debugger(

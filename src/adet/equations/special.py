@@ -34,3 +34,21 @@ class ThermoVarsAdder(EquationBase):
         # stc_p_critical0,
     ):
         return ()
+
+
+class GeometricalAdder(EquationBase):
+    """
+    This is a `ghost` equation, but don't get scared!
+    It essentially forces to add variables
+    to the system at runtime without them appearing
+    explicitly in any equation, it is currently to force
+    the addition of thermodynamic vars to be used in state updates
+    """
+
+    def residual(
+        self,
+        geo_rr_midspan0,
+        geo_height0,
+        geo_meridional_angle0,
+    ):
+        return ()

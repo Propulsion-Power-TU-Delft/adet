@@ -31,8 +31,9 @@ from adet.equations.geometrical import (
     MidspanVelocities,
 )
 from adet.equations.nondimensional import EnthalpyDropCoefficient
+from adet.equations.special import GeometricalAdder
 from adet.geometry import BezierCurve, StraightLine
-from adet.losses.basic import PercentageEntropyLoss, PlaceHolderLoss, ZeroDeviation
+from adet.losses.basic import PlaceHolderLoss, ZeroDeviation
 from adet.losses.mixing import MixingMomentumBalances
 from adet.node import FlowNode
 
@@ -175,9 +176,9 @@ class VanelessDiffuser(BaseComponent):
     from_previous_node = ABSOLUTE_LINK + GEOM_LINK
 
     def _post_init(self):
+        self.inlet_bc['kin']['omega'] = 0
         # WARN: Hypothesis => Null axial chord = exactly radial diffuser
         self.outlet_bc['geo']['chord_ax'] = 0
-        self.inlet_bc['kin']['omega'] = 0
 
 
 class DownstreamMixer(BaseComponent):
@@ -187,7 +188,6 @@ class DownstreamMixer(BaseComponent):
         (MassConservation, (0, 1)),
         (MixingMomentumBalances, (0, 1)),
         (DeviationAngle, (0, 1)),
-        # (SimplifiedMixingBalances, (0, 1)),
         (PlaceHolderLoss, (0, 1)),
         # *** Blockage
         (BladeBlockage, 0),
@@ -197,6 +197,9 @@ class DownstreamMixer(BaseComponent):
         (BladePitch, 1),
         # Creates a dummy metal angle (for plots)
         (ZeroDeviation, 1),
+        # Special adders
+        (GeometricalAdder, 0),
+        (GeometricalAdder, 1),
     ]
 
     # Keep the absolute triangle
@@ -222,7 +225,7 @@ class DownstreamMixer(BaseComponent):
         ]
     )
 
-    constant_variables = [
+    constant_variables = GEOM_LINK + [
         # Keep the span geometry constant
         'geo_hh',
         'geo_rr',
@@ -230,54 +233,7 @@ class DownstreamMixer(BaseComponent):
         'kin_omega',
         # Keep geometry
         'geo_num_blades',
-    ] + GEOM_LINK
-
-
-class DummyMixer(BaseComponent):
-    base_equations = [
-        # *** Fundamental
-        (ConstantEnergy, (0, 1)),
-        (MassConservation, (0, 1)),
-        (PercentageEntropyLoss, (0, 1)),
-        # *** Blockage
-        (BladeBlockage, 0),
-        (ZeroBlockage, 1),  # No blockage mixed out
-        # Uniform meridional distribution
-        (MeridionalUniform, 0),
-        (MeridionalUniform, 1),
-        # *** Definition of channel massflow and num_blades
-        (BladePitch, 0),
-        (BladePitch, 1),
     ]
-
-    # Keep the absolute triangle
-    # energy, meridional geometry
-    from_previous_node = (
-        ABSOLUTE_LINK
-        + GEOM_LINK
-        + [
-            # Get the base pressure
-            'oth_p_base',
-            # Stay in the same MRF as blade row
-            'kin_omega',
-            # Geometry
-            'geo_num_blades',
-            'geo_metal_angle',
-            # Boundary layer and blade thicknesses
-            'geo_bld_thick',
-            'oth_disp_thick',
-            'oth_mom_thick',
-        ]
-    )
-
-    constant_variables = [
-        # Keep reference frame alive
-        'kin_omega',
-        # Keep geometry
-        'kin_Vt',
-        'kin_Vm',
-        'geo_num_blades',
-    ] + GEOM_LINK
 
 
 @dataclass
