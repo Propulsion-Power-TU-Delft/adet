@@ -27,28 +27,19 @@ def get_index(argument: str) -> int:
     Get an index from a string, where the index is supposed to
     be at the end of the string formatted as <string><index>
     """
-    # \d = digits
     string_index = re.findall(r'\d+$', argument)
 
-    if len(string_index) > 1:
-        raise ValueError(
-            f'Badly formatted argument: {string_index}. Please provide'
-            f'the indices at the end e.g. `kine_V0`.'
-        )
+    if not string_index:
+        raise AttributeError(f'No digits in `{argument}`')
 
     return int(string_index[0])
 
 
-def verify_string_pattern(argument: str, reference_pattern: str) -> bool:
-    """Verify whether the string argument satisfies exactly a reference pattern"""
-    regex_match = re.findall(reference_pattern, argument)
-    if not regex_match:
-        return False
-    else:
-        if len(regex_match) == 1:
-            return True
-        else:
-            return False
+def validate_arg_format(argument: str, include_digits: bool):
+    states_id_re = '|'.join(get_args(NodeStatesNames))
+    digits = r'\d+$' if include_digits else ''
+    PATTERN = rf'^({states_id_re})_[a-zA-Z0-9_]*' + digits
+    return re.match(PATTERN, argument)
 
 
 def get_arg_type(argument: str, prefix_length: int = 4) -> str:
@@ -69,7 +60,9 @@ def get_arg_state(argument: str, prefix_length: int = 3) -> NodeStatesNames:
         state_id = cast(NodeStatesNames, state_id)
         return state_id
     else:
-        raise ValueError(f'Unknown variable type {state_id}')
+        raise ValueError(
+            f'Unknown state for `{argument}`, valid states are:\n{STATE_NAMES}'
+        )
 
 
 def get_arg_specs(argument: str) -> tuple[NodeStatesNames, str, int]:

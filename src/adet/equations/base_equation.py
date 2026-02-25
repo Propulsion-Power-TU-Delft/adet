@@ -8,7 +8,7 @@ import sympy as sp
 import casadi as cs
 
 from adet.fluid.casadi_eos import CasadiEos
-from adet.tools.strings import verify_string_pattern, get_arg_state
+from adet.tools.strings import get_index, validate_arg_format, get_arg_state
 from adet.tools.context import override_operators
 from adet.constants import NodeStatesNames
 
@@ -110,37 +110,20 @@ class EquationBase(ABC):
         return tuple(validated_arguments)
 
     def _validate_argument(self, full_argument: str):
-        VALID_STATES = get_args(NodeStatesNames)
-        states_id_re = '|'.join(VALID_STATES)
-        TEMPLATE_PATTERN = rf'^({states_id_re})_[a-zA-Z0-9_]*\d+$'
-
-        # Check for trailing digits (node index)
-        # We allow digits anywhere in the name (e.g., 'ss0' in 'stc_p_ss0_0')
-        # Only the trailing digits are interpreted as the node index
-        arg_index = re.findall(r'\d+$', full_argument)
-
-        if not arg_index:
+        try:
+            arg_index = get_index(full_argument)
+        except AttributeError:
             logger.info(f'No index found, assigning relative node 0 to {full_argument}')
-            arg_index = '0'
-            full_argument += arg_index
-        else:
-            arg_index = arg_index[0]
+            arg_index = 0
+            full_argument += '0'
 
-        if verify_string_pattern(full_argument, TEMPLATE_PATTERN) is False:
+        if not validate_arg_format(full_argument, include_digits=True):
             logger.warning(
                 f'Argument {full_argument[:-1]} in equation `{self.__class__.__name__}`'
                 f' does not declare a state or has an unrecognized format, '
                 f'assigning to `oth` state'
             )
             full_argument = 'oth_' + full_argument
-
-        # Validate the node state
-        var_state = get_arg_state(full_argument)
-        if var_state not in VALID_STATES:
-            raise ValueError(
-                f'Unknown state for `{full_argument}`, valid states are:\n'
-                f'{VALID_STATES}'
-            )
 
         return full_argument, int(arg_index)
 
