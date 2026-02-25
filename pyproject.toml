@@ -16,7 +16,6 @@ dependencies = [
     "optimistix>=0.0.11",
     "pint>=0.25",
     "rich>=14.2.0",
-    "scipy>=1.16.2",
     "sympy>=1.14.0",
 ]
 
@@ -35,7 +34,6 @@ dev = [
     "pdbpp>=0.11.7",
     "pytest>=8.4.2",
     "ruff>=0.14.3",
-    "scipy-stubs>=1.16.2.4",
 ]
 docs = [
     "myst-parser>=4.0.1",

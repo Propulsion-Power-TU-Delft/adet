@@ -4,17 +4,24 @@ from typing import Any
 import casadi as cs
 import numpy as np
 from numpy.typing import NDArray
-import scipy.stats.qmc as qmc
-
 from adet.tools.context import dummy_context, output_suppression
 
 
 logger = logging.getLogger(__name__)
 
 
+# NOTE: I am using this instead of qmc because
+# scipy somehow breaks pdb on windows
+def _latin_hypercube(n_dims, n_samples):
+    result = np.zeros((n_samples, n_dims))
+    for i in range(n_dims):
+        perm = np.random.permutation(n_samples)
+        result[:, i] = (perm + np.random.uniform(size=n_samples)) / n_samples
+    return result * 2 - 1  # scale [0, 1] -> [-1, 1]
+
+
 def generate_perturbated_samples(guess, num_samples, delta_pert):
-    sampler = qmc.LatinHypercube(len(guess))
-    samples = qmc.scale(sampler.random(num_samples), -delta_pert, delta_pert)
+    samples = _latin_hypercube(len(guess), num_samples) * delta_pert
 
     if isinstance(guess, list):
         return np.concatenate(guess).flatten() + samples
