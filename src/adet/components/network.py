@@ -1,4 +1,3 @@
-import re
 from collections import defaultdict
 from typing import Generic, Mapping, Sequence, Type, TypeVar
 
@@ -188,14 +187,6 @@ class ComponentNetwork(Generic[T]):
 
     def build(self, scaled: bool = True):
         self.system.build(scaled)
-
-        # Write nodes on components for easier access
-        for comp_idx, comp in enumerate(self.components):
-            inlet_node_idx = 2 * comp_idx  # Of the current component
-            outlet_node_idx = inlet_node_idx + 1  # Of the previous component
-
-            comp.inlet_node = self.system.nodes[inlet_node_idx]
-            comp.outlet_node = self.system.nodes[outlet_node_idx]
 
     def get_scaled_guess(self, manual_values: Mapping[str, ArrayLike] = {}):
         """Simple passthrough"""

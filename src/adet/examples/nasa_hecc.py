@@ -294,47 +294,57 @@ if __name__ == '__main__':
     n0 = ntw_hecc.system.nodes[0]
     n1 = ntw_hecc.system.nodes[1]
 
-    if PLOTS:
-        fig, axs = plt.subplots(2, 2, figsize=(8, 20))
-        for cmp_idx, cmp in enumerate(ntw_hecc.components):
-            if cmp.inlet_node is None or cmp.outlet_node is None:
-                raise ValueError('Missing nodes')
+    fig, axs = plt.subplots(2, 2, figsize=(8, 20))
+    for cmp_idx, comp in enumerate(ntw_hecc.components):
+        inlet_node = comp.get_inlet_node(ntw_hecc)
+        outlet_node = comp.get_outlet_node(ntw_hecc)
 
-            node_idx = 0
-            for n in (cmp.inlet_node, cmp.outlet_node):
-                ax = axs[cmp_idx][node_idx]
+        if inlet_node is None or outlet_node is None:
+            raise ValueError('Missing nodes')
 
-                ax.set_title(f'Node number {2 * cmp_idx + node_idx}')
-                ax.set_aspect('equal')
-                n.kin.plot(n.geo, 8, ax)
+        node_idx = 0
+        for n in (inlet_node, outlet_node):
+            ax = axs[cmp_idx][node_idx]
 
-                node_idx += 1
+            ax.set_title(f'Node number {2 * cmp_idx + node_idx}')
+            ax.set_aspect('equal')
+            n.kin.plot(n.geo, 8, ax)
 
-        fig, ax = plt.subplots()
-        ax.set_aspect('equal')
-        offset = 0.0
-        for c in ntw_hecc.components:
-            if not c.inlet_node or not c.outlet_node:
-                raise ValueError('missing nodes')
+            node_idx += 1
 
-            lines = plot_from_nodes(
-                c.inlet_node,
-                c.outlet_node,
-                False,
-                offset,
-            )
+    fig, ax = plt.subplots()
+    ax.set_aspect('equal')
+    offset = 0.0
+    for comp in ntw_hecc.components:
+        inlet_node = comp.get_inlet_node(ntw_hecc)
+        outlet_node = comp.get_outlet_node(ntw_hecc)
+        if not inlet_node or not outlet_node:
+            raise ValueError('missing nodes')
 
-            offset += c.outlet_node.geo.chord_ax[0]
+        lines = plot_from_nodes(
+            inlet_node,
+            outlet_node,
+            False,
+            offset,
+        )
 
-        print(ntw_hecc.system.nodes[1].oth)
-        plt.show(block=True)
-        # plt.close('all')
+        offset += outlet_node.geo.chord_ax[0]
 
-        plt.plot(n1.oth.delta_hmass_loading)
-        plt.plot(n1.oth.delta_hmass_clearance)
-        plt.plot(n1.oth.delta_hmass_skin)
-        plt.ylabel('Enthalpy loss [J / kg / K]')
-        plt.xlabel('Spanwise station []')
-        plt.legend(['loading', 'clearance', 'skin'])
-        plt.grid()
+    print(n1.oth)
+    show_plots = input('Show plots? [y/N] ').strip().lower() == 'y'
+    if show_plots:
         plt.show()
+    else:
+        plt.close('all')
+
+    plt.plot(n1.oth.delta_hmass_loading)
+    plt.plot(n1.oth.delta_hmass_clearance)
+    plt.plot(n1.oth.delta_hmass_skin)
+    plt.ylabel('Enthalpy loss [J / kg / K]')
+    plt.xlabel('Spanwise station []')
+    plt.legend(['loading', 'clearance', 'skin'])
+    plt.grid()
+    if show_plots:
+        plt.show()
+    else:
+        plt.close('all')

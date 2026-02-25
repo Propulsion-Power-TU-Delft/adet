@@ -12,7 +12,7 @@ from pint import Quantity
 from adet.assembly import CasadiSystem
 from adet.components import BladeRow, Inlet, Shaft
 from adet.components import ComponentNetwork
-from adet.components.blade_row import RowGeometry
+from adet.components.blade_row import RowGeometry, plot_from_nodes
 from adet.equations.base_equation import EquationBase, LossApplier
 from adet.equations.definitions import (
     BoundaryLayerRatios,
@@ -20,7 +20,12 @@ from adet.equations.definitions import (
     IsentropicProperties,
     RepeatedStage,
 )
-from adet.equations.geometrical import MinimalCamberLine, ParabolicCamberline
+from adet.equations.fundamental import BladeBlockage, ZeroBlockage
+from adet.equations.geometrical import (
+    MeridionalVariable,
+    MinimalCamberLine,
+    ParabolicCamberline,
+)
 from adet.equations.nondimensional import (
     FlowCoefficient,
     StaticTotalDegreeOfReaction,
@@ -89,13 +94,14 @@ class LossMatcher(LossApplier):
 
 
 EXTRA_EQUATIONS: dict[Type[EquationBase], int | tuple[int, ...]] = {
-    ClearanceByHeight: 1,
     IsentropicProperties: (0, 1),
+    BladeBlockage: 1,
     BoundaryLayerRatios: 1,
     SieverdingBasePressure: (0, 1),
     SecondaryBSM: (0, 1),
     DentonProfileLoss: (0, 1),
     DentonLeakageLoss: (0, 1),
+    ClearanceByHeight: 1,
 }
 
 # === DESIGN MAP PARAMETERS
@@ -152,6 +158,7 @@ _bounds_reg.reset()
 _bounds_reg.from_dict(
     {
         'hdropCoeff': (-8.0, -0.4),
+        'eta_tt': (0.3, 1.0),
         'U': (0.0, 200.0),
     }
 )
@@ -238,10 +245,12 @@ rotor.set_boundary_cond('oth_flowCoeff1', PHI_RANGE[0])
 rotor.set_boundary_cond('oth_reactDegree_ts1', 0.3)
 rotor.set_boundary_cond('oth_ts_loadCoeff1', PSI_RANGE[0])
 
-final_node = ntw.num_components * 2 - 1
+final_node = ntw.num_components * 2 - 1  # = 3
 
 stator.set_spanwise_constant('geo_hh0', 'geo_chord_ax1')
 rotor.set_spanwise_constant('geo_chord_ax1')
+rotor.copy_from_previous('geo_hh', 'geo_rr')
+rotor.remove_equation(MeridionalVariable, 0)
 ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, final_node))
 ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, 2, 3))
 ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, final_node))
@@ -253,7 +262,6 @@ ntw.system.build(SCALED)
 flow_coeff_name = f'oth_flowCoeff{final_node}'
 load_coeff_name = f'oth_ts_loadCoeff{final_node}'
 
-# Constraint indices for the isentropic system (re-fetched after loss rebuild below)
 flow_coeff_idx = ntw.system.constraints.index(flow_coeff_name)
 load_coeff_idx = ntw.system.constraints.index(load_coeff_name)
 
@@ -276,20 +284,41 @@ solution = solve_root_problem(
 )
 
 # ================================================
-# Transition to losses (mirrors axial_orc.py second phase)
+# Transition to losses — rebuild without mixer
 sol_dict_is = ntw.system.solution_to_dict(solution)
 
-ntw.system.remove_equation_type(LossApplier)
 rotor.remove_equation(INITIAL_LOSS.__class__, (0, 1))
 stator.remove_equation(INITIAL_LOSS.__class__, (0, 1))
+rotor.remove_equation(ZeroBlockage, 1)
+stator.remove_equation(ZeroBlockage, 1)
 for eq, pos in EXTRA_EQUATIONS.items():
-    rotor.add_equation(eq(), pos)
     stator.add_equation(eq(), pos)
-rotor.add_equation(LossMatcher(tip_gap=True), (0, 1))
+    rotor.add_equation(eq(), pos)
 stator.add_equation(LossMatcher(tip_gap=False), (0, 1))
+rotor.add_equation(LossMatcher(tip_gap=True), (0, 1))
+
+ntw = ComponentNetwork(
+    fluid_settings,
+    inlet,
+    CasadiSystem(num_span=NUM_SPAN),
+    components=[stator, rotor],
+)
+
+# No mixer: rotor stays at nodes 2, 3 — no key remapping needed
+rotor_in, rotor_out = (2, 3)
+final_node = rotor_out  # = 3
+
+ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, rotor_out))
+ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, rotor_in, rotor_out))
+ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, rotor_out))
+ntw.system.add_equation(RepeatedStage(), (0, 1, rotor_in, rotor_out))
+
 ntw.build()
 
-# Re-fetch constraint indices after rebuild
+# Update constraint names and indices for the loss system
+flow_coeff_name = f'oth_flowCoeff{final_node}'
+load_coeff_name = f'oth_ts_loadCoeff{final_node}'
+
 flow_coeff_idx = ntw.system.constraints.index(flow_coeff_name)
 load_coeff_idx = ntw.system.constraints.index(load_coeff_name)
 logger.info(
@@ -351,14 +380,11 @@ def extract_meridional():
         r_tip += [rr0 + hh0 / 2, rr1 + hh1 / 2]
         r_mid += [rr0, rr1]
 
-        # Camberline at midspan
         alpha_in = float(n0.geo.metal_angle[midspan])
         alpha_out = float(n1.geo.metal_angle[midspan])
         pitch = float(n1.geo.pitch[midspan])
 
-        a, b, _ = _pbl._compute_parabola(alpha_in, alpha_out, chord_ax)
         xc = np.linspace(0, chord_ax, N_CAMBER_PTS)
-        yc = a * xc**2 + b * xc
 
         mer_angle_in = float(
             n0.geo.get('meridional_angle').to_base_units().magnitude[0]
@@ -372,7 +398,6 @@ def extract_meridional():
                 'x_offset': x_offset,
                 'pitch': pitch,
                 'xc': xc,
-                'yc': yc,
                 'alpha_in': alpha_in,
                 'alpha_out': alpha_out,
                 'alpha_hub_in': float(n0.geo.metal_angle[0]),
@@ -416,17 +441,35 @@ def extract_eta_tt(sol):
     return np.nan
 
 
-prev_solution = solution
+_phi_span = PHI_RANGE[-1] - PHI_RANGE[0]
+_psi_span = PSI_RANGE[-1] - PSI_RANGE[0]
+
+
+def find_closest_solution(
+    phi: float,
+    psi: float,
+    store: dict[tuple[int, int], object],
+) -> object:
+    """Return the solution whose (phi, psi) grid point is closest to the target."""
+    best_key = min(
+        store,
+        key=lambda k: (
+            ((PHI_RANGE[k[0]] - phi) / _phi_span) ** 2
+            + ((PSI_RANGE[k[1]] - psi) / _psi_span) ** 2
+        ),
+    )
+    return store[best_key]
+
+
+solution_store: dict[tuple[int, int], object] = {}
+solution_store[(0, 0)] = solution
 converged_map[0, 0] = True
 eta_tt_map[0, 0] = extract_eta_tt(solution)
 
-# Save meridional at (0,0)
+# Save meridional at (0, 0)
+ntw.system.write_solution_to_nodes(solution)
 if 0 in MERID_INDICES:
-    ntw.system.write_solution_to_nodes(solution)
-    if 0 in MERID_INDICES:
-        for j_save in MERID_INDICES:
-            if j_save == 0:
-                meridional_data[(0, 0)] = extract_meridional()
+    meridional_data[(0, 0)] = extract_meridional()
 
 for i, phi in enumerate(PHI_RANGE):
     for j, psi in enumerate(PSI_RANGE):
@@ -435,16 +478,21 @@ for i, phi in enumerate(PHI_RANGE):
 
         ntw.system.data.constraints_values[flow_coeff_idx] = np.array([phi])
         ntw.system.data.constraints_values[load_coeff_idx] = np.array([psi])
-        kn = ntw.system.get_scaled_constraints()
+        kn_loss = ntw.system.get_scaled_constraints()
 
+        warm_start = find_closest_solution(phi, psi, solution_store)
         logger.info(f'Solving phi={phi:.3f}, psi={psi:.3f}')
         try:
             sol = solve_root_problem(
-                rootfinder_kinsol, prev_solution, kn, suppress_output=True
+                rootfinder_kinsol,
+                warm_start,
+                kn_loss,
+                bnd_loss,
+                suppress_output=True,
             )
             eta_tt_map[i, j] = extract_eta_tt(sol)
             converged_map[i, j] = True
-            prev_solution = sol
+            solution_store[(i, j)] = sol
 
             # Save meridional channel at selected grid points
             if i in MERID_INDICES and j in MERID_INDICES:
@@ -469,7 +517,6 @@ for (i, j), data in meridional_data.items():
     merid_save[f'{key}_psi_val'] = np.array([PSI_RANGE[j]])
     for br_idx, cl in enumerate(data['camberlines']):
         merid_save[f'{key}_br{br_idx}_xc'] = cl['xc']
-        merid_save[f'{key}_br{br_idx}_yc'] = cl['yc']
         merid_save[f'{key}_br{br_idx}_pitch'] = np.array([cl['pitch']])
         merid_save[f'{key}_br{br_idx}_x_offset'] = np.array([cl['x_offset']])
         merid_save[f'{key}_br{br_idx}_alpha_in'] = np.array([cl['alpha_in']])
@@ -479,7 +526,7 @@ np.savez(Path(__file__).parent / 'meridional_channels.npz', **merid_save)
 logger.info(f'Saved {len(meridional_data)} meridional channels with camberlines')
 
 # ================================================
-# Plot meridional channels  (axial_orc.py style: blade outlines, stator/rotor colors)
+# Plot meridional channels (NR x NR grid)
 NR = len(MERID_INDICES)
 row_colors = ['steelblue', 'coral']  # stator, rotor
 
@@ -507,7 +554,6 @@ for row, i in enumerate(MERID_INDICES):
                 )
                 for line in geom.plot_meridional_profile(color, ax=ax):
                     line.set_linewidth(2.5)
-                # Midspan dots at LE and TE
                 ax.plot(x_offset_plot, cl['rr0'], 'o', color='r', markersize=4)
                 ax.plot(
                     x_offset_plot + cl['chord_ax'],
@@ -516,7 +562,6 @@ for row, i in enumerate(MERID_INDICES):
                     color='r',
                     markersize=4,
                 )
-                # Hub (blue) and tip (green) tick markers
                 ax.plot(
                     x_offset_plot,
                     cl['rr0'] - cl['hh0'] / 2,
@@ -546,7 +591,6 @@ for row, i in enumerate(MERID_INDICES):
                     markersize=8,
                 )
                 x_offset_plot += cl['chord_ax'] * 1.1
-            # Axis reference line
             ax.plot(
                 [0.0, x_offset_plot],
                 [0.0, 0.0],
@@ -569,7 +613,7 @@ fig_m.tight_layout()
 fig_m.savefig(Path(__file__).parent / 'meridional_channels.png', dpi=150)
 
 # ================================================
-# Plot camberlines  (axial_orc.py style: midspan=black, hub=orange, tip=seagreen)
+# Plot camberlines (NR x NR grid, axial_orc.py style)
 fig_c, ax_c = plt.subplots(NR, NR, figsize=(4 * NR, 3 * NR), sharex=False, sharey=False)
 fig_c.suptitle('Camberlines at midspan (3 blades per row)', fontsize=14)
 
@@ -579,28 +623,35 @@ for row, i in enumerate(MERID_INDICES):
         key = (i, j)
         if key in meridional_data:
             d = meridional_data[key]
-            for br_idx, cl in enumerate(d['camberlines']):
+            for cl in d['camberlines']:
                 # Midspan blades in black
                 for blade_num in range(N_BLADES_PLOT):
-                    ax.plot(
-                        cl['x_offset'] + cl['xc'],
-                        blade_num * cl['pitch'] + cl['yc'],
-                        color='k',
-                        linewidth=1.5,
+                    _pbl.plot_camber_line(
+                        ax,
+                        cl['alpha_in'],
+                        cl['alpha_out'],
+                        cl['chord_ax'],
+                        'k',
+                        axial_offset=cl['x_offset'],
+                        tangential_offset=blade_num * cl['pitch'],
                     )
                 # Hub camberline (orange)
-                a_h, b_h, _ = _pbl._compute_parabola(
-                    cl['alpha_hub_in'], cl['alpha_hub_out'], cl['chord_ax']
+                _pbl.plot_camber_line(
+                    ax,
+                    cl['alpha_hub_in'],
+                    cl['alpha_hub_out'],
+                    cl['chord_ax'],
+                    'orange',
+                    axial_offset=cl['x_offset'],
                 )
-                yc_h = a_h * cl['xc'] ** 2 + b_h * cl['xc']
-                ax.plot(cl['x_offset'] + cl['xc'], yc_h, color='orange', linewidth=1.5)
                 # Tip camberline (seagreen)
-                a_t, b_t, _ = _pbl._compute_parabola(
-                    cl['alpha_tip_in'], cl['alpha_tip_out'], cl['chord_ax']
-                )
-                yc_t = a_t * cl['xc'] ** 2 + b_t * cl['xc']
-                ax.plot(
-                    cl['x_offset'] + cl['xc'], yc_t, color='seagreen', linewidth=1.5
+                _pbl.plot_camber_line(
+                    ax,
+                    cl['alpha_tip_in'],
+                    cl['alpha_tip_out'],
+                    cl['chord_ax'],
+                    'seagreen',
+                    axial_offset=cl['x_offset'],
                 )
             ax.set_title(
                 rf'$\phi$={PHI_RANGE[i]:.2f}, $\psi_{{ts}}$={PSI_RANGE[j]:.1f}',
@@ -617,7 +668,104 @@ fig_c.tight_layout()
 fig_c.savefig(Path(__file__).parent / 'camberlines.png', dpi=150)
 
 # ================================================
-# Plot design map  (phi on x-axis, psi on y-axis)
+# Reference design point plot (axial_orc.py style: meridional + camberlines side by side)
+fig_ref, (ax_merid, ax_camber) = plt.subplots(1, 2, figsize=(14, 6))
+fig_ref.suptitle(
+    rf'Reference design: $\phi$={PHI_RANGE[0]:.2f}, $\psi_{{ts}}$={PSI_RANGE[0]:.1f}',
+    fontsize=14,
+)
+
+ax_merid.set_title('Meridional profile', fontsize=14)
+ax_merid.set_ylabel('Radius [m]', fontsize=14)
+ax_merid.set_xlabel('Axial [m]', fontsize=14)
+ax_merid.axis('equal')
+ax_merid.grid(True, alpha=0.3)
+
+ax_camber.set_title('Camberlines at midspan', fontsize=14)
+ax_camber.set_ylabel('Tangential [m]', fontsize=14)
+ax_camber.set_xlabel('Axial [m]', fontsize=14)
+ax_camber.axis('equal')
+ax_camber.grid(True, alpha=0.3)
+
+# Write reference solution (0, 0) to nodes for live plotting
+ntw.system.data.constraints_values[flow_coeff_idx] = np.array([PHI_RANGE[0]])
+ntw.system.data.constraints_values[load_coeff_idx] = np.array([PSI_RANGE[0]])
+ntw.system.write_solution_to_nodes(solution)
+
+offset = 0.0
+for comp in ntw.components:
+    if not isinstance(comp, BladeRow):
+        continue
+    idx_map = comp.network_maps[ntw]
+    inl_node = ntw.system.nodes[idx_map[0]]
+    out_node = ntw.system.nodes[idx_map[1]]
+    ax_chord = out_node.geo.chord_ax[0]
+
+    is_stator = comp.row_type == 'stator'
+    color = 'steelblue' if is_stator else 'coral'
+
+    plot_from_nodes(inl_node, out_node, False, offset, ax=ax_merid, color=color)
+    ax_merid.plot(NUM_SPAN * [offset], inl_node.geo.rr, 'o', color='r')
+    ax_merid.plot(NUM_SPAN * [offset] + ax_chord, out_node.geo.rr, 'o', color='r')
+    ax_merid.plot(
+        NUM_SPAN * [offset], inl_node.geo.rr + inl_node.geo.hh / 2, '_', color='g'
+    )
+    ax_merid.plot(
+        NUM_SPAN * [offset], inl_node.geo.rr - inl_node.geo.hh / 2, '_', color='b'
+    )
+    ax_merid.plot(
+        NUM_SPAN * [offset] + ax_chord,
+        out_node.geo.rr + out_node.geo.hh / 2,
+        '_',
+        color='g',
+    )
+    ax_merid.plot(
+        NUM_SPAN * [offset] + ax_chord,
+        out_node.geo.rr - out_node.geo.hh / 2,
+        '_',
+        color='b',
+    )
+
+    midspan_idx = ntw.system.num_span // 2
+    inlet_angle = inl_node.geo.metal_angle[midspan_idx]
+    outlet_angle = out_node.geo.metal_angle[midspan_idx]
+    chord_ax = out_node.geo.chord_ax[midspan_idx]
+    pitch = out_node.geo.pitch[midspan_idx]
+
+    for blade_num in range(N_BLADES_PLOT):
+        _pbl.plot_camber_line(
+            ax_camber,
+            inlet_angle,
+            outlet_angle,
+            chord_ax,
+            'k',
+            axial_offset=offset,
+            tangential_offset=blade_num * pitch,
+        )
+    _pbl.plot_camber_line(
+        ax_camber,
+        inl_node.geo.metal_angle[0],
+        out_node.geo.metal_angle[0],
+        out_node.geo.chord_ax[0],
+        'orange',
+        axial_offset=offset,
+    )
+    _pbl.plot_camber_line(
+        ax_camber,
+        inl_node.geo.metal_angle[-1],
+        out_node.geo.metal_angle[-1],
+        out_node.geo.chord_ax[-1],
+        'seagreen',
+        axial_offset=offset,
+    )
+
+    offset += ax_chord * 1.1
+
+ax_merid.plot([0.0, offset], [0.0, 0.0], color='r', linestyle='dashdot', linewidth=2.5)
+fig_ref.tight_layout()
+
+# ================================================
+# Plot design map (phi on x-axis, psi on y-axis)
 fig, ax = plt.subplots(figsize=(8, 6))
 
 eta_masked = np.where(converged_map, eta_tt_map, np.nan)

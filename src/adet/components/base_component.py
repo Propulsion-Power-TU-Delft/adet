@@ -2,7 +2,9 @@ from abc import ABC
 import inspect
 from collections import defaultdict
 import logging
-from typing import TYPE_CHECKING, ClassVar, Literal, TypeAlias, Type, Any
+from typing import TYPE_CHECKING, ClassVar, TypeAlias, Type, Any, Literal
+
+from casadi import ne
 
 from adet.constants import ArrayLike
 from pint.facets.plain import PlainQuantity
@@ -12,7 +14,12 @@ from adet.equations import EquationBase, UniqueEquation
 from adet.equations.base_equation import LossApplier
 from adet.node import FlowNode
 from adet.tools.iter import ensure_tuple
-from adet.tools.strings import get_arg_specs, get_arg_state, get_arg_type
+from adet.tools.strings import (
+    get_arg_specs,
+    get_arg_state,
+    get_arg_type,
+    validate_arg_format,
+)
 
 if TYPE_CHECKING:
     from adet.assembly import CasadiSystem
@@ -106,10 +113,6 @@ class BaseComponent(ABC):
         # Check for duplicates
         self._equation_checks()
 
-        # === Convenient node access
-        self.inlet_node: FlowNode | None = None
-        self.outlet_node: FlowNode | None = None
-
         # Post-init for child classes
         self._post_init()
 
@@ -120,7 +123,7 @@ class BaseComponent(ABC):
         for arg in copy_from_prev:
             self.copy_from_previous(arg)
         for arg in comp_const:
-            self.set_component_constant(arg)
+            self.set_component_constants(arg)
 
     def attach_network(self, network: 'ComponentNetwork'):
         logger.debug(f'Attached network {network} to {self}')
@@ -133,6 +136,14 @@ class BaseComponent(ABC):
     @property
     def outlet_bc(self):
         return self._boundary_conditions[1]
+
+    def get_inlet_node(self, network: 'ComponentNetwork'):
+        ntw_map = self.network_maps[network]
+        return network.system.nodes[ntw_map[0]]
+
+    def get_outlet_node(self, network: 'ComponentNetwork'):
+        ntw_map = self.network_maps[network]
+        return network.system.nodes[ntw_map[1]]
 
     @property
     def network_maps(self):
@@ -307,6 +318,7 @@ class BaseComponent(ABC):
                 f'Adding {equation} in position {abs_position} '
                 f'to network {ntw} attached to {self} '
             )
+            # TODO: Use merge logic here?
             ntw.system.add_equation(equation, abs_position)
 
     def equations_from_dict(self, equations: dict[EquationBase, int | tuple[int, ...]]):
@@ -347,61 +359,75 @@ class BaseComponent(ABC):
             pass
 
     def set_boundary_cond(self, argument: str, value: ArrayLike | PlainQuantity):
-        self._system_interaction_helper('set_bc', argument, value)
+        self._bound_cond_helper('add', argument, value)
 
     def rm_boundary_cond(self, argument: str):
-        self._system_interaction_helper('rm_bc', argument)
+        self._bound_cond_helper('rm', argument)
 
-    def set_component_constant(self, argument: str):
-        self._system_interaction_helper('const', argument)
+    def copy_from_previous(self, *arguments: str):
+        self._equalities_helper('prev', *arguments)
+
+    def set_component_constants(self, *arguments: str):
+        self._equalities_helper('const', *arguments)
+
+    def bc_from_dict(self, bound_conds: dict[str, ArrayLike]):
+        for arg, value in bound_conds.items():
+            self.set_boundary_cond(arg, value)
+
+    def _bound_cond_helper(
+        self,
+        mode: Literal['add', 'rm'],
+        argument: str,
+        value: ArrayLike | PlainQuantity | None = None,
+    ):
+        validate_arg_format(argument, include_digits=True)
+        arg_state, arg_type, rel_idx = get_arg_specs(argument)
+        if mode == 'add':
+            self._boundary_conditions[rel_idx][arg_state][arg_type] = value
+            if value is None:
+                raise ValueError(f'Missing value to set {argument}')
+
+            for ntw in self._attached_networks:
+                abs_idx = self.network_maps[ntw][rel_idx]
+                ntw.system.boundary_conditions[abs_idx][arg_state][arg_type] = value
+        else:
+            self._boundary_conditions[rel_idx][arg_state].pop(arg_type)
+            for ntw in self._attached_networks:
+                abs_idx = self.network_maps[ntw][rel_idx]
+                ntw.system.boundary_conditions[abs_idx][arg_state].pop(arg_type)
+
+    def _equalities_helper(self, mode: Literal['const', 'prev'], *arguments: str):
+        for arg in arguments:
+            validate_arg_format(arg, include_digits=False)
+            arg_state, arg_type = (get_arg_state(arg), get_arg_type(arg))
+            arg_no_idx = f'{arg_state}_{arg_type}'
+
+            # Add to self
+            if mode == 'const':
+                self._const_variables.add(arg_no_idx)
+            elif mode == 'prev':
+                self._from_prev_node.add(arg_no_idx)
+
+            # Add to networks
+            for ntw in self._attached_networks:
+                if mode == 'const':
+                    equality = (
+                        f'{arg_no_idx}{i}' for i in self.network_maps[ntw].values()
+                    )
+                elif mode == 'prev':
+                    inl_idx = min(self.network_maps[ntw].values())
+                    equality = (
+                        f'{arg_state}_{arg_type}{inl_idx - 1}',  # outlet of prev
+                        f'{arg_state}_{arg_type}{inl_idx}',  # inlet of self
+                    )
+
+                ntw.system.add_equalities(tuple(equality))
 
     def set_spanwise_constant(self, *arguments: str):
         for arg in arguments:
-            self._system_interaction_helper('span', arg)
-
-    def copy_from_previous(self, *arguments: str):
-        for arg in arguments:
-            self._system_interaction_helper('prev', arg)
-
-    def _system_interaction_helper(
-        self,
-        mode: Literal['set_bc', 'rm_bc', 'span', 'const', 'prev'],
-        argument: str,
-        value: ArrayLike | PlainQuantity = -1,
-    ):
-        # Only `set` and `rm` you can work unattached
-        self._check_attached_network(strict=mode not in ('set', 'rm'))
-        for ntw in self._attached_networks:
-            if mode in ('const', 'prev'):
-                arg_state = get_arg_state(argument)
-                arg_type = get_arg_type(argument)
-                abs_indices = self.network_maps[ntw].values()
-                arg_no_idx = f'{arg_state}_{arg_type}'
-                if mode == 'const':
-                    abs_equality = tuple(f'{arg_no_idx}{i}' for i in abs_indices)
-                    ntw.system.add_equalities(abs_equality)  # Add to system
-                    self._const_variables.add(arg_no_idx)  # Add to self
-                elif mode == 'prev':
-                    inl_idx = min(abs_indices)
-                    ntw.system.add_equalities(
-                        (
-                            f'{arg_state}_{arg_type}{inl_idx - 1}',  # Out previous
-                            f'{arg_state}_{arg_type}{inl_idx}',  # Inlet self
-                        )
-                    )
-                    self._from_prev_node.add(arg_no_idx)
-
-            else:
-                arg_state, arg_type, rel_idx = get_arg_specs(argument)
+            validate_arg_format(arg, include_digits=True)
+            arg_state, arg_type, rel_idx = get_arg_specs(arg)
+            self._spanwise_constants.add(f'{arg_state}_{arg_type}{rel_idx}')
+            for ntw in self._attached_networks:
                 abs_idx = self.network_maps[ntw][rel_idx]
-                if mode == 'set_bc':
-                    ntw.system.boundary_conditions[abs_idx][arg_state][arg_type] = value
-                    self._boundary_conditions[rel_idx][arg_state][arg_type] = value
-                elif mode == 'rm_bc':
-                    ntw.system.boundary_conditions[abs_idx][arg_state].pop(arg_type)
-                    self._boundary_conditions[rel_idx][arg_state].pop(arg_type)
-                elif mode == 'span':
-                    ntw.system.add_spanwise_constants(
-                        f'{arg_state}_{arg_type}{abs_idx}'
-                    )
-                    self._spanwise_constants.add(f'{arg_state}_{arg_type}{rel_idx}')
+                ntw.system.add_spanwise_constants(f'{arg_state}_{arg_type}{abs_idx}')

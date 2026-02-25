@@ -342,13 +342,13 @@ class ConstraintManager:
         appear as declared arguments
         """
         # TODO: Could even check if they are free
-        args_to_check = []
+        args_to_check = set()
 
         for equality in self.data.equalities:
-            args_to_check += list(equality)
+            args_to_check.update(equality)
 
         for arg in self.data.spanwise_constants:
-            args_to_check.append(arg)
+            args_to_check.add(arg)
 
         for arg in args_to_check:
             self._check_arg_declaration(arg)

@@ -289,11 +289,12 @@ if __name__ == '__main__':
 
     fig, axs = plt.subplots(2, 2, figsize=(8, 15))
     for cmp_idx, cmp in enumerate(ntw_ass.components):
-        if cmp.inlet_node is None or cmp.outlet_node is None:
-            raise ValueError('Missing nodes')
+        arg_map = cmp.network_maps[ntw_ass]
+        inl_node = ntw_ass.system.nodes[arg_map[0]]
+        out_node = ntw_ass.system.nodes[arg_map[1]]
 
         node_idx = 0
-        for n in (cmp.inlet_node, cmp.outlet_node):
+        for n in (inl_node, out_node):
             ax = axs[cmp_idx][node_idx]
 
             ax.set_title(f'Node number {2 * cmp_idx + node_idx}')
@@ -306,20 +307,23 @@ if __name__ == '__main__':
     ax.set_aspect('equal')
     offset = 0.0
     for c in ntw_ass.components:
-        if not c.inlet_node or not c.outlet_node:
+        if not inl_node or not out_node:
             raise ValueError('missing nodes')
 
         lines = plot_from_nodes(
-            c.inlet_node,
-            c.outlet_node,
+            inl_node,
+            out_node,
             False,
             offset,
         )
 
-        offset += c.outlet_node.geo.chord_ax[0]
+        offset += out_node.geo.chord_ax[0]
 
     print(n1.oth)
-    # plt.close('all')
-    plt.show()
+    show_plots = input('Show plots? [y/N] ').strip().lower() == 'y'
+    if show_plots:
+        plt.show()
+    else:
+        plt.close('all')
 
     globals().update(residual_debugger(IsentropicProperties(), [n0, n1]))

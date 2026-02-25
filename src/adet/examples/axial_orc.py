@@ -119,7 +119,7 @@ _bounds_reg.from_dict(
     {
         # 'delta_smass_.*': (0.0, 100.0),
         'hdropCoeff': (-8.0, -0.4),
-        # 'eta_tt': (0.7, 1.0),
+        'eta_tt': (0.7, 1.0),
         'U': (0.0, 200.0),  # Reduce the search area
     }
 )
@@ -174,15 +174,15 @@ EXTRA_EQUATIONS: dict[
     Type[EquationBase],
     int | tuple[int, ...],
 ] = {
-    ClearanceByHeight: 1,
     IsentropicProperties: (0, 1),
     BladeBlockage: 1,
     BoundaryLayerRatios: 1,
-    # ReducedThermoQuantities: 0,
     SieverdingBasePressure: (0, 1),
+    # ReducedThermoQuantities: 0,
     SecondaryBSM: (0, 1),
     DentonProfileLoss: (0, 1),
     DentonLeakageLoss: (0, 1),
+    ClearanceByHeight: 1,
 }
 
 # ================================================
@@ -239,10 +239,6 @@ stator = BladeRow(
             'xi_by_camb_len_B': 0.675,
             # *** Tip leakage discharge coeff
             'dischCoeff': 0.35,
-            # *** Duty coefficients
-            'flowCoeff': 0.4,
-            'reactDegree_ts': 0.3,
-            'ts_loadCoeff': 3,
         },
     },
     extra_equations={
@@ -256,7 +252,7 @@ stator = BladeRow(
 )
 
 
-# ============ Modify before creating copies
+# ============ Modify rows
 rotor = deepcopy(stator)  # Reuse the ratios from stator
 rotor.shaft = shaft  # Assign the rotating shaft
 rotor.row_type = 'rotor'
@@ -266,12 +262,16 @@ rotor.equations_from_dict(
         FlowCoefficient(): (0, 1),
     }
 )
-
-mixer = DownstreamMixer(
-    'Mixer',
-    # The axial chord is just for plotting it like a blade row
-    outlet_bc={'geo': {'chord_ax': 0.01}},
+# *** Duty coefficients
+rotor.bc_from_dict(
+    {
+        'oth_flowCoeff1': 0.7,
+        'oth_reactDegree_ts1': 0.3,
+        'oth_ts_loadCoeff1': 5,
+    }
 )
+
+mixer = DownstreamMixer('Mixer')
 
 backend = CasadiSystem(num_span=NUM_SPAN)
 # ================================================
@@ -287,14 +287,13 @@ final_node = ntw.num_components * 2 - 1
 
 rotor.set_spanwise_constant('geo_chord_ax1')
 stator.set_spanwise_constant('geo_hh0', 'geo_chord_ax1')
+rotor.copy_from_previous('geo_hh', 'geo_rr')
+rotor.remove_equation(MeridionalVariable, 0)
 
 if NUM_SPAN > 1:
     # Free vortex at stator and rotor outlets
     stator.add_equation(FreeVortexDistribution(), 1)
     rotor.add_equation(FreeVortexDistribution(), 1)
-    # Rotor inlet geometry is continuous with stator outlet
-    rotor.copy_from_previous('geo_hh', 'geo_rr')
-    rotor.remove_equation(MeridionalVariable, 0)
 
 # Multi-component relations
 ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
@@ -334,30 +333,35 @@ sol_dict_is = ntw.system.write_solution_to_nodes(solution)
 # ================================================
 user = input('INPUT >>> Continue with losses? [y/n] ')
 if user in ('y', 'Y'):
-    # Reboot the system
     ntw = ComponentNetwork(
-        ntw.system.fluid_settings, inlet, CasadiSystem(NUM_SPAN), [stator, rotor]
+        ntw.system.fluid_settings,
+        inlet,
+        CasadiSystem(NUM_SPAN),
+        [
+            stator,
+            mixer,
+            rotor,
+            # deepcopy(mixer),
+        ],
     )
     if mixer in ntw.components:
+        sol_dict_is_translate = {
+            k.replace('2', '4').replace('3', '5'): v for k, v in sol_dict_is.items()
+        }
         rotor_in, rotor_out = (4, 5)
     else:
         rotor_in, rotor_out = (2, 3)
+        sol_dict_is_translate = sol_dict_is
 
     ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, rotor_in, rotor_out))
     ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, rotor_out))
     ntw.system.add_equation(RepeatedStage(), (0, 1, rotor_in, rotor_out))
-
     ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, rotor_out))
-
-    # sol_dict_is_translate = {
-    #     k.replace('2', '4').replace('3', '5'): v for k, v in sol_dict_is.items()
-    # }
-    sol_dict_is_translate = sol_dict_is
 
     # Remove the first computation loss
     rotor.remove_equation(INITIAL_LOSS.__class__, (0, 1))
-    rotor.remove_equation(ZeroBlockage, 1)
     stator.remove_equation(INITIAL_LOSS.__class__, (0, 1))
+    rotor.remove_equation(ZeroBlockage, 1)
     stator.remove_equation(ZeroBlockage, 1)
     for eq, pos in EXTRA_EQUATIONS.items():
         stator.add_equation(eq(), pos)
@@ -375,7 +379,7 @@ if user in ('y', 'Y'):
         input('INPUT >>> Fail on rootfinding error? [0/1] '),
     )
     rootfinder_loss = ntw.system.make_rootfinder(
-        'kinsol',
+        'ipopt',
         opts={
             'error_on_fail': bool(err_on_fail),
         },
@@ -440,13 +444,16 @@ if PLOTS:
     # Merged loop for both plots
     pbl = ParabolicCamberline()
     offset = 0.0
-    for n0_idx, n1_idx in grouper(num_nodes, 2, incomplete='ignore'):
-        inl_node = ntw.system.nodes[n0_idx]
-        out_node = ntw.system.nodes[n1_idx]
-        ax_chord = out_node.geo.get('chord_ax').to_base_units().magnitude[0]
+    for comp in ntw.components:
+        if not isinstance(comp, BladeRow):
+            continue
+        idx_map = comp.network_maps[ntw]
+        inl_node = ntw.system.nodes[idx_map[0]]
+        out_node = ntw.system.nodes[idx_map[1]]
+        ax_chord = out_node.geo.chord_ax[0]
 
         # Plot meridional profile
-        is_stator = (n0_idx // 2) % 2 == 0
+        is_stator = comp.row_type == 'stator'
         color = 'steelblue' if is_stator else 'coral'
 
         lines = plot_from_nodes(
