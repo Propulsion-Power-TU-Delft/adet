@@ -103,7 +103,7 @@ class MixingMomentumBalances(EquationBase):
         # 3 *** Supersonic vs. subsonic switch
         # This is a very dubious assumption that Andrea uses in its code
         # for now let us reproduce it and exclude the y momentum balance
-        switch_supers = kin_relmach0 - 1.0  # Choking
+        switch_supers = kin_relmach0 - 1.0  # Choking at throat
         switch_subson = kin_beta0 - kin_beta1  # Zero deviation
         r3 = cs.if_else(kin_relmach1 > 0.9, switch_supers, switch_subson)
 
@@ -138,7 +138,7 @@ class SimplifiedMixingBalances(EquationBase):
         stc_smass1,
         oth_delta_smass_mixing1,
     ):
-        # Angle is maintained
+        # No deviation
         r1 = kin_beta1 - kin_beta0
 
         q = 0.5 * stc_rhomass0 * kin_W0**2  # Dynamic head

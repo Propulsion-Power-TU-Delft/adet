@@ -18,8 +18,10 @@ class ConstantAngMomentum(EquationBase):
 
 
 class ConstantEnergy(EquationBase):
-    def residual(self, tot_hmass0, tot_hmass1):
-        return tot_hmass0 - tot_hmass1
+    def residual(self, rlt_hmass0, rlt_hmass1):
+        # WARN: This is used in mixing models for AXIAL
+        # turbines, I need to double check this
+        return rlt_hmass0 - rlt_hmass1
 
 
 class MassConservation(EquationBase):

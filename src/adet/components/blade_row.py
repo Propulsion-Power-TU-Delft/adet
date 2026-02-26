@@ -24,6 +24,7 @@ from adet.equations.fundamental import (
     ZeroBlockage,
 )
 from adet.equations.geometrical import (
+    CamberFunction,
     EndwallProperties,
     MeridionalUniform,
     GeometricalRatios,
@@ -74,12 +75,10 @@ class BladeRow(BaseComponent):
         (ZeroBlockage, 0),
         (ZeroBlockage, 1),
         # *** Common definitions
-        (AngleDeflection, (0, 1)),
         (EndwallProperties, 0),
         (EndwallProperties, 1),
-        (MidspanVelocities, 0),
-        (MidspanVelocities, 1),
-        (EnthalpyDropCoefficient, (0, 1)),
+        # (MidspanVelocities, 0),
+        # (MidspanVelocities, 1),
         (GeometricalRatios, (0, 1)),
         (MeridionalVelocityRatio, (0, 1)),
         # *** Blade count, pitch, channel massflow
@@ -89,6 +88,10 @@ class BladeRow(BaseComponent):
         (ThicknessToPitch, 0),
         (ThicknessToPitch, 1),
         (Solidity, 1),
+        # *** Properties for bounding
+        (AngleDeflection, (0, 1)),
+        (EnthalpyDropCoefficient, (0, 1)),
+        (CamberFunction, (0, 1)),
     ]
 
     from_previous_node = ABSOLUTE_LINK + GEOM_LINK
@@ -188,18 +191,16 @@ class DownstreamMixer(BaseComponent):
         (MassConservation, (0, 1)),
         (MixingMomentumBalances, (0, 1)),
         (DeviationAngle, (0, 1)),
-        (PlaceHolderLoss, (0, 1)),
         # *** Blockage
         (BladeBlockage, 0),
         (ZeroBlockage, 1),  # No blockage mixed out
         # *** Definition of channel massflow and num_blades
         (BladePitch, 0),
         (BladePitch, 1),
-        # Creates a dummy metal angle (for plots)
-        (ZeroDeviation, 1),
         # Special adders
         (GeometricalAdder, 0),
         (GeometricalAdder, 1),
+        (ZeroDeviation, 1),  # Creates a dummy metal angle (for plots)
     ]
 
     # Keep the absolute triangle
@@ -435,7 +436,7 @@ def plot_from_nodes(
         for node in [n0, n1]:
             args.append(node.geo.get(var).to_base_units().magnitude[0])
 
-    args.append(node.geo.get('chord_ax').to_base_units().magnitude[0])
+    args.append(n1.geo.chord_ax[0])
 
     geom = RowGeometry(
         *args,

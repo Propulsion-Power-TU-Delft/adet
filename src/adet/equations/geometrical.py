@@ -197,6 +197,12 @@ class LaxByOutradius(EquationBase):
         return geo_rr_midspan0 * oth_chAx_outRad_Ratio0 - geo_chord_ax0
 
 
+class CamberFunction(EquationBase):
+    def residual(self, geo_metal_angle0, geo_metal_angle1, oth_camberCoeff1):
+        delta_angle = geo_metal_angle1 - geo_metal_angle0
+        return oth_camberCoeff1 + np.tanh(8 * delta_angle)
+
+
 class MinimalCamberLine(CamberLineGeom):
     """
     Minimal camberline. Consider stagger as average

@@ -32,6 +32,14 @@ def safe_abs(x):
         return cs.fabs(x)
 
 
+def safe_sign(x):
+    if isinstance(x, PlainQuantity):
+        # Unit checks
+        return x
+    else:
+        return cs.sign(x)
+
+
 def safe_sum(x):
     return (x**0).T @ x
 

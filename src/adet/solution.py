@@ -54,7 +54,7 @@ def best_first_iter(guess, knowns, root_function, delta_pert, num_samples):
     guesses = generate_perturbated_samples(guess, num_samples, delta_pert)
 
     def norm_function(x):
-        return np.linalg.norm(x, 2)
+        return np.linalg.norm(x, np.inf)
 
     best_guess = guess
     best_res_norm = norm_function(

@@ -533,7 +533,7 @@ class UnitScalingManager:
         return self._argument_scaling_helper(self.data.constraints)
 
     def get_arguments_bounds(
-        self, custom_bounds: dict[str, tuple[float, float]] = {}
+        self, custom_bounds: dict[str, tuple[float, float]]
     ) -> list[tuple[float, float]]:
         """The custom bounds are to be provided dimensionally"""
         bounds = []
@@ -1488,8 +1488,10 @@ class CasadiSystem(SystemAssembler):
                     'ipopt.print_level': 3,
                     'ipopt.max_iter': 1000,
                     'ipopt.tol': 1e-8,
-                    'ipopt.acceptable_constr_viol_tol': 1e-13,  # infeasible pts
+                    'ipopt.acceptable_constr_viol_tol': 1e-10,  # infeasible pts
                     'ipopt.bound_push': 0.1,
+                    'ipopt.mu_strategy': 'adaptive',
+                    'ipopt.linear_solver': 'mumps',
                     # NOTE: Superseeded by new implementations, thermo
                     # derivatives available up to the 3rd order (null)
                     # 'ipopt.hessian_approximation': 'limited-memory',
@@ -1509,7 +1511,7 @@ class CasadiSystem(SystemAssembler):
             )
         return rootfinder
 
-    def get_arguments_bounds(self, custom_bounds={}):
+    def get_arguments_bounds(self, custom_bounds: dict[str, tuple[float, float]] = {}):
         bounds_by_arg = self._scaling_manager.get_arguments_bounds(custom_bounds)
         lbx = []
         ubx = []

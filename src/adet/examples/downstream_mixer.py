@@ -15,7 +15,11 @@ from adet.components.blade_row import DownstreamMixer
 from adet.components.blade_row import plot_from_nodes
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
 from adet.equations.fundamental import BladeBlockage
-from adet.equations.geometrical import ParabolicCamberline
+from adet.equations.geometrical import (
+    CamberFunction,
+    MinimalCamberLine,
+    ParabolicCamberline,
+)
 from adet.equations.nondimensional import (
     TotalTotalExpansionEfficiency,
 )
@@ -24,6 +28,7 @@ from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.losses.mixing import (
+    MixingMomentumBalances,
     SieverdingBasePressure,
     SimplifiedMixingBalances,
 )
@@ -42,7 +47,7 @@ setup_logger(
 )
 
 # === SETTINGS
-NUM_SPAN = 1
+NUM_SPAN = 11
 SCALED = True
 PLOTS = True
 PRINTS = True
@@ -78,15 +83,15 @@ _bounds_reg = VariableBoundsRegistry()
 _bounds_reg.reset()
 _bounds_reg.from_dict(
     {
-        'delta_smass_.*': (0.0, 100.0),
-        'dev_angle': (0.0, 0.1),
-        'relmach': (0.0, 1.3),
+        'delta_smass_.*': (0.0, 10.0),
+        # 'dev_angle': (0.0, 0.1),
+        # 'relmach': (0.0, 1.3),
     }
 )
 
 # *** Shafts
 shaft = Shaft(
-    Quantity(0.0, 'rpm'),
+    Quantity(15000.0, 'rpm'),
     is_constrained=True,
 )
 
@@ -94,13 +99,13 @@ shaft = Shaft(
 inlet = Inlet(
     {
         'kin': {
-            'alpha': Quantity(0, 'deg'),
-            'Vm': Quantity(140, 'm/s'),
+            'alpha': Quantity(70, 'deg'),
+            'Vm': Quantity(100, 'm/s'),
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
-            'rr_midspan': 0.5,
-            'height': 0.2,
+            'rr_midspan': 0.1,
+            'hubtipRatio': 0.7,
         },
         'tot': {
             'p': 18.1e5,
@@ -120,18 +125,17 @@ row = BladeRow(
     },
     out_constraints={
         'kin': {
-            # 'alpha': Quantity(70, 'deg'),
-            'alpha': Quantity(40, 'deg'),
+            'alpha': Quantity(0, 'deg'),
         },
         'geo': {
             # Meridional
             'meridional_angle': Quantity(0, 'deg'),
-            'rr_midspan': 0.5,
             # Blade
-            'chord_ax': 0.15,
-            'num_blades': 30,
+            'aspRatio': 1.4,
+            # 'num_blades': 10,
+            'solidity': 1.0,
             'thick_by_pitch': 0.02,
-            'heightRatio': 1.0,
+            'heightRatio': 1.1,
         },
         'oth': {
             'mom_by_bld': 0.075,
@@ -145,9 +149,9 @@ row = BladeRow(
     },
     extra_equations={
         # Camberline model
-        # MinimalCamberLine(): (0, 1),
+        MinimalCamberLine(): (0, 1),
         # TwoSegmentCamberline(): (0, 1),
-        ParabolicCamberline(): (0, 1),
+        # ParabolicCamberline(): (0, 1),
         # |> Losses & Dev
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
@@ -159,9 +163,14 @@ row = BladeRow(
         INITIAL_LOSS: (0, 1),
         # Efficiency measures
     },
+    constant_variables=['geo_rr_midspan'],
 )
 
 mixer = DownstreamMixer('twitch')
+
+# *** Simplified formulation
+# mixer.remove_equation(MixingMomentumBalances, (0, 1))
+# mixer.add_equation(SimplifiedMixingBalances(), (0, 1))
 
 # Create network
 ntw = ComponentNetwork(
@@ -174,7 +183,7 @@ ntw = ComponentNetwork(
     ],
 )
 
-row.set_spanwise_constant('geo_hh0')
+row.set_spanwise_constant('geo_hh0', 'kin_Vm1')
 
 if ntw.num_components == 2:
     ntw.system.add_equation(IsentropicProperties(), (0, 3))
@@ -184,7 +193,7 @@ ntw.system.build(SCALED)
 
 rootfinder = ntw.system.make_rootfinder(
     'ipopt',
-    opts={'error_on_fail': True},
+    opts={'error_on_fail': False},
 )
 x0 = ntw.system.get_scaled_guess()
 kn = ntw.system.get_scaled_constraints()
@@ -196,13 +205,11 @@ solution = solve_root_problem(
     kn,
     bnd,
     suppress_output=False,
-    perturbate_guess=True,
-    delta_pert=0.001,
-    num_samples=10,
 )
 
 ntw.system.write_solution_to_nodes(solution)
 ntw.print_structure()
+
 
 nodes = {}
 for i, node in enumerate(ntw.system.nodes):
@@ -210,6 +217,8 @@ for i, node in enumerate(ntw.system.nodes):
     nodes[i] = node
 n0 = nodes[0]
 n1 = nodes[1]
+
+ntw.system.nodes[-1].geo.add_variable('chord_ax', 0.2 * n1.geo.chord_ax)
 
 
 if PLOTS:
@@ -264,15 +273,16 @@ if PLOTS:
     # Merged loop for both plots
     pbl = ParabolicCamberline()
     offset = 0.0
-    for n0_idx, n1_idx in grouper(num_nodes, 2, incomplete='ignore'):
-        nodes[0] = ntw.system.nodes[n0_idx]
-        nodes[1] = ntw.system.nodes[n1_idx]
-        ax_chord = nodes[1].geo.get('chord_ax').to_base_units().magnitude[0]
+    for comp in ntw.components:
+        idx_map = comp.network_maps[ntw]
+        inl_node = ntw.system.nodes[idx_map[0]]
+        out_node = ntw.system.nodes[idx_map[1]]
+        ax_chord = out_node.geo.chord_ax[0]
 
         # Plot meridional profile
         lines = plot_from_nodes(
-            nodes[0],
-            nodes[1],
+            inl_node,
+            out_node,
             False,
             offset,
             ax=ax_merid,
@@ -280,10 +290,9 @@ if PLOTS:
 
         # Plot camberlines at midspan (3 blades for rotor, 1 for stator)
         midspan_idx = ntw.system.num_span // 2
-        inlet_angle = nodes[0].geo.metal_angle[midspan_idx]  # pyright:ignore
-        outlet_angle = nodes[1].geo.metal_angle[midspan_idx]  # pyright:ignore
-        chord_ax = nodes[1].geo.chord_ax[midspan_idx]  # pyright:ignore
-        pitch = nodes[1].geo.pitch[midspan_idx]  # pyright:ignore
+        inlet_angle = inl_node.geo.metal_angle[midspan_idx]  # pyright:ignore
+        outlet_angle = out_node.geo.metal_angle[midspan_idx]  # pyright:ignore
+        pitch = out_node.geo.pitch[midspan_idx]  # pyright:ignore
         num_plt_blades = 3  # blades to plot
 
         for blade_num in range(num_plt_blades):
@@ -291,7 +300,7 @@ if PLOTS:
                 ax_camber,
                 inlet_angle,
                 outlet_angle,
-                chord_ax,
+                ax_chord,
                 'k',
                 axial_offset=offset,
                 tangential_offset=blade_num * pitch,
@@ -329,10 +338,3 @@ if ntw.num_components > 1:
 
 plt.show()
 # plt.close('all')
-
-globals().update(
-    residual_debugger(
-        SimplifiedMixingBalances(),
-        [n2, n3],
-    )
-)

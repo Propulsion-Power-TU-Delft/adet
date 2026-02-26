@@ -36,6 +36,7 @@ from adet.equations.nondimensional import (
     TotalTotalExpansionEfficiency,
     WorkCoefficient,
 )
+from adet.equations.utils import residual_debugger
 from adet.fluid.settings import ExternalFluidModel
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
@@ -108,6 +109,7 @@ _guess_reg.from_dict(
         'smass': abs_state.smass(),
         'rhomass': abs_state.rhomass(),
         'k_prof': 0.3,  # Profile loading
+        'camberCoeff': 1.0,
     }
 )
 
@@ -115,20 +117,20 @@ _guess_reg.from_dict(
 # *** Variable bounds
 _bounds_reg = VariableBoundsRegistry()
 _bounds_reg.reset()
+# _bounds_reg.ignore_defaults = True
 _bounds_reg.from_dict(
     {
         # 'delta_smass_.*': (0.0, 100.0),
-        'hdropCoeff': (-8.0, -0.4),
-        'eta_tt': (0.7, 1.0),
+        'hdropCoeff': (-8.0, -0.2),
         'U': (0.0, 200.0),  # Reduce the search area
     }
 )
 if fluid_settings.model == real_model:
     _bounds_reg.from_dict(
         {
-            'p': (abs_state.p_critical(), INLET_PRESSURE),
-            'T': (abs_state.T_critical(), INLET_TEMPERATURE),
-            'hmass': (abs_state.hmass() - 2 * 60**2, 1.2 * abs_state.hmass()),
+            'p': (abs_state.p_critical() * 0.4, INLET_PRESSURE),
+            'T': (abs_state.T_critical() * 0.7, INLET_TEMPERATURE),
+            'hmass': (abs_state.hmass() - 300**2, abs_state.hmass()),
         }
     )
 
@@ -194,7 +196,6 @@ inlet = Inlet(
         },
         'kin': {
             'mermach': 0.1,
-            # 'Vm': 100,
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
@@ -223,6 +224,7 @@ stator = BladeRow(
             'meridional_angle': Quantity(0, 'deg'),
             # ***  height <-> chord
             'aspRatio': 2,
+            # 'flare_angle': Quantity(20, 'deg'),
             'num_blades': 25,
             'thick_by_pitch': 0.02,
             'clearance_by_height': 0.01,
@@ -265,9 +267,9 @@ rotor.equations_from_dict(
 # *** Duty coefficients
 rotor.bc_from_dict(
     {
-        'oth_flowCoeff1': 0.7,
+        'oth_flowCoeff1': 0.4,
         'oth_reactDegree_ts1': 0.3,
-        'oth_ts_loadCoeff1': 5,
+        'oth_ts_loadCoeff1': 3,
     }
 )
 
@@ -316,7 +318,9 @@ rootfinder_is = ntw.system.make_rootfinder(
 
 x0_is = ntw.system.get_scaled_guess()
 kn_is = ntw.system.get_scaled_constraints()
-bnd_is = ntw.system.get_arguments_bounds()
+bnd_is = ntw.system.get_arguments_bounds(
+    {'kin_alpha0': (-0.1, 0.1)},
+)
 solution = solve_root_problem(
     rootfinder_is,
     x0_is,
@@ -324,8 +328,8 @@ solution = solve_root_problem(
     bnd_is,
     suppress_output=False,
     perturbate_guess=False,
-    delta_pert=0.001,
-    num_samples=1,
+    delta_pert=0.1,
+    num_samples=10000,
 )
 
 # Write solution to dict for reading for next solution
@@ -341,7 +345,7 @@ if user in ('y', 'Y'):
             stator,
             mixer,
             rotor,
-            # deepcopy(mixer),
+            deepcopy(mixer),
         ],
     )
     if mixer in ntw.components:
@@ -349,47 +353,58 @@ if user in ('y', 'Y'):
             k.replace('2', '4').replace('3', '5'): v for k, v in sol_dict_is.items()
         }
         rotor_in, rotor_out = (4, 5)
+        if isinstance(ntw.components[-1], DownstreamMixer):
+            final_node = 7
+        else:
+            final_node = 5
     else:
         rotor_in, rotor_out = (2, 3)
         sol_dict_is_translate = sol_dict_is
+        final_node = 3
 
     ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, rotor_in, rotor_out))
     ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, rotor_out))
     ntw.system.add_equation(RepeatedStage(), (0, 1, rotor_in, rotor_out))
-    ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, rotor_out))
+    ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, final_node))
 
     # Remove the first computation loss
     rotor.remove_equation(INITIAL_LOSS.__class__, (0, 1))
     stator.remove_equation(INITIAL_LOSS.__class__, (0, 1))
+    # Add loss applier function
+    stator.add_equation(LossMatcher(tip_gap=False), (0, 1))
+    rotor.add_equation(LossMatcher(tip_gap=True), (0, 1))
+
     rotor.remove_equation(ZeroBlockage, 1)
     stator.remove_equation(ZeroBlockage, 1)
     for eq, pos in EXTRA_EQUATIONS.items():
         stator.add_equation(eq(), pos)
         rotor.add_equation(eq(), pos)
 
-    stator.add_equation(LossMatcher(tip_gap=False), (0, 1))
-    rotor.add_equation(LossMatcher(tip_gap=True), (0, 1))
-
     ntw.build()
 
     x0_loss = ntw.system.get_scaled_guess(sol_dict_is_translate)
     kn_loss = ntw.system.get_scaled_constraints()
     bnd_loss = ntw.system.get_arguments_bounds()
+
+    # sys.exit()
     err_on_fail = int(
         input('INPUT >>> Fail on rootfinding error? [0/1] '),
     )
     rootfinder_loss = ntw.system.make_rootfinder(
-        'ipopt',
+        'kinsol',
         opts={
             'error_on_fail': bool(err_on_fail),
+            # 'ipopt.hessian_approximation': 'limited-memory',
         },
     )
+
     solution = solve_root_problem(
         rootfinder_loss,
         x0_loss,
         kn_loss,
         # bnd_loss,
         suppress_output=False,
+        perturbate_guess=False,
     )
     # = = = = = = = = = =
 # ________________________________________________
@@ -637,6 +652,6 @@ if answer in ('Y', 'y'):
     input('Press enter to close ')
 plt.close('all')
 
-print(f'Inlet mach is {inl_node.kin.mach}')
+print(f'Inlet mach is {n0.kin.mach}')
 
-# globals().update(residual_debugger(MixingMomentumBalances(), [n6, n7]))
+# globals().update(residual_debugger(SecondaryBSM(), [n2, n3]))

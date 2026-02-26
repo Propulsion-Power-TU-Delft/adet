@@ -12,7 +12,7 @@ from pint import Quantity
 from adet.assembly import CasadiSystem
 from adet.components import BladeRow, Inlet, Shaft
 from adet.components import ComponentNetwork
-from adet.components.blade_row import RowGeometry, plot_from_nodes
+from adet.components.blade_row import DownstreamMixer, RowGeometry, plot_from_nodes
 from adet.equations.base_equation import EquationBase, LossApplier
 from adet.equations.definitions import (
     BoundaryLayerRatios,
@@ -42,7 +42,6 @@ from adet.losses.secondary import SecondaryBSM
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
-from adet.tools.iter import grouper
 from adet.tools.loggers import setup_logger
 
 logger = logging.getLogger(__name__)
@@ -107,8 +106,8 @@ EXTRA_EQUATIONS: dict[Type[EquationBase], int | tuple[int, ...]] = {
 # === DESIGN MAP PARAMETERS
 N_PHI = 20
 N_PSI = 20
-PHI_RANGE = np.linspace(0.4, 1.4, N_PHI)
-PSI_RANGE = np.linspace(3.0, 10.0, N_PSI)
+PHI_RANGE = np.linspace(0.4, 1.3, N_PHI)
+PSI_RANGE = np.linspace(3.0, 9.0, N_PSI)
 
 # Indices at which to save meridional channels (3x3 = 9 points)
 MERID_INDICES = [0, N_PHI // 2, N_PHI - 1]
@@ -150,6 +149,7 @@ _guess_reg.from_dict(
         'smass': abs_state.smass(),
         'rhomass': abs_state.rhomass(),
         'k_prof': 0.3,
+        'camberCoeff': 1.0,
     }
 )
 
@@ -157,8 +157,7 @@ _bounds_reg = VariableBoundsRegistry()
 _bounds_reg.reset()
 _bounds_reg.from_dict(
     {
-        'hdropCoeff': (-8.0, -0.4),
-        'eta_tt': (0.3, 1.0),
+        'hdropCoeff': (-8.0, -0.2),
         'U': (0.0, 200.0),
     }
 )
@@ -215,7 +214,8 @@ stator = BladeRow(
         },
     },
     extra_equations={
-        MinimalCamberLine(): (0, 1),
+        # MinimalCamberLine(): (0, 1),
+        ParabolicCamberline(): (0, 1),
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
         INITIAL_LOSS: (0, 1),
@@ -233,6 +233,8 @@ rotor.equations_from_dict(
     }
 )
 
+mixer = DownstreamMixer('mixer')
+
 # ================================================
 ntw = ComponentNetwork(
     fluid_settings,
@@ -241,9 +243,13 @@ ntw = ComponentNetwork(
     components=[stator, rotor],
 )
 
-rotor.set_boundary_cond('oth_flowCoeff1', PHI_RANGE[0])
-rotor.set_boundary_cond('oth_reactDegree_ts1', 0.3)
-rotor.set_boundary_cond('oth_ts_loadCoeff1', PSI_RANGE[0])
+rotor.bc_from_dict(
+    {
+        'oth_flowCoeff1': PHI_RANGE[0],
+        'oth_reactDegree_ts1': 0.3,
+        'oth_ts_loadCoeff1': PSI_RANGE[0],
+    }
+)
 
 final_node = ntw.num_components * 2 - 1  # = 3
 
@@ -269,12 +275,16 @@ load_coeff_idx = ntw.system.constraints.index(load_coeff_name)
 # Isentropic initial IPOPT solve
 rootfinder_ipopt = ntw.system.make_rootfinder(
     'ipopt',
-    opts={'error_on_fail': False, 'ipopt.max_iter': 1000},
+    opts={
+        'error_on_fail': False,
+        'ipopt.max_iter': 1000,
+        'ipopt.hessian_approximation': 'limited-memory',
+    },
 )
 
 x0 = ntw.system.get_scaled_guess()
 kn = ntw.system.get_scaled_constraints()
-bnd = ntw.system.get_arguments_bounds()
+bnd = ntw.system.get_arguments_bounds({'kin_alpha0': (-0.1, 0.1)})
 
 logger.info(
     f'Solving isentropic initial point: phi={PHI_RANGE[0]:.3f}, psi={PSI_RANGE[0]:.3f}'
@@ -284,8 +294,8 @@ solution = solve_root_problem(
 )
 
 # ================================================
-# Transition to losses — rebuild without mixer
-sol_dict_is = ntw.system.solution_to_dict(solution)
+# Transition to losses
+sol_dict_is = ntw.system.write_solution_to_nodes(solution)
 
 rotor.remove_equation(INITIAL_LOSS.__class__, (0, 1))
 stator.remove_equation(INITIAL_LOSS.__class__, (0, 1))
@@ -301,14 +311,30 @@ ntw = ComponentNetwork(
     fluid_settings,
     inlet,
     CasadiSystem(num_span=NUM_SPAN),
-    components=[stator, rotor],
+    components=[
+        stator,
+        mixer,
+        rotor,
+        deepcopy(mixer),
+    ],
 )
 
-# No mixer: rotor stays at nodes 2, 3 — no key remapping needed
-rotor_in, rotor_out = (2, 3)
-final_node = rotor_out  # = 3
+if mixer in ntw.components:
+    sol_dict_is_translate = {
+        k.replace('2', '4').replace('3', '5'): v for k, v in sol_dict_is.items()
+    }
+    rotor_in, rotor_out = (4, 5)
+    if isinstance(ntw.components[-1], DownstreamMixer):
+        final_node = 7
+    else:
+        final_node = 5
+else:
+    rotor_in, rotor_out = (2, 3)
+    sol_dict_is_translate = sol_dict_is
+    final_node = 3
 
-ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, rotor_out))
+
+ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, final_node))
 ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, rotor_in, rotor_out))
 ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, rotor_out))
 ntw.system.add_equation(RepeatedStage(), (0, 1, rotor_in, rotor_out))
@@ -316,8 +342,8 @@ ntw.system.add_equation(RepeatedStage(), (0, 1, rotor_in, rotor_out))
 ntw.build()
 
 # Update constraint names and indices for the loss system
-flow_coeff_name = f'oth_flowCoeff{final_node}'
-load_coeff_name = f'oth_ts_loadCoeff{final_node}'
+flow_coeff_name = f'oth_flowCoeff{rotor_out}'
+load_coeff_name = f'oth_ts_loadCoeff{rotor_out}'
 
 flow_coeff_idx = ntw.system.constraints.index(flow_coeff_name)
 load_coeff_idx = ntw.system.constraints.index(load_coeff_name)
@@ -327,12 +353,14 @@ logger.info(
 )
 
 # Solve loss initial point with IPOPT (using isentropic solution as warm start)
-x0_loss = ntw.system.get_scaled_guess(sol_dict_is)
+x0_loss = ntw.system.get_scaled_guess(sol_dict_is_translate)
 kn_loss = ntw.system.get_scaled_constraints()
 bnd_loss = ntw.system.get_arguments_bounds()
 rootfinder_ipopt_loss = ntw.system.make_rootfinder(
-    'ipopt',
-    opts={'error_on_fail': False, 'ipopt.max_iter': 1000},
+    'kinsol',
+    opts={
+        'error_on_fail': False,
+    },
 )
 logger.info(
     f'Solving loss initial point: phi={PHI_RANGE[0]:.3f}, psi={PSI_RANGE[0]:.3f}'
@@ -350,7 +378,7 @@ solution = solve_root_problem(
 # Kinsol for the loss sweep
 rootfinder_kinsol = ntw.system.make_rootfinder(
     'kinsol',
-    opts={'error_on_fail': False},
+    opts={'error_on_fail': True},
 )
 
 # ================================================
@@ -361,14 +389,18 @@ N_BLADES_PLOT = 3
 
 
 def extract_meridional():
-    nodes = ntw.system.nodes
     midspan = ntw.system.num_span // 2
     x, r_hub, r_tip, r_mid = [], [], [], []
     camberlines = []  # list of dicts, one per blade row
     x_offset = 0.0
 
-    for n0_idx, n1_idx in grouper(range(len(nodes)), 2, incomplete='ignore'):
-        n0, n1 = nodes[n0_idx], nodes[n1_idx]
+    for comp in ntw.components:
+        if not isinstance(comp, BladeRow):
+            continue
+
+        n0 = comp.get_inlet_node(ntw)
+        n1 = comp.get_outlet_node(ntw)
+
         chord_ax = float(n1.geo.get('chord_ax').to_base_units().magnitude[0])
         rr0 = float(n0.geo.get('rr_midspan').to_base_units().magnitude[0])
         hh0 = float(n0.geo.get('height').to_base_units().magnitude[0])
@@ -771,22 +803,20 @@ fig, ax = plt.subplots(figsize=(8, 6))
 eta_masked = np.where(converged_map, eta_tt_map, np.nan)
 
 # Transpose: eta_tt_map[i_phi, j_psi] -> contourf(phi, psi, map.T)
-cf = ax.contourf(PHI_RANGE, PSI_RANGE, eta_masked.T, levels=15, cmap='viridis')
+cf = ax.contourf(
+    PHI_RANGE, PSI_RANGE, eta_masked.T, levels=15, cmap='viridis', vmin=0.70, vmax=0.91
+)
 cs = ax.contour(
     PHI_RANGE,
     PSI_RANGE,
     eta_masked.T,
-    levels=15,
+    levels=30,
     colors='w',
     linewidths=0.5,
     alpha=0.6,
 )
 ax.clabel(cs, fmt='%.3f', fontsize=8)
 
-# Mark the meridional sample points
-for i in MERID_INDICES:
-    for j in MERID_INDICES:
-        ax.plot(PHI_RANGE[i], PSI_RANGE[j], 'w+', markersize=8, markeredgewidth=1.5)
 
 cbar = fig.colorbar(cf, ax=ax)
 cbar.set_label(r'Total-to-total efficiency $\eta_{tt}$ [-]', fontsize=14)
@@ -795,7 +825,6 @@ ax.set_xlabel(r'Flow coefficient $\phi$ [-]', fontsize=14)
 ax.set_ylabel(r'Loading coefficient $\psi_{ts}$ [-]', fontsize=14)
 ax.set_title('ORC Axial Turbine — Loss-Based Design Map', fontsize=15)
 ax.grid(True, alpha=0.3)
-ax.plot(PHI_RANGE[0], PSI_RANGE[0], 'w*', markersize=12, label='Reference design')
 ax.legend(fontsize=11)
 
 fig.tight_layout()
