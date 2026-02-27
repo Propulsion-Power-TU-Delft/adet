@@ -29,12 +29,11 @@ from adet.equations.geometrical import (
     MeridionalUniform,
     GeometricalRatios,
     MeridionalVariable,
-    MidspanVelocities,
 )
 from adet.equations.nondimensional import EnthalpyDropCoefficient
 from adet.equations.special import GeometricalAdder
 from adet.geometry import BezierCurve, StraightLine
-from adet.losses.basic import PlaceHolderLoss, ZeroDeviation
+from adet.losses.basic import ZeroDeviation
 from adet.losses.mixing import MixingMomentumBalances
 from adet.node import FlowNode
 

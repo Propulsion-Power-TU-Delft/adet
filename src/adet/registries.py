@@ -426,11 +426,11 @@ class VariableBoundsRegistry(
     ]
 ):
     DEFAULTS = {
-        # THERMODYNAMICS
+        # *** THERMODYNAMICS
         'p': (1e4, 150e5),
         'rhomass': (1e-3, 800.0),
         'T': (80.0, 1800.0),
-        # KINEMATICS
+        # *** KINEMATICS
         'V': (0.1, 600.0),
         'Vm': (0.1, 600.0),
         'Vt': (-600.0, 600.0),
@@ -443,14 +443,12 @@ class VariableBoundsRegistry(
         'alpha': (-1.45, 1.45),
         'metal_angle': (-1.45, 1.45),
         '.*area': (0.0, 2.0),
-        # 'chord_ax': (1e-3, 1.0),
         'rr': (1e-4, 3.0),
         'rr_.*': (1e-4, 3.0),
         'hh': (1e-8, 1.0),
         'height': (1e-5, 3.0),
-        # OTHERS
+        # *** OTHERS
         '.*solidity': (0.05, 10.0),
-        'num_blades': (1.0, 300.0),
         '.*massflow': (1e-4, 5e4),
         'slip_factor': (0.01, 0.99),
     }

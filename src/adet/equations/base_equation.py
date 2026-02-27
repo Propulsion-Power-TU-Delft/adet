@@ -1,16 +1,14 @@
-from inspect import getfullargspec
 from abc import ABC, abstractmethod
+from inspect import getfullargspec
 import logging
-import re
-from typing import Callable, ClassVar, get_args, cast, Self, Any
+from typing import Any, Callable, ClassVar, Self, cast
 
-import sympy as sp
 import casadi as cs
+import sympy as sp
 
 from adet.fluid.casadi_eos import CasadiEos
-from adet.tools.strings import get_index, validate_arg_format, get_arg_state
 from adet.tools.context import override_operators
-from adet.constants import NodeStatesNames
+from adet.tools.strings import get_index, validate_arg_format
 
 
 logger = logging.getLogger(__name__)

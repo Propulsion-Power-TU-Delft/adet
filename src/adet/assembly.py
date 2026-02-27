@@ -1486,15 +1486,17 @@ class CasadiSystem(SystemAssembler):
                     'error_on_fail': True,
                     # Reasonable defaults for IPOPT, overwritten by user
                     'ipopt.print_level': 3,
-                    'ipopt.max_iter': 1000,
+                    'ipopt.max_iter': 6000,
                     'ipopt.tol': 1e-8,
-                    'ipopt.acceptable_constr_viol_tol': 1e-10,  # infeasible pts
-                    'ipopt.bound_push': 0.1,
+                    'ipopt.acceptable_constr_viol_tol': 1e-10,
+                    'ipopt.bound_frac': 0.1,  # Relative initial push < 0.5
+                    'ipopt.mu_init': 0.3,  # Initial barrier param
                     'ipopt.mu_strategy': 'adaptive',
-                    'ipopt.linear_solver': 'mumps',
-                    # NOTE: Superseeded by new implementations, thermo
-                    # derivatives available up to the 3rd order (null)
-                    # 'ipopt.hessian_approximation': 'limited-memory',
+                    'ipopt.linear_solver': 'spral',
+                    # Lower = stricter restoration (def = 100 * tol)
+                    'ipopt.resto_failure_feasibility_threshold': 1e-7,
+                    'ipopt.expect_infeasible_problem': 'yes',
+                    # 'ipopt.hessian_approximation': 'limited-memory',  # Less updates
                     **opts,
                 },
             )

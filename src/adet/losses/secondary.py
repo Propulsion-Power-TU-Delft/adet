@@ -77,6 +77,8 @@ class SecondaryBSM(LossModel):
         )
 
         loss_coeffY = cs.if_else(hgt_by_ch < 2.0, Y_min2, Y_gtr2)
+        # Bound the loss coefficient to be >= 0
+        loss_coeffY = cs.if_else(loss_coeffY > 0.0, loss_coeffY, 0.0)
 
         rlt_p_out = (rlt_p0 + loss_coeffY * stc_p1) / (loss_coeffY + 1)
 

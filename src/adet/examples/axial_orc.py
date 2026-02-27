@@ -27,6 +27,7 @@ from adet.equations.fundamental import (
 from adet.equations.geometrical import (
     MeridionalVariable,
     MinimalCamberLine,
+    ModifiedZweifel,
     ParabolicCamberline,
 )
 from adet.equations.nondimensional import (
@@ -34,9 +35,9 @@ from adet.equations.nondimensional import (
     StaticTotalDegreeOfReaction,
     TotalStaticLoadingCoefficient,
     TotalTotalExpansionEfficiency,
+    VolumetricFlowRatio,
     WorkCoefficient,
 )
-from adet.equations.utils import residual_debugger
 from adet.fluid.settings import ExternalFluidModel
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
@@ -75,8 +76,8 @@ abs_state.debug_print = False
 
 
 real_model = ExternalFluidModel(abs_state)
-INLET_PRESSURE = 2.071 * abs_state.p_critical()
-INLET_TEMPERATURE = 1.052 * abs_state.T_critical()
+INLET_PRESSURE = 1.3 * abs_state.p_critical()
+INLET_TEMPERATURE = 1.045 * abs_state.T_critical()
 abs_state.update(cp.PT_INPUTS, INLET_PRESSURE, INLET_TEMPERATURE)
 
 
@@ -110,6 +111,7 @@ _guess_reg.from_dict(
         'rhomass': abs_state.rhomass(),
         'k_prof': 0.3,  # Profile loading
         'camberCoeff': 1.0,
+        'zweifelCoeff': 0.8,
     }
 )
 
@@ -120,9 +122,11 @@ _bounds_reg.reset()
 # _bounds_reg.ignore_defaults = True
 _bounds_reg.from_dict(
     {
-        # 'delta_smass_.*': (0.0, 100.0),
-        'hdropCoeff': (-8.0, -0.2),
+        # 'delta_smass_.*': (0.2, 100.0),
+        # 'delta_smass_mixing': (0.8, 100.0),
+        # 'hdropCoeff': (-8.0, -0.2),
         'U': (0.0, 200.0),  # Reduce the search area
+        'Vm': (20.0, 150.0),  # Reduce the search area
     }
 )
 if fluid_settings.model == real_model:
@@ -172,15 +176,29 @@ class LossMatcher(LossApplier):
         )
 
 
-EXTRA_EQUATIONS: dict[
+DUTY_COEFFS = {
+    'oth_flowCoeff1': 0.4,
+    'oth_volflowRatio1': 3.0,
+    'oth_reactDegree_ts1': 0.3,
+    'oth_ts_loadCoeff1': 3,
+}
+
+MIXING_EQS: dict[
     Type[EquationBase],
     int | tuple[int, ...],
 ] = {
-    IsentropicProperties: (0, 1),
+    # Blockage of blade + b.l.
     BladeBlockage: 1,
     BoundaryLayerRatios: 1,
     SieverdingBasePressure: (0, 1),
-    # ReducedThermoQuantities: 0,
+}
+
+LOSS_MODELS: dict[
+    Type[EquationBase],
+    int | tuple[int, ...],
+] = {
+    # *** Blade row losses
+    IsentropicProperties: (0, 1),
     SecondaryBSM: (0, 1),
     DentonProfileLoss: (0, 1),
     DentonLeakageLoss: (0, 1),
@@ -194,16 +212,12 @@ inlet = Inlet(
         'oth': {
             'cum_massflow': 1,
         },
-        'kin': {
-            'mermach': 0.1,
-        },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
-            'hubtipRatio': 0.7,
+            'hubtipRatio': 0.8,
         },
         'tot': {
             'p': abs_state.p(),
-            # 'T': abs_state.T(),
             'hmass': abs_state.hmass(),
         },
     }
@@ -225,16 +239,17 @@ stator = BladeRow(
             # ***  height <-> chord
             'aspRatio': 2,
             # 'flare_angle': Quantity(20, 'deg'),
-            'num_blades': 25,
             'thick_by_pitch': 0.02,
             'clearance_by_height': 0.01,
-            # 'solidity': 1.3, # WARN: Applies along span
+            # *** Num blades
+            # 'num_blades': 25,
+            'zweifelCoeff': 0.85,
         },
-        'oth': {
+        'oth': {  # NOTE: These are not used on first pass
             # *** Boundary layer ratios
             'mom_by_bld': 0.075,
             'disp_by_mom': 2,
-            'disp_by_hgt': 0.05,
+            'disp_by_hgt': 0.05,  # endwall
             # *** Profile loss coeff
             'Cd_profile': 0.002,
             'xi_by_camb_len_A': 0.375,
@@ -244,10 +259,10 @@ stator = BladeRow(
         },
     },
     extra_equations={
-        # *** Camberline model
-        MinimalCamberLine(): (0, 1),
         ZeroDeviation(): 0,  # No incidence (design)
-        ZeroDeviation(): 1,
+        ZeroDeviation(): 1,  # No deviation (accounted in mixers)
+        ModifiedZweifel(): (0, 1),
+        MinimalCamberLine(): (0, 1),
         INITIAL_LOSS: (0, 1),
     },
     constant_variables=['geo_rr_midspan'],
@@ -255,37 +270,22 @@ stator = BladeRow(
 
 
 # ============ Modify rows
-rotor = deepcopy(stator)  # Reuse the ratios from stator
+rotor = deepcopy(stator)  # Reuse the stator as template
 rotor.shaft = shaft  # Assign the rotating shaft
-rotor.row_type = 'rotor'
-rotor.equations_from_dict(
-    {
-        WorkCoefficient(): (0, 1),
-        FlowCoefficient(): (0, 1),
-    }
-)
+rotor.name = 'rotor'  # Not strictly required
+rotor.row_type = 'rotor'  # Set the type
+rotor.add_equation(WorkCoefficient(), (0, 1))
 # *** Duty coefficients
-rotor.bc_from_dict(
-    {
-        'oth_flowCoeff1': 0.4,
-        'oth_reactDegree_ts1': 0.3,
-        'oth_ts_loadCoeff1': 3,
-    }
-)
+rotor.bc_from_dict(DUTY_COEFFS)  # Duty coefficients at node 1
 
-mixer = DownstreamMixer('Mixer')
-
-backend = CasadiSystem(num_span=NUM_SPAN)
 # ================================================
 # Create network
 ntw = ComponentNetwork(
-    fluid_settings,  # Fluid settings
-    inlet,  # Inlet conditions
-    backend,
+    fluid_settings,
+    inlet,
+    CasadiSystem(num_span=NUM_SPAN),
     components=[stator, rotor],
 )
-
-final_node = ntw.num_components * 2 - 1
 
 rotor.set_spanwise_constant('geo_chord_ax1')
 stator.set_spanwise_constant('geo_hh0', 'geo_chord_ax1')
@@ -294,33 +294,33 @@ rotor.remove_equation(MeridionalVariable, 0)
 
 if NUM_SPAN > 1:
     # Free vortex at stator and rotor outlets
-    stator.add_equation(FreeVortexDistribution(), 1)
+    # TODO: Impose on mixers directly
     rotor.add_equation(FreeVortexDistribution(), 1)
+    stator.add_equation(FreeVortexDistribution(), 1)
 
-# Multi-component relations
-ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
-ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, 2, 3))
-ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, 3))
+# Repeated stage definition
 ntw.system.add_equation(RepeatedStage(), (0, 1, 2, 3))
+ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, 2, 3))
+# Inlet-to-outlet equations
+ntw.system.add_equation(FlowCoefficient(), (0, 3))
+ntw.system.add_equation(VolumetricFlowRatio(), (0, 3))
+ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, 3))
+ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
 
 # Build
 ntw.system.build(SCALED)
 
-# ============ Solution ==========================
+# ============ Isentropic Solution ============
 rootfinder_is = ntw.system.make_rootfinder(
     'ipopt',
     opts={
         'error_on_fail': False,
-        'ipopt.max_iter': 1000,
-        'ipopt.hessian_approximation': 'limited-memory',  # Saves updates
     },
 )
 
 x0_is = ntw.system.get_scaled_guess()
 kn_is = ntw.system.get_scaled_constraints()
-bnd_is = ntw.system.get_arguments_bounds(
-    {'kin_alpha0': (-0.1, 0.1)},
-)
+bnd_is = ntw.system.get_arguments_bounds({'kin_alpha0': (-0.1, 0.1)})
 solution = solve_root_problem(
     rootfinder_is,
     x0_is,
@@ -332,69 +332,138 @@ solution = solve_root_problem(
     num_samples=10000,
 )
 
+stator_is_equations = stator._equations.copy()
+rotor_is_equations = rotor._equations.copy()
+
 # Write solution to dict for reading for next solution
 sol_dict_is = ntw.system.write_solution_to_nodes(solution)
-# ================================================
-user = input('INPUT >>> Continue with losses? [y/n] ')
+
+# ========================== MIXERS
+user = input('INPUT >>> Continue with mixers? [y/n] ')
 if user in ('y', 'Y'):
+    # Create mixer objects
+    sta_mixer = DownstreamMixer('sta_mixer')
+    rot_mixer = DownstreamMixer('rot_mixer')
+    rot_mixer.bc_from_dict(DUTY_COEFFS)
+
     ntw = ComponentNetwork(
         ntw.system.fluid_settings,
         inlet,
         CasadiSystem(NUM_SPAN),
         [
             stator,
-            mixer,
+            sta_mixer,
             rotor,
-            deepcopy(mixer),
+            rot_mixer,
         ],
     )
-    if mixer in ntw.components:
-        sol_dict_is_translate = {
-            k.replace('2', '4').replace('3', '5'): v for k, v in sol_dict_is.items()
-        }
-        rotor_in, rotor_out = (4, 5)
-        if isinstance(ntw.components[-1], DownstreamMixer):
-            final_node = 7
-        else:
-            final_node = 5
-    else:
-        rotor_in, rotor_out = (2, 3)
-        sol_dict_is_translate = sol_dict_is
-        final_node = 3
+    # *** Node indices
+    sta_in = 0
+    sta_out = 1
+    # Intermediate mixer out
+    mix_out = 2 * ntw.components.index(sta_mixer) + 1
+    rot_in = 2 * ntw.components.index(rotor)
+    rot_out = rot_in + 1
+    fin_node = 2 * len(ntw.components) - 1
 
-    ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, rotor_in, rotor_out))
-    ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, rotor_out))
-    ntw.system.add_equation(RepeatedStage(), (0, 1, rotor_in, rotor_out))
-    ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, final_node))
+    # *** Transpose dictionaries
+    mixing_guess_dict = {}
+    if isinstance(ntw.components[1], DownstreamMixer):
+        mixing_guess_dict.update(
+            **{k: v for k, v in sol_dict_is.items() if k.endswith(('0', '1'))}
+        )
+        # 1. Copy from stator outlet to mixer
+        mixing_guess_dict.update(
+            **{k.replace('1', '2'): v for k, v in sol_dict_is.items()}
+        )
+        mixing_guess_dict.update(
+            **{k.replace('1', '3'): v for k, v in sol_dict_is.items()}
+        )
+        # 2. Shift rotor guesses
+        mixing_guess_dict.update(
+            **{k.replace('2', '4'): v for k, v in sol_dict_is.items()}
+        )
+        mixing_guess_dict.update(
+            **{k.replace('3', '5'): v for k, v in sol_dict_is.items()}
+        )
+    if isinstance(ntw.components[-1], DownstreamMixer):
+        # 1. Copy from isentropic rotor outlet to mixer
+        mixing_guess_dict.update(
+            **{k.replace('3', '6'): v for k, v in sol_dict_is.items()}
+        )
+        mixing_guess_dict.update(
+            **{k.replace('3', '7'): v for k, v in sol_dict_is.items()}
+        )
 
-    # Remove the first computation loss
-    rotor.remove_equation(INITIAL_LOSS.__class__, (0, 1))
-    stator.remove_equation(INITIAL_LOSS.__class__, (0, 1))
-    # Add loss applier function
-    stator.add_equation(LossMatcher(tip_gap=False), (0, 1))
-    rotor.add_equation(LossMatcher(tip_gap=True), (0, 1))
+    STAGE_POSITIONS = (0, mix_out, rot_in, fin_node)
+    # *** Re-add equations in correct position
+    ntw.system.add_equation(RepeatedStage(), STAGE_POSITIONS)
+    ntw.system.add_equation(StaticTotalDegreeOfReaction(), STAGE_POSITIONS)
+
+    ntw.system.add_equation(FlowCoefficient(), (0, fin_node))
+    ntw.system.add_equation(VolumetricFlowRatio(), (0, fin_node))
+    ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, fin_node))
+    ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, fin_node))
 
     rotor.remove_equation(ZeroBlockage, 1)
     stator.remove_equation(ZeroBlockage, 1)
-    for eq, pos in EXTRA_EQUATIONS.items():
+    for eq, pos in MIXING_EQS.items():
         stator.add_equation(eq(), pos)
         rotor.add_equation(eq(), pos)
 
     ntw.build()
 
-    x0_loss = ntw.system.get_scaled_guess(sol_dict_is_translate)
+    x0_mixing = ntw.system.get_scaled_guess(mixing_guess_dict)
+    kn_mixing = ntw.system.get_scaled_constraints()
+    bnd_mixing = ntw.system.get_arguments_bounds()
+
+    err_on_fail = int(
+        input('INPUT >>> Fail on rootfinding error? [0/1] '),
+    )
+    rootfinder_mixing = ntw.system.make_rootfinder(
+        'ipopt',
+        opts={
+            'error_on_fail': bool(err_on_fail),
+        },
+    )
+
+    solution = solve_root_problem(
+        rootfinder_mixing,
+        x0_mixing,
+        kn_mixing,
+        bnd_mixing,
+        suppress_output=False,
+        perturbate_guess=False,
+    )
+    mixing_sol_dict = ntw.system.write_solution_to_nodes(solution)
+
+# ========================== LOSSES
+user = input('INPUT >>> Continue with losses? [y/n] ')
+if user in ('y', 'Y'):
+    # --- Remove the first computation loss
+    rotor.remove_equation(INITIAL_LOSS.__class__, (0, 1))
+    stator.remove_equation(INITIAL_LOSS.__class__, (0, 1))
+    # --- Add loss applier function
+    stator.add_equation(LossMatcher(tip_gap=False), (0, 1))
+    rotor.add_equation(LossMatcher(tip_gap=True), (0, 1))
+
+    for eq, pos in LOSS_MODELS.items():
+        stator.add_equation(eq(), pos)
+        rotor.add_equation(eq(), pos)
+
+    ntw.build()
+
+    x0_loss = ntw.system.get_scaled_guess(mixing_sol_dict)
     kn_loss = ntw.system.get_scaled_constraints()
     bnd_loss = ntw.system.get_arguments_bounds()
 
-    # sys.exit()
     err_on_fail = int(
         input('INPUT >>> Fail on rootfinding error? [0/1] '),
     )
     rootfinder_loss = ntw.system.make_rootfinder(
-        'kinsol',
+        'ipopt',
         opts={
             'error_on_fail': bool(err_on_fail),
-            # 'ipopt.hessian_approximation': 'limited-memory',
         },
     )
 
@@ -402,16 +471,14 @@ if user in ('y', 'Y'):
         rootfinder_loss,
         x0_loss,
         kn_loss,
-        # bnd_loss,
+        bnd_loss,
         suppress_output=False,
         perturbate_guess=False,
     )
-    # = = = = = = = = = =
-# ________________________________________________
-# ________________________________________________
+
+    sol_dict_loss = ntw.system.write_solution_to_nodes(solution)
 
 
-final_sol_dict = ntw.system.write_solution_to_nodes(solution)
 ntw.print_structure()
 
 
@@ -612,12 +679,12 @@ if PLOTS:
 
 print(f'Num updates = {real_model.eos_object.num_updates}')
 
-# A little staircase :)
 nodes = {}
 for i, node in enumerate(ntw.system.nodes):
     # For simpler access set n0, n1, n2, ...
     nodes[i] = node
 
+# A little staircase :)
 n0 = nodes[0]
 n1 = nodes[1]
 if ntw.num_components > 1:
@@ -629,22 +696,7 @@ if ntw.num_components > 1:
         if ntw.num_components > 3:
             n6 = nodes[6]
             n7 = nodes[7]
-#     print(f'delta_smass_mixing {n3.stc.smass - n2.stc.smass}')
-#     print(f'Deviation {n3.kin.beta - n2.kin.beta}')
-#
-#     q = 0.5 * n2.stc.rhomass * n2.kin.W**2
-#     w = n2.geo.pitch * np.cos(n2.geo.metal_angle)
-#     cpb = (n2.oth.p_base - n2.stc.p) / q
-#
-#     zeta_inc = (
-#         -(cpb * n2.geo.bld_thick) / w
-#         + 2 * n2.oth.mom_thick / w
-#         + ((n2.oth.disp_thick + n2.geo.bld_thick) / w) ** 2
-#     )
-#
-#     zeta_actual = (n2.rlt.p - n3.rlt.p) / q
-#
-#     print(f'Incompressible vs actual zeta {zeta_inc}, {zeta_actual}')
+
 
 answer = input('INPUT >>> Show plots? [y/n]')
 if answer in ('Y', 'y'):

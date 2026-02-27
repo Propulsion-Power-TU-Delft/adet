@@ -99,8 +99,9 @@ def trapezoidal_vel_profile(
         xi_by_camb_len_A / xi_by_camb_len_A,
     )
 
-    # Velocity values
-    CLIP_RATIO = 5  # Clip pressure side to inlet W / ratio
+    # Velocity clippers
+    MIN_CLIP = 5  # Clip pressure side to inlet W / <N>
+    MAX_CLIP = 4  # Clip suction side to <N> times inlet vel
 
     # NOTE: With the absolute value this should work for both diffusing
     # and accelerating channels
@@ -114,8 +115,8 @@ def trapezoidal_vel_profile(
     # => Solution = Take the absolute value of k_prof
 
     k_prof = cs.fabs(k_prof)  # Take the absolute value
-    W_mid_ss = 2 * k_prof * kin_W1 + delta_W
-    W_mid_ps = cs.fmax(k_prof * kin_W0 - delta_W, kin_W0 / CLIP_RATIO)
+    W_mid_ss = cs.fmin(2 * k_prof * kin_W1 + delta_W, kin_W0 * MAX_CLIP)
+    W_mid_ps = cs.fmax(k_prof * kin_W0 - delta_W, kin_W0 / MIN_CLIP)
 
     # Full velocity distribution
     W_distr_ss = cs.horzcat(1 * kin_W0, W_mid_ss, W_mid_ss, kin_W1)  # Suction
@@ -162,10 +163,14 @@ class DentonProfileLoss(LossModel):
             oth_xi_by_camb_len_A1, oth_xi_by_camb_len_B1, oth_k_prof1, kin_W0, kin_W1
         )
 
+        # Static enthalpies
+        stc_hmass_ss = rlt_hmass0 - W_distr_ss**2 / 2
+        stc_hmass_ps = rlt_hmass0 - W_distr_ps**2 / 2
+
         # NOTE: Idea, make smass1 also an input and distribute
         # entropy (linearly?) between inlet and outlet
-        p_ss, rho_ss, temp_ss = self.eos(rlt_hmass0 - W_distr_ss**2 / 2, stc_smass0)
-        p_ps, rho_ps, temp_ps = self.eos(rlt_hmass0 - W_distr_ps**2 / 2, stc_smass0)
+        p_ss, rho_ss, temp_ss = self.eos(stc_hmass_ss, stc_smass0)
+        p_ps, rho_ps, temp_ps = self.eos(stc_hmass_ps, stc_smass0)
 
         # xi is the curvilinear coordinate along the chord
         xi_dimensional = xi_by_camb_len * geo_camb_len1

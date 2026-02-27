@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from adet.equations.base_equation import CamberLineGeom, EquationBase, MeridionalGeom
-from adet.equations.utils import get_midspan_idx, safe_min_clip, safe_sum
+from adet.equations.utils import get_midspan_idx, safe_abs, safe_min_clip, safe_sum
 
 
 # NOTE:
@@ -201,6 +201,36 @@ class CamberFunction(EquationBase):
     def residual(self, geo_metal_angle0, geo_metal_angle1, oth_camberCoeff1):
         delta_angle = geo_metal_angle1 - geo_metal_angle0
         return oth_camberCoeff1 + np.tanh(8 * delta_angle)
+
+
+class ModifiedZweifel(EquationBase):
+    def residual(
+        self,
+        kin_Wt0,
+        kin_Wt1,
+        stc_rhomass0,
+        stc_rhomass1,
+        kin_Wm0,
+        kin_Wm1,
+        rlt_p0,
+        stc_p1,
+        geo_zweifelCoeff1,
+        geo_num_blades1,
+        geo_chord_ax1,
+        geo_rr_midspan1,
+    ):
+        midspan = get_midspan_idx(kin_Wm0)
+        delta_Vt = safe_abs(kin_Wt1 - kin_Wt0)
+        solidity_ax = (
+            0.5
+            * (stc_rhomass0 * kin_Wm0 + stc_rhomass1 * kin_Wm1)
+            * delta_Vt
+            / (geo_zweifelCoeff1 * (rlt_p0 - stc_p1))
+        )
+
+        optimal_pitch = geo_chord_ax1[midspan] / solidity_ax[midspan]
+        num_blades_opt = (2 * np.pi * geo_rr_midspan1) / optimal_pitch
+        return geo_num_blades1 - np.floor(num_blades_opt)
 
 
 class MinimalCamberLine(CamberLineGeom):

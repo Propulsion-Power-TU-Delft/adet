@@ -31,6 +31,16 @@ class StaticTotalPressRatio(EquationBase):
         return tot_p0 * oth_pRatio_ts1 - stc_p1
 
 
+class VolumetricFlowRatio(EquationBase):
+    """
+    .. math::
+        \\beta_{tt} = \\frac{p_{t1}}{p_{t,0}}
+    """
+
+    def residual(self, stc_rhomass0, stc_rhomass1, oth_volflowRatio1):
+        return stc_rhomass1 * oth_volflowRatio1 - stc_rhomass0
+
+
 class TotalTotalExpansionEfficiency(EquationBase):
     manual_units = ('dimensionless',)
     input_pair = cp.PSmass_INPUTS
