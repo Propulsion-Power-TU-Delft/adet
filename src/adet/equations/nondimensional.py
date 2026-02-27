@@ -37,8 +37,8 @@ class VolumetricFlowRatio(EquationBase):
         \\beta_{tt} = \\frac{p_{t1}}{p_{t,0}}
     """
 
-    def residual(self, stc_rhomass0, stc_rhomass1, oth_volflowRatio1):
-        return stc_rhomass1 * oth_volflowRatio1 - stc_rhomass0
+    def residual(self, tot_rhomass0, stc_rhomass1, oth_volflowRatio1):
+        return stc_rhomass1 * oth_volflowRatio1 - tot_rhomass0
 
 
 class TotalTotalExpansionEfficiency(EquationBase):

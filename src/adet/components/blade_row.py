@@ -34,7 +34,7 @@ from adet.equations.nondimensional import EnthalpyDropCoefficient
 from adet.equations.special import GeometricalAdder
 from adet.geometry import BezierCurve, StraightLine
 from adet.losses.basic import ZeroDeviation
-from adet.losses.mixing import MixingMomentumBalances
+from adet.losses.mixing import MixingMomentumBalances, SimplifiedMixingBalances
 from adet.node import FlowNode
 
 logger = logging.getLogger(__name__)
@@ -88,9 +88,9 @@ class BladeRow(BaseComponent):
         (ThicknessToPitch, 1),
         (Solidity, 1),
         # *** Properties for bounding
-        (AngleDeflection, (0, 1)),
-        (EnthalpyDropCoefficient, (0, 1)),
-        (CamberFunction, (0, 1)),
+        # (AngleDeflection, (0, 1)),
+        # (EnthalpyDropCoefficient, (0, 1)),
+        # (CamberFunction, (0, 1)),
     ]
 
     from_previous_node = ABSOLUTE_LINK + GEOM_LINK
@@ -188,7 +188,8 @@ class DownstreamMixer(BaseComponent):
         # *** Fundamental
         (ConstantEnergy, (0, 1)),
         (MassConservation, (0, 1)),
-        (MixingMomentumBalances, (0, 1)),
+        # (MixingMomentumBalances, (0, 1)),
+        (SimplifiedMixingBalances, (0, 1)),
         (DeviationAngle, (0, 1)),
         # *** Blockage
         (BladeBlockage, 0),

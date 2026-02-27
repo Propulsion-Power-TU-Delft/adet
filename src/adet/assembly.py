@@ -579,13 +579,17 @@ class UnitScalingManager:
         if not self.data.scaled:
             scales = np.ones(num_equations)
         else:
-            for eq, units in zip(self.data.equations.keys(), self.data.equations_units):
-                if eq.scaling_factor:
+            for eq, units in zip(self.data.equations, self.data.equations_units):
+                if eq._scaling_factor:
                     logger.debug(
                         f'Custom scaling factor found for {eq.__class__.__name__}, '
-                        f'{eq.scaling_factor}'
+                        f'{eq._scaling_factor}'
                     )
-                    eq_scales += eq.scaling_factor
+                    for scl, u in zip(eq._scaling_factor, units):
+                        if scl is None:
+                            eq_scales.append(self._assign_scaling_factor(u))
+                        else:
+                            eq_scales.append(scl)
                 else:
                     eq_scales += [self._assign_scaling_factor(u) for u in units]
 

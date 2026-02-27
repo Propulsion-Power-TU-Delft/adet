@@ -26,12 +26,13 @@ class EquationBase(ABC):
     """
 
     manual_units: ClassVar[tuple[str, ...]] = ()
+    scaling_factor: tuple[float | None, ...] | None = None
     # EoS accessories
     input_pair: ClassVar[int] = 0
     output_quantities: ClassVar[tuple[str, ...]] = ()
     _eos: None | CasadiEos | cs.Function = None
 
-    def __init__(self, scaling_factor: list[float] | None = None):
+    def __init__(self, custom_scaling_factor: list[float] | None = None):
         """
         Parameters
         ----------
@@ -47,9 +48,10 @@ class EquationBase(ABC):
             residual_args,
         )
 
-        # TODO: Move scaling factor to class attribute
-        self.scaling_factor = scaling_factor
-        self._num_equations: int | None = None
+        if custom_scaling_factor:
+            self._scaling_factor = custom_scaling_factor
+        else:
+            self._scaling_factor = self.__class__.scaling_factor
 
     def __call__(self, *args):
         return self.residual(*args)

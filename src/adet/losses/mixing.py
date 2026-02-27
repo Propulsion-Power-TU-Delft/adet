@@ -7,6 +7,7 @@ import casadi as cs
 import numpy as np
 
 from adet.equations.base_equation import EquationBase
+from adet.equations.utils import safe_abs
 from adet.tools.interpolation import make_casadi_interpolant
 
 
@@ -47,6 +48,8 @@ class MixingMomentumBalances(EquationBase):
 
     manual_units = ('N / m', 'dimensionless', 'J / kg / K')
 
+    scaling_factor = (None, None, 0.01)
+
     def residual(
         self,
         oth_ch_massflow0,
@@ -77,6 +80,7 @@ class MixingMomentumBalances(EquationBase):
     ):
         # Hypotheses
         devtn = -np.sign(geo_metal_angle0) * (kin_beta1 - kin_beta0)
+        devtn = cs.fmax(devtn, 0.0)
 
         # Massflow per unit length
         mf = oth_ch_massflow0 / geo_hh0
@@ -98,14 +102,14 @@ class MixingMomentumBalances(EquationBase):
         # area_y = safe_abs(geo_pitch0 * np.sin(geo_metal_angle0))
         # mom_in_y = p_suct * area_y
         # mom_out_y = stc_p1 * area_y + mf * kin_W1 * np.sin(devtn)
-        # r2 = mom_in_y - mom_out_y
+        # r2 = (mom_in_y - mom_out_y) / mom_in_y
 
         # 3 *** Supersonic vs. subsonic switch
         # This is a very dubious assumption that Andrea uses in its code
         # for now let us reproduce it and exclude the y momentum balance
         switch_supers = kin_relmach0 - 1.0  # Choking at throat
         switch_subson = kin_beta0 - kin_beta1  # Zero deviation
-        r3 = cs.if_else(kin_relmach1 > 0.9, switch_supers, switch_subson)
+        r3 = cs.if_else(kin_relmach1 >= 0.9, switch_supers, switch_subson)
 
         # Entropy production for bounding
         r4 = oth_delta_smass_mixing1 - (stc_smass1 - stc_smass0)
@@ -114,6 +118,9 @@ class MixingMomentumBalances(EquationBase):
 
 
 class SimplifiedMixingBalances(EquationBase):
+    manual_units = ('dimensionless', 'Pa', 'J / kg / K')
+    scaling_factor = (None, None, 0.01)
+
     def residual(
         self,
         # Thermo
@@ -125,6 +132,8 @@ class SimplifiedMixingBalances(EquationBase):
         kin_W0,
         kin_beta0,
         kin_beta1,
+        kin_relmach0,
+        kin_relmach1,
         # Geometry
         geo_metal_angle0,
         geo_pitch0,
@@ -139,7 +148,9 @@ class SimplifiedMixingBalances(EquationBase):
         oth_delta_smass_mixing1,
     ):
         # No deviation
-        r1 = kin_beta1 - kin_beta0
+        switch_supers = kin_relmach0 - 1.0  # Choking at throat
+        switch_subson = kin_beta0 - kin_beta1  # Zero deviation
+        r1 = cs.if_else(kin_relmach1 >= 0.9, switch_supers, switch_subson)
 
         q = 0.5 * stc_rhomass0 * kin_W0**2  # Dynamic head
         w = geo_pitch0 * np.cos(geo_metal_angle0)  # Throat

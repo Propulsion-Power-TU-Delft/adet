@@ -1,13 +1,11 @@
-from importlib import import_module
 import sys
 from typing import Literal, Mapping
 
 import casadi as cs
 import numpy as np
-
 from numpy.typing import NDArray
-from sympy import Symbol
 from pint.facets.plain import PlainQuantity
+from sympy import Symbol
 
 from adet.equations.base_equation import EquationBase
 from adet.fluid.casadi_eos import CasadiEos
@@ -80,7 +78,7 @@ def safe_min_clip(x, min_value):
     return x
 
 
-def thermo_deriv(eos: CasadiEos, arg0, arg1, wrt: Literal[0, 1]):
+def thermo_deriv(eos, arg0, arg1, wrt: Literal[0, 1]):
     eos_value = (eos(arg0, arg1),)
     jacobian = eos.jacobian()(arg0, arg1, *eos_value)
     return [cs.diag(jacobian[wrt + 2 * i]) for i in range(eos.n_out())]

@@ -24,6 +24,7 @@ from adet.equations.fundamental import BladeBlockage, ZeroBlockage
 from adet.equations.geometrical import (
     MeridionalVariable,
     MinimalCamberLine,
+    ModifiedZweifel,
     ParabolicCamberline,
 )
 from adet.equations.nondimensional import (
@@ -31,6 +32,7 @@ from adet.equations.nondimensional import (
     StaticTotalDegreeOfReaction,
     TotalStaticLoadingCoefficient,
     TotalTotalExpansionEfficiency,
+    VolumetricFlowRatio,
     WorkCoefficient,
 )
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
@@ -92,11 +94,16 @@ class LossMatcher(LossApplier):
         )
 
 
-EXTRA_EQUATIONS: dict[Type[EquationBase], int | tuple[int, ...]] = {
-    IsentropicProperties: (0, 1),
+# Mixing equations: blockage and boundary layer ratios
+MIXING_EQS: dict[Type[EquationBase], int | tuple[int, ...]] = {
     BladeBlockage: 1,
     BoundaryLayerRatios: 1,
     SieverdingBasePressure: (0, 1),
+}
+
+# Loss models: isentropic properties + loss correlations
+LOSS_MODELS: dict[Type[EquationBase], int | tuple[int, ...]] = {
+    IsentropicProperties: (0, 1),
     SecondaryBSM: (0, 1),
     DentonProfileLoss: (0, 1),
     DentonLeakageLoss: (0, 1),
@@ -150,6 +157,8 @@ _guess_reg.from_dict(
         'rhomass': abs_state.rhomass(),
         'k_prof': 0.3,
         'camberCoeff': 1.0,
+        'zweifelCoeff': 0.8,
+        'volflowRatio': 4.0,
     }
 )
 
@@ -198,10 +207,9 @@ stator = BladeRow(
     out_constraints={
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
-            'aspRatio': 2,
-            'num_blades': 25,
             'thick_by_pitch': 0.02,
             'clearance_by_height': 0.01,
+            'zweifelCoeff': 0.85,
         },
         'oth': {
             'mom_by_bld': 0.075,
@@ -214,8 +222,8 @@ stator = BladeRow(
         },
     },
     extra_equations={
-        # MinimalCamberLine(): (0, 1),
-        ParabolicCamberline(): (0, 1),
+        ModifiedZweifel(): (0, 1),
+        MinimalCamberLine(): (0, 1),
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
         INITIAL_LOSS: (0, 1),
@@ -226,12 +234,9 @@ stator = BladeRow(
 rotor = deepcopy(stator)
 rotor.shaft = shaft
 rotor.row_type = 'rotor'
-rotor.equations_from_dict(
-    {
-        WorkCoefficient(): (0, 1),
-        FlowCoefficient(): (0, 1),
-    }
-)
+rotor.add_equation(WorkCoefficient(), (0, 1))
+stator.set_boundary_cond('geo_flare_angle1', Quantity(30, 'deg'))
+rotor.set_boundary_cond('geo_aspRatio1', 3.0)
 
 mixer = DownstreamMixer('mixer')
 
@@ -257,19 +262,15 @@ stator.set_spanwise_constant('geo_hh0', 'geo_chord_ax1')
 rotor.set_spanwise_constant('geo_chord_ax1')
 rotor.copy_from_previous('geo_hh', 'geo_rr')
 rotor.remove_equation(MeridionalVariable, 0)
-ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, final_node))
-ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, 2, 3))
-ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, final_node))
+
 ntw.system.add_equation(RepeatedStage(), (0, 1, 2, 3))
+ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, 2, 3))
+ntw.system.add_equation(FlowCoefficient(), (0, final_node))
+ntw.system.add_equation(VolumetricFlowRatio(), (0, final_node))
+ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, final_node))
+ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, final_node))
 
 ntw.system.build(SCALED)
-
-# ================================================
-flow_coeff_name = f'oth_flowCoeff{final_node}'
-load_coeff_name = f'oth_ts_loadCoeff{final_node}'
-
-flow_coeff_idx = ntw.system.constraints.index(flow_coeff_name)
-load_coeff_idx = ntw.system.constraints.index(load_coeff_name)
 
 # ================================================
 # Isentropic initial IPOPT solve
@@ -294,18 +295,23 @@ solution = solve_root_problem(
 )
 
 # ================================================
-# Transition to losses
+# Transition to mixing (add mixers + blockage/BL equations)
 sol_dict_is = ntw.system.write_solution_to_nodes(solution)
 
-rotor.remove_equation(INITIAL_LOSS.__class__, (0, 1))
-stator.remove_equation(INITIAL_LOSS.__class__, (0, 1))
 rotor.remove_equation(ZeroBlockage, 1)
 stator.remove_equation(ZeroBlockage, 1)
-for eq, pos in EXTRA_EQUATIONS.items():
+for eq, pos in MIXING_EQS.items():
     stator.add_equation(eq(), pos)
     rotor.add_equation(eq(), pos)
-stator.add_equation(LossMatcher(tip_gap=False), (0, 1))
-rotor.add_equation(LossMatcher(tip_gap=True), (0, 1))
+
+rot_mixer = deepcopy(mixer)
+rot_mixer.bc_from_dict(
+    {
+        'oth_flowCoeff1': PHI_RANGE[0],
+        'oth_reactDegree_ts1': 0.3,
+        'oth_ts_loadCoeff1': PSI_RANGE[0],
+    }
+)
 
 ntw = ComponentNetwork(
     fluid_settings,
@@ -315,35 +321,73 @@ ntw = ComponentNetwork(
         stator,
         mixer,
         rotor,
-        deepcopy(mixer),
+        rot_mixer,
     ],
 )
 
-if mixer in ntw.components:
-    sol_dict_is_translate = {
-        k.replace('2', '4').replace('3', '5'): v for k, v in sol_dict_is.items()
-    }
-    rotor_in, rotor_out = (4, 5)
-    if isinstance(ntw.components[-1], DownstreamMixer):
-        final_node = 7
-    else:
-        final_node = 5
-else:
-    rotor_in, rotor_out = (2, 3)
-    sol_dict_is_translate = sol_dict_is
-    final_node = 3
+# Node indices in the mixing/loss network
+mix_out = 2 * ntw.components.index(mixer) + 1  # = 3
+rotor_in = 2 * ntw.components.index(rotor)      # = 4
+rotor_out = rotor_in + 1                         # = 5
+final_node = 2 * len(ntw.components) - 1        # = 7
 
+STAGE_POSITIONS = (0, mix_out, rotor_in, final_node)
 
+ntw.system.add_equation(RepeatedStage(), STAGE_POSITIONS)
+ntw.system.add_equation(StaticTotalDegreeOfReaction(), STAGE_POSITIONS)
+ntw.system.add_equation(FlowCoefficient(), (0, final_node))
+ntw.system.add_equation(VolumetricFlowRatio(), (0, final_node))
+ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, final_node))
 ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, final_node))
-ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, rotor_in, rotor_out))
-ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, rotor_out))
-ntw.system.add_equation(RepeatedStage(), (0, 1, rotor_in, rotor_out))
+
+ntw.build()
+
+# Translate isentropic solution to mixing network node indices
+sol_dict_mixing_guess = {
+    k.replace('2', '4').replace('3', '5'): v for k, v in sol_dict_is.items()
+}
+
+x0_mixing = ntw.system.get_scaled_guess(sol_dict_mixing_guess)
+kn_mixing = ntw.system.get_scaled_constraints()
+bnd_mixing = ntw.system.get_arguments_bounds()
+
+rootfinder_mixing = ntw.system.make_rootfinder(
+    'ipopt',
+    opts={
+        'error_on_fail': False,
+        'ipopt.max_iter': 1000,
+        'ipopt.hessian_approximation': 'limited-memory',
+    },
+)
+logger.info(
+    f'Solving mixing initial point: phi={PHI_RANGE[0]:.3f}, psi={PSI_RANGE[0]:.3f}'
+)
+solution = solve_root_problem(
+    rootfinder_mixing,
+    x0_mixing,
+    kn_mixing,
+    bnd_mixing,
+    suppress_output=False,
+    perturbate_guess=False,
+)
+
+# ================================================
+# Transition to losses
+sol_dict_mixing = ntw.system.write_solution_to_nodes(solution)
+
+rotor.remove_equation(INITIAL_LOSS.__class__, (0, 1))
+stator.remove_equation(INITIAL_LOSS.__class__, (0, 1))
+stator.add_equation(LossMatcher(tip_gap=False), (0, 1))
+rotor.add_equation(LossMatcher(tip_gap=True), (0, 1))
+for eq, pos in LOSS_MODELS.items():
+    stator.add_equation(eq(), pos)
+    rotor.add_equation(eq(), pos)
 
 ntw.build()
 
 # Update constraint names and indices for the loss system
-flow_coeff_name = f'oth_flowCoeff{rotor_out}'
-load_coeff_name = f'oth_ts_loadCoeff{rotor_out}'
+flow_coeff_name = f'oth_flowCoeff{final_node}'
+load_coeff_name = f'oth_ts_loadCoeff{final_node}'
 
 flow_coeff_idx = ntw.system.constraints.index(flow_coeff_name)
 load_coeff_idx = ntw.system.constraints.index(load_coeff_name)
@@ -352,14 +396,16 @@ logger.info(
     f'{load_coeff_name}={load_coeff_idx}'
 )
 
-# Solve loss initial point with IPOPT (using isentropic solution as warm start)
-x0_loss = ntw.system.get_scaled_guess(sol_dict_is_translate)
+x0_loss = ntw.system.get_scaled_guess(sol_dict_mixing)
 kn_loss = ntw.system.get_scaled_constraints()
 bnd_loss = ntw.system.get_arguments_bounds()
+
 rootfinder_ipopt_loss = ntw.system.make_rootfinder(
-    'kinsol',
+    'ipopt',
     opts={
         'error_on_fail': False,
+        'ipopt.max_iter': 1000,
+        'ipopt.hessian_approximation': 'limited-memory',
     },
 )
 logger.info(

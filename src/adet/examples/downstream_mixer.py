@@ -4,10 +4,9 @@ import logging
 
 import matplotlib.pyplot as plt
 import numpy as np
+import CoolProp as cp
 from pint import Quantity
 
-from adet.fluid.symbolic_eos import IdealGasState
-from adet.solution import solve_root_problem
 from adet.assembly import CasadiSystem
 from adet.components import BladeRow, Inlet, Shaft
 from adet.components import ComponentNetwork
@@ -15,26 +14,22 @@ from adet.components.blade_row import DownstreamMixer
 from adet.components.blade_row import plot_from_nodes
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
 from adet.equations.fundamental import BladeBlockage
-from adet.equations.geometrical import (
-    CamberFunction,
-    MinimalCamberLine,
-    ParabolicCamberline,
-)
+from adet.equations.geometrical import MinimalCamberLine, ParabolicCamberline
 from adet.equations.nondimensional import (
     TotalTotalExpansionEfficiency,
 )
 from adet.equations.utils import residual_debugger
 from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel
 from adet.fluid.settings import FluidSettings
+from adet.fluid.symbolic_eos import IdealGasState
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.losses.mixing import (
     MixingMomentumBalances,
     SieverdingBasePressure,
-    SimplifiedMixingBalances,
 )
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
+from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
-from adet.tools.iter import grouper
 from adet.tools.loggers import setup_logger
 
 logger = logging.getLogger(__name__)
@@ -47,14 +42,14 @@ setup_logger(
 )
 
 # === SETTINGS
-NUM_SPAN = 11
+NUM_SPAN = 1
 SCALED = True
 PLOTS = True
 PRINTS = True
 INITIAL_LOSS = PercentageEntropyLoss(0.0)
 
 # This counts the number of updates in an attribute
-abs_state = DebugAbstractState('REFPROP', 'Air')
+abs_state = DebugAbstractState('REFPROP', 'MM')
 abs_state.debug_print = False
 id_state = IdealGasState(1.4, 287, 1.8e5)
 
@@ -62,8 +57,8 @@ real_model = ExternalFluidModel(abs_state)
 ideal_model = AnalyticalFluidModel(id_state)
 
 settings = FluidSettings(
-    model=ideal_model,
-    update_variables=('p', 'T'),
+    model=real_model,
+    update_variables=('p', 'hmass', 'T'),
     update_length=2,
 )
 
@@ -75,23 +70,35 @@ _defreg.from_dict(
         'k_prof': 'dimensionless',
     }
 )
+# Variable guesses
 _guess_reg = GuessRegistry()
 _guess_reg.reset()
-_guess_reg.set_fallback_value(1.5)
 
+# Variable bounds
 _bounds_reg = VariableBoundsRegistry()
 _bounds_reg.reset()
+_bounds_reg.ignore_defaults = True
 _bounds_reg.from_dict(
     {
-        'delta_smass_.*': (0.0, 10.0),
-        # 'dev_angle': (0.0, 0.1),
+        # 'delta_smass_.*': (0.0, 10.0),
+        # 'dev_angle': (-0.1, 0.1),
         # 'relmach': (0.0, 1.3),
+    }
+)
+INLET_PRESSURE = 1.3 * abs_state.p_critical()
+INLET_TEMPERATURE = 1.045 * abs_state.T_critical()
+abs_state.update(cp.PT_INPUTS, INLET_PRESSURE, INLET_TEMPERATURE)
+_bounds_reg.from_dict(
+    {
+        'p': (abs_state.p_critical() * 0.4, INLET_PRESSURE),
+        'T': (abs_state.T_critical() * 0.7, INLET_TEMPERATURE),
+        'hmass': (abs_state.hmass() - 300**2, abs_state.hmass()),
     }
 )
 
 # *** Shafts
 shaft = Shaft(
-    Quantity(15000.0, 'rpm'),
+    omega=Quantity(0.0, 'rpm'),
     is_constrained=True,
 )
 
@@ -99,8 +106,8 @@ shaft = Shaft(
 inlet = Inlet(
     {
         'kin': {
-            'alpha': Quantity(70, 'deg'),
-            'Vm': Quantity(100, 'm/s'),
+            'mach': 0.5,
+            'beta': 0.0,
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
@@ -108,14 +115,14 @@ inlet = Inlet(
             'hubtipRatio': 0.7,
         },
         'tot': {
-            'p': 18.1e5,
-            'T': 575,
+            'p': INLET_PRESSURE,
+            'T': INLET_TEMPERATURE,
         },
     }
 )
 
 row = BladeRow(
-    name='Stator',
+    name='stator',
     shaft=shaft,
     row_type='rotor',
     in_constraints={
@@ -125,17 +132,19 @@ row = BladeRow(
     },
     out_constraints={
         'kin': {
-            'alpha': Quantity(0, 'deg'),
+            # 'beta': 1.06,
+            # 'mach': 1,
         },
         'geo': {
             # Meridional
             'meridional_angle': Quantity(0, 'deg'),
             # Blade
-            'aspRatio': 1.4,
-            # 'num_blades': 10,
-            'solidity': 1.0,
+            'aspRatio': 1.8,
+            # 'chord_ax': 0.1,
+            'num_blades': 30,
+            # 'solidity': 1.0,
             'thick_by_pitch': 0.02,
-            'heightRatio': 1.1,
+            # 'heightRatio': 1.3,
         },
         'oth': {
             'mom_by_bld': 0.075,
@@ -149,24 +158,28 @@ row = BladeRow(
     },
     extra_equations={
         # Camberline model
-        MinimalCamberLine(): (0, 1),
-        # TwoSegmentCamberline(): (0, 1),
-        # ParabolicCamberline(): (0, 1),
+        ParabolicCamberline(): (0, 1),
         # |> Losses & Dev
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
-        # PercentageEntropyLoss(0.0): (0, 1),
         # |> Boundary layer properties
         BladeBlockage(): 1,
         BoundaryLayerRatios(): 1,
         SieverdingBasePressure(): (0, 1),
         INITIAL_LOSS: (0, 1),
-        # Efficiency measures
     },
     constant_variables=['geo_rr_midspan'],
 )
 
-mixer = DownstreamMixer('twitch')
+mixer = DownstreamMixer(
+    'twitch',
+    outlet_bc={
+        'kin': {
+            'beta': 1.2,
+            'mach': 1.2,
+        },
+    },
+)
 
 # *** Simplified formulation
 # mixer.remove_equation(MixingMomentumBalances, (0, 1))
@@ -184,6 +197,7 @@ ntw = ComponentNetwork(
 )
 
 row.set_spanwise_constant('geo_hh0', 'kin_Vm1')
+row.set_spanwise_constant('geo_chord_ax1')
 
 if ntw.num_components == 2:
     ntw.system.add_equation(IsentropicProperties(), (0, 3))
@@ -193,7 +207,10 @@ ntw.system.build(SCALED)
 
 rootfinder = ntw.system.make_rootfinder(
     'ipopt',
-    opts={'error_on_fail': False},
+    opts={
+        'error_on_fail': False,
+        'ipopt.max_wall_time': 20,
+    },
 )
 x0 = ntw.system.get_scaled_guess()
 kn = ntw.system.get_scaled_constraints()
@@ -218,7 +235,8 @@ for i, node in enumerate(ntw.system.nodes):
 n0 = nodes[0]
 n1 = nodes[1]
 
-ntw.system.nodes[-1].geo.add_variable('chord_ax', 0.2 * n1.geo.chord_ax)
+if mixer in ntw.components:
+    ntw.system.nodes[-1].geo.add_variable('chord_ax', 0.2 * n1.geo.chord_ax)
 
 
 if PLOTS:
@@ -336,5 +354,10 @@ if ntw.num_components > 1:
 
     print(f'Incompressible vs actual zeta {zeta_inc}, {zeta_actual}')
 
-plt.show()
-# plt.close('all')
+user = input('>>> INPUT: Show plots [y/n] ')
+if user in ('y', 'Y'):
+    plt.show(block=False)
+    input('Enter to close')
+plt.close('all')
+
+globals().update(residual_debugger(MixingMomentumBalances(), [n2, n3]))

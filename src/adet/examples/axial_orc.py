@@ -38,11 +38,16 @@ from adet.equations.nondimensional import (
     VolumetricFlowRatio,
     WorkCoefficient,
 )
+from adet.equations.utils import residual_debugger
 from adet.fluid.settings import ExternalFluidModel
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.losses.leakage import DentonLeakageLoss
-from adet.losses.mixing import SieverdingBasePressure
+from adet.losses.mixing import (
+    MixingMomentumBalances,
+    SieverdingBasePressure,
+    SimplifiedMixingBalances,
+)
 from adet.losses.profile import DentonProfileLoss
 from adet.losses.secondary import SecondaryBSM
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
@@ -73,7 +78,6 @@ INITIAL_LOSS = PercentageEntropyLoss(0.0)
 # This counts the number of updates in an attribute
 abs_state = DebugAbstractState('REFPROP', 'MM')
 abs_state.debug_print = False
-
 
 real_model = ExternalFluidModel(abs_state)
 INLET_PRESSURE = 1.3 * abs_state.p_critical()
@@ -122,8 +126,6 @@ _bounds_reg.reset()
 # _bounds_reg.ignore_defaults = True
 _bounds_reg.from_dict(
     {
-        # 'delta_smass_.*': (0.2, 100.0),
-        # 'delta_smass_mixing': (0.8, 100.0),
         # 'hdropCoeff': (-8.0, -0.2),
         'U': (0.0, 200.0),  # Reduce the search area
         'Vm': (20.0, 150.0),  # Reduce the search area
@@ -148,6 +150,8 @@ shaft = Shaft(-1, is_constrained=False)
 
 
 class LossMatcher(LossApplier):
+    scaling_factor = (0.01,)
+
     def __init__(
         self,
         tip_gap: bool,
@@ -178,9 +182,9 @@ class LossMatcher(LossApplier):
 
 DUTY_COEFFS = {
     'oth_flowCoeff1': 0.4,
-    'oth_volflowRatio1': 3.0,
+    'oth_volflowRatio1': 4,
     'oth_reactDegree_ts1': 0.3,
-    'oth_ts_loadCoeff1': 3,
+    'oth_ts_loadCoeff1': 4.0,
 }
 
 MIXING_EQS: dict[
@@ -214,7 +218,7 @@ inlet = Inlet(
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
-            'hubtipRatio': 0.8,
+            'hubtipRatio': 0.81,
         },
         'tot': {
             'p': abs_state.p(),
@@ -236,9 +240,6 @@ stator = BladeRow(
     out_constraints={
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
-            # ***  height <-> chord
-            'aspRatio': 2,
-            # 'flare_angle': Quantity(20, 'deg'),
             'thick_by_pitch': 0.02,
             'clearance_by_height': 0.01,
             # *** Num blades
@@ -268,13 +269,14 @@ stator = BladeRow(
     constant_variables=['geo_rr_midspan'],
 )
 
-
 # ============ Modify rows
 rotor = deepcopy(stator)  # Reuse the stator as template
 rotor.shaft = shaft  # Assign the rotating shaft
 rotor.name = 'rotor'  # Not strictly required
 rotor.row_type = 'rotor'  # Set the type
 rotor.add_equation(WorkCoefficient(), (0, 1))
+rotor.set_boundary_cond('geo_aspRatio1', 3.0)
+stator.set_boundary_cond('geo_flare_angle1', Quantity(30, 'deg'))
 # *** Duty coefficients
 rotor.bc_from_dict(DUTY_COEFFS)  # Duty coefficients at node 1
 
@@ -315,6 +317,7 @@ rootfinder_is = ntw.system.make_rootfinder(
     'ipopt',
     opts={
         'error_on_fail': False,
+        'ipopt.hessian_approximation': 'limited-memory',
     },
 )
 
@@ -424,6 +427,7 @@ if user in ('y', 'Y'):
         'ipopt',
         opts={
             'error_on_fail': bool(err_on_fail),
+            'ipopt.hessian_approximation': 'limited-memory',
         },
     )
 
@@ -435,7 +439,13 @@ if user in ('y', 'Y'):
         suppress_output=False,
         perturbate_guess=False,
     )
+
+    rtfn_kinsol = ntw.system.make_rootfinder(
+        'kinsol',
+        opts={'error_on_fail': bool(err_on_fail)},
+    )
     mixing_sol_dict = ntw.system.write_solution_to_nodes(solution)
+
 
 # ========================== LOSSES
 user = input('INPUT >>> Continue with losses? [y/n] ')
@@ -464,6 +474,7 @@ if user in ('y', 'Y'):
         'ipopt',
         opts={
             'error_on_fail': bool(err_on_fail),
+            'ipopt.hessian_approximation': 'limited-memory',
         },
     )
 
@@ -706,4 +717,5 @@ plt.close('all')
 
 print(f'Inlet mach is {n0.kin.mach}')
 
-# globals().update(residual_debugger(SecondaryBSM(), [n2, n3]))
+globals().update(residual_debugger(SimplifiedMixingBalances(), [n2, n3]))
+globals().update(residual_debugger(MixingMomentumBalances(), [n2, n3]))
