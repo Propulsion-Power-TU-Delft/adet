@@ -94,8 +94,8 @@ class StaticPressRatio(EquationBase):
         \\beta_{tt} = \\frac{p_{t1}}{p_{t,0}}
     """
 
-    def residual(self, stc_p0, stc_p1, oth_pRatio_ss1):
-        return stc_p0 * oth_pRatio_ss1 - stc_p1
+    def residual(self, stc_p0, stc_p1, oth_pRatio1):
+        return stc_p0 * oth_pRatio1 - stc_p1
 
 
 class StaticTotalDegreeOfReaction(EquationBase):
@@ -254,16 +254,7 @@ class RelativeMachNumber(EquationBase):
     manual_units = ('dimensionless',)
 
     def residual(self, kin_relmach0, kin_W0, stc_speed_sound0):
-        # Choking criterion, not used for now
         return kin_relmach0 * stc_speed_sound0 - kin_W0
-
-
-class RelativeMachWithChoke(EquationBase):
-    manual_units = ('dimensionless',)
-
-    def residual(self, kin_relmach0, kin_W0, stc_speed_sound0):
-        mach_w_choke = cs.if_else(kin_relmach0 > 1.0, 1.0, kin_relmach0)
-        return kin_W0 / stc_speed_sound0 - mach_w_choke
 
 
 class GammaPV(EquationBase):

@@ -104,7 +104,7 @@ class BaseRegistry(Generic[K, V]):
             return regex_match
 
         regex_match = self._find_regex_match(key, self._defaults)
-        if regex_match is not None:
+        if regex_match is not None and not self._ignore_defaults:
             return regex_match
 
         # No match found - check fallback or raise error
@@ -156,7 +156,10 @@ class BaseRegistry(Generic[K, V]):
         # Check regex patterns
         if self._find_regex_match(key, self._user_values) is not None:
             return True
-        if self._find_regex_match(key, self._defaults) is not None:
+        if (
+            not self._ignore_defaults
+            and self._find_regex_match(key, self._defaults) is not None
+        ):
             return True
         return False
 
@@ -175,6 +178,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         '.*_T_is': 'K',  # used by isentropic temperature
         '.*_[a-zA-Z]_red': 'dimensionless',  # reduced quantities
         'rhomass': 'kg / m**3',
+        'rhomass_.*': 'kg / m**3',
         '.*hmass.*': 'J / kg',  # Includes delta_hmass
         '.*smass.*': 'J / (kg * K)',  # Includes delta_smass
         'umass': 'J / kg',

@@ -188,8 +188,8 @@ class DownstreamMixer(BaseComponent):
         # *** Fundamental
         (ConstantEnergy, (0, 1)),
         (MassConservation, (0, 1)),
-        # (MixingMomentumBalances, (0, 1)),
-        (SimplifiedMixingBalances, (0, 1)),
+        (MixingMomentumBalances, (0, 1)),
+        # (SimplifiedMixingBalances, (0, 1)),
         (DeviationAngle, (0, 1)),
         # *** Blockage
         (BladeBlockage, 0),

@@ -1,6 +1,7 @@
 """Module that gathers fundamental equations for internal flows"""
 
 import numpy as np
+import CoolProp as cp
 
 from adet.equations import EquationBase
 from adet.equations.utils import get_midspan_idx, safe_sum, span_fin_diff
@@ -18,10 +19,8 @@ class ConstantAngMomentum(EquationBase):
 
 
 class ConstantEnergy(EquationBase):
-    def residual(self, rlt_hmass0, rlt_hmass1):
-        # WARN: This is used in mixing models for AXIAL
-        # turbines, I need to double check this
-        return rlt_hmass0 - rlt_hmass1
+    def residual(self, tot_hmass0, tot_hmass1):
+        return tot_hmass0 - tot_hmass1
 
 
 class MassConservation(EquationBase):
@@ -71,8 +70,8 @@ class BladeBlockage(MeridAreaBlockage):
     ):
         return geo_eff_area0 - (
             geo_area0
-            - geo_num_blades0
-            * geo_hh0
+            - geo_hh0
+            * geo_num_blades0
             * (geo_bld_thick0 + oth_disp_thick0)
             / np.cos(geo_metal_angle0)
         )
@@ -216,3 +215,61 @@ class GeneralWhirl(EquationBase):
         free_vortex_term = kin_Vt0 * geo_rr0
         frcd_vortex_term = kin_Vt0 / geo_rr0
         return kin_Vt0 - gen_whirl_a * geo_rr0**gen_whirl_n + gen_whirl_b / geo_rr0
+
+
+# NOTE: This is an experimental equation to compute the choking
+# conditions in parallel to any row, it does not enforce anything
+# for now but it is an accurate physical choking prediction that
+# does not add overhead. In the future we could do something for
+# massflow maximization using Lagrange multipliers like turboflow
+class ChokingCriterion(EquationBase):
+    manual_units = ('kg / s', 'm / s', 'Pa')
+    input_pair = cp.HmassSmass_INPUTS
+    output_quantities = ('rhomass', 'speed_sound', 'p')
+
+    def residual(
+        self,
+        tot_hmass0,
+        stc_smass0,
+        geo_eff_area0,
+        geo_eff_area1,
+        geo_metal_angle1,
+        kin_U0,
+        geo_metal_angle0,
+        kin_U1,
+        # Outputs
+        kin_W_choke0,
+        kin_W_choke1,
+        oth_p_choke1,
+    ):
+        Wt_in = kin_W_choke0 * np.sin(geo_metal_angle0)
+        Wt_th = kin_W_choke1 * np.sin(geo_metal_angle1)
+
+        Vt_in = Wt_in + kin_U0
+        Vt_th = Wt_th + kin_U1
+
+        Vm_in = kin_W_choke0 * np.cos(geo_metal_angle0)
+        Vm_th = kin_W_choke1 * np.cos(geo_metal_angle1)
+
+        tot_hmass_th = tot_hmass0 + (kin_U1 * Vt_th - kin_U0 * Vt_in)
+        stc_smass_th = stc_smass0
+
+        stc_hmass_in = tot_hmass0 - kin_W_choke0**2 / 2
+        stc_hmass_th = tot_hmass_th - kin_W_choke1**2 / 2
+
+        stc_rhomass_in, _, _ = self.eos(stc_hmass_in, stc_smass0)
+        stc_rhomass_th, stc_speed_sound_th, stc_p_th = self.eos(
+            stc_hmass_th, stc_smass_th
+        )
+
+        r1 = (
+            stc_rhomass_in * Vm_in * geo_eff_area0
+            - stc_rhomass_th * Vm_th * geo_eff_area1
+        )
+
+        # Assume velocity perpendicular to blade
+        r2 = kin_W_choke1 - stc_speed_sound_th
+
+        r3 = oth_p_choke1 - stc_p_th
+
+        return r1, r2, r3

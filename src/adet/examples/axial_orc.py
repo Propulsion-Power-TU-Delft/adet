@@ -181,7 +181,7 @@ class LossMatcher(LossApplier):
 
 
 DUTY_COEFFS = {
-    'oth_flowCoeff1': 0.4,
+    'oth_flowCoeff1': 0.55,
     'oth_volflowRatio1': 4,
     'oth_reactDegree_ts1': 0.3,
     'oth_ts_loadCoeff1': 4.0,
@@ -195,6 +195,7 @@ MIXING_EQS: dict[
     BladeBlockage: 1,
     BoundaryLayerRatios: 1,
     SieverdingBasePressure: (0, 1),
+    ModifiedZweifel: (0, 1),
 }
 
 LOSS_MODELS: dict[
@@ -243,8 +244,7 @@ stator = BladeRow(
             'thick_by_pitch': 0.02,
             'clearance_by_height': 0.01,
             # *** Num blades
-            # 'num_blades': 25,
-            'zweifelCoeff': 0.85,
+            'num_blades': 15,
         },
         'oth': {  # NOTE: These are not used on first pass
             # *** Boundary layer ratios
@@ -262,7 +262,6 @@ stator = BladeRow(
     extra_equations={
         ZeroDeviation(): 0,  # No incidence (design)
         ZeroDeviation(): 1,  # No deviation (accounted in mixers)
-        ModifiedZweifel(): (0, 1),
         MinimalCamberLine(): (0, 1),
         INITIAL_LOSS: (0, 1),
     },
@@ -321,6 +320,8 @@ rootfinder_is = ntw.system.make_rootfinder(
     },
 )
 
+rtfn_kinsol = ntw.system.make_rootfinder('kinsol')
+
 x0_is = ntw.system.get_scaled_guess()
 kn_is = ntw.system.get_scaled_constraints()
 bnd_is = ntw.system.get_arguments_bounds({'kin_alpha0': (-0.1, 0.1)})
@@ -348,6 +349,11 @@ if user in ('y', 'Y'):
     sta_mixer = DownstreamMixer('sta_mixer')
     rot_mixer = DownstreamMixer('rot_mixer')
     rot_mixer.bc_from_dict(DUTY_COEFFS)
+
+    rotor.rm_boundary_cond('geo_num_blades1')
+    stator.rm_boundary_cond('geo_num_blades1')
+    rotor.set_boundary_cond('geo_zweifelCoeff1', 0.85)
+    stator.set_boundary_cond('geo_zweifelCoeff1', 0.85)
 
     ntw = ComponentNetwork(
         ntw.system.fluid_settings,

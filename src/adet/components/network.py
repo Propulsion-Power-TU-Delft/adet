@@ -1,25 +1,23 @@
 from collections import defaultdict
-from typing import Generic, Mapping, Sequence, Type, TypeVar
+from typing import Generic, Mapping, Sequence, TypeVar
 
 from adet.assembly import SystemAssembler
 from adet.components import BaseComponent
 from adet.components.blade_row import BladeRow
+from adet.components.connections import Inlet, Shaft
 from adet.constants import ArrayLike
 from adet.equations.base_equation import EquationBase
-from adet.fluid.settings import FluidSettings
-from adet.components.connections import Inlet, Shaft
-
-from adet.equations.special import ThermoVarsAdder
-from adet.equations.geometrical import AnnulusAreas
-from adet.equations.nondimensional import AbsoluteMachNumber, RelativeMachNumber
 from adet.equations.fundamental import (
     Kinematics,
-    TotalMassFlow,
     MassAreaRelation,
     TotalArea,
+    TotalMassFlow,
     TotalStaticMatching,
 )
-
+from adet.equations.geometrical import AnnulusAreas
+from adet.equations.nondimensional import AbsoluteMachNumber, RelativeMachNumber
+from adet.equations.special import ThermoVarsAdder
+from adet.fluid.settings import FluidSettings
 from adet.tools.iter import ensure_tuple
 from adet.tools.printing import print_logo
 from adet.tools.strings import get_index, rm_index
