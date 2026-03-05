@@ -6,8 +6,8 @@ from typing import Literal
 import casadi as cs
 import numpy as np
 
-from adet.equations.base_equation import EquationBase
-from adet.equations.utils import safe_abs
+from adet.equations.base_equation import DeviationModel, EquationBase
+from adet.equations.utils import safe_abs, safe_if_else
 from adet.tools.interpolation import make_casadi_interpolant
 
 
@@ -46,70 +46,62 @@ class MixingMomentumBalances(EquationBase):
     1 = Mixed out conditions
     """
 
-    manual_units = ('dimensionless', 'dimensionless', 'J / kg / K')
-
-    scaling_factor = (None, None, 0.01)
-
     def residual(
         self,
-        oth_ch_massflow0,
-        # Thermo
-        stc_p0,
-        stc_p1,
-        stc_rhomass0,
-        # Kinematics
         kin_W0,
+        stc_rhomass0,
+        geo_bld_thick0,
+        geo_metal_angle0,
+        oth_mom_thick0,
+        oth_p_base0,
+        stc_p0,
+        stc_speed_sound0,
+        rlt_hmass0,
+        rlt_hmass1,
+        stc_p1,
         kin_W1,
+        kin_relmach1,
+        geo_pitch0,
         kin_beta0,
         kin_beta1,
-        kin_relmach0,
-        kin_relmach1,
-        # Geometry
+        kin_dev_angle1,
+        oth_ch_massflow0,
         geo_hh0,
-        geo_metal_angle0,
-        geo_pitch0,
-        geo_pitch1,
-        geo_bld_thick0,
-        # Boundary layer
-        oth_p_base0,
-        oth_mom_thick0,
-        # Entropy production check
-        stc_smass0,
-        stc_smass1,
-        oth_delta_smass_mixing1,
     ):
-        # Massflow per unit length
         mf = oth_ch_massflow0 / geo_hh0
-        devtn = kin_beta1 - kin_beta0
 
         # 1 *** X-Momentum
         mom_in_x = (
             mf * kin_W0
             - stc_rhomass0 * kin_W0**2 * oth_mom_thick0
-            + stc_p0 * (geo_pitch0 * np.cos(geo_metal_angle0) - geo_bld_thick0)
+            + stc_p0 * (geo_pitch0 * np.cos(kin_beta0) - geo_bld_thick0)
             + oth_p_base0 * geo_bld_thick0
         )
-        mom_out_x = mf * kin_W1 * np.cos(devtn) + stc_p1 * geo_pitch1 * np.cos(
-            geo_metal_angle0
+        mom_out_x = mf * kin_W1 * np.cos(kin_dev_angle1) + stc_p1 * geo_pitch0 * np.cos(
+            kin_beta0
         )
-        r_momx = (mom_in_x - mom_out_x) / mom_in_x
+        r_momx = mom_in_x - mom_out_x
 
         # 2 *** Y-Momentum
-        p_suct = stc_p0
-        area_y = safe_abs(geo_pitch0 * np.sin(geo_metal_angle0))
+        p_suct = 1.0 * stc_p1
+        area_y = safe_abs(geo_pitch0 * np.sin(kin_beta0))
         mom_in_y = p_suct * area_y
-        mom_out_y = stc_p1 * area_y + mf * kin_W1 * np.sin(devtn)
-        r_momy = (mom_in_y - mom_out_y) / mom_in_y
+        mom_out_y = stc_p1 * area_y + mf * kin_W1 * np.sin(kin_dev_angle1)
+
+        # Subsonic => Zero deviation
+        r_no_dev = kin_beta0 - kin_beta1
+
+        # Supersonic
+        r_choke = kin_W0 / stc_speed_sound0 - 1
+
+        # Design it choked
+        r_regime = safe_if_else(kin_relmach1 >= 1.0, r_choke, r_no_dev)
 
         # 3 *** Supersonic vs. subsonic switch
-        switch_supers = kin_relmach0 - 1.0
-        switch_subson = kin_beta0 - kin_beta1
-        r_regime = cs.if_else(kin_relmach1 >= 0.9, switch_supers, switch_subson)
+        # Positive metal angle => positive deviation reduces angle
+        r_dev = kin_beta1 - (kin_beta0 - kin_dev_angle1 * np.sign(geo_metal_angle0))
 
-        # Entropy production for bounding
-        r_delta = oth_delta_smass_mixing1 - (stc_smass1 - stc_smass0)
-
-        return r_momx, r_regime, r_delta
+        return r_momx, r_dev, r_regime
 
 
 class SimplifiedMixingBalances(EquationBase):
@@ -185,3 +177,31 @@ def inc_mixing_zeta(
         + 2 * oth_mom_thick0 / w
         + ((oth_disp_thick0 + geo_bld_thick0) / w) ** 2
     )
+
+
+class AungierDeviationModel(DeviationModel):
+    def residual(
+        self,
+        kin_beta0,
+        kin_relmach0,
+        geo_metal_angle0,
+    ):
+        cos_beta = np.cos(geo_metal_angle0)
+        beta = safe_abs(geo_metal_angle0)
+        delta0_rad = beta - np.arccos(
+            cos_beta * (1 + (1 - cos_beta) * (1 - 2 * beta / np.pi) ** 2)  # pyright:ignore
+        )
+
+        X = 2 * kin_relmach0 - 1
+
+        delta_sub_rad = delta0_rad * (1 - 10 * X**3 + 15 * X**4 - 6 * X**5)
+
+        deviation_rad = safe_if_else(
+            kin_relmach0 <= 0.5,
+            delta0_rad,
+            delta_sub_rad,
+        )
+
+        deviation_rad = -np.sign(geo_metal_angle0) * deviation_rad
+
+        return kin_beta0 - (geo_metal_angle0 + deviation_rad)

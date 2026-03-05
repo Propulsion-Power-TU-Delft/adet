@@ -18,7 +18,7 @@ from adet.equations.definitions import (
 from adet.equations.fundamental import (
     BladeBlockage,
     ConstantAngMomentum,
-    ConstantEnergy,
+    ConstRelEnthalpy,
     EulerEquation,
     MassConservation,
     ZeroBlockage,
@@ -157,7 +157,7 @@ class BladeRow(BaseComponent):
 class VanelessDiffuser(BaseComponent):
     base_equations = [
         # Fundamental equations
-        (ConstantEnergy, (0, 1)),
+        (ConstRelEnthalpy, (0, 1)),
         (ConstantAngMomentum, (0, 1)),
         (MassConservation, (0, 1)),
         # Meridional Geometry
@@ -186,11 +186,10 @@ class VanelessDiffuser(BaseComponent):
 class DownstreamMixer(BaseComponent):
     base_equations = [
         # *** Fundamental
-        (ConstantEnergy, (0, 1)),
         (MassConservation, (0, 1)),
+        (ConstRelEnthalpy, (0, 1)),
         (MixingMomentumBalances, (0, 1)),
         # (SimplifiedMixingBalances, (0, 1)),
-        (DeviationAngle, (0, 1)),
         # *** Blockage
         (BladeBlockage, 0),
         (ZeroBlockage, 1),  # No blockage mixed out

@@ -22,12 +22,20 @@ def get_midspan_idx(var):
     return midspan
 
 
-def safe_abs(x):
+def safe_abs(x) -> PlainQuantity | cs.MX:
     if isinstance(x, PlainQuantity):
         # Unit checks
         return (x**2) ** 0.5
     else:
         return cs.fabs(x)
+
+
+def safe_if_else(cond, if_true, if_false):
+    """The unit is based on the FIRST condition"""
+    if isinstance(if_true, PlainQuantity):
+        return if_true
+    else:
+        return cs.if_else(cond, if_true, if_false)
 
 
 def safe_sign(x):

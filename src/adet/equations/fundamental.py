@@ -18,9 +18,9 @@ class ConstantAngMomentum(EquationBase):
         return geo_rr0 * kin_Vt0 - geo_rr1 * kin_Vt1
 
 
-class ConstantEnergy(EquationBase):
-    def residual(self, tot_hmass0, tot_hmass1):
-        return tot_hmass0 - tot_hmass1
+class ConstRelEnthalpy(EquationBase):
+    def residual(self, rlt_hmass0, rlt_hmass1):
+        return rlt_hmass0 - rlt_hmass1
 
 
 class MassConservation(EquationBase):

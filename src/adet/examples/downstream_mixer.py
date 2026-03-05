@@ -12,11 +12,11 @@ from adet.components import BladeRow, Inlet, Shaft
 from adet.components import ComponentNetwork
 from adet.components.blade_row import DownstreamMixer
 from adet.components.blade_row import plot_from_nodes
+from adet.diagnostics import SystemDiagnostics
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
-from adet.equations.fundamental import BladeBlockage, ChokingCriterion, MassAreaRelation
+from adet.equations.fundamental import BladeBlockage, ChokingCriterion
 from adet.equations.geometrical import MinimalCamberLine, ParabolicCamberline
 from adet.equations.nondimensional import (
-    RelativeMachNumber,
     StaticPressRatio,
     TotalTotalExpansionEfficiency,
 )
@@ -26,6 +26,7 @@ from adet.fluid.settings import FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.losses.mixing import (
+    AungierDeviationModel,
     SieverdingBasePressure,
 )
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
@@ -78,6 +79,11 @@ _guess_reg.from_dict(
     {
         'pRatio': 0.9,
         'p_choke': 3e5,
+        'VmRatio': 1.3,
+        'Vm': 30,
+        'Wm': 30,
+        'Vt': 100,
+        'Wt': 100,
     }
 )
 
@@ -91,9 +97,9 @@ INLET_TEMPERATURE = 1.045 * abs_state.T_critical()
 abs_state.update(cp.PT_INPUTS, INLET_PRESSURE, INLET_TEMPERATURE)
 _bounds_reg.from_dict(
     {
-        # 'p': (abs_state.p_critical() * 0.4, INLET_PRESSURE),
+        # 'p': (abs_state.p_critical() * 0.2, INLET_PRESSURE),
         # 'T': (abs_state.T_critical() * 0.7, INLET_TEMPERATURE),
-        # 'hmass': (abs_state.hmass() - 300**2, abs_state.hmass()),
+        # 'hmass': (abs_state.hmass() - 300**2, 1.2 * abs_state.hmass()),
     }
 )
 
@@ -108,6 +114,7 @@ inlet = Inlet(
     {
         'kin': {
             'beta': 0.0,
+            # 'mach': 0.15,
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
@@ -115,10 +122,8 @@ inlet = Inlet(
             'hubtipRatio': 0.8,
         },
         'tot': {
-            # 'p': INLET_PRESSURE,
-            # 'T': INLET_TEMPERATURE,
-            'p': 2.3e5,
-            'T': 500,
+            'p': INLET_PRESSURE,
+            'hmass': abs_state.hmass(),
         },
     }
 )
@@ -134,7 +139,8 @@ row = BladeRow(
     },
     out_constraints={
         'kin': {
-            'beta': Quantity(40, 'deg'),
+            'alpha': Quantity(75, 'deg'),
+            # 'mach': 0.3,
         },
         'geo': {
             # Meridional
@@ -165,6 +171,7 @@ row = BladeRow(
         # |> Losses & Dev
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
+        # AungierDeviationModel(): 1,
         # |> Boundary layer properties
         BladeBlockage(): 1,
         BoundaryLayerRatios(): 1,
@@ -179,13 +186,9 @@ row = BladeRow(
 mixer = DownstreamMixer(
     'twitch',
     outlet_bc={
-        'kin': {'mach': 0.1},
+        'kin': {'mach': 1.2},
     },
 )
-
-# *** Simplified formulation
-# mixer.remove_equation(MixingMomentumBalances, (0, 1))
-# mixer.add_equation(SimplifiedMixingBalances(), (0, 1))
 
 # Create network
 ntw = ComponentNetwork(
@@ -201,9 +204,11 @@ ntw = ComponentNetwork(
 row.set_spanwise_constant('geo_hh0', 'kin_Vm1')
 row.set_spanwise_constant('geo_chord_ax1')
 
+
 if ntw.num_components == 2:
     ntw.system.add_equation(IsentropicProperties(), (0, 3))
     ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
+
 
 ntw.system.build(SCALED)
 
@@ -214,21 +219,26 @@ rootfinder = ntw.system.make_rootfinder(
         'ipopt.max_wall_time': 20,
     },
 )
-x0 = ntw.system.get_scaled_guess()
+x0 = np.concatenate(
+    ntw.system.get_scaled_guess(
+        {
+            'kin_beta3': 0.0,
+        }
+    )
+)
 kn = ntw.system.get_scaled_constraints()
 bnd = ntw.system.get_arguments_bounds(
     {
-        # 'kin_relmach1': (0.0, 1.0),
+        # 'kin_alpha1': (0.0, 1.3),
     }
 )
 
-solution = solve_root_problem(
-    rootfinder,
-    x0,
-    kn,
-    bnd,
-    suppress_output=False,
-)
+# diag = SystemDiagnostics(ntw.system, kn)
+
+solution = solve_root_problem(rootfinder, x0, kn, bnd)
+
+rtfn = ntw.system.make_rootfinder('kinsol')
+solution = solve_root_problem(rtfn, solution, kn)
 
 sol_dict = ntw.system.write_solution_to_nodes(solution)
 ntw.print_structure()
@@ -240,6 +250,8 @@ for i, node in enumerate(ntw.system.nodes):
     nodes[i] = node
 n0 = nodes[0]
 n1 = nodes[1]
+
+globals().update(residual_debugger(AungierDeviationModel(), [n0, n1]))
 
 if mixer in ntw.components:
     ntw.system.nodes[-1].geo.add_variable('chord_ax', 0.2 * n1.geo.chord_ax)
@@ -346,7 +358,7 @@ if ntw.num_components > 1:
     n2 = nodes[2]
     n3 = nodes[3]
     print(f'Entropy rise {n3.stc.smass - n2.stc.smass}')
-    print(f'Deviation {n3.kin.beta - n2.kin.beta}')
+    print(f'Deviation {np.sign(n2.geo.metal_angle) * (n2.kin.beta - n3.kin.beta)}')
 
     q = 0.5 * n2.stc.rhomass * n2.kin.W**2
     w = n2.geo.pitch * np.cos(n2.geo.metal_angle)
@@ -370,43 +382,44 @@ plt.close('all')
 
 # globals().update(residual_debugger(MassAreaChoke(), [n0, n1]))
 
-mach_out_idx = ntw.system.constraints.index('kin_mach3')
-rtfn = ntw.system.make_rootfinder('kinsol')
-out_machs = np.linspace(0.1, 1.5, 100)
-zetas = []
-deviations = []
-for m in out_machs:
-    flag_error = 0
-    kn[mach_out_idx] = np.array([m])
-    x0 = ntw.system.get_scaled_guess(sol_dict)
-    try:
-        solution = solve_root_problem(
-            rtfn,
-            x0,
-            kn,
-            bnd,
-            suppress_output=False,
-        )
-    except RuntimeError:
-        flag_error = 1
+RUN_SWEEP = False
+if RUN_SWEEP:
+    mach_out_idx = ntw.system.constraints.index('kin_mach3')
+    rtfn = ntw.system.make_rootfinder('ipopt')
+    out_machs = np.linspace(0.3, 1.1, 60)
+    zetas = []
+    deviations = []
+    for m in out_machs:
+        flag_error = 0
+        kn[mach_out_idx] = np.array([m])
+        x0 = ntw.system.get_scaled_guess(sol_dict)
+        try:
+            solution = solve_root_problem(
+                rtfn,
+                x0,
+                kn,
+                bnd,
+                suppress_output=False,
+            )
+        except RuntimeError:
+            flag_error = 1
 
-    if flag_error:
-        zeta = np.array([np.nan])
-        dev = np.array([np.nan])
-    else:
-        zeta = (n2.rlt.p - n3.rlt.p) / q
-        dev = n3.kin.beta - n2.kin.beta
+        if flag_error:
+            zeta = np.array([np.nan])
+            dev = np.array([np.nan])
+        else:
+            zeta = (n2.rlt.p - n3.rlt.p) / n2.rlt.p
+            dev = n3.kin.beta - n2.kin.beta
 
-    zetas.append(zeta)
-    deviations.append(dev)
+        zetas.append(zeta)
+        deviations.append(dev)
 
-    sol_dict = ntw.system.write_solution_to_nodes(solution)
+        sol_dict = ntw.system.write_solution_to_nodes(solution)
 
-
-fig, ax = plt.subplots(1, 2)
-ax[0].plot(out_machs, zetas, label='zeta')
-ax[1].plot(out_machs, deviations, label='deviations')
-ax[0].legend()
-ax[1].legend()
+    fig, ax = plt.subplots(1, 2)
+    ax[0].plot(out_machs, zetas, label='zeta')
+    ax[1].plot(out_machs, deviations, label='deviations')
+    ax[0].legend()
+    ax[1].legend()
 
 plt.show(block=True)

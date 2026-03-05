@@ -54,6 +54,7 @@ exact_sol = {
     'oth_po0': 2.0,
 }
 
+# That is found in the paper
 original_order = (
     'oth_f0',
     'oth_kv0',
@@ -76,9 +77,9 @@ x0_case3 = np.round(exact_x0 - 1e-2 * exact_x0, 3)
 x0_case4 = np.round(exact_x0 - 1e-1 * exact_x0, 3)
 x0_case5 = np.array([3.6, 0.9, 0.9, 0.9, 2.151, 1.8])
 
-analyzer.compute_bounding_coeffs(x0_case1)
-analyzer.compute_curvatures(x0_case1)
-analyzer.compute_sensitivities(x0_case1)
+analyzer.compute_bounding_coeffs(x0_case3)
+analyzer.compute_curvatures(x0_case3)
+analyzer.compute_sensitivities(x0_case3)
 
 
 def sensitivities_printer(sigma):

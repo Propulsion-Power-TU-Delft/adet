@@ -245,8 +245,8 @@ class SizeParameter(EquationBase):
 
 class AbsoluteMachNumber(EquationBase):
     def residual(self, kin_mach0, kin_mermach0, kin_Vm0, kin_V0, stc_speed_sound0):
-        r1 = kin_mach0 * stc_speed_sound0 - kin_V0
-        r2 = kin_mermach0 * stc_speed_sound0 - kin_Vm0
+        r1 = kin_mach0 - kin_V0 / stc_speed_sound0
+        r2 = kin_mermach0 - kin_Vm0 / stc_speed_sound0
         return r1, r2
 
 

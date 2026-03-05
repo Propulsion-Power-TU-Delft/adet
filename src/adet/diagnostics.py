@@ -160,7 +160,7 @@ class SystemDiagnostics(Generic[T]):
         logger.debug(f'Nonlinear args are: {", ".join(self._nonlinear_arguments)}')
 
         args = tuple(self._nonlinear_arguments + self._linear_arguments)
-        arg_mapping = np.array([args.index(a) for a in args])
+        arg_mapping = np.array([self._arguments.index(a) for a in args])
 
         return arg_mapping
 
@@ -339,6 +339,10 @@ class SystemDiagnostics(Generic[T]):
         diag_sens = np.diag(sens_matrix)
 
         return diag_sens
+
+    @property
+    def arguments(self):
+        return tuple(self._arguments[i] for i in self._arg_mapping)
 
     # TODO:
     # I want to keep it simple for now, this more user-friendly stuff
