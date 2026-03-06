@@ -7,7 +7,7 @@ from adet.solution import solve_root_problem
 from adet.assembly import CasadiSystem
 from adet.equations import EquationBase
 from adet.equations.fundamental import (
-    RelativeEnthalpyCons,
+    ConstRelEnthalpy,
     Kinematics,
     MassAreaRelation,
     MassConservation,
@@ -142,7 +142,7 @@ EQUATIONS = {
     AbsoluteMachNumber(): 1,
     VoluteAreas(): (0, 1),
     MassConservation(): (0, 1),
-    RelativeEnthalpyCons(): (0, 1),
+    ConstRelEnthalpy(): (0, 1),
 }
 
 

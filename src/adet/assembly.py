@@ -1389,7 +1389,7 @@ class CasadiSystem(SystemAssembler):
         factors as arguments, and create an MX expression for the full
         function with the actual scaling values assigned
         """
-        super().make_residual_function()
+        super().make_residual_function()  # This only checks if built for now
 
         FULL_ARGUMENTS = [
             self.free_args_sym,

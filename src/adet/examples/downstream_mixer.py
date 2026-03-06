@@ -150,12 +150,15 @@ row = BladeRow(
             # 'chord_ax': 0.1,
             'num_blades': 40,
             # 'solidity': 1.0,
-            'thick_by_pitch': 0.02,
+            'thick_by_pitch': 0.0,
             'heightRatio': 1.0,
         },
         'oth': {
-            'mom_by_bld': 0.075,
-            'disp_by_mom': 2,
+            # 'mom_by_bld': 0.075,
+            # 'disp_by_mom': 2,
+            # 'disp_by_hgt': 0.05,
+            'mom_by_bld': 0,
+            'disp_by_mom': 0,
             'disp_by_hgt': 0.05,
             # Profile losses
             'Cd_profile': 0.002,
@@ -186,7 +189,7 @@ row = BladeRow(
 mixer = DownstreamMixer(
     'twitch',
     outlet_bc={
-        'kin': {'mach': 1.2},
+        'kin': {'mach': 1.0},
     },
 )
 

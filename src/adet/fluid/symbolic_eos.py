@@ -142,18 +142,18 @@ def update_func(pair: int):
 
 if __name__ == '__main__':
     import casadi as cs
-    import multiprocessing as mp
 
-    mp.freeze_support()
     eos = IdealGasState(
-        gamma=2.94,
-        gas_constant=18.0,
-        viscosity=1e-5,
+        gamma=1.4,
+        gas_constant=287.0,
+        viscosity=2e-5,
     )
 
     # Polymorphic
     eos.update(
         cp.PSmass_INPUTS,
-        cs.MX.sym('x'),  # pyright:ignore
-        cs.MX.sym('y'),  # pyright:ignore
+        cs.MX.sym('p'),  # pyright:ignore
+        cs.MX.sym('s'),  # pyright:ignore
     )
+
+    print(f'Hmass is {eos.hmass()}')
