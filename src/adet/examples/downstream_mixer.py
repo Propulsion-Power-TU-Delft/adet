@@ -128,6 +128,7 @@ inlet = Inlet(
     }
 )
 
+# row = Models inlet-to-throat here
 row = BladeRow(
     name='stator',
     shaft=shaft,
@@ -139,8 +140,7 @@ row = BladeRow(
     },
     out_constraints={
         'kin': {
-            'alpha': Quantity(75, 'deg'),
-            # 'mach': 0.3,
+            'beta': Quantity(75, 'deg'),
         },
         'geo': {
             # Meridional
@@ -154,17 +154,13 @@ row = BladeRow(
             'heightRatio': 1.0,
         },
         'oth': {
-            # 'mom_by_bld': 0.075,
-            # 'disp_by_mom': 2,
-            # 'disp_by_hgt': 0.05,
-            'mom_by_bld': 0,
-            'disp_by_mom': 0,
-            'disp_by_hgt': 0.05,
+            'mom_by_bld': 0.075,
+            'disp_by_mom': 2,
+            'disp_by_hgt': 0.05,  # Used by sec losses
             # Profile losses
             'Cd_profile': 0.002,
             'xi_by_camb_len_A': 0.375,
             'xi_by_camb_len_B': 0.675,
-            # 'pRatio': 0.83471,
         },
     },
     extra_equations={
@@ -174,13 +170,10 @@ row = BladeRow(
         # |> Losses & Dev
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
-        # AungierDeviationModel(): 1,
         # |> Boundary layer properties
         BladeBlockage(): 1,
         BoundaryLayerRatios(): 1,
         SieverdingBasePressure(): (0, 1),
-        ChokingCriterion(): (0, 1),
-        StaticPressRatio(): (0, 1),
         INITIAL_LOSS: (0, 1),
     },
     constant_variables=['geo_rr_midspan'],
@@ -189,7 +182,11 @@ row = BladeRow(
 mixer = DownstreamMixer(
     'twitch',
     outlet_bc={
-        'kin': {'mach': 1.0},
+        # 'oth': {'pRatio': 0.7},  # Mixer in-to-out
+        'kin': {'mach': 1.3},  # Mixed-out mach
+    },
+    extra_equations={
+        StaticPressRatio(): (0, 1),
     },
 )
 
@@ -208,7 +205,7 @@ row.set_spanwise_constant('geo_hh0', 'kin_Vm1')
 row.set_spanwise_constant('geo_chord_ax1')
 
 
-if ntw.num_components == 2:
+if ntw.num_components == 2 and shaft.omega > 0:
     ntw.system.add_equation(IsentropicProperties(), (0, 3))
     ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
 
@@ -219,22 +216,12 @@ rootfinder = ntw.system.make_rootfinder(
     'ipopt',
     opts={
         'error_on_fail': False,
-        'ipopt.max_wall_time': 20,
+        'ipopt.max_wall_time': 10,
     },
 )
-x0 = np.concatenate(
-    ntw.system.get_scaled_guess(
-        {
-            'kin_beta3': 0.0,
-        }
-    )
-)
+x0 = ntw.system.get_scaled_guess()
 kn = ntw.system.get_scaled_constraints()
-bnd = ntw.system.get_arguments_bounds(
-    {
-        # 'kin_alpha1': (0.0, 1.3),
-    }
-)
+bnd = ntw.system.get_arguments_bounds()
 
 # diag = SystemDiagnostics(ntw.system, kn)
 
@@ -385,16 +372,16 @@ plt.close('all')
 
 # globals().update(residual_debugger(MassAreaChoke(), [n0, n1]))
 
-RUN_SWEEP = False
+RUN_SWEEP = True
 if RUN_SWEEP:
     mach_out_idx = ntw.system.constraints.index('kin_mach3')
-    rtfn = ntw.system.make_rootfinder('ipopt')
-    out_machs = np.linspace(0.3, 1.1, 60)
-    zetas = []
+    rtfn = ntw.system.make_rootfinder('kinsol')
+    out_machs = np.linspace(1.5, 0.7, 60)
+    loss_coeffs = []
     deviations = []
     for m in out_machs:
         flag_error = 0
-        kn[mach_out_idx] = np.array([m])
+        kn[mach_out_idx] = np.array([m]) * ntw.system.constraints_scaling[mach_out_idx]
         x0 = ntw.system.get_scaled_guess(sol_dict)
         try:
             solution = solve_root_problem(
@@ -408,19 +395,19 @@ if RUN_SWEEP:
             flag_error = 1
 
         if flag_error:
-            zeta = np.array([np.nan])
+            y_loss = np.array([np.nan])
             dev = np.array([np.nan])
         else:
-            zeta = (n2.rlt.p - n3.rlt.p) / n2.rlt.p
-            dev = n3.kin.beta - n2.kin.beta
+            y_loss = (n2.rlt.p - n3.rlt.p) / (n2.rlt.p - n2.stc.p)
+            dev = n2.kin.beta - n3.kin.beta
 
-        zetas.append(zeta)
+        loss_coeffs.append(y_loss)
         deviations.append(dev)
 
         sol_dict = ntw.system.write_solution_to_nodes(solution)
 
     fig, ax = plt.subplots(1, 2)
-    ax[0].plot(out_machs, zetas, label='zeta')
+    ax[0].plot(out_machs, loss_coeffs, label='zeta')
     ax[1].plot(out_machs, deviations, label='deviations')
     ax[0].legend()
     ax[1].legend()

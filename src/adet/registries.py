@@ -341,7 +341,7 @@ SCALING_FACTORS: dict[str, float] = {
     'meter * rad / s': 1e2,  # Tangential velocity
     'Pa * s': 1e-5,  # Dynamic viscosity
     'rad / s': 1e3,  # Omega
-    'rad': 0.5,
+    'rad': 1.0,
     'm': 0.1,
     'm**2': 1e-2,
     'm**2 / s': 10.0,

@@ -94,7 +94,7 @@ class BalanceEquations(EquationBase):
 
         # 3 *** Supersonic vs. subsonic switch
         # r_choke = kin_W0 - stc_speed_sound0
-        r_dev = kin_dev_angle1 - (kin_beta0 - kin_beta1)
+        r_dev = kin_dev_angle1 - np.sign(kin_beta0) * (kin_beta0 - kin_beta1)
 
         return r_mass, r_momx, r_dev, r_energ
 
@@ -180,26 +180,26 @@ pRatio_idx = sys.constraints.index('oth_pRatio1')
 angle_idx = sys.constraints.index('kin_beta0')
 out_mach_idx = sys.free_args.index('kin_mach1')
 RUN_SWEEP = True
-N_PTS = 20
+N_PTS = 40
 ANGLES = [45, 60, 75]
 
-alphas = [a * np.pi / 180 for a in ANGLES]
-pratios = np.linspace(0.3, 0.9, N_PTS)
-deviations = {a: [] for a in alphas}
-loss_coeffs = {a: [] for a in alphas}
-mer_machs = {a: [] for a in alphas}
-out_machs = {a: [] for a in alphas}
-out_angles = {a: [] for a in alphas}
+betas = [a * np.pi / 180 for a in ANGLES]
+pratios = np.linspace(0.3, 1.0, N_PTS)
+deviations = {a: [] for a in betas}
+loss_coeffs = {a: [] for a in betas}
+mer_machs = {a: [] for a in betas}
+out_machs = {a: [] for a in betas}
+out_angles = {a: [] for a in betas}
 
 rtfn_kn = sys.make_rootfinder('kinsol', {'error_on_fail': True})
 res_func = sys.make_residual_function()
 
 if RUN_SWEEP:
     fig, ax = plt.subplots(3, 1, figsize=(7, 8), sharex=True)
-    for alpha in alphas:
-        kn[angle_idx] = np.array([alpha]) * sys.constraints_scaling[angle_idx]
+    for beta in betas:
+        kn[angle_idx] = np.array([beta]) * sys.constraints_scaling[angle_idx]
         # First sweep with ipopt
-        sol = solve_root_problem(rtfn_kn, sol, kn)
+        sol = solve_root_problem(rtfn_ip, sol, kn)
         for pr in pratios:
             kn[pRatio_idx] = np.array([pr]) * sys.constraints_scaling[pRatio_idx]
             sol = solve_root_problem(rtfn_kn, sol, kn)
@@ -207,22 +207,23 @@ if RUN_SWEEP:
             n0 = sys.nodes[0]
             n1 = sys.nodes[1]
 
-            deviations[alpha].append(n0.kin.alpha - n1.kin.alpha)
-            loss_coeffs[alpha].append((n0.tot.p - n1.tot.p) / (n0.tot.p - n0.stc.p))
-            mer_machs[alpha].append(n1.kin.Wm / n1.stc.speed_sound)
-            out_machs[alpha].append(n1.kin.W / n1.stc.speed_sound)
-            out_angles[alpha].append(n1.kin.beta)
+            deviations[beta].append(np.abs(n0.kin.alpha - n1.kin.alpha))
+            loss_coeffs[beta].append((n0.tot.p - n1.tot.p) / (n0.tot.p - n0.stc.p))
+            mer_machs[beta].append(n1.kin.Wm / n1.stc.speed_sound)
+            out_machs[beta].append(n1.kin.W / n1.stc.speed_sound)
+            out_angles[beta].append(n1.kin.beta)
 
-        label = f'alpha {alpha * 180 / np.pi:.2f}'
+        label = f'alpha {beta * 180 / np.pi:.2f}'
 
         ax[0].set_title('Deviations')
-        ax[0].plot(pratios, np.array(deviations[alpha]) * 180 / np.pi, label=label)
+        ax[0].plot(pratios, np.array(deviations[beta]) * 180 / np.pi, label=label)
 
         ax[1].set_title('Loss Y')
-        ax[1].plot(pratios, np.array(loss_coeffs[alpha]), label=label)
+        ax[1].plot(pratios, np.array(loss_coeffs[beta]), label=label)
 
-        ax[2].set_title('Oulet Meridional Machs')
-        ax[2].plot(pratios, mer_machs[alpha], label=label)
+        ax[2].set_title('Oulet Machs')
+        # ax[2].plot(pratios, mer_machs[alpha], label=label)
+        ax[2].plot(pratios, out_machs[beta], label=label)
 
     jax.tree.map(
         lambda a: a.grid(alpha=0.8),

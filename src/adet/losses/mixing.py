@@ -10,6 +10,8 @@ from adet.equations.base_equation import DeviationModel, EquationBase
 from adet.equations.utils import safe_abs, safe_if_else
 from adet.tools.interpolation import make_casadi_interpolant
 
+BLADE_PARAM = 2  # For Sieverding -> tmp, make this an input
+
 
 class SieverdingBasePressure(EquationBase):
     manual_units = ('Pa',)
@@ -33,7 +35,7 @@ class SieverdingBasePressure(EquationBase):
         # Add support for other blade parameters
 
         first_param = stc_p1 / tot_p0
-        second_param = 2 * (stc_p1**0)  # it's just a 2 with the correct shape
+        second_param = BLADE_PARAM * (stc_p1**0)  # it's just a 2 with the correct shape
         table_entry = cs.horzcat(first_param, second_param).T
         pb_by__ptin = base_p_interpolant(table_entry).T
         return oth_p_base1 - pb_by__ptin * tot_p0
@@ -56,8 +58,6 @@ class MixingMomentumBalances(EquationBase):
         oth_p_base0,
         stc_p0,
         stc_speed_sound0,
-        rlt_hmass0,
-        rlt_hmass1,
         stc_p1,
         kin_W1,
         kin_relmach1,
@@ -66,42 +66,58 @@ class MixingMomentumBalances(EquationBase):
         kin_beta1,
         kin_dev_angle1,
         oth_ch_massflow0,
+        oth_disp_thick0,
+        rlt_p0,
+        rlt_p1,
         geo_hh0,
     ):
+        MACH_THRES = 1.0
+
+        # Positive metal angle => positive deviation reduces angle
+        r_dev = kin_dev_angle1 - np.sign(geo_metal_angle0) * (kin_beta0 - kin_beta1)
+
+        # Blockage enforced through effective area
         mf = oth_ch_massflow0 / geo_hh0
+
+        opening = geo_pitch0 * np.cos(geo_metal_angle0)
 
         # 1 *** X-Momentum
         mom_in_x = (
             mf * kin_W0
-            - stc_rhomass0 * kin_W0**2 * oth_mom_thick0
-            + stc_p0 * (geo_pitch0 * np.cos(kin_beta0) - geo_bld_thick0)
+            + stc_p0 * (opening - geo_bld_thick0)
             + oth_p_base0 * geo_bld_thick0
+            - stc_rhomass0 * kin_W0**2 * oth_mom_thick0
         )
-        mom_out_x = mf * kin_W1 * np.cos(kin_dev_angle1) + stc_p1 * geo_pitch0 * np.cos(
-            kin_beta0
-        )
+        mom_out_x = mf * kin_W1 * np.cos(kin_dev_angle1) + stc_p1 * opening
         r_momx = mom_in_x - mom_out_x
 
         # 2 *** Y-Momentum
-        p_suct = 1.0 * stc_p1
-        area_y = safe_abs(geo_pitch0 * np.sin(kin_beta0))
-        mom_in_y = p_suct * area_y
-        mom_out_y = stc_p1 * area_y + mf * kin_W1 * np.sin(kin_dev_angle1)
+        # p_suct = 1.0 * stc_p1
+        # area_y = safe_abs(geo_pitch0 * np.sin(kin_beta0))
+        # mom_in_y = p_suct * area_y
+        # mom_out_y = stc_p1 * area_y + mf * kin_W1 * np.sin(kin_dev_angle1)
+        # r_momy = (mom_in_y - mom_out_y) / mom_in_y
 
-        # Subsonic => Zero deviation
+        q = 0.5 * stc_rhomass0 * kin_W0**2  # Dynamic head
+        zeta = incomp_mixing_zeta(
+            q,
+            stc_p0,
+            geo_metal_angle0,
+            geo_pitch0,
+            geo_bld_thick0,
+            oth_p_base0,
+            oth_mom_thick0,
+            oth_disp_thick0,
+        )
+        r_sub = rlt_p1 - (rlt_p0 - q * zeta)
+
         r_no_dev = kin_beta0 - kin_beta1
-
-        # Supersonic
         r_choke = kin_W0 / stc_speed_sound0 - 1
 
-        # Design it choked
-        r_regime = safe_if_else(kin_relmach1 >= 1.0, r_choke, r_no_dev)
+        r1 = safe_if_else(kin_relmach1 >= MACH_THRES, r_momx, r_sub)
+        r2 = safe_if_else(kin_relmach1 >= MACH_THRES, r_choke, r_no_dev)
 
-        # 3 *** Supersonic vs. subsonic switch
-        # Positive metal angle => positive deviation reduces angle
-        r_dev = kin_beta1 - (kin_beta0 - kin_dev_angle1 * np.sign(geo_metal_angle0))
-
-        return r_momx, r_dev, r_regime
+        return r_dev, r1, r2
 
 
 class SimplifiedMixingBalances(EquationBase):
@@ -140,7 +156,7 @@ class SimplifiedMixingBalances(EquationBase):
         r1 = cs.if_else(kin_relmach1 >= 0.9, switch_supers, switch_subson)
 
         q = 0.5 * stc_rhomass0 * kin_W0**2  # Dynamic head
-        zeta = inc_mixing_zeta(
+        zeta = incomp_mixing_zeta(
             q,
             stc_p0,
             geo_metal_angle0,
@@ -159,7 +175,7 @@ class SimplifiedMixingBalances(EquationBase):
         return r1, r2, r3
 
 
-def inc_mixing_zeta(
+def incomp_mixing_zeta(
     q,
     stc_p0,
     geo_metal_angle0,

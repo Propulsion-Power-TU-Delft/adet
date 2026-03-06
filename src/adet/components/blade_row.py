@@ -8,9 +8,7 @@ import numpy as np
 from adet.components import BaseComponent, Shaft
 from adet.equations import EquationBase
 from adet.equations.definitions import (
-    AngleDeflection,
     BladePitch,
-    DeviationAngle,
     MeridionalVelocityRatio,
     Solidity,
     ThicknessToPitch,
@@ -24,17 +22,15 @@ from adet.equations.fundamental import (
     ZeroBlockage,
 )
 from adet.equations.geometrical import (
-    CamberFunction,
     EndwallProperties,
     MeridionalUniform,
     GeometricalRatios,
     MeridionalVariable,
 )
-from adet.equations.nondimensional import EnthalpyDropCoefficient
 from adet.equations.special import GeometricalAdder
 from adet.geometry import BezierCurve, StraightLine
 from adet.losses.basic import ZeroDeviation
-from adet.losses.mixing import MixingMomentumBalances, SimplifiedMixingBalances
+from adet.losses.mixing import MixingMomentumBalances
 from adet.node import FlowNode
 
 logger = logging.getLogger(__name__)
@@ -108,11 +104,11 @@ class BladeRow(BaseComponent):
         in_constraints: dict[
             str,
             dict[str, Any],
-        ],
+        ] = {},
         out_constraints: dict[
             str,
             dict[str, Any],
-        ],
+        ] = {},
         extra_equations: dict[
             EquationBase,
             int | tuple[int, ...],
@@ -191,7 +187,7 @@ class DownstreamMixer(BaseComponent):
         (MixingMomentumBalances, (0, 1)),
         # (SimplifiedMixingBalances, (0, 1)),
         # *** Blockage
-        (BladeBlockage, 0),
+        (BladeBlockage, 0),  # Blade + b.l. inlet blockage
         (ZeroBlockage, 1),  # No blockage mixed out
         # *** Definition of channel massflow and num_blades
         (BladePitch, 0),
