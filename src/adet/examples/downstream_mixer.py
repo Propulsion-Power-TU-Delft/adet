@@ -124,7 +124,7 @@ inlet = Inlet(
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
             'rr_midspan': 0.1,
-            'hubtipRatio': 0.8,
+            'hubtipRatio': 0.7,
         },
         'tot': {
             'p': INLET_PRESSURE,
@@ -145,9 +145,10 @@ row = BladeRow(
     },
     out_constraints={
         'kin': {
-            'beta': Quantity(45, 'deg'),
+            # 'mach': 0.4,
         },
         'geo': {
+            'metal_angle': Quantity(50, 'deg'),
             # Meridional
             'meridional_angle': Quantity(0, 'deg'),
             # Blade
@@ -188,10 +189,11 @@ mixer = DownstreamMixer(
     'twitch',
     outlet_bc={
         # 'oth': {'pRatio': 0.7},  # Mixer in-to-out
-        'kin': {'mach': 1.0},  # Mixed-out mach
+        'kin': {'mach': 0.2},  # Mixed-out mach
     },
     extra_equations={
         StaticPressRatio(): (0, 1),
+        AungierDeviationModel(): 1,
     },
 )
 
@@ -250,8 +252,6 @@ for i, node in enumerate(ntw.system.nodes):
     nodes[i] = node
 n0 = nodes[0]
 n1 = nodes[1]
-
-globals().update(residual_debugger(AungierDeviationModel(), [n0, n1]))
 
 if mixer in ntw.components:
     ntw.system.nodes[-1].geo.add_variable('chord_ax', 0.2 * n1.geo.chord_ax)
@@ -380,14 +380,13 @@ if user in ('y', 'Y'):
     input('Enter to close')
 plt.close('all')
 
-# globals().update(residual_debugger(MassAreaChoke(), [n0, n1]))
-
+globals().update(residual_debugger(AungierDeviationModel(), [n1]))
 RUN_SWEEP = True
-N_PTS = 40
+N_PTS = 100
 if RUN_SWEEP:
     mach_out_idx = ntw.system.constraints.index('kin_mach3')
     rtfn = ntw.system.make_rootfinder('kinsol')
-    out_machs = np.linspace(1.0, 1.4, N_PTS)
+    out_machs = np.linspace(0.2, 0.9, N_PTS)
     loss_coeffs = []
     deviations = []
     for m in out_machs:
@@ -419,7 +418,7 @@ if RUN_SWEEP:
 
     fig, ax = plt.subplots(1, 2)
     ax[0].plot(out_machs, loss_coeffs, label='zeta')
-    ax[1].plot(out_machs, deviations, label='deviations')
+    ax[1].plot(out_machs, np.array(deviations) * 180 / np.pi, label='deviations [deg]')
     ax[0].legend()
     ax[1].legend()
 

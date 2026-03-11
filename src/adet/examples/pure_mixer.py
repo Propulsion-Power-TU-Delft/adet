@@ -46,6 +46,42 @@ def dev_osnaghi(pr, Ma, alpha_a, gamma):
     return np.arctan(tan_delta_alpha)
 
 
+def loss_denton(
+    rhomass,
+    W_in,
+    beta_in,
+    pitch,
+    p_base,
+    p_in,
+    tot_p_in,
+    bld_thick,
+    mom_thick,
+    disp_thick,
+):
+    q = 0.5 * rhomass * W_in**2
+    w = pitch * np.cos(beta_in)
+    cpb = (p_base - p_in) / q
+    zeta = (
+        -(cpb * bld_thick) / w + 2 * mom_thick / w + ((disp_thick + bld_thick) / w) ** 2
+    )
+    delta_tot_p = zeta * q
+
+    return delta_tot_p / (tot_p_in - p_in)
+
+
+def loss_osnaghi(pr, Ma, M1, gamma):
+    """Y = pt2 - pt1 / (pt1 - p1)"""
+    gmo_half = (gamma - 1) / 2
+    gamma_ratio = gamma / (gamma - 1)
+
+    num = (1 + gmo_half * Ma**2) ** gamma_ratio - pr * (
+        1 + gmo_half * M1**2
+    ) ** gamma_ratio
+    den = (1 + gmo_half * Ma**2) ** gamma_ratio - 1
+
+    return num / den
+
+
 class BalanceEquations(EquationBase):
     def residual(
         self,
@@ -120,26 +156,26 @@ if __name__ == '__main__':
     sys.add_equation(StaticPressRatio(), (0, 1))
 
     sys.add_equalities(
-        ('kin_omega0', 'kin_omega1'),
         ('geo_rr0', 'geo_rr1'),
+        ('kin_omega0', 'kin_omega1'),
     )
 
     sys.boundary_conditions[0]['tot'] = {'p': 3e5, 'T': 400}
 
     sys.boundary_conditions[0]['geo'] = {
-        'pitch': 1.0,
-        'bld_thick': 0.0,
         'rr': 0.1,
+        'pitch': 1.0,
+        'bld_thick': 0.05,
     }
     sys.boundary_conditions[0]['oth'] = {
-        'mom_thick': 0,
-        'disp_thick': 0,
-        'p_base': 1.0,
+        'mom_thick': sys.boundary_conditions[0]['geo']['bld_thick'] * 0.075,  # pyright: ignore
+        'disp_thick': sys.boundary_conditions[0]['geo']['bld_thick'] * 0.15,  # pyright: ignore
+        'p_base': 1.3e5,
     }
 
     sys.boundary_conditions[0]['kin'] = {
         'omega': 0.0,
-        'beta': Quantity(45.0, 'deg'),
+        'beta': Quantity(60, 'deg'),
         'mach': 1.0,
     }
 
@@ -180,13 +216,18 @@ if __name__ == '__main__':
     angle_idx = sys.constraints.index('kin_beta0')
     out_mach_idx = sys.free_args.index('kin_mach1')
     RUN_SWEEP = True
-    N_PTS = 40
-    ANGLES = [45, 60, 75]
+    N_PTS = 20
+    ANGLES = [
+        45,
+        60,
+        75,
+    ]
 
     betas = [a * np.pi / 180 for a in ANGLES]
     pratios = np.linspace(0.3, 1.0, N_PTS)
     deviations = {a: [] for a in betas}
     loss_coeffs = {a: [] for a in betas}
+    loss_coeffs_dnt = {a: [] for a in betas}
     mer_machs = {a: [] for a in betas}
     out_machs = {a: [] for a in betas}
     out_angles = {a: [] for a in betas}
@@ -206,20 +247,68 @@ if __name__ == '__main__':
                 sys.write_solution_to_nodes(sol)
                 n0 = sys.nodes[0]
                 n1 = sys.nodes[1]
+                out_mach = n1.kin.W / n1.stc.speed_sound
 
-                deviations[beta].append(np.abs(n0.kin.alpha - n1.kin.alpha))
+                deviations[beta].append(n0.kin.alpha - n1.kin.alpha)
                 loss_coeffs[beta].append((n0.tot.p - n1.tot.p) / (n0.tot.p - n0.stc.p))
                 mer_machs[beta].append(n1.kin.Wm / n1.stc.speed_sound)
-                out_machs[beta].append(n1.kin.W / n1.stc.speed_sound)
+                out_machs[beta].append(out_mach)
                 out_angles[beta].append(n1.kin.beta)
+                Y_dent = loss_denton(
+                    n1.stc.rhomass,
+                    n0.kin.W,
+                    n0.kin.beta,
+                    n0.geo.pitch,
+                    n0.oth.p_base,
+                    n0.stc.p,
+                    n0.tot.p,
+                    n0.geo.bld_thick,
+                    n0.oth.mom_thick,
+                    n0.oth.disp_thick,
+                )
+                loss_coeffs_dnt[beta].append(Y_dent)
+
+            throat_mach = sys.boundary_conditions[0]['kin']['mach']
+
+            dev_analytical = dev_osnaghi(
+                pratios,
+                throat_mach,
+                beta,
+                model.eos_object._gamma,
+            )
+            loss_osn = loss_osnaghi(
+                pratios,
+                throat_mach,
+                np.concatenate(out_machs[beta]),
+                model.eos_object._gamma,
+            )
 
             label = f'alpha {beta * 180 / np.pi:.2f}'
 
             ax[0].set_title('Deviations')
             ax[0].plot(pratios, np.array(deviations[beta]) * 180 / np.pi, label=label)
+            ax[0].plot(
+                pratios,
+                dev_analytical * 180 / np.pi,
+                'o',
+                label=label + ' Osnaghi',
+            )
 
-            ax[1].set_title('Loss Y')
-            ax[1].plot(pratios, np.array(loss_coeffs[beta]), label=label)
+            ax[1].set_title('Loss Y [%]')
+            ax[1].plot(pratios, np.array(loss_coeffs[beta]) * 100, label=label)
+            # Analytical models
+            ax[1].plot(
+                pratios,
+                np.array(loss_coeffs_dnt[beta]) * 100,
+                'o',
+                label=label + ' Denton',
+            )
+            ax[1].plot(
+                pratios,
+                loss_osn * 100,
+                'o',
+                label=label + ' Osnaghi',
+            )
 
             ax[2].set_title('Oulet Machs')
             # ax[2].plot(pratios, mer_machs[alpha], label=label)
@@ -235,7 +324,7 @@ if __name__ == '__main__':
         )
 
         ax[0].set_ylim(0, 20)
-        ax[1].set_ylim(0, 0.4)
+        ax[1].set_ylim(0, 14)
         ax[2].set_ylim(0, 1.9)
 
         fig.tight_layout()

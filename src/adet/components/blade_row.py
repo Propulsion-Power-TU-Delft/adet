@@ -218,6 +218,7 @@ class DownstreamMixer(BaseComponent):
     constant_variables = GEOM_LINK + [
         # Keep reference frame alive
         'kin_omega',
+        'geo_metal_angle',
         # Keep the span geometry constant
         'geo_hh',
         'geo_rr',
