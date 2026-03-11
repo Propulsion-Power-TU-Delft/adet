@@ -43,7 +43,7 @@ from adet.losses.compressors import (
     CaseyRushInletFunc,
     ClearanceJansen,
     CompressorShapeFactor,
-    LossAdder,
+    CompressorLosses,
     SkinFrictionJansen,
 )
 from adet.registries import GuessRegistry, VariableBoundsRegistry
@@ -137,7 +137,7 @@ EQS_WITH_LOSSES = {
     SkinFrictionJansen(): (0, 1),
     BladeLoadingCoppage(): (0, 1),
     # Losses are added
-    LossAdder(): 1,
+    CompressorLosses(): 1,
 }
 
 

@@ -1,5 +1,4 @@
 import logging
-from pprint import PrettyPrinter
 from pint import Quantity
 import matplotlib.pyplot as plt
 import numpy as np
@@ -34,7 +33,7 @@ from adet.losses.compressors import (
     BackstromSlip,
     BladeLoadingCoppage,
     ClearanceJansen,
-    LossAdder,
+    CompressorLosses,
     SkinFrictionJansen,
 )
 from adet.registries import GuessRegistry, VariableBoundsRegistry
@@ -124,7 +123,7 @@ EQS_WITH_LOSSES = {
     ClearanceJansen(): (0, 1),
     SkinFrictionJansen(): (0, 1),
     BladeLoadingCoppage(): (0, 1),
-    LossAdder(): 1,  # Use losses
+    CompressorLosses(): 1,  # Use losses
 }
 
 

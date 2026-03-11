@@ -458,6 +458,20 @@ class VariableBoundsRegistry(
     }
 
 
+ALL_REGISTRIES = [
+    DefaultUnitsRegistry,
+    GuessRegistry,
+    ScalingRegistry,
+    ScalarsRegistry,
+    VariableBoundsRegistry,
+]
+
+
+def reset_registries():
+    for reg in ALL_REGISTRIES:
+        reg.reset()
+
+
 if __name__ == '__main__':
     # Example: Test regex matching
     reg = DefaultUnitsRegistry()

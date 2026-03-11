@@ -260,7 +260,7 @@ class SkinFrictionJansen(LossModel):
         return r1, r2, r3
 
 
-class LossAdder(LossApplier):
+class CompressorLosses(LossApplier):
     def residual(
         self,
         tot_hmass0,

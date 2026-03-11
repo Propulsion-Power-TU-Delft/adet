@@ -67,8 +67,8 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 # === CONFIGURATION
 # Simulation settings
-NUM_SPAN = 7  # Number of spanwise stations
-NUM_STAGES = 2  # Number of turbine stages (stator-rotor pairs)
+NUM_SPAN = 9  # Number of spanwise stations
+NUM_STAGES = 3  # Number of turbine stages (stator-rotor pairs)
 # Runtime options
 RUN_MULTI = True  # Run the multi streamline case
 ADD_LOSSES = True
@@ -114,18 +114,12 @@ _gss_reg.from_dict(
         'workCoeff': -0.9,
         'reactDegree_ts': 0.5,
         'k_prof': 0.2,
-        'hdropCoeff': -2.0,
     }
 )
 
 _bnd_reg = VariableBoundsRegistry()
 _bnd_reg.reset()
-_bnd_reg.from_dict(
-    {
-        'U': (0, 700.0),
-        'hdropCoeff': (-7.0, 0.9),
-    }
-)
+_bnd_reg.from_dict({'U': (0, 700.0)})
 
 # === SHAFT DEFINITIONS
 # Static shaft for stators (no rotation)
@@ -191,7 +185,6 @@ stator = BladeRow(
         PercentageEntropyLoss(0.0): (0, 1),
         MinimalCamberLine(): (0, 1),
         ZeroDeviation(): 0,
-        ZeroDeviation(): 1,
     },
     constant_variables=['geo_rr_midspan'],
 )
@@ -218,9 +211,8 @@ rotor = BladeRow(
     },
     extra_equations={
         PercentageEntropyLoss(0.0): (0, 1),
+        ZeroDeviation(): 0,  # No incidence
         ParabolicCamberline(): (0, 1),
-        ZeroDeviation(): 0,
-        ZeroDeviation(): 1,
         # Work and flow coefficients defined only on rotor
         WorkCoefficient(): (0, 1),
         FlowCoefficient(): (0, 1),

@@ -17,11 +17,15 @@ from adet.equations.fundamental import (
     ZeroBlockage,
 )
 from adet.equations.geometrical import (
+    BladeRatios,
     EndwallProperties,
     MeridionalUniform,
     MeridionalVariable,
     MeridionalRatios,
-    BladeRatios,
+    BladePitch,
+    MinimalCamberLine,
+    ParabolicCamberline,
+    TwoSegmentCamberline,
 )
 from adet.equations.nondimensional import EnthalpyDropCoefficient
 from adet.equations.special import GeometricalAdder
@@ -60,22 +64,25 @@ class BladeRow(BaseComponent):
         # *** Fundamental equations - do not remove
         (EulerEquation, (0, 1)),  # Adiabatic and steady
         (MassConservation, (0, 1)),
-        # *** Meridional streamtube distributions
+        # *** Meridional geometry
         (MeridionalVariable, 0),
         (MeridionalVariable, 1),
+        (MeridionalRatios, (0, 1)),
         # *** Blockage - Zero by default
         (ZeroBlockage, 0),
         (ZeroBlockage, 1),
-        # *** Geometry
+        # *** Out Deviation - Zero by default
+        (ZeroDeviation, 1),
+        # *** Row Geometry
+        (BladePitch, 0),
+        (BladePitch, 1),
         (BladeRatios, 0),
         (BladeRatios, 1),
-        (MeridionalRatios, (0, 1)),
+        (TwoSegmentCamberline, (0, 1)),
         # *** Common definitions
         (EndwallProperties, 0),
         (EndwallProperties, 1),
         (MeridionalVelocityRatio, (0, 1)),
-        # *** Properties for bounding
-        (EnthalpyDropCoefficient, (0, 1)),
     ]
 
     from_previous_node = ABSOLUTE_LINK + GEOM_LINK
@@ -83,8 +90,8 @@ class BladeRow(BaseComponent):
     constant_variables = [
         # Store on both nodes
         'kin_omega',
-        'geo_num_blades',
         'geo_chord',
+        'geo_num_blades',
     ]
 
     def __init__(
@@ -177,8 +184,9 @@ class DownstreamMixer(BaseComponent):
         (ConstRelEnthalpy, (0, 1)),
         (MixingMomentumBalances, (0, 1)),
         # *** Blockage
+        (BladePitch, 0),
+        (ZeroBlockage, 1),  # No blockage @ mixed out
         (BladeBlockage, 0),  # Blade + b.l. blockage
-        (ZeroBlockage, 1),  # No blockage mixed out
         # Special adders
         (GeometricalAdder, 0),
         (GeometricalAdder, 1),
@@ -191,10 +199,10 @@ class DownstreamMixer(BaseComponent):
         ABSOLUTE_LINK
         + GEOM_LINK
         + [
-            # Copy the geometry
+            # Copy the relevant geometry
             'geo_hh',
             'geo_rr',
-            'geo_pitch',
+            'geo_num_blades',
             'geo_metal_angle',
             # Get the base pressure
             'oth_p_base',
@@ -208,13 +216,11 @@ class DownstreamMixer(BaseComponent):
     )
 
     constant_variables = GEOM_LINK + [
+        # Keep reference frame alive
+        'kin_omega',
         # Keep the span geometry constant
         'geo_hh',
         'geo_rr',
-        # Keep reference frame alive
-        'kin_omega',
-        # Keep geometry
-        'geo_num_blades',
     ]
 
 

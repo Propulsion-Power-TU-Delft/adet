@@ -24,24 +24,22 @@ def get_midspan_idx(var):
 
 def safe_abs(x) -> PlainQuantity | cs.MX:
     if isinstance(x, PlainQuantity):
-        # Unit checks
         return (x**2) ** 0.5
     else:
         return cs.fabs(x)
 
 
-def minmax_bound(x, min_val, max_val):
+def minmax_bound(x, min_val: float, max_val: float) -> PlainQuantity | cs.MX:
     if isinstance(x, PlainQuantity):
-        # Unit checks
         return x
     else:
-        x = cs.if_else(x > max_val, max_val, x)
-        x = cs.if_else(x < min_val, min_val, x)
+        x = cs.fmax(x, max_val)
+        x = cs.fmin(x, min_val)
         return x
 
 
 def safe_if_else(cond, if_true, if_false):
-    """The unit is based on the FIRST condition"""
+    """The unit is based on the first expression"""
     if isinstance(if_true, PlainQuantity):
         return if_true
     else:
@@ -50,7 +48,6 @@ def safe_if_else(cond, if_true, if_false):
 
 def safe_sign(x):
     if isinstance(x, PlainQuantity):
-        # Unit checks
         return x
     else:
         return cs.sign(x)

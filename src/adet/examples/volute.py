@@ -15,7 +15,7 @@ from adet.equations.fundamental import (
 )
 from adet.equations.nondimensional import AbsoluteMachNumber
 from adet.equations.special import ThermoVarsAdder
-from adet.equations.utils import safe_abs
+from adet.equations.utils import safe_abs, safe_if_else
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
 from adet.losses.basic import PercentageEntropyLoss
 from adet.registries import GuessRegistry, VariableBoundsRegistry
@@ -41,8 +41,6 @@ class VoluteAreas(EquationBase):
 
 
 class VoluteDesignFister(EquationBase):
-    # manual_units = ('m',)
-
     def residual(
         self,
         geo_rr1,
@@ -79,8 +77,6 @@ class VoluteDesingStepanoff(EquationBase):
 
 
 class VoluteLoss(EquationBase):
-    manual_units = ('Pa',)
-
     def residual(
         self,
         oth_f1Coeff1,
@@ -108,7 +104,7 @@ class VoluteLoss(EquationBase):
             / (1 + swirl**2)
         )
 
-        k_theta = cs.if_else(product > 1, k_theta, 0.0)
+        k_theta = safe_if_else(product > 1, k_theta, 0.0)
 
         deltaPt = (tot_p1 - stc_p1) * (k_m + k_theta)
 
@@ -153,7 +149,9 @@ class VoluteFreeVortex(EquationBase):
 
 
 if __name__ == '__main__':
+    VariableBoundsRegistry().reset()
     VariableBoundsRegistry().set('mach', (0, 1.0))
+    GuessRegistry().reset()
     GuessRegistry().set_fallback_value(0.8)
 
     method_map = {1: 'conservation', 2: 'fister', 3: 'stepanoff'}
@@ -220,7 +218,6 @@ if __name__ == '__main__':
         'ipopt',
         opts={
             'error_on_fail': False,
-            'ipopt.tol': 1e-8,
         },
     )
 

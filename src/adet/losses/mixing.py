@@ -68,9 +68,6 @@ class MixingMomentumBalances(EquationBase):
         oth_ch_massflow0,
         stc_smass0,
         stc_smass1,
-        oth_disp_thick0,
-        rlt_p0,
-        rlt_p1,
         geo_hh0,
         oth_delta_smass_mixing1,
     ):

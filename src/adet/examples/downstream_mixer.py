@@ -328,7 +328,7 @@ if PLOTS:
         midspan_idx = ntw.system.num_span // 2
         inlet_angle = inl_node.geo.metal_angle[midspan_idx]  # pyright:ignore
         outlet_angle = out_node.geo.metal_angle[midspan_idx]  # pyright:ignore
-        pitch = out_node.geo.pitch[midspan_idx]  # pyright:ignore
+        pitch = inl_node.geo.pitch[midspan_idx]  # pyright:ignore
         num_plt_blades = 3  # blades to plot
 
         for blade_num in range(num_plt_blades):

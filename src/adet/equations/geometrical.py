@@ -112,7 +112,7 @@ class MeridionalRatios(EquationBase):
         return r1, r2, r3, r4
 
 
-class BladeRatios(EquationBase):
+class BladePitch(EquationBase):
     """
     Define pitch as circumference / num_blades and the massflow per blade channel
 
@@ -135,17 +135,24 @@ class BladeRatios(EquationBase):
         # Massflow
         oth_massflow0,
         oth_ch_massflow0,
-        geo_bld_thick0,
-        geo_solidity0,
-        geo_chord0,
-        geo_thick_by_pitch0,
     ):
         r1 = geo_pitch0 * geo_num_blades0 - 2 * np.pi * geo_rr0
         r2 = geo_num_blades0 * oth_ch_massflow0 - oth_massflow0
-        r3 = geo_pitch0 * geo_solidity0 - geo_chord0
-        r4 = geo_bld_thick0 - geo_thick_by_pitch0 * geo_pitch0
+        return r1, r2
 
-        return r1, r2, r3, r4
+
+class BladeRatios(EquationBase):
+    def residual(
+        self,
+        geo_pitch0,
+        geo_solidity0,
+        geo_chord0,
+        geo_bld_thick0,
+        geo_thick_by_pitch0,
+    ):
+        r1 = geo_pitch0 * geo_solidity0 - geo_chord0
+        r2 = geo_bld_thick0 - geo_thick_by_pitch0 * geo_pitch0
+        return r1, r2
 
 
 class EndwallProperties(EquationBase):
@@ -294,7 +301,6 @@ class TwoSegmentCamberline(CamberLineGeom):
         geo_stagger1,
         geo_chord_ax1,
         geo_camb_len1,
-        geo_pitch1,
     ):
         stagger_computed, camber_len_computed = self._compute_lines(
             geo_metal_angle0, geo_metal_angle1, geo_chord_ax1
