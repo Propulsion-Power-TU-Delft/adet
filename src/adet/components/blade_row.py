@@ -7,12 +7,7 @@ import numpy as np
 
 from adet.components import BaseComponent, Shaft
 from adet.equations import EquationBase
-from adet.equations.definitions import (
-    BladePitch,
-    MeridionalVelocityRatio,
-    Solidity,
-    ThicknessToPitch,
-)
+from adet.equations.definitions import MeridionalVelocityRatio
 from adet.equations.fundamental import (
     BladeBlockage,
     ConstantAngMomentum,
@@ -24,9 +19,11 @@ from adet.equations.fundamental import (
 from adet.equations.geometrical import (
     EndwallProperties,
     MeridionalUniform,
-    GeometricalRatios,
     MeridionalVariable,
+    MeridionalRatios,
+    BladeRatios,
 )
+from adet.equations.nondimensional import EnthalpyDropCoefficient
 from adet.equations.special import GeometricalAdder
 from adet.geometry import BezierCurve, StraightLine
 from adet.losses.basic import ZeroDeviation
@@ -69,31 +66,25 @@ class BladeRow(BaseComponent):
         # *** Blockage - Zero by default
         (ZeroBlockage, 0),
         (ZeroBlockage, 1),
+        # *** Geometry
+        (BladeRatios, 0),
+        (BladeRatios, 1),
+        (MeridionalRatios, (0, 1)),
         # *** Common definitions
         (EndwallProperties, 0),
         (EndwallProperties, 1),
-        # (MidspanVelocities, 0),
-        # (MidspanVelocities, 1),
-        (GeometricalRatios, (0, 1)),
         (MeridionalVelocityRatio, (0, 1)),
-        # *** Blade count, pitch, channel massflow
-        # |> TODO: Make this user-enabled
-        (BladePitch, 0),
-        (BladePitch, 1),
-        (ThicknessToPitch, 0),
-        (ThicknessToPitch, 1),
-        (Solidity, 1),
         # *** Properties for bounding
-        # (AngleDeflection, (0, 1)),
-        # (EnthalpyDropCoefficient, (0, 1)),
-        # (CamberFunction, (0, 1)),
+        (EnthalpyDropCoefficient, (0, 1)),
     ]
 
     from_previous_node = ABSOLUTE_LINK + GEOM_LINK
 
     constant_variables = [
+        # Store on both nodes
         'kin_omega',
         'geo_num_blades',
+        'geo_chord',
     ]
 
     def __init__(
@@ -163,7 +154,7 @@ class VanelessDiffuser(BaseComponent):
         (ZeroBlockage, 0),
         (ZeroBlockage, 1),
         # Extra definitions
-        (GeometricalRatios, (0, 1)),
+        (MeridionalRatios, (0, 1)),
     ]
 
     constant_variables = [
@@ -185,13 +176,9 @@ class DownstreamMixer(BaseComponent):
         (MassConservation, (0, 1)),
         (ConstRelEnthalpy, (0, 1)),
         (MixingMomentumBalances, (0, 1)),
-        # (SimplifiedMixingBalances, (0, 1)),
         # *** Blockage
-        (BladeBlockage, 0),  # Blade + b.l. inlet blockage
+        (BladeBlockage, 0),  # Blade + b.l. blockage
         (ZeroBlockage, 1),  # No blockage mixed out
-        # *** Definition of channel massflow and num_blades
-        (BladePitch, 0),
-        (BladePitch, 1),
         # Special adders
         (GeometricalAdder, 0),
         (GeometricalAdder, 1),
@@ -207,13 +194,12 @@ class DownstreamMixer(BaseComponent):
             # Copy the geometry
             'geo_hh',
             'geo_rr',
+            'geo_pitch',
+            'geo_metal_angle',
             # Get the base pressure
             'oth_p_base',
             # Stay in the same MRF as blade row
             'kin_omega',
-            # Geometry
-            'geo_num_blades',
-            'geo_metal_angle',
             # Boundary layer and blade thicknesses
             'geo_bld_thick',
             'oth_disp_thick',

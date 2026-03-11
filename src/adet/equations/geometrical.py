@@ -83,41 +83,11 @@ class MeridionalUniform(MeridionalGeom):
 
 
 class AnnulusAreas(EquationBase):
-    # Circular annuli at various spanwise
     def residual(self, geo_area0, geo_rr0, geo_hh0):
-        # I realized that in the equation above only the midle terms
-        # of the binomial square do not elide
-        # return geo_area0 - np.pi * (
-        #     (geo_rr0 + geo_hh0 / 2) ** 2 - (geo_rr0 - geo_hh0 / 2) ** 2
-        # )
-
         return geo_area0 - 2 * np.pi * geo_rr0 * geo_hh0
 
 
-class MidspanVelocities(EquationBase):
-    def residual(
-        self,
-        kin_V0,
-        kin_Vm0,
-        kin_Vt0,
-        kin_V_midspan0,
-        kin_Vm_midspan0,
-        kin_Vt_midspan0,
-    ):
-        num_span = max(kin_V0.shape)
-        if num_span == 1:
-            midspan = 0
-        else:
-            midspan = num_span // 2
-
-        r1 = kin_V_midspan0 - kin_V0[midspan]
-        r2 = kin_Vm_midspan0 - kin_Vm0[midspan]
-        r3 = kin_Vt_midspan0 - kin_Vt0[midspan]
-
-        return r1, r2, r3
-
-
-class GeometricalRatios(EquationBase):
+class MeridionalRatios(EquationBase):
     def residual(
         self,
         geo_height0,
@@ -138,6 +108,43 @@ class GeometricalRatios(EquationBase):
         )
         r3 = geo_rr_midspan0 * geo_radiusRatio1 - geo_rr_midspan1
         r4 = geo_chord_ax1[midspan] * geo_aspRatio1 - geo_height0
+
+        return r1, r2, r3, r4
+
+
+class BladeRatios(EquationBase):
+    """
+    Define pitch as circumference / num_blades and the massflow per blade channel
+
+    Note:
+    -----
+    I deliberately did not include a mechanism for imposing an integer
+    number of blades. It should be done by the loading criteria
+    e.g. If the user imposes no loading criteria and just specifies radius and
+    pitch, the num of blades might be forced by input not to be an integer.
+    Therefore, we choose not to violate the user's constraints for a single
+    root problem because it is not compatible with the current architecture.
+    """
+
+    def residual(
+        self,
+        # Geometry
+        geo_rr0,
+        geo_pitch0,
+        geo_num_blades0,
+        # Massflow
+        oth_massflow0,
+        oth_ch_massflow0,
+        geo_bld_thick0,
+        geo_solidity0,
+        geo_chord0,
+        geo_thick_by_pitch0,
+    ):
+        r1 = geo_pitch0 * geo_num_blades0 - 2 * np.pi * geo_rr0
+        r2 = geo_num_blades0 * oth_ch_massflow0 - oth_massflow0
+        r3 = geo_pitch0 * geo_solidity0 - geo_chord0
+        r4 = geo_bld_thick0 - geo_thick_by_pitch0 * geo_pitch0
+
         return r1, r2, r3, r4
 
 

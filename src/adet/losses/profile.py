@@ -3,7 +3,7 @@ import casadi as cs
 import numpy as np
 
 from adet.losses.base_loss import LossModel
-from adet.equations.utils import trapezoid2
+from adet.equations.utils import minmax_bound, safe_abs, trapezoid2
 
 
 # Greitzer model
@@ -101,7 +101,6 @@ def trapezoidal_vel_profile(
 
     # Velocity clippers
     MIN_CLIP = 5  # Clip pressure side to inlet W / <N>
-    MAX_CLIP = 4  # Clip suction side to <N> times inlet vel
 
     # NOTE: With the absolute value this should work for both diffusing
     # and accelerating channels
@@ -114,14 +113,17 @@ def trapezoidal_vel_profile(
     # are assuming the value of the sign by using the max function
     # => Solution = Take the absolute value of k_prof
 
-    k_prof = cs.fabs(k_prof)  # Take the absolute value
-    W_mid_ss = cs.fmin(2 * k_prof * kin_W1 + delta_W, kin_W0 * MAX_CLIP)
-    W_mid_ps = cs.fmax(k_prof * kin_W0 - delta_W, kin_W0 / MIN_CLIP)
+    # Manual Bounding
+    abs_k = safe_abs(k_prof)
+    bnd_k = minmax_bound(abs_k, 0.01, 1.5)
+
+    W_mid_ss = 2 * bnd_k * kin_W1 + delta_W
+    W_mid_ps = cs.fmax(bnd_k * kin_W0 - delta_W, kin_W0 / MIN_CLIP)
 
     # Full velocity distribution
     W_distr_ss = cs.horzcat(1 * kin_W0, W_mid_ss, W_mid_ss, kin_W1)  # Suction
     # The 99 is needed otherwise the last state is equal, can cause NaN in some formulas
-    W_distr_ps = cs.horzcat(0 * kin_W0, W_mid_ps, W_mid_ps, 0.999 * kin_W1)  # Pressure
+    W_distr_ps = cs.horzcat(0 * kin_W0, W_mid_ps, W_mid_ps, 0.99 * kin_W1)  # Pressure
 
     return xi_by_camb_len, W_distr_ss, W_distr_ps
 

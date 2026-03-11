@@ -30,6 +30,16 @@ def safe_abs(x) -> PlainQuantity | cs.MX:
         return cs.fabs(x)
 
 
+def minmax_bound(x, min_val, max_val):
+    if isinstance(x, PlainQuantity):
+        # Unit checks
+        return x
+    else:
+        x = cs.if_else(x > max_val, max_val, x)
+        x = cs.if_else(x < min_val, min_val, x)
+        return x
+
+
 def safe_if_else(cond, if_true, if_false):
     """The unit is based on the FIRST condition"""
     if isinstance(if_true, PlainQuantity):

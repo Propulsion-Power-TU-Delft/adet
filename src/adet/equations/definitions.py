@@ -7,7 +7,6 @@ import CoolProp as cp
 import numpy as np
 
 from adet.equations.base_equation import EquationBase
-from adet.equations.utils import safe_sum
 
 
 class AngleDeflection(EquationBase):
@@ -29,11 +28,6 @@ class DeviationAngle(EquationBase):
         geo_metal_angle0,
     ):
         return kin_dev_angle1 + np.sign(geo_metal_angle0) * (kin_beta1 - kin_beta0)
-
-
-class AreaAveragePressure(EquationBase):
-    def residual(self, oth_p_AreaAve0, stc_p0, geo_area0):
-        return safe_sum(geo_area0) * oth_p_AreaAve0 - safe_sum(geo_area0 * stc_p0)
 
 
 class RepeatedStage(EquationBase):
@@ -60,34 +54,27 @@ class MeridionalVelocityRatio(EquationBase):
         return kin_Vm0 * kin_VmRatio1 - kin_Vm1
 
 
-class BladePitch(EquationBase):
-    """
-    Define pitch as circumference / num_blades and the massflow per blade channel
-
-    Note:
-    -----
-    I deliberately did not include a mechanism for imposing an integer
-    number of blades. It should be done by the loading criteria
-    e.g. If the user imposes no loading criteria and just specifies radius and
-    pitch, the num of blades might be forced by input not to be an integer.
-    Therefore, we choose not to violate the user's constraints for a single
-    root problem because it is not compatible with the current architecture.
-    """
-
+class MidspanVelocities(EquationBase):
     def residual(
         self,
-        # Geometry
-        geo_rr0,
-        geo_pitch0,
-        geo_num_blades0,
-        # Massflow
-        oth_massflow0,
-        oth_ch_massflow0,
+        kin_V0,
+        kin_Vm0,
+        kin_Vt0,
+        kin_V_midspan0,
+        kin_Vm_midspan0,
+        kin_Vt_midspan0,
     ):
-        r1 = geo_pitch0 * geo_num_blades0 - 2 * np.pi * geo_rr0
-        r2 = geo_num_blades0 * oth_ch_massflow0 - oth_massflow0
+        num_span = max(kin_V0.shape)
+        if num_span == 1:
+            midspan = 0
+        else:
+            midspan = num_span // 2
 
-        return r1, r2
+        r1 = kin_V_midspan0 - kin_V0[midspan]
+        r2 = kin_Vm_midspan0 - kin_Vm0[midspan]
+        r3 = kin_Vt_midspan0 - kin_Vt0[midspan]
+
+        return r1, r2, r3
 
 
 class EffectiveBladeNumber(EquationBase):
@@ -121,16 +108,6 @@ class IsentropicProperties(EquationBase):
         r4 = oth_stc_T_is1 - temp_stat_is
 
         return r1, r2, r3, r4
-
-
-class Solidity(EquationBase):
-    def residual(self, geo_solidity0, geo_pitch0, geo_chord0):
-        return geo_pitch0 * geo_solidity0 - geo_chord0
-
-
-class ThicknessToPitch(EquationBase):
-    def residual(self, geo_bld_thick0, geo_thick_by_pitch0, geo_pitch0):
-        return geo_bld_thick0 - geo_thick_by_pitch0 * geo_pitch0
 
 
 class ClearanceByHeight(EquationBase):

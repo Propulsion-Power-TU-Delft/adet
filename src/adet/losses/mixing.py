@@ -18,10 +18,10 @@ class SieverdingBasePressure(EquationBase):
 
     def _get_base_pressure_interpolant(self, blade_type: Literal['conv', 'conv-div']):
         data_folder = Path(__file__).parents[3] / 'data'
-        xq = np.load(data_folder / f'sieverding_{blade_type}_xq.npy')
-        yq = np.load(data_folder / f'sieverding_{blade_type}_yq.npy')
-        zq = np.load(data_folder / f'sieverding_{blade_type}_zq.npy')
-        return make_casadi_interpolant(xq, yq, zq, 'base_pr', 'linear')
+        x = np.load(data_folder / f'sieverding_{blade_type}_xq.npy')
+        y = np.load(data_folder / f'sieverding_{blade_type}_yq.npy')
+        data = np.load(data_folder / f'sieverding_{blade_type}_zq.npy')
+        return make_casadi_interpolant(x, y, data, 'base_pr', 'linear')
 
     def residual(self, tot_p0, stc_p1, oth_p_base1):
         # Detect array shapes
@@ -35,7 +35,7 @@ class SieverdingBasePressure(EquationBase):
         # Add support for other blade parameters
 
         first_param = stc_p1 / tot_p0
-        second_param = BLADE_PARAM * (stc_p1**0)  # it's just a 2 with the correct shape
+        second_param = BLADE_PARAM * (stc_p1**0)  # it's just an array of 2s
         table_entry = cs.horzcat(first_param, second_param).T
         pb_by__ptin = base_p_interpolant(table_entry).T
         return oth_p_base1 - pb_by__ptin * tot_p0
@@ -66,10 +66,13 @@ class MixingMomentumBalances(EquationBase):
         kin_beta1,
         kin_dev_angle1,
         oth_ch_massflow0,
+        stc_smass0,
+        stc_smass1,
         oth_disp_thick0,
         rlt_p0,
         rlt_p1,
         geo_hh0,
+        oth_delta_smass_mixing1,
     ):
         MACH_THRES = 1.0
 
@@ -98,26 +101,28 @@ class MixingMomentumBalances(EquationBase):
         # mom_out_y = stc_p1 * area_y + mf * kin_W1 * np.sin(kin_dev_angle1)
         # r_momy = (mom_in_y - mom_out_y) / mom_in_y
 
-        q = 0.5 * stc_rhomass0 * kin_W0**2  # Dynamic head
-        zeta = incomp_mixing_zeta(
-            q,
-            stc_p0,
-            geo_metal_angle0,
-            geo_pitch0,
-            geo_bld_thick0,
-            oth_p_base0,
-            oth_mom_thick0,
-            oth_disp_thick0,
-        )
-        r_sub = rlt_p1 - (rlt_p0 - q * zeta)
+        # q = 0.5 * stc_rhomass0 * kin_W0**2
+        # zeta = incomp_mixing_zeta(
+        #     q,
+        #     stc_p0,
+        #     geo_metal_angle0,
+        #     geo_pitch0,
+        #     geo_bld_thick0,
+        #     oth_p_base0,
+        #     oth_mom_thick0,
+        #     oth_disp_thick0,
+        # )
+        # r_sub = rlt_p1 - (rlt_p0 - q * zeta)
 
+        # No deviation at subsonic outlet, choke otherwise
         r_no_dev = kin_beta0 - kin_beta1
         r_choke = kin_W0 / stc_speed_sound0 - 1
+        r_regime = safe_if_else(kin_relmach1 >= MACH_THRES, r_choke, r_no_dev)
 
-        r1 = safe_if_else(kin_relmach1 >= MACH_THRES, r_momx, r_sub)
-        r2 = safe_if_else(kin_relmach1 >= MACH_THRES, r_choke, r_no_dev)
+        # Delta smass for bounding
+        r_delta = oth_delta_smass_mixing1 - (stc_smass1 - stc_smass0)
 
-        return r_dev, r1, r2
+        return r_dev, r_momx, r_regime, r_delta
 
 
 class SimplifiedMixingBalances(EquationBase):

@@ -38,7 +38,6 @@ from adet.equations.nondimensional import (
 )
 from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
-from adet.losses.base_loss import LossModel
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.losses.profile import DentonProfileLoss
 from adet.registries import (
@@ -68,8 +67,8 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 # === CONFIGURATION
 # Simulation settings
-NUM_SPAN = 9  # Number of spanwise stations
-NUM_STAGES = 3  # Number of turbine stages (stator-rotor pairs)
+NUM_SPAN = 7  # Number of spanwise stations
+NUM_STAGES = 2  # Number of turbine stages (stator-rotor pairs)
 # Runtime options
 RUN_MULTI = True  # Run the multi streamline case
 ADD_LOSSES = True
@@ -80,7 +79,7 @@ PRINTS = False  # Print node information
 # === FLUID MODEL SETUP
 # Real gas model using CoolProp (HEOS = Helmholtz Equation of State)
 abs_state = DebugAbstractState('HEOS', 'Air')
-idl_state = IdealGasState(1.4, 287.0, 3e-5)
+idl_state = IdealGasState(1.4, 287.0, 2e-5)
 abs_state.debug_print = False
 
 real_model = ExternalFluidModel(abs_state)
@@ -124,7 +123,7 @@ _bnd_reg.reset()
 _bnd_reg.from_dict(
     {
         'U': (0, 700.0),
-        'hdropCoeff': (-6.0, 0.9),
+        'hdropCoeff': (-7.0, 0.9),
     }
 )
 
@@ -144,7 +143,7 @@ shaft = Shaft(
 
 #  =  =  =  =  =  =  =  =  =  =  =  =  =  =  COMPONENT DEFINITIONS
 # Only use profile
-class LossAdder(LossApplier):
+class AddProfileLoss(LossApplier):
     def residual(self, stc_smass0, stc_smass1, oth_delta_smass_profile1):
         return stc_smass1 - (stc_smass0 + oth_delta_smass_profile1)
 
@@ -219,7 +218,7 @@ rotor = BladeRow(
     },
     extra_equations={
         PercentageEntropyLoss(0.0): (0, 1),
-        MinimalCamberLine(): (0, 1),
+        ParabolicCamberline(): (0, 1),
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
         # Work and flow coefficients defined only on rotor
@@ -305,9 +304,9 @@ def build_network(num_stages, num_span, add_losses: bool = False):
         for nodes in nodes_by_stage:
             # Add profile losses
             ntw.system.add_equation(DentonProfileLoss(), (nodes[0], nodes[1]))
-            ntw.system.add_equation(LossAdder(), (nodes[0], nodes[1]))
+            ntw.system.add_equation(AddProfileLoss(), (nodes[0], nodes[1]))
             ntw.system.add_equation(DentonProfileLoss(), (nodes[2], nodes[3]))
-            ntw.system.add_equation(LossAdder(), (nodes[2], nodes[3]))
+            ntw.system.add_equation(AddProfileLoss(), (nodes[2], nodes[3]))
 
     ntw.build(SCALED)
     return ntw
@@ -373,7 +372,6 @@ if RUN_MULTI:
 
 
 # === POST-PROCESSING AND VISUALIZATION
-# plt.style.use('dark_background')
 if PLOTS:
     plt.style.use('dark_background')
     FONTSIZE = 18

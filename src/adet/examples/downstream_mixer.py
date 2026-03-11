@@ -51,7 +51,7 @@ PRINTS = True
 INITIAL_LOSS = PercentageEntropyLoss(0.0)
 
 # This counts the number of updates in an attribute
-abs_state = DebugAbstractState('REFPROP', 'MM')
+abs_state = DebugAbstractState('REFPROP', 'NOVEC649')
 abs_state.debug_print = False
 id_state = IdealGasState(1.4, 287, 1.8e5)
 
@@ -59,7 +59,7 @@ real_model = ExternalFluidModel(abs_state)
 ideal_model = AnalyticalFluidModel(id_state)
 
 settings = FluidSettings(
-    model=ideal_model,
+    model=real_model,
     update_variables=('p', 'hmass', 'T'),
     update_length=2,
 )
@@ -82,8 +82,8 @@ _guess_reg.from_dict(
         'VmRatio': 1.3,
         'Vm': 30,
         'Wm': 30,
-        'Vt': 100,
-        'Wt': 100,
+        'Vt': 10,
+        'Wt': 10,
     }
 )
 
@@ -91,15 +91,20 @@ _guess_reg.from_dict(
 _bounds_reg = VariableBoundsRegistry()
 _bounds_reg.reset()
 _bounds_reg.ignore_defaults = False
+_bounds_reg.from_dict(
+    {
+        'delta_smass_mixing': (0.0, 10.0),
+    }
+)
 
-INLET_PRESSURE = 1.3 * abs_state.p_critical()
-INLET_TEMPERATURE = 1.045 * abs_state.T_critical()
+INLET_PRESSURE = 2.3e5
+INLET_TEMPERATURE = 383
 abs_state.update(cp.PT_INPUTS, INLET_PRESSURE, INLET_TEMPERATURE)
 _bounds_reg.from_dict(
     {
-        # 'p': (abs_state.p_critical() * 0.2, INLET_PRESSURE),
-        # 'T': (abs_state.T_critical() * 0.7, INLET_TEMPERATURE),
-        # 'hmass': (abs_state.hmass() - 300**2, 1.2 * abs_state.hmass()),
+        'p': (0.6 * INLET_PRESSURE, 1.5 * INLET_PRESSURE),
+        'T': (0.5 * INLET_PRESSURE, 1.5 * INLET_TEMPERATURE),
+        'hmass': (abs_state.hmass() - 200**2, 1.2 * abs_state.hmass()),
     }
 )
 
@@ -140,7 +145,7 @@ row = BladeRow(
     },
     out_constraints={
         'kin': {
-            'beta': Quantity(75, 'deg'),
+            'beta': Quantity(45, 'deg'),
         },
         'geo': {
             # Meridional
@@ -150,7 +155,7 @@ row = BladeRow(
             # 'chord_ax': 0.1,
             'num_blades': 40,
             # 'solidity': 1.0,
-            'thick_by_pitch': 0.0,
+            'thick_by_pitch': 0.01,
             'heightRatio': 1.0,
         },
         'oth': {
@@ -183,7 +188,7 @@ mixer = DownstreamMixer(
     'twitch',
     outlet_bc={
         # 'oth': {'pRatio': 0.7},  # Mixer in-to-out
-        'kin': {'mach': 1.3},  # Mixed-out mach
+        'kin': {'mach': 1.0},  # Mixed-out mach
     },
     extra_equations={
         StaticPressRatio(): (0, 1),
@@ -207,6 +212,7 @@ row.set_spanwise_constant('geo_chord_ax1')
 
 if ntw.num_components == 2 and shaft.omega > 0:
     ntw.system.add_equation(IsentropicProperties(), (0, 3))
+    # WARN: For a stator this crashes the code
     ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
 
 
@@ -221,7 +227,11 @@ rootfinder = ntw.system.make_rootfinder(
 )
 x0 = ntw.system.get_scaled_guess()
 kn = ntw.system.get_scaled_constraints()
-bnd = ntw.system.get_arguments_bounds()
+bnd = ntw.system.get_arguments_bounds(
+    {
+        'kin_mach0': (0.0, 0.9),
+    }
+)
 
 # diag = SystemDiagnostics(ntw.system, kn)
 
@@ -373,10 +383,11 @@ plt.close('all')
 # globals().update(residual_debugger(MassAreaChoke(), [n0, n1]))
 
 RUN_SWEEP = True
+N_PTS = 40
 if RUN_SWEEP:
     mach_out_idx = ntw.system.constraints.index('kin_mach3')
     rtfn = ntw.system.make_rootfinder('kinsol')
-    out_machs = np.linspace(1.5, 0.7, 60)
+    out_machs = np.linspace(1.0, 1.4, N_PTS)
     loss_coeffs = []
     deviations = []
     for m in out_machs:
