@@ -165,7 +165,7 @@ if __name__ == '__main__':
     sys.boundary_conditions[0]['geo'] = {
         'rr': 0.1,
         'pitch': 1.0,
-        'bld_thick': 0.05,
+        'bld_thick': 0.01,
     }
     sys.boundary_conditions[0]['oth'] = {
         'mom_thick': sys.boundary_conditions[0]['geo']['bld_thick'] * 0.075,  # pyright: ignore

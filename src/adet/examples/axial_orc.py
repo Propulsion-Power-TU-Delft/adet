@@ -38,16 +38,10 @@ from adet.equations.nondimensional import (
     VolumetricFlowRatio,
     WorkCoefficient,
 )
-from adet.equations.utils import residual_debugger
 from adet.fluid.settings import ExternalFluidModel
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.losses.leakage import DentonLeakageLoss
-from adet.losses.mixing import (
-    MixingMomentumBalances,
-    SieverdingBasePressure,
-    SimplifiedMixingBalances,
-)
 from adet.losses.profile import DentonProfileLoss
 from adet.losses.secondary import SecondaryBSM
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
@@ -107,6 +101,7 @@ _guess_reg.from_dict(
     {
         'hdropCoeff': -0.8,
         'workCoeff': -0.8,
+        'p_choke': 0.4 * INLET_PRESSURE,
         'reactDegree_ts': 0.5,
         'p': abs_state.p(),
         'T': abs_state.T(),
@@ -129,6 +124,7 @@ _bounds_reg.from_dict(
         # 'hdropCoeff': (-8.0, -0.2),
         'U': (0.0, 200.0),  # Reduce the search area
         'Vm': (20.0, 150.0),  # Reduce the search area
+        'delta_smass_mixing': (0.0, 10.0),
     }
 )
 if fluid_settings.model == real_model:
@@ -194,7 +190,7 @@ MIXING_EQS: dict[
     # Blockage of blade + b.l.
     BladeBlockage: 1,
     BoundaryLayerRatios: 1,
-    SieverdingBasePressure: (0, 1),
+    # SieverdingBasePressure: (0, 1),
     ModifiedZweifel: (0, 1),
 }
 
@@ -244,7 +240,7 @@ stator = BladeRow(
             'thick_by_pitch': 0.02,
             'clearance_by_height': 0.01,
             # *** Num blades
-            'num_blades': 15,
+            'num_blades': 20,
         },
         'oth': {  # NOTE: These are not used on first pass
             # *** Boundary layer ratios
@@ -324,17 +320,15 @@ rtfn_kinsol = ntw.system.make_rootfinder('kinsol')
 
 x0_is = ntw.system.get_scaled_guess()
 kn_is = ntw.system.get_scaled_constraints()
-bnd_is = ntw.system.get_arguments_bounds({'kin_alpha0': (-0.1, 0.1)})
+bnd_is = ntw.system.get_arguments_bounds({'kin_alpha0': (-0.7, 0.7)})
 solution = solve_root_problem(
     rootfinder_is,
     x0_is,
     kn_is,
     bnd_is,
     suppress_output=False,
-    perturbate_guess=False,
-    delta_pert=0.1,
-    num_samples=10000,
 )
+solution = solve_root_problem(rtfn_kinsol, solution, kn_is)
 
 stator_is_equations = stator._equations.copy()
 rotor_is_equations = rotor._equations.copy()
@@ -350,6 +344,7 @@ if user in ('y', 'Y'):
     rot_mixer = DownstreamMixer('rot_mixer')
     rot_mixer.bc_from_dict(DUTY_COEFFS)
 
+    # Remove number of blades and use zweifel
     rotor.rm_boundary_cond('geo_num_blades1')
     stator.rm_boundary_cond('geo_num_blades1')
     rotor.set_boundary_cond('geo_zweifelCoeff1', 0.85)
@@ -722,6 +717,3 @@ if answer in ('Y', 'y'):
 plt.close('all')
 
 print(f'Inlet mach is {n0.kin.mach}')
-
-globals().update(residual_debugger(SimplifiedMixingBalances(), [n2, n3]))
-globals().update(residual_debugger(MixingMomentumBalances(), [n2, n3]))

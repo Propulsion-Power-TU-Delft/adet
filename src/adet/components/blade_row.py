@@ -223,7 +223,7 @@ class DownstreamMixer(BaseComponent):
     constant_variables = GEOM_LINK + [
         # Keep reference frame alive
         'kin_omega',
-        'geo_metal_angle',
+        # 'geo_metal_angle',
         # Keep the span geometry constant
         'geo_hh',
         'geo_rr',
@@ -238,7 +238,7 @@ class DownstreamMixer(BaseComponent):
         row_out = row.network_maps[network][1]
 
         TO_ADD = [ChokingCriterion, SieverdingBasePressure]
-        position = (row_inl, row_out)
+        abs_position = (row_inl, row_out)
 
         logger.debug(
             f'{self} requested to add choking criterion and '
@@ -246,12 +246,12 @@ class DownstreamMixer(BaseComponent):
         )
 
         for eq in TO_ADD:
-            if network.system.contains_eq(eq, position):
+            if network.system.contains_eq(eq, abs_position):
                 logger.debug('Equation {eq} already in system, skipping')
                 continue
             else:
                 # Add both to row and system
-                row.add_equation(eq(), position)
+                row.add_equation(eq(), (0, 1))
 
 
 @dataclass

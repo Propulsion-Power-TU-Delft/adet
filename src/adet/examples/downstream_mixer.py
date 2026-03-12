@@ -12,10 +12,9 @@ from adet.components import BladeRow, Inlet, Shaft
 from adet.components import ComponentNetwork
 from adet.components.blade_row import DownstreamMixer
 from adet.components.blade_row import plot_from_nodes
-from adet.diagnostics import SystemDiagnostics
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
 from adet.equations.fundamental import BladeBlockage, ChokingCriterion
-from adet.equations.geometrical import MinimalCamberLine, ParabolicCamberline
+from adet.equations.geometrical import ParabolicCamberline
 from adet.equations.nondimensional import (
     StaticPressRatio,
     TotalTotalExpansionEfficiency,
@@ -186,8 +185,8 @@ row = BladeRow(
 mixer = DownstreamMixer(
     'twitch',
     outlet_bc={
-        # 'oth': {'pRatio': 0.7},  # Mixer in-to-out
-        # 'kin': {'mach': 0.9},  # Mixed-out mach
+        # 'oth': {'pRatio': 1.0},  # Mixer in-to-out
+        'kin': {'mach': 0.4},  # Mixed-out mach
     },
     extra_equations={
         StaticPressRatio(): (0, 1),
@@ -237,8 +236,8 @@ bnd = ntw.system.get_arguments_bounds(
 
 solution = solve_root_problem(rootfinder, x0, kn, bnd)
 
-# rtfn = ntw.system.make_rootfinder('kinsol')
-# solution = solve_root_problem(rtfn, solution, kn)
+# rtfn_kn = ntw.system.make_rootfinder('kinsol')
+# solution = solve_root_problem(rtfn_kn, solution, kn)
 
 sol_dict = ntw.system.write_solution_to_nodes(solution)
 ntw.print_structure()
@@ -379,45 +378,79 @@ if user in ('y', 'Y'):
 plt.close('all')
 
 globals().update(residual_debugger(AungierDeviationModel(), [n1]))
-RUN_SWEEP = False
-N_PTS = 100
+RUN_SWEEP = True
+N_PTS = 50
+out_machs = np.linspace(1.5, 0.3, N_PTS)
+thick_by_pitch_vals = np.linspace(0.0, 0.03, 4)
 if RUN_SWEEP:
     mach_out_idx = ntw.system.constraints.index('kin_mach3')
-    rtfn = ntw.system.make_rootfinder('kinsol')
-    out_machs = np.linspace(0.2, 0.9, N_PTS)
-    loss_coeffs = []
-    deviations = []
-    for m in out_machs:
-        flag_error = 0
-        kn[mach_out_idx] = np.array([m]) * ntw.system.constraints_scaling[mach_out_idx]
-        x0 = ntw.system.get_scaled_guess(sol_dict)
-        try:
-            solution = solve_root_problem(
-                rtfn,
-                x0,
-                kn,
-                bnd,
-                suppress_output=False,
+    thick_idx = ntw.system.constraints.index('geo_thick_by_pitch1')
+    rtfn_ip = ntw.system.make_rootfinder(
+        'ipopt', opts={'error_on_fail': False, 'ipopt.max_wall_time': 3}
+    )
+    rtfn_kn = ntw.system.make_rootfinder('kinsol', opts={'error_on_fail': True})
+
+    loss_coeffs_by_thick = {}
+    deviations_by_thick = {}
+
+    for thick in thick_by_pitch_vals:
+        loss_coeffs = []
+        deviations = []
+        kn_local = kn.copy()
+        kn_local[thick_idx] = (
+            np.array([thick]) * ntw.system.constraints_scaling[thick_idx]
+        )
+
+        for m in out_machs:
+            flag_error = 0
+            kn_local[mach_out_idx] = (
+                np.array([m]) * ntw.system.constraints_scaling[mach_out_idx]
             )
-        except RuntimeError:
-            flag_error = 1
+            x0 = ntw.system.get_scaled_guess(sol_dict)
+            try:
+                solution = solve_root_problem(
+                    rtfn_ip, x0, kn_local, suppress_output=True
+                )
+                solution = solve_root_problem(
+                    rtfn_kn, solution, kn_local, suppress_output=True
+                )
+            except RuntimeError:
+                flag_error = 1
 
-        if flag_error:
-            y_loss = np.array([np.nan])
-            dev = np.array([np.nan])
-        else:
-            y_loss = (n2.rlt.p - n3.rlt.p) / (n2.rlt.p - n2.stc.p)
-            dev = n2.kin.beta - n3.kin.beta
+            if flag_error:
+                y_loss = np.array([np.nan])
+                dev = np.array([np.nan])
+            else:
+                y_loss = (n2.rlt.p - n3.rlt.p) / (n2.rlt.p - n2.stc.p)
+                dev = n2.kin.beta - n3.kin.beta
 
-        loss_coeffs.append(y_loss)
-        deviations.append(dev)
+            loss_coeffs.append(y_loss)
+            deviations.append(dev)
 
-        sol_dict = ntw.system.write_solution_to_nodes(solution)
+            sol_dict = ntw.system.write_solution_to_nodes(solution)
 
-    fig, ax = plt.subplots(1, 2)
-    ax[0].plot(out_machs, loss_coeffs, label='zeta')
-    ax[1].plot(out_machs, np.array(deviations) * 180 / np.pi, label='deviations [deg]')
+        loss_coeffs_by_thick[thick] = loss_coeffs
+        deviations_by_thick[thick] = deviations
+
+    fig, ax = plt.subplots(1, 2, figsize=(14, 5))
+    for thick in thick_by_pitch_vals:
+        ax[0].plot(
+            out_machs[1:],
+            loss_coeffs_by_thick[thick][1:],
+            label=f'thick_by_pitch={thick:.4f}',
+        )
+        ax[1].plot(
+            out_machs[1:],
+            np.array(deviations_by_thick[thick][1:]) * 180 / np.pi,
+            label=f'thick_by_pitch={thick:.4f}',
+        )
+    ax[0].set_xlabel('Outlet Mach')
+    ax[0].set_ylabel('Loss Coefficient (zeta)')
     ax[0].legend()
+    ax[0].grid()
+    ax[1].set_xlabel('Outlet Mach')
+    ax[1].set_ylabel('Deviation [deg]')
     ax[1].legend()
+    ax[1].grid()
 
 plt.show(block=True)
