@@ -14,7 +14,7 @@ from adet.components.blade_row import DownstreamMixer
 from adet.components.blade_row import plot_from_nodes
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
 from adet.equations.fundamental import BladeBlockage, ChokingCriterion
-from adet.equations.geometrical import ParabolicCamberline
+from adet.equations.geometrical import MinimalCamberLine, ParabolicCamberline
 from adet.equations.nondimensional import (
     StaticPressRatio,
     TotalTotalExpansionEfficiency,
@@ -50,7 +50,7 @@ PRINTS = True
 INITIAL_LOSS = PercentageEntropyLoss(0.0)
 
 # This counts the number of updates in an attribute
-abs_state = DebugAbstractState('REFPROP', 'NOVEC649')
+abs_state = DebugAbstractState('REFPROP', 'MM')
 abs_state.debug_print = False
 id_state = IdealGasState(1.4, 287, 1.8e5)
 
@@ -58,10 +58,14 @@ real_model = ExternalFluidModel(abs_state)
 ideal_model = AnalyticalFluidModel(id_state)
 
 settings = FluidSettings(
-    model=ideal_model,
+    model=real_model,
     update_variables=('p', 'hmass', 'T'),
     update_length=2,
 )
+
+INLET_PRESSURE = 1.3 * abs_state.p_critical()
+INLET_TEMPERATURE = 1.045 * abs_state.T_critical()
+abs_state.update(cp.PT_INPUTS, INLET_PRESSURE, INLET_TEMPERATURE)
 
 _defreg = DefaultUnitsRegistry()
 _defreg.from_dict(
@@ -77,12 +81,11 @@ _guess_reg.reset()
 _guess_reg.from_dict(
     {
         'pRatio': 0.9,
-        'p_choke': 3e5,
-        'VmRatio': 1.3,
-        'Vm': 30,
-        'Wm': 30,
-        'Vt': 10,
-        'Wt': 10,
+        'p': INLET_PRESSURE,
+        'T': INLET_TEMPERATURE,
+        'p_choke': INLET_PRESSURE * 0.6,
+        'hmass': abs_state.hmass(),
+        'smass': abs_state.smass(),
     }
 )
 
@@ -92,18 +95,17 @@ _bounds_reg.reset()
 _bounds_reg.ignore_defaults = False
 _bounds_reg.from_dict(
     {
-        # 'delta_smass_mixing': (0.0, 10.0),
+        'dev_angle': (-0.3, 0.3),
+        'Vm': (10.0, 140.0),
     }
 )
 
-INLET_PRESSURE = 2.3e5
-INLET_TEMPERATURE = 383
-abs_state.update(cp.PT_INPUTS, INLET_PRESSURE, INLET_TEMPERATURE)
+
 _bounds_reg.from_dict(
     {
-        'p': (0.6 * INLET_PRESSURE, 1.5 * INLET_PRESSURE),
-        'T': (0.5 * INLET_PRESSURE, 1.5 * INLET_TEMPERATURE),
-        'hmass': (abs_state.hmass() - 200**2, 1.2 * abs_state.hmass()),
+        'p': (0.5 * INLET_PRESSURE, 1.2 * INLET_PRESSURE),
+        'T': (0.5 * INLET_TEMPERATURE, 1.2 * INLET_TEMPERATURE),
+        'hmass': (abs_state.hmass() - 150**2, abs_state.hmass() + 150**2),
     }
 )
 
@@ -117,13 +119,13 @@ shaft = Shaft(
 inlet = Inlet(
     {
         'kin': {
-            'beta': 0.0,
-            # 'mach': 0.15,
+            'beta': -0.35,
+            # 'mach': 0.2,
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
             'rr_midspan': 0.1,
-            'hubtipRatio': 0.7,
+            'hubtipRatio': 0.8,
         },
         'tot': {
             'p': INLET_PRESSURE,
@@ -144,18 +146,18 @@ row = BladeRow(
     },
     out_constraints={
         'kin': {
-            # 'mach': 0.4,
+            # 'mach': 0.3,
         },
         'geo': {
-            'metal_angle': Quantity(70, 'deg'),
+            'metal_angle': Quantity(71, 'deg'),
             # Meridional
             'meridional_angle': Quantity(0, 'deg'),
             # Blade
             'aspRatio': 1.8,
             # 'chord_ax': 0.1,
-            'num_blades': 40,
+            'num_blades': 20,
             # 'solidity': 1.0,
-            'thick_by_pitch': 0.01,
+            'thick_by_pitch': 0.02,
             'heightRatio': 1.0,
         },
         'oth': {
@@ -169,6 +171,7 @@ row = BladeRow(
         },
     },
     extra_equations={
+        MinimalCamberLine(): (0, 1),
         # |> Losses & Dev
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
@@ -186,7 +189,7 @@ mixer = DownstreamMixer(
     'twitch',
     outlet_bc={
         # 'oth': {'pRatio': 1.0},  # Mixer in-to-out
-        'kin': {'mach': 0.4},  # Mixed-out mach
+        'kin': {'mach': 1.23},  # Mixed-out mach
     },
     extra_equations={
         StaticPressRatio(): (0, 1),
@@ -221,23 +224,21 @@ rootfinder = ntw.system.make_rootfinder(
     'ipopt',
     opts={
         'error_on_fail': False,
-        'ipopt.max_wall_time': 10,
+        'ipopt.max_wall_time': 20,
     },
 )
 x0 = ntw.system.get_scaled_guess()
 kn = ntw.system.get_scaled_constraints()
 bnd = ntw.system.get_arguments_bounds(
     {
-        'kin_mach0': (0.0, 0.9),
+        # 'kin_mach0': (0.0, 0.7),
     }
 )
 
-# diag = SystemDiagnostics(ntw.system, kn)
-
 solution = solve_root_problem(rootfinder, x0, kn, bnd)
 
-# rtfn_kn = ntw.system.make_rootfinder('kinsol')
-# solution = solve_root_problem(rtfn_kn, solution, kn)
+rtfn_kn = ntw.system.make_rootfinder('ipopt')
+solution = solve_root_problem(rtfn_kn, solution, kn, suppress_output=True)
 
 sol_dict = ntw.system.write_solution_to_nodes(solution)
 ntw.print_structure()
@@ -380,13 +381,21 @@ plt.close('all')
 globals().update(residual_debugger(AungierDeviationModel(), [n1]))
 RUN_SWEEP = True
 N_PTS = 50
-out_machs = np.linspace(1.5, 0.3, N_PTS)
-thick_by_pitch_vals = np.linspace(0.0, 0.03, 4)
+out_machs = np.linspace(1.3, 1.0, N_PTS)
+thick_by_pitch_vals = [
+    0.0,
+    0.01,
+    0.02,
+]
 if RUN_SWEEP:
     mach_out_idx = ntw.system.constraints.index('kin_mach3')
     thick_idx = ntw.system.constraints.index('geo_thick_by_pitch1')
     rtfn_ip = ntw.system.make_rootfinder(
-        'ipopt', opts={'error_on_fail': False, 'ipopt.max_wall_time': 3}
+        'ipopt',
+        opts={
+            'error_on_fail': False,
+            'ipopt.max_wall_time': 3,
+        },
     )
     rtfn_kn = ntw.system.make_rootfinder('kinsol', opts={'error_on_fail': True})
 
@@ -409,10 +418,7 @@ if RUN_SWEEP:
             x0 = ntw.system.get_scaled_guess(sol_dict)
             try:
                 solution = solve_root_problem(
-                    rtfn_ip, x0, kn_local, suppress_output=True
-                )
-                solution = solve_root_problem(
-                    rtfn_kn, solution, kn_local, suppress_output=True
+                    rtfn_ip, x0, kn_local, bnd, suppress_output=True
                 )
             except RuntimeError:
                 flag_error = 1

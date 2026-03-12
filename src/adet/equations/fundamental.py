@@ -4,7 +4,13 @@ import numpy as np
 import CoolProp as cp
 
 from adet.equations import EquationBase
-from adet.equations.utils import get_midspan_idx, safe_sum, span_fin_diff
+from adet.equations.utils import (
+    get_midspan_idx,
+    minmax_bound,
+    safe_max,
+    safe_sum,
+    span_fin_diff,
+)
 from adet.equations.base_equation import MeridAreaBlockage
 
 
@@ -253,6 +259,9 @@ class ChokingCriterion(EquationBase):
 
         tot_hmass_th = tot_hmass0 + (kin_U1 * Vt_th - kin_U0 * Vt_in)
         stc_smass_th = stc_smass0
+
+        kin_W_choke0 = minmax_bound(kin_W_choke0, 0.1, 300)
+        kin_W_choke1 = minmax_bound(kin_W_choke1, 0.1, 300)
 
         stc_hmass_in = tot_hmass0 - kin_W_choke0**2 / 2
         stc_hmass_th = tot_hmass_th - kin_W_choke1**2 / 2

@@ -109,8 +109,7 @@ _guess_reg.from_dict(
         'smass': abs_state.smass(),
         'rhomass': abs_state.rhomass(),
         'k_prof': 0.3,  # Profile loading
-        'camberCoeff': 1.0,
-        'zweifelCoeff': 0.8,
+        'zweifelCoeff': 0.85,
     }
 )
 
@@ -124,15 +123,15 @@ _bounds_reg.from_dict(
         # 'hdropCoeff': (-8.0, -0.2),
         'U': (0.0, 200.0),  # Reduce the search area
         'Vm': (20.0, 150.0),  # Reduce the search area
-        'delta_smass_mixing': (0.0, 10.0),
+        'dev_angle': (-0.3, 0.3),
     }
 )
 if fluid_settings.model == real_model:
     _bounds_reg.from_dict(
         {
-            'p': (abs_state.p_critical() * 0.4, INLET_PRESSURE),
-            'T': (abs_state.T_critical() * 0.7, INLET_TEMPERATURE),
-            'hmass': (abs_state.hmass() - 300**2, abs_state.hmass()),
+            'p': (abs_state.p_critical() * 0.5, 1.5 * INLET_PRESSURE),
+            'T': (abs_state.T_critical() * 0.5, 1.5 * INLET_TEMPERATURE),
+            'hmass': (abs_state.hmass() - 200**2, abs_state.hmass() + 200**2),
         }
     )
 
