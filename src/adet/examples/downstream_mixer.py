@@ -59,7 +59,7 @@ real_model = ExternalFluidModel(abs_state)
 ideal_model = AnalyticalFluidModel(id_state)
 
 settings = FluidSettings(
-    model=real_model,
+    model=ideal_model,
     update_variables=('p', 'hmass', 'T'),
     update_length=2,
 )
@@ -93,7 +93,7 @@ _bounds_reg.reset()
 _bounds_reg.ignore_defaults = False
 _bounds_reg.from_dict(
     {
-        'delta_smass_mixing': (0.0, 10.0),
+        # 'delta_smass_mixing': (0.0, 10.0),
     }
 )
 
@@ -148,7 +148,7 @@ row = BladeRow(
             # 'mach': 0.4,
         },
         'geo': {
-            'metal_angle': Quantity(50, 'deg'),
+            'metal_angle': Quantity(70, 'deg'),
             # Meridional
             'meridional_angle': Quantity(0, 'deg'),
             # Blade
@@ -170,16 +170,14 @@ row = BladeRow(
         },
     },
     extra_equations={
-        # Camberline model
-        MinimalCamberLine(): (0, 1),
-        # ParabolicCamberline(): (0, 1),
         # |> Losses & Dev
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
         # |> Boundary layer properties
         BladeBlockage(): 1,
         BoundaryLayerRatios(): 1,
-        SieverdingBasePressure(): (0, 1),
+        # SieverdingBasePressure(): (0, 1),
+        # ChokingCriterion(): (0, 1),
         INITIAL_LOSS: (0, 1),
     },
     constant_variables=['geo_rr_midspan'],
@@ -189,11 +187,11 @@ mixer = DownstreamMixer(
     'twitch',
     outlet_bc={
         # 'oth': {'pRatio': 0.7},  # Mixer in-to-out
-        'kin': {'mach': 0.2},  # Mixed-out mach
+        # 'kin': {'mach': 0.9},  # Mixed-out mach
     },
     extra_equations={
         StaticPressRatio(): (0, 1),
-        AungierDeviationModel(): 1,
+        # AungierDeviationModel(): 1,
     },
 )
 
@@ -239,8 +237,8 @@ bnd = ntw.system.get_arguments_bounds(
 
 solution = solve_root_problem(rootfinder, x0, kn, bnd)
 
-rtfn = ntw.system.make_rootfinder('kinsol')
-solution = solve_root_problem(rtfn, solution, kn)
+# rtfn = ntw.system.make_rootfinder('kinsol')
+# solution = solve_root_problem(rtfn, solution, kn)
 
 sol_dict = ntw.system.write_solution_to_nodes(solution)
 ntw.print_structure()
@@ -381,7 +379,7 @@ if user in ('y', 'Y'):
 plt.close('all')
 
 globals().update(residual_debugger(AungierDeviationModel(), [n1]))
-RUN_SWEEP = True
+RUN_SWEEP = False
 N_PTS = 100
 if RUN_SWEEP:
     mach_out_idx = ntw.system.constraints.index('kin_mach3')

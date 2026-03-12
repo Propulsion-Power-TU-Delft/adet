@@ -7,7 +7,7 @@ import casadi as cs
 import numpy as np
 
 from adet.equations.base_equation import DeviationModel, EquationBase
-from adet.equations.utils import safe_abs, safe_if_else
+from adet.equations.utils import safe_abs, safe_if_else, safe_min
 from adet.tools.interpolation import make_casadi_interpolant
 
 BLADE_PARAM = 2  # For Sieverding -> tmp, make this an input
@@ -59,8 +59,8 @@ class MixingMomentumBalances(EquationBase):
         stc_p0,
         stc_speed_sound0,
         stc_p1,
+        kin_W_choke0,
         kin_W1,
-        kin_relmach1,
         geo_pitch0,
         kin_beta0,
         kin_beta1,
@@ -68,17 +68,9 @@ class MixingMomentumBalances(EquationBase):
         oth_ch_massflow0,
         stc_smass0,
         stc_smass1,
-        oth_disp_thick0,
-        rlt_p0,
-        rlt_p1,
         geo_hh0,
         oth_delta_smass_mixing1,
     ):
-        MACH_THRES = 1.0
-
-        # Positive metal angle => positive deviation reduces angle
-        r_dev = kin_dev_angle1 - np.sign(geo_metal_angle0) * (kin_beta0 - kin_beta1)
-
         # Blockage enforced through effective area
         mf = oth_ch_massflow0 / geo_hh0
 
@@ -101,30 +93,19 @@ class MixingMomentumBalances(EquationBase):
         mom_out_y = stc_p1 * area_y + mf * kin_W1 * np.sin(kin_dev_angle1)
         r_momy = (mom_in_y - mom_out_y) / mom_in_y
 
-        q = 0.5 * stc_rhomass0 * kin_W0**2
-        zeta = incomp_mixing_zeta(
-            q,
-            stc_p0,
-            geo_metal_angle0,
-            geo_pitch0,
-            geo_bld_thick0,
-            oth_p_base0,
-            oth_mom_thick0,
-            oth_disp_thick0,
-        )
-        r_sub = rlt_p1 - (rlt_p0 - q * zeta)
-
         # No deviation at subsonic outlet, choke otherwise
         r_no_dev = kin_beta0 - kin_beta1
         r_choke = kin_W0 / stc_speed_sound0 - 1
 
-        r1 = safe_if_else(kin_relmach1 >= MACH_THRES, r_momx, r_sub)
-        r2 = safe_if_else(kin_relmach1 >= MACH_THRES, r_choke, r_no_dev)
+        r_regime = safe_if_else(kin_W0 >= kin_W_choke0, r_choke, r_no_dev)
 
         # Delta smass for bounding
         r_delta = oth_delta_smass_mixing1 - (stc_smass1 - stc_smass0)
+        # Positive metal angle => positive deviation reduces angle
+        deviation = np.sign(geo_metal_angle0) * (kin_beta0 - kin_beta1)
+        r_dev = kin_dev_angle1 - deviation
 
-        return r_dev, r_momx, r_delta
+        return r_dev, r_momx, r_delta, r_regime
 
 
 class SimplifiedMixingBalances(EquationBase):

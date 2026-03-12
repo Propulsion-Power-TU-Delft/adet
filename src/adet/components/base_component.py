@@ -1,18 +1,14 @@
 from abc import ABC
-import inspect
 from collections import defaultdict
+import inspect
 import logging
-from typing import TYPE_CHECKING, ClassVar, TypeAlias, Type, Any, Literal
+from typing import Any, ClassVar, Literal, TYPE_CHECKING, Type, TypeAlias
 
-from casadi import ne
-
-from adet.constants import ArrayLike
 from pint.facets.plain import PlainQuantity
 
-from adet.assembly import CasadiSystem
+from adet.constants import ArrayLike
 from adet.equations import EquationBase, UniqueEquation
 from adet.equations.base_equation import LossApplier
-from adet.node import FlowNode
 from adet.tools.iter import ensure_tuple
 from adet.tools.strings import (
     get_arg_specs,
@@ -83,7 +79,7 @@ class BaseComponent(ABC):
         self.name = name
 
         # === Network syncronization
-        self._attached_networks: set[ComponentNetwork[CasadiSystem]] = set()
+        self._attached_networks: set['ComponentNetwork[CasadiSystem]'] = set()
         self._network_maps: dict['ComponentNetwork', dict[int, int]] = {}
 
         # === Store
@@ -98,7 +94,7 @@ class BaseComponent(ABC):
             self.__class__.constant_variables + constant_variables
         )
 
-        # === Constraint dictionaries
+        # === Boundary conditions dictionaries
         self._boundary_conditions = {0: defaultdict(dict), 1: defaultdict(dict)}
         self.inlet_bc.update(inlet_bc)
         self.outlet_bc.update(outlet_bc)
@@ -147,6 +143,7 @@ class BaseComponent(ABC):
 
     @property
     def network_maps(self):
+        """{0: ABS_IN, 1: ABS_OUT}"""
         if not self._attached_networks.issubset(self._network_maps):
             self._build_network_maps()
         return self._network_maps
@@ -162,6 +159,7 @@ class BaseComponent(ABC):
         for ntw in self._attached_networks:
             for eq in self._equations:
                 abs_pos = self.get_absolute_eq_position(eq, ntw)
+                # Find a two node equation and use it for mapping
                 if len(abs_pos) == 2:
                     rel_pos = ensure_tuple(self._equations[eq])
                     break
@@ -266,10 +264,9 @@ class BaseComponent(ABC):
         for eq, eq_pos in self._equations.items():
             if isinstance(eq, UniqueEquation):
                 eq_pos = set(ensure_tuple(eq_pos))
-
                 eq_base_cls = eq.__class__.__base__
-
                 type_key = (eq_base_cls, eq_pos)
+
                 if type_key not in unique_types_seen:
                     unique_types_seen.append(type_key)
                 else:
@@ -291,7 +288,7 @@ class BaseComponent(ABC):
                 f'No loss applier function for `{self.name}` component instance'
             )
 
-    # ================== Interaction with the system
+    # ================== Interaction with the system ==================
     def get_absolute_eq_position(
         self, equation: EquationBase, network: 'ComponentNetwork'
     ):

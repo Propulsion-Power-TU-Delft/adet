@@ -1,15 +1,17 @@
 from dataclasses import dataclass
 import logging
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from matplotlib.lines import Line2D
 import numpy as np
 
+from adet.assembly import CasadiSystem
 from adet.components import BaseComponent, Shaft
 from adet.equations import EquationBase
 from adet.equations.definitions import MeridionalVelocityRatio
 from adet.equations.fundamental import (
     BladeBlockage,
+    ChokingCriterion,
     ConstantAngMomentum,
     ConstRelEnthalpy,
     EulerEquation,
@@ -23,16 +25,16 @@ from adet.equations.geometrical import (
     MeridionalVariable,
     MeridionalRatios,
     BladePitch,
-    MinimalCamberLine,
-    ParabolicCamberline,
     TwoSegmentCamberline,
 )
-from adet.equations.nondimensional import EnthalpyDropCoefficient
 from adet.equations.special import GeometricalAdder
 from adet.geometry import BezierCurve, StraightLine
 from adet.losses.basic import ZeroDeviation
-from adet.losses.mixing import MixingMomentumBalances
+from adet.losses.mixing import MixingMomentumBalances, SieverdingBasePressure
 from adet.node import FlowNode
+
+if TYPE_CHECKING:
+    from adet.components.network import ComponentNetwork
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +81,7 @@ class BladeRow(BaseComponent):
         (BladeRatios, 0),
         (BladeRatios, 1),
         (TwoSegmentCamberline, (0, 1)),
-        # *** Common definitions
+        # *** Common definitions (optional)
         (EndwallProperties, 0),
         (EndwallProperties, 1),
         (MeridionalVelocityRatio, (0, 1)),
@@ -87,8 +89,8 @@ class BladeRow(BaseComponent):
 
     from_previous_node = ABSOLUTE_LINK + GEOM_LINK
 
+    # Store on both nodes
     constant_variables = [
-        # Store on both nodes
         'kin_omega',
         'geo_chord',
         'geo_num_blades',
@@ -140,12 +142,15 @@ class BladeRow(BaseComponent):
 
     @shaft.setter
     def shaft(self, shaft: Shaft):
-        # Fix omega at the outlet node
+        self._shaft = shaft
         if shaft.is_constrained:
+            # Fix omega at the outlet node
             self.outlet_bc['kin']['omega'] = shaft.omega
         else:
+            # When switching from a fixed to nonfixed shaft
+            # remove omega from both bc dictionaries
+            self.inlet_bc['kin'].pop('omega', None)
             self.outlet_bc['kin'].pop('omega', None)
-        self._shaft = shaft
 
 
 class VanelessDiffuser(BaseComponent):
@@ -173,7 +178,7 @@ class VanelessDiffuser(BaseComponent):
 
     def _post_init(self):
         self.inlet_bc['kin']['omega'] = 0
-        # WARN: Hypothesis => Null axial chord = exactly radial diffuser
+        # NOTE: Null axial chord => exactly radial diffuser
         self.outlet_bc['geo']['chord_ax'] = 0
 
 
@@ -184,10 +189,10 @@ class DownstreamMixer(BaseComponent):
         (ConstRelEnthalpy, (0, 1)),
         (MixingMomentumBalances, (0, 1)),
         # *** Blockage
-        (BladePitch, 0),
-        (ZeroBlockage, 1),  # No blockage @ mixed out
+        (BladePitch, 0),  # Only needed at the inlet
         (BladeBlockage, 0),  # Blade + b.l. blockage
-        # Special adders
+        (ZeroBlockage, 1),  # No blockage mixed out
+        # Special adders - Mainly for plotting
         (GeometricalAdder, 0),
         (GeometricalAdder, 1),
         (ZeroDeviation, 1),  # Creates a dummy metal angle (for plots)
@@ -204,8 +209,8 @@ class DownstreamMixer(BaseComponent):
             'geo_rr',
             'geo_num_blades',
             'geo_metal_angle',
-            # Get the base pressure
-            'oth_p_base',
+            'kin_W_choke',  # Get row choking
+            'oth_p_base',  # Base pressure
             # Stay in the same MRF as blade row
             'kin_omega',
             # Boundary layer and blade thicknesses
@@ -223,6 +228,20 @@ class DownstreamMixer(BaseComponent):
         'geo_hh',
         'geo_rr',
     ]
+
+    def attach_network(self, network: 'ComponentNetwork[CasadiSystem]'):
+        super().attach_network(network)
+        # Add base pressure and choking criterion to preceding row
+        row_position = network.components.index(self) - 1
+        row = network.components[row_position]
+        row_inl = row.network_maps[network][0]
+        row_out = row.network_maps[network][1]
+        logger.debug(
+            f'{self} requested to add choking criterion and '
+            f'base pressure correlation to {row}'
+        )
+        row.add_equation(ChokingCriterion(), (row_inl, row_out))
+        row.add_equation(SieverdingBasePressure(), (row_inl, row_out))
 
 
 @dataclass
