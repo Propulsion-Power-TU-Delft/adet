@@ -20,12 +20,14 @@ COOLPROP_NAMES_MAP = {
 
 INVERSE_CP_NAMES_MAP = {v: k for k, v in COOLPROP_NAMES_MAP.items()}
 
-_SUFFIX = '_INPUTS'
+_PAIR_SUFFIX = '_INPUTS'
 COOLPROP_PAIRS: dict[int, str] = {
-    getattr(cp, key): key[: -len(_SUFFIX)] for key in dir(cp) if key.endswith(_SUFFIX)
+    getattr(cp, key): key[: -len(_PAIR_SUFFIX)]
+    for key in dir(cp)
+    if key.endswith(_PAIR_SUFFIX)
 }
 
-ArrayLike = Union[
+AdetArray = Union[
     NDArray,
     list[float],
     list[int],

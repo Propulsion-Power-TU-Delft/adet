@@ -5,7 +5,7 @@ from adet.assembly import SystemAssembler
 from adet.components import BaseComponent
 from adet.components.blade_row import BladeRow
 from adet.components.connections import Inlet, Shaft
-from adet.constants import ArrayLike
+from adet.constants import AdetArray
 from adet.equations.base_equation import EquationBase
 from adet.equations.fundamental import (
     Kinematics,
@@ -186,7 +186,7 @@ class ComponentNetwork(Generic[T]):
     def build(self, scaled: bool = True):
         self.system.build(scaled)
 
-    def get_scaled_guess(self, manual_values: Mapping[str, ArrayLike] = {}):
+    def get_scaled_guess(self, manual_values: Mapping[str, AdetArray] = {}):
         """Simple passthrough"""
         return self.system.get_scaled_guess(manual_values)
 

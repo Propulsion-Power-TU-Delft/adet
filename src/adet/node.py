@@ -18,7 +18,7 @@ from pint import Quantity
 
 # Internal imports
 from adet.tools.strings import get_arg_state, get_arg_type
-from adet.constants import NodeStatesNames, ArrayLike
+from adet.constants import NodeStatesNames, AdetArray
 from adet.variables import VariableContainer, KinematicContainer, ThermostateContainer
 
 from adet.fluid.settings import FluidSettings
@@ -66,7 +66,7 @@ class FlowNode(GasPropertiesMixin):
         self.geo = VariableContainer(num_span)
         self.oth = VariableContainer(num_span)
 
-    def write_to_node(self, args_to_write: dict[str, ArrayLike], fixed: bool) -> None:
+    def write_to_node(self, args_to_write: dict[str, AdetArray], fixed: bool) -> None:
         for arg, value in args_to_write.items():
             state_id = get_arg_state(arg)
             state_obj = self.fetch_state(state_id)

@@ -176,8 +176,8 @@ row = BladeRow(
         # |> Boundary layer properties
         BladeBlockage(): 1,
         BoundaryLayerRatios(): 1,
-        # SieverdingBasePressure(): (0, 1),
-        # ChokingCriterion(): (0, 1),
+        SieverdingBasePressure(): (0, 1),
+        ChokingCriterion(): (0, 1),
         INITIAL_LOSS: (0, 1),
     },
     constant_variables=['geo_rr_midspan'],

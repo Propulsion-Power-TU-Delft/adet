@@ -23,7 +23,7 @@ from pint import Quantity
 from pint.facets.plain import PlainQuantity
 import sympy as sp
 
-from adet.constants import ArrayLike, INVERSE_CP_NAMES_MAP, NodeStatesNames
+from adet.constants import AdetArray, INVERSE_CP_NAMES_MAP, NodeStatesNames
 from adet.equations.base_equation import EquationBase
 from adet.errors import ExistingEquationError
 from adet.fluid.casadi_eos import CasadiEos
@@ -84,11 +84,11 @@ class SystemSharedData:
             int,
             defaultdict[
                 NodeStatesNames,
-                dict[str, ArrayLike | PlainQuantity],
+                dict[str, AdetArray | PlainQuantity],
             ],
         ] = defaultdict(lambda: defaultdict(dict))
         self.global_constraints: defaultdict[
-            NodeStatesNames, dict[str, ArrayLike | PlainQuantity]
+            NodeStatesNames, dict[str, AdetArray | PlainQuantity]
         ] = defaultdict(dict)
         self.equalities: list[set[str]] = []
         self.spanwise_constants: set[str] = set()
@@ -134,14 +134,11 @@ class EquationRegistry:
             )
 
         # Check that an equation of the same type does not exist at the same location
-        for eq_instance, eq_nodes in self.data.equations.items():
-            if isinstance(eq_instance, equation.__class__) and (
-                set(eq_nodes) == set(abs_position)
-            ):
-                raise ExistingEquationError(
-                    f'Duplicate equation entry for {equation.__class__.__name__}'
-                    f' at position {abs_position}'
-                )
+        if self.contains(equation.__class__, abs_position):
+            raise ExistingEquationError(
+                f'Duplicate equation entry for {equation.__class__.__name__}'
+                f' at position {abs_position}'
+            )
 
         self.data.equations[equation] = tuple(abs_position)
 
@@ -149,6 +146,19 @@ class EquationRegistry:
             f'Added equation {equation.__class__.__name__} to system '
             f'in position {abs_position}'
         )
+
+    def contains(
+        self,
+        eq_class: Type[EquationBase],
+        abs_position: int | list[int] | tuple[int, ...],
+    ):
+        abs_position = ensure_tuple(abs_position)
+        for eq_instance, eq_pos in self.data.equations.items():
+            is_same_pos = set(eq_pos) == set(abs_position)
+            if isinstance(eq_instance, eq_class) and is_same_pos:
+                return True
+
+        return False
 
     def remove_equation_type(self, *equation_class: Type[EquationBase]):
         """Remove all equations of the specified types"""
@@ -839,6 +849,13 @@ class SystemAssembler(ABC):
         """Delegate to equation registry"""
         self._equation_registry.remove_equation_type(*eq_child_class)
 
+    def contains_eq(
+        self,
+        eq_class: Type[EquationBase],
+        abs_position: int | list[int] | tuple[int, ...],
+    ):
+        return self._equation_registry.contains(eq_class, abs_position)
+
     def remove_equation(
         self,
         equation_class: Type[EquationBase],
@@ -1031,7 +1048,7 @@ class SystemAssembler(ABC):
         )
 
     def get_scaled_guess(
-        self, manual_values: Mapping[str, ArrayLike] = {}
+        self, manual_values: Mapping[str, AdetArray] = {}
     ) -> list[NDArray]:
         """Generate initial guesses for free arguments"""
         guesses = []
@@ -1434,7 +1451,7 @@ class CasadiSystem(SystemAssembler):
         self,
         root_method: Literal['newton', 'ipopt', 'lstsq', 'kinsol'],
         opts={},
-    ) -> Callable[[ArrayLike, ArrayLike], cs.DM]:
+    ) -> Callable[[AdetArray, AdetArray], cs.DM]:
         """
         Create a rootfinder callable object that takes as a first input the
         initial guess and as second input the values of the constraints and

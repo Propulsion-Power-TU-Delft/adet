@@ -236,12 +236,22 @@ class DownstreamMixer(BaseComponent):
         row = network.components[row_position]
         row_inl = row.network_maps[network][0]
         row_out = row.network_maps[network][1]
+
+        TO_ADD = [ChokingCriterion, SieverdingBasePressure]
+        position = (row_inl, row_out)
+
         logger.debug(
             f'{self} requested to add choking criterion and '
             f'base pressure correlation to {row}'
         )
-        row.add_equation(ChokingCriterion(), (row_inl, row_out))
-        row.add_equation(SieverdingBasePressure(), (row_inl, row_out))
+
+        for eq in TO_ADD:
+            if network.system.contains_eq(eq, position):
+                logger.debug('Equation {eq} already in system, skipping')
+                continue
+            else:
+                # Add both to row and system
+                row.add_equation(eq(), position)
 
 
 @dataclass

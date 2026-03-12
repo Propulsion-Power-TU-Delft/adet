@@ -6,7 +6,7 @@ from typing import Any, ClassVar, Literal, TYPE_CHECKING, Type, TypeAlias
 
 from pint.facets.plain import PlainQuantity
 
-from adet.constants import ArrayLike
+from adet.constants import AdetArray
 from adet.equations import EquationBase, UniqueEquation
 from adet.equations.base_equation import LossApplier
 from adet.tools.iter import ensure_tuple
@@ -355,7 +355,7 @@ class BaseComponent(ABC):
             )
             pass
 
-    def set_boundary_cond(self, argument: str, value: ArrayLike | PlainQuantity):
+    def set_boundary_cond(self, argument: str, value: AdetArray | PlainQuantity):
         self._bound_cond_helper('add', argument, value)
 
     def rm_boundary_cond(self, argument: str):
@@ -367,7 +367,7 @@ class BaseComponent(ABC):
     def set_component_constants(self, *arguments: str):
         self._equalities_helper('const', *arguments)
 
-    def bc_from_dict(self, bound_conds: dict[str, ArrayLike]):
+    def bc_from_dict(self, bound_conds: dict[str, AdetArray]):
         for arg, value in bound_conds.items():
             self.set_boundary_cond(arg, value)
 
@@ -375,7 +375,7 @@ class BaseComponent(ABC):
         self,
         mode: Literal['add', 'rm'],
         argument: str,
-        value: ArrayLike | PlainQuantity | None = None,
+        value: AdetArray | PlainQuantity | None = None,
     ):
         validate_arg_format(argument, include_digits=True)
         arg_state, arg_type, rel_idx = get_arg_specs(argument)

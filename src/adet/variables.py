@@ -13,7 +13,7 @@ from numpy.typing import NDArray
 from pint import Quantity, Unit
 from pint.facets.plain import PlainQuantity
 
-from adet.constants import ArrayLike
+from adet.constants import AdetArray
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
 from adet.registries import DefaultUnitsRegistry
 from adet.tools.plotting import plot_velocity_triangles
@@ -68,7 +68,7 @@ class VariableContainer:
                 f'in the container, skipping...'
             )
 
-    def _validate_magnitude(self, magnitude: ArrayLike) -> NDArray:
+    def _validate_magnitude(self, magnitude: AdetArray) -> NDArray:
         """
         Validate that a magnitude array has the correct shape for the container.
 
@@ -126,7 +126,7 @@ class VariableContainer:
     def _add_variable_helper(
         self,
         var_type: str,
-        magnitude: Optional[ArrayLike],
+        magnitude: Optional[AdetArray],
         units: str | Unit | None,
         is_fixed: bool,
     ) -> None:
@@ -149,7 +149,7 @@ class VariableContainer:
     def add_variable(
         self,
         var_type: str,
-        magnitude: Optional[float | ArrayLike] = None,
+        magnitude: Optional[float | AdetArray] = None,
         units: str | None | Unit = None,
     ) -> None:
         self._add_variable_helper(var_type, magnitude, units, is_fixed=False)
@@ -157,12 +157,12 @@ class VariableContainer:
     def add_constraint(
         self,
         var_type: str,
-        magnitude: float | ArrayLike,
+        magnitude: float | AdetArray,
         units: str | Unit | None = None,
     ) -> None:
         self._add_variable_helper(var_type, magnitude, units, is_fixed=True)
 
-    def set_value(self, var_type: str, magnitude: ArrayLike) -> None:
+    def set_value(self, var_type: str, magnitude: AdetArray) -> None:
         """This assumes base units"""
         if var_type not in self.all_quantities:
             self.add_variable(var_type)

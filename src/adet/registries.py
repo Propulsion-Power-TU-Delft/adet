@@ -23,9 +23,9 @@ class BaseRegistry(Generic[K, V]):
 
     _defaults: dict[K, V]
     _user_values: dict[K, V]
-    _ignore_defaults: bool
     _fallback_value: V | None
     _forced_value: V | None
+    ignore_defaults: bool
 
     def __init_subclass__(cls) -> None:
         # Check that the subclass defines defaults
@@ -38,7 +38,7 @@ class BaseRegistry(Generic[K, V]):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._defaults = dict(cls.DEFAULTS)
-            cls._ignore_defaults = False
+            cls.ignore_defaults = False
 
             # Initialize
             cls._user_values = {}
@@ -54,14 +54,6 @@ class BaseRegistry(Generic[K, V]):
     def set_forced_value(self, value: V):
         """Set a value that overriddes all defaults and user-defined values"""
         self._forced_value = value
-
-    @property
-    def ignore_defaults(self):
-        return self._ignore_defaults
-
-    @ignore_defaults.setter
-    def ignore_defaults(self, flag: bool):
-        self._ignore_defaults = flag
 
     def set(self, key: K, value: V) -> None:
         self._user_values[key] = value
@@ -103,8 +95,8 @@ class BaseRegistry(Generic[K, V]):
         if regex_match is not None:
             return regex_match
 
-        regex_match = self._find_regex_match(key, self._defaults)
-        if regex_match is not None and not self._ignore_defaults:
+        regex_match = self._find_regex_match(key, self.defaults)
+        if regex_match is not None:
             return regex_match
 
         # No match found - check fallback or raise error
@@ -121,34 +113,6 @@ class BaseRegistry(Generic[K, V]):
         # These are intentionally left untyped
         return self.get(key)
 
-    @property
-    def _all_values(self) -> dict[K, V]:
-        if self._ignore_defaults:
-            return self._user_values
-        else:
-            return {**self._defaults, **self._user_values}
-
-    def from_dict(self, input: dict[K, V]):
-        for k, v in input.items():
-            self.set(k, v)
-
-    def clear(self) -> None:
-        """Remove user values"""
-        self._user_values.clear()
-
-    @classmethod
-    def reset(cls) -> None:
-        if cls._instance is None:
-            raise AttributeError('Resetting a unitialized registry is not allowed')
-
-        # Remove custom values
-        cls._instance.clear()
-        # Restore defaults
-        cls._instance._ignore_defaults = False
-        # Reset fallback and forced values
-        cls._instance._fallback_value = None
-        cls._instance._forced_value = None
-
     def __contains__(self, key: K) -> bool:
         # Check exact match first
         if key in self._all_values:
@@ -156,12 +120,41 @@ class BaseRegistry(Generic[K, V]):
         # Check regex patterns
         if self._find_regex_match(key, self._user_values) is not None:
             return True
-        if (
-            not self._ignore_defaults
-            and self._find_regex_match(key, self._defaults) is not None
-        ):
+        if self._find_regex_match(key, self.defaults) is not None:
             return True
         return False
+
+    @property
+    def _all_values(self) -> dict[K, V]:
+        return {**self.defaults, **self._user_values}
+
+    @property
+    def defaults(self) -> dict[K, V]:
+        if self.ignore_defaults:
+            return {}
+        else:
+            return self._defaults
+
+    def from_dict(self, input: dict[K, V]):
+        for k, v in input.items():
+            self.set(k, v)
+
+    def clear(self) -> None:
+        """Clear user values"""
+        self._user_values.clear()
+
+    @classmethod
+    def reset(cls) -> None:
+        if cls._instance is None:
+            raise RuntimeError('Resetting a unitialized registry is not allowed')
+
+        # Remove custom values
+        cls._instance.clear()
+        # Restore defaults
+        cls._instance.ignore_defaults = False
+        # Reset fallback and forced values
+        cls._instance._fallback_value = None
+        cls._instance._forced_value = None
 
 
 class DefaultUnitsRegistry(BaseRegistry[str, str]):
@@ -172,7 +165,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
     DEFAULTS = {
         # Thermodynamics
         'p': 'Pa',
-        'p_.*': 'Pa',  # WARN: this could catch unwanted stuff
+        'p_.*': 'Pa',  # WARN: this is a pretty broad catch
         'T': 'K',
         'T_critical': 'K',
         '.*_T_is': 'K',  # used by isentropic temperature
