@@ -468,6 +468,7 @@ ALL_REGISTRIES = [
 
 
 def reset_registries():
+    """Reset all registries"""
     for reg in ALL_REGISTRIES:
         reg.reset()
 

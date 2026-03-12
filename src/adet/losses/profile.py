@@ -174,7 +174,7 @@ class DentonProfileLoss(LossModel):
         p_ss, rho_ss, temp_ss = self.eos(stc_hmass_ss, stc_smass0)
         p_ps, rho_ps, temp_ps = self.eos(stc_hmass_ps, stc_smass0)
 
-        # xi is the curvilinear coordinate along the chord
+        # xi = coordinate along the chord
         xi_dimensional = xi_by_camb_len * geo_camb_len1
 
         # Trapezoidal integration (can't use np.trapezoidal for differentiability)

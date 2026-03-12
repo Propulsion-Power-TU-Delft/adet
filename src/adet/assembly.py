@@ -1450,7 +1450,6 @@ class CasadiSystem(SystemAssembler):
             constraints_symbols,
         )
 
-        # Casadi boilerplate
         if root_method == 'lstsq':
             func_spec = {
                 'f': cs.norm_fro(res_expr_partial),
@@ -1460,6 +1459,7 @@ class CasadiSystem(SystemAssembler):
                 'g': res_expr_partial,
             }
 
+        # CasADi boilerplate
         rootfind_problem = {
             'x': free_args_symbols,
             'p': constraints_symbols,
@@ -1491,6 +1491,7 @@ class CasadiSystem(SystemAssembler):
                     # Reasonable defaults for IPOPT, overwritten by user
                     'ipopt.print_level': 3,
                     'ipopt.max_iter': 6000,
+                    'ipopt.max_wall_time': 60,
                     'ipopt.tol': 1e-8,
                     'ipopt.acceptable_constr_viol_tol': 1e-10,
                     'ipopt.bound_frac': 0.1,  # Relative initial push < 0.5

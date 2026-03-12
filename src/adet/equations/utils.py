@@ -29,12 +29,32 @@ def safe_abs(x) -> PlainQuantity | cs.MX:
         return cs.fabs(x)
 
 
+def any_is_qty(*args):
+    are_qnties = [isinstance(v, PlainQuantity) for v in args]
+    if any(are_qnties):
+        return True
+
+
+def safe_min(x, y) -> PlainQuantity | cs.MX:
+    if any_is_qty(x, y):
+        return x + y
+    else:
+        return cs.fmin(x, y)
+
+
+def safe_max(x, y) -> PlainQuantity | cs.MX:
+    if any_is_qty(x, y):
+        return x + y
+    else:
+        return cs.fmax(x, y)
+
+
 def minmax_bound(x, min_val: float, max_val: float) -> PlainQuantity | cs.MX:
     if isinstance(x, PlainQuantity):
         return x
     else:
-        x = cs.fmax(x, max_val)
-        x = cs.fmin(x, min_val)
+        x = cs.fmin(x, max_val)
+        x = cs.fmax(x, min_val)
         return x
 
 

@@ -45,6 +45,7 @@ from adet.registries import (
     GuessRegistry,
     ScalingRegistry,
     VariableBoundsRegistry,
+    reset_registries,
 )
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
@@ -67,7 +68,7 @@ logging.getLogger('jax').setLevel(logging.WARNING)
 
 # === CONFIGURATION
 # Simulation settings
-NUM_SPAN = 9  # Number of spanwise stations
+NUM_SPAN = 7  # Number of spanwise stations
 NUM_STAGES = 3  # Number of turbine stages (stator-rotor pairs)
 # Runtime options
 RUN_MULTI = True  # Run the multi streamline case
@@ -95,7 +96,8 @@ settings = FluidSettings(
 )
 
 # === UNIT REGISTRIES
-# Register custom units for turbomachinery-specific variables
+reset_registries()
+
 _dfu_reg = DefaultUnitsRegistry()
 _scl_reg = ScalingRegistry()
 _gss_reg = GuessRegistry()
@@ -108,7 +110,6 @@ _dfu_reg.from_dict(
     }
 )
 
-_gss_reg.reset()
 _gss_reg.from_dict(
     {
         'workCoeff': -0.9,
@@ -118,8 +119,11 @@ _gss_reg.from_dict(
 )
 
 _bnd_reg = VariableBoundsRegistry()
-_bnd_reg.reset()
-_bnd_reg.from_dict({'U': (0, 700.0)})
+_bnd_reg.from_dict(
+    {
+        'U': (0, 700.0),
+    }
+)
 
 # === SHAFT DEFINITIONS
 # Static shaft for stators (no rotation)
@@ -180,11 +184,16 @@ stator = BladeRow(
             'thick_by_pitch': 0.02,
             'meridional_angle': Quantity(0, 'deg'),
         },
+        'oth': {
+            'Cd_profile': 0.002,
+            'xi_by_camb_len_A': 0.375,
+            'xi_by_camb_len_B': 0.675,
+        },
     },
     extra_equations={
         PercentageEntropyLoss(0.0): (0, 1),
         MinimalCamberLine(): (0, 1),
-        ZeroDeviation(): 0,
+        ZeroDeviation(): 0,  # No incidence
     },
     constant_variables=['geo_rr_midspan'],
 )
@@ -201,12 +210,15 @@ rotor = BladeRow(
     },
     out_constraints={
         'geo': {
-            # This indirectly sets the work coefficient
-            # 'flare_angle': Quantity(12, 'deg'),
             'aspRatio': 2.0,
             'num_blades': 20,
             'thick_by_pitch': 0.02,
             'meridional_angle': Quantity(0, 'deg'),
+        },
+        'oth': {
+            'Cd_profile': 0.002,
+            'xi_by_camb_len_A': 0.375,
+            'xi_by_camb_len_B': 0.675,
         },
     },
     extra_equations={
@@ -260,19 +272,6 @@ def build_network(num_stages, num_span, add_losses: bool = False):
                 row.add_equation(FreeVortexDistribution(), 1)
             row.remove_equation(MeridionalVariable, 0)
             row.copy_from_previous('geo_hh', 'geo_rr')
-
-    # === GLOBAL CONSTRAINTS
-    # Add ideal gas reference and loss model coefficients
-    ntw.system.add_global_constraints(
-        {
-            'oth': {
-                # Profile loss parameters
-                'Cd_profile': 0.002,
-                'xi_by_camb_len_A': 0.375,
-                'xi_by_camb_len_B': 0.675,
-            }
-        }
-    )
 
     # === STAGE-LEVEL EQUATIONS
     # Apply repeated stage and degree of reaction constraints
@@ -354,7 +353,10 @@ if RUN_MULTI:
     bnd_span_loss = ntw.system.get_arguments_bounds()
     rootfind_span_loss = ntw.system.make_rootfinder(
         'ipopt',
-        {'error_on_fail': True},
+        {
+            'error_on_fail': True,
+            'ipopt.max_wall_time': 10,
+        },
     )
 
     sol_span_loss = solve_root_problem(
