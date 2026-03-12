@@ -1,5 +1,6 @@
 from itertools import zip_longest
 from collections.abc import Iterable
+import numpy as np
 from typing import Any, Iterator, Literal, TypeVar, overload
 
 T = TypeVar('T')  # Iterable type
@@ -84,3 +85,13 @@ def ensure_tuple(x: int | Iterable[int]):
         return tuple(x)
     else:
         return (x,)
+
+
+keys = np.array([(1.0, 2.0), (3.0, 4.0), (5.0, 6.0)])
+values = np.array(['A', 'B', 'C'])
+
+
+def closest(query, keys, values, ord=2):
+    dists = np.linalg.norm(keys - np.array(query), axis=1, ord=ord)
+    idx = np.argmin(dists)
+    return keys[idx], values[idx]
