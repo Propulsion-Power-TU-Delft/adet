@@ -4,10 +4,12 @@ from pathlib import Path
 from typing import Literal
 
 import casadi as cs
+import CoolProp as cp
 import numpy as np
 
 from adet.equations.base_equation import DeviationModel, EquationBase
-from adet.equations.utils import safe_abs, safe_if_else, safe_min
+from adet.equations.utils import minmax_bound, safe_abs, safe_if_else, safe_min
+from adet.losses.base_loss import LossModel
 from adet.tools.interpolation import make_casadi_interpolant
 
 BLADE_PARAM = 2  # For Sieverding -> tmp, make this an input
@@ -166,7 +168,7 @@ class SimplifiedMixingBalances(EquationBase):
 
 
 def incomp_mixing_zeta(
-    q,
+    dyn_press,
     stc_p0,
     geo_metal_angle0,
     geo_pitch0,
@@ -176,7 +178,7 @@ def incomp_mixing_zeta(
     oth_disp_thick0,
 ):
     w = geo_pitch0 * np.cos(geo_metal_angle0)  # Throat
-    cpb = (oth_p_base0 - stc_p0) / q
+    cpb = (oth_p_base0 - stc_p0) / dyn_press
 
     return (
         -(cpb * geo_bld_thick0) / w
@@ -210,3 +212,83 @@ class AungierDeviationModel(DeviationModel):
         deviation_rad = -np.sign(geo_metal_angle0) * deviation_rad
 
         return kin_beta0 - (geo_metal_angle0 + deviation_rad)
+
+
+class AungierSimpleMixLoss(LossModel):
+    input_pair = cp.HmassP_INPUTS
+    output_quantities = ('smass',)
+    manual_units = ('J / kg / K',)
+
+    def residual(
+        self,
+        stc_rhomass0,
+        kin_W0,
+        geo_pitch0,
+        geo_metal_angle0,
+        geo_bld_thick0,
+        rlt_p0,
+        rlt_hmass0,
+        oth_disp_thick0,
+        stc_smass0,
+        oth_delta_smass_mixing0,
+    ):
+        opening = geo_pitch0 * np.cos(geo_metal_angle0)
+        delta_pt = (
+            0.5
+            * stc_rhomass0
+            * kin_W0**2
+            * (opening / (opening - geo_bld_thick0 - oth_disp_thick0) - 1) ** 2
+        )
+
+        smass1 = self.eos(rlt_hmass0, rlt_p0 - delta_pt)
+
+        return oth_delta_smass_mixing0 - (stc_smass0 - smass1)
+
+
+class DentonMixingLoss(LossModel):
+    input_pair = cp.HmassP_INPUTS
+    output_quantities = ('smass',)
+    manual_units = ('J / kg / K',)
+
+    def residual(
+        self,
+        # Thermo
+        stc_p0,
+        rlt_p0,
+        stc_rhomass0,
+        # Kinematics
+        kin_W0,
+        # Geometry
+        geo_metal_angle0,
+        geo_pitch0,
+        geo_bld_thick0,
+        # Boundary layer
+        oth_p_base0,
+        oth_mom_thick0,
+        oth_disp_thick0,
+        # Entropy production check
+        rlt_hmass0,
+        stc_smass0,
+        stc_speed_sound0,
+        kin_relmach0,
+        oth_delta_smass_mixing0,
+    ):
+        # No deviation
+        velocity = safe_if_else(kin_relmach0 >= 1, stc_speed_sound0, kin_W0)
+        dyn_press = 0.5 * stc_rhomass0 * velocity**2  # Dynamic head
+        zeta = incomp_mixing_zeta(
+            dyn_press,
+            stc_p0,
+            geo_metal_angle0,
+            geo_pitch0,
+            geo_bld_thick0,
+            oth_p_base0,
+            oth_mom_thick0,
+            oth_disp_thick0,
+        )
+        zeta = minmax_bound(zeta, 0.0, 1.0)
+
+        rlt_p_loss = rlt_p0 - dyn_press * zeta
+        smass_loss = self.eos(rlt_hmass0, rlt_p_loss)
+
+        return oth_delta_smass_mixing0 - (smass_loss - stc_smass0)
