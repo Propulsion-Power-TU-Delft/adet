@@ -39,7 +39,7 @@ from adet.equations.nondimensional import (
 from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
-from adet.losses.profile import DentonProfileLoss
+from adet.losses.profile import DentonTrapProfile
 from adet.registries import (
     DefaultUnitsRegistry,
     GuessRegistry,
@@ -253,7 +253,7 @@ def build_network(num_stages, num_span, add_losses: bool = False):
     )
 
     # =============== Manipulate rows ===============
-    # |> Impose effectively a meridional uniform distribution
+    # |> Impose a meridional uniform distribution
     blade_rows[0].set_spanwise_constant('geo_hh0')
     for row in blade_rows:
         row.set_spanwise_constant('geo_chord_ax1')
@@ -294,9 +294,9 @@ def build_network(num_stages, num_span, add_losses: bool = False):
         ntw.system.remove_equation_type(LossApplier)
         for nodes in nodes_by_stage:
             # Add profile losses
-            ntw.system.add_equation(DentonProfileLoss(), (nodes[0], nodes[1]))
+            ntw.system.add_equation(DentonTrapProfile(), (nodes[0], nodes[1]))
             ntw.system.add_equation(AddProfileLoss(), (nodes[0], nodes[1]))
-            ntw.system.add_equation(DentonProfileLoss(), (nodes[2], nodes[3]))
+            ntw.system.add_equation(DentonTrapProfile(), (nodes[2], nodes[3]))
             ntw.system.add_equation(AddProfileLoss(), (nodes[2], nodes[3]))
 
     ntw.build(SCALED)

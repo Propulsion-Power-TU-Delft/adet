@@ -29,7 +29,7 @@ class ThermoVarsAdder(EquationBase):
         tot_cvmass0,
         stc_cvmass0,
         # Visc
-        # stc_viscosity0,
+        stc_viscosity0,
         # stc_T_critical0,
         # stc_p_critical0,
     ):

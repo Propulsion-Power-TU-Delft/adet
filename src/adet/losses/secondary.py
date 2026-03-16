@@ -56,7 +56,7 @@ class SecondaryBSM(LossModel):
         rlt_p0,
         stc_p1,
         stc_smass0,
-        rlt_hmass1,
+        rlt_hmass0,
         oth_delta_smass_secondary1,
     ):
         hgt_by_ch = geo_height1 / geo_chord1
@@ -83,5 +83,5 @@ class SecondaryBSM(LossModel):
         rlt_p_out = (rlt_p0 + loss_coeffY * stc_p1) / (loss_coeffY + 1)
 
         return oth_delta_smass_secondary1 - (
-            self.eos(rlt_hmass1, rlt_p_out) - stc_smass0
+            self.eos(rlt_hmass0, rlt_p_out) - stc_smass0
         )

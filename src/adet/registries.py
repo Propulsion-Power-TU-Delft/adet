@@ -402,6 +402,8 @@ class ScalarsRegistry(BaseRegistry[str, int]):
         'heightRatio': -1,
         'radiusRatio': -1,
         'hubtipRatio': -1,
+        # 'clearance_by_height': -1,
+        # 'tip_clearance': -1,
         'aspRatio': -1,
         'cum_.*': -1,
         'meridional_angle': -1,
@@ -410,6 +412,7 @@ class ScalarsRegistry(BaseRegistry[str, int]):
         # Coefficients
         'flowCoeff': -1,
         'workCoeff': -1,
+        'volflowRatio': -1,
         'ts_loadCoeff': -1,
         'reactDegree.*': -1,
     }

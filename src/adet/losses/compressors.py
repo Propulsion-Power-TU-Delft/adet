@@ -260,6 +260,44 @@ class SkinFrictionJansen(LossModel):
         return r1, r2, r3
 
 
+# TODO: WIP
+# *** Internal models
+class IncidenceVDB(LossModel):
+    def residual(self, args):
+        pass
+
+
+class NormalLEShock(LossModel):
+    def residual(self, args):
+        pass
+
+
+class MixingJohnstonDean(LossModel):
+    def residual(self, args):
+        pass
+
+
+class AmiranteVanDiffLoss(LossModel):
+    def residual(self, args):
+        pass
+
+
+# *** External Models
+class DiskFricDailyNece(LossModel):
+    def residual(self, args):
+        pass
+
+
+class RecirculationOh(LossModel):
+    def residual(self, args):
+        pass
+
+
+class LeakageAungier(LossModel):
+    def residual(self, args):
+        pass
+
+
 class CompressorLosses(LossApplier):
     def residual(
         self,

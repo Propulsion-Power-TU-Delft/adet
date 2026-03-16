@@ -38,7 +38,9 @@ class VolumetricFlowRatio(EquationBase):
     """
 
     def residual(self, tot_rhomass0, stc_rhomass1, oth_volflowRatio1):
-        return stc_rhomass1 * oth_volflowRatio1 - tot_rhomass0
+        midspan = get_midspan_idx(stc_rhomass1)
+        vol_ratio = tot_rhomass0[midspan] / stc_rhomass1[midspan]
+        return oth_volflowRatio1 - vol_ratio
 
 
 class TotalTotalExpansionEfficiency(EquationBase):

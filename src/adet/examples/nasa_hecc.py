@@ -11,11 +11,7 @@ from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 
 from adet.equations.definitions import IsentropicProperties, EffectiveBladeNumber
-from adet.equations.geometrical import (
-    MeridionalUniform,
-    MinimalCamberLine,
-    MeridionalVariable,
-)
+from adet.equations.geometrical import MinimalCamberLine
 from adet.equations.nondimensional import (
     WorkCoefficient,
     TotalTotalPressureRatio,
@@ -33,8 +29,8 @@ from adet.losses.compressors import (
     BackstromSlip,
     BladeLoadingCoppage,
     ClearanceJansen,
-    CompressorLosses,
     SkinFrictionJansen,
+    CompressorLosses,
 )
 from adet.registries import GuessRegistry, VariableBoundsRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
