@@ -21,10 +21,10 @@ from adet.equations.fundamental import (
 from adet.equations.geometrical import (
     BladeRatios,
     EndwallProperties,
-    MeridionalUniform,
     MeridionalVariable,
     MeridionalRatios,
     BladePitch,
+    RadialGeometry,
     TwoSegmentCamberline,
 )
 from adet.equations.special import GeometricalAdder
@@ -165,13 +165,13 @@ class VanelessDiffuser(BaseComponent):
         (ConstantAngMomentum, (0, 1)),
         (MassConservation, (0, 1)),
         # Meridional Geometry
-        (MeridionalUniform, 0),
-        (MeridionalUniform, 1),
+        (GeometricalAdder, 0),
+        (MeridionalVariable, 1),
         # No blades
         (ZeroBlockage, 0),
         (ZeroBlockage, 1),
         # Extra definitions
-        (MeridionalRatios, (0, 1)),
+        (RadialGeometry, (0, 1)),
     ]
 
     constant_variables = [
@@ -179,10 +179,10 @@ class VanelessDiffuser(BaseComponent):
         'geo_meridional_angle',
     ]
 
-    from_previous_node = ABSOLUTE_LINK + GEOM_LINK
+    from_previous_node = ABSOLUTE_LINK + GEOM_LINK + ['geo_hh', 'geo_rr']
 
     def _post_init(self):
-        self.inlet_bc['kin']['omega'] = 0
+        self.outlet_bc['kin']['omega'] = 0
         # NOTE: Null axial chord => exactly radial diffuser
         self.outlet_bc['geo']['chord_ax'] = 0
 

@@ -51,37 +51,6 @@ class MeridionalVariable(MeridionalGeom):
         return residuals
 
 
-class MeridionalUniform(MeridionalGeom):
-    # 2N equations
-    def residual(
-        self,
-        geo_hh0,
-        geo_rr0,
-        geo_height0,
-        geo_rr_midspan0,
-        geo_meridional_angle0,
-    ):
-        num_span = max(geo_rr0.shape)
-        midspan = get_midspan_idx(geo_rr0)
-
-        if midspan == 0:
-            r1 = geo_rr0 - geo_rr_midspan0
-        else:
-            unit_space = np.linspace(0, 1, num_span)
-
-            # Segment between innermost and outermost stations
-            quasi_height = (num_span - 1) * geo_hh0
-            r_hub = geo_rr_midspan0 - quasi_height / 2 * np.cos(geo_meridional_angle0)
-
-            r1 = geo_rr0 - (
-                r_hub + unit_space * quasi_height * np.cos(geo_meridional_angle0)
-            )
-
-        r2 = geo_hh0 - geo_height0 / num_span
-
-        return r1, r2
-
-
 class AnnulusAreas(EquationBase):
     def residual(self, geo_area0, geo_rr0, geo_hh0):
         return geo_area0 - 2 * np.pi * geo_rr0 * geo_hh0
@@ -103,13 +72,29 @@ class MeridionalRatios(EquationBase):
         midspan = get_midspan_idx(geo_chord_ax1)
 
         r1 = geo_heightRatio1 - geo_height1 / geo_height0
-        r2 = np.tan(geo_flare_angle1) - (geo_height1 - geo_height0) / (
-            2 * geo_chord_ax1[midspan]
+        r2 = 2 * geo_chord_ax1[midspan] * np.tan(geo_flare_angle1) - (
+            geo_height1 - geo_height0
         )
         r3 = geo_rr_midspan0 * geo_radiusRatio1 - geo_rr_midspan1
         r4 = geo_chord_ax1[midspan] * geo_aspRatio1 - geo_height0
 
         return r1, r2, r3, r4
+
+
+class RadialGeometry(EquationBase):
+    def residual(
+        self,
+        geo_chord1,
+        geo_rr_midspan0,
+        geo_rr_midspan1,
+        geo_height0,
+        geo_height1,
+        geo_heightRatio1,
+    ):
+        r1 = geo_chord1 - (geo_rr_midspan1 - geo_rr_midspan0)
+        r2 = geo_height0 * geo_heightRatio1 - geo_height1
+
+        return r1, r2
 
 
 class BladePitch(EquationBase):
