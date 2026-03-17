@@ -4,7 +4,6 @@ coefficients used in TurboMachinery
 """
 
 import numpy as np
-import casadi as cs
 import CoolProp as cp
 
 from adet.equations import EquationBase

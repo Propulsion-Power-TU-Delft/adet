@@ -41,12 +41,12 @@ from adet.examples.axial_orc import AddAxialLosses
 from adet.fluid.settings import ExternalFluidModel
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
-from adet.losses.leakage import DentonRectLeakage
+from adet.losses.leakage import DentonRectLeakage, DentonTrapLeakage
 from adet.losses.mixing import (
     DentonMixingLoss,
     SieverdingBasePressure,
 )
-from adet.losses.profile import DentonRectProfile
+from adet.losses.profile import DentonRectProfile, DentonTrapProfile
 from adet.losses.secondary import SecondaryBSM
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
 from adet.solution import solve_root_problem
@@ -64,7 +64,8 @@ setup_logger(
 plt.close('all')
 
 # === SETTINGS
-NUM_SPAN = 5
+MULTI = False  # Whether to run multi or not
+NUM_SPAN = 1
 SCALED = True
 PLOTS = True
 PRINTS = True
@@ -75,21 +76,14 @@ INITIAL_LOSS = PercentageEntropyLoss(0.0)
 def compute_design_map(
     ntw, first_sol, n_points, starter_keys=None, starter_solutions=None
 ):
-    rtfn_kn = ntw.system.make_rootfinder(
-        'kinsol', opts={'error_on_fail': False, 'max_iter': 2e9}
-    )
+    rtfn_kin = ntw.system.make_rootfinder('kinsol')
 
-    rtfn_ip = ntw.system.make_rootfinder(
-        'ipopt',
-        opts={
-            'error_on_fail': False,
-            'ipopt.max_wall_time': 6,
-        },
-    )
     keys = np.zeros((n_points**2, 2))
 
     solutions = np.zeros((n_points**2, len(first_sol)))
     solutions[0] = first_sol.flatten()
+
+    kn = ntw.system.get_scaled_constraints()
 
     curr_index = 0
     phi_idx = ntw.system.constraints.index('oth_flowCoeff3')
@@ -107,20 +101,16 @@ def compute_design_map(
                 x0 = solutions[idx]
                 while np.isnan(x0).any():
                     idx -= 1
-                    print('Walking back!')
+                    print('Walk back!!')
                     x0 = solutions[idx]
 
             # Overwrite the knowns
             kn[phi_idx] = np.array([phi * ntw.system.constraints_scaling[phi_idx]])
             kn[psi_idx] = np.array([psi * ntw.system.constraints_scaling[psi_idx]])
-            # try:
-            solution = solve_root_problem(rtfn_kn, x0, kn)
-            # except RuntimeError:
-            #     try:
-            #         solution = solve_root_problem(rtfn_ip, x0, kn)
-            #         solution = solve_root_problem(rtfn_kn, solution, kn)
-            #     except RuntimeError:
-            #         solution = np.full(solution.shape, np.nan)
+            try:
+                solution = solve_root_problem(rtfn_kin, x0, kn)
+            except RuntimeError:
+                solution = np.full(solution.shape, np.nan)
 
             keys[curr_index, :] = curr_key
             solutions[curr_index, :] = solution.flatten()
@@ -136,18 +126,18 @@ def compute_design_map(
 abs_state = DebugAbstractState('REFPROP', 'MM')
 abs_state.debug_print = False
 
-N_PTS = 20
+N_PTS = 40
 
 # Stable solution
 DUTY_COEFFS = {
     'oth_flowCoeff1': 0.4,
-    'oth_ts_loadCoeff1': 3.0,
-    'oth_volflowRatio1': 4,
+    'oth_ts_loadCoeff1': 3,
+    'oth_volflowRatio1': 3.0,
     'oth_reactDegree_ts1': 0.3,
 }
 
-PHI_SPAN = np.linspace(DUTY_COEFFS['oth_flowCoeff1'], 1.4, N_PTS)
-PSI_SPAN = np.linspace(DUTY_COEFFS['oth_ts_loadCoeff1'], 10.0, N_PTS)
+PHI_SPAN = np.linspace(0.4, 1.4, N_PTS)
+PSI_SPAN = np.linspace(3.0, 10.0, N_PTS)
 
 real_model = ExternalFluidModel(abs_state)
 INLET_PRESSURE = 1.3 * abs_state.p_critical()
@@ -225,8 +215,8 @@ LOSS_MODELS: dict[
     # *** Blade row losses
     IsentropicProperties: (0, 1),
     SecondaryBSM: (0, 1),
-    DentonRectProfile: (0, 1),
-    DentonRectLeakage: (0, 1),
+    DentonTrapLeakage: (0, 1),
+    DentonTrapProfile: (0, 1),
     DentonMixingLoss: 1,
     ClearanceByHeight: 1,
     BladeBlockage: 1,
@@ -244,7 +234,7 @@ inlet = Inlet(
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
-            'hubtipRatio': 0.82,
+            'hubtipRatio': 0.9,
         },
         'tot': {
             'p': abs_state.p(),
@@ -299,8 +289,8 @@ rotor.shaft = shaft  # Assign the rotating shaft
 rotor.name = 'rotor'  # Not strictly required
 rotor.row_type = 'rotor'  # Set the type
 rotor.add_equation(WorkCoefficient(), (0, 1))
-rotor.set_boundary_cond('geo_aspRatio1', 3.0)
-stator.set_boundary_cond('geo_flare_angle1', Quantity(30, 'deg'))
+stator.set_boundary_cond('geo_flare_angle1', Quantity(20, 'deg'))
+rotor.set_boundary_cond('geo_flare_angle1', Quantity(20, 'deg'))
 # *** Duty coefficients
 rotor.bc_from_dict(DUTY_COEFFS)  # Duty coefficients at node 1
 
@@ -372,6 +362,13 @@ stator.remove_equation(ZeroBlockage, 1)
 for eq, pos in LOSS_MODELS.items():
     stator.add_equation(eq(), pos)
     rotor.add_equation(eq(), pos)
+# --- Remove the first computation loss
+rotor.remove_equation(INITIAL_LOSS.__class__, (0, 1))
+stator.remove_equation(INITIAL_LOSS.__class__, (0, 1))
+
+# --- Add loss applier function
+stator.add_equation(AddAxialLosses(tip_gap=False), (0, 1))
+rotor.add_equation(AddAxialLosses(tip_gap=True), (0, 1))
 
 ntw.build()
 
@@ -400,57 +397,63 @@ solution = solve_root_problem(rtfn_kn, solution, kn_loss)
 sol_dict_loss = ntw.system.write_solution_to_nodes(solution)
 
 # === MULTI SPAN
-ntw.system.num_span = 3
-if NUM_SPAN > 1:
-    rotor.add_equation(FreeVortexDistribution(), 1)
-    stator.add_equation(FreeVortexDistribution(), 1)
+if MULTI:
+    ntw.system.num_span = 3
+    if NUM_SPAN > 1:
+        rotor.add_equation(FreeVortexDistribution(), 1)
+        stator.add_equation(FreeVortexDistribution(), 1)
 
-ntw.build()
+    ntw.build()
 
-opts = {
-    'error_on_fail': False,
-    'ipopt.hessian_approximation': 'limited-memory',
-}
+    opts = {
+        'error_on_fail': False,
+        'ipopt.hessian_approximation': 'limited-memory',
+    }
 
-rtfn_multi_ip = ntw.system.make_rootfinder('ipopt', opts=opts)
-rtfn_multi_kn = ntw.system.make_rootfinder('kinsol')
+    rtfn_multi_ip = ntw.system.make_rootfinder('ipopt', opts=opts)
+    rtfn_multi_kn = ntw.system.make_rootfinder('kinsol')
 
-x0 = ntw.system.get_scaled_guess(sol_dict_loss)
-kn = ntw.system.get_scaled_constraints()
-bnd = ntw.system.get_arguments_bounds()
+    x0 = ntw.system.get_scaled_guess(sol_dict_loss)
+    kn = ntw.system.get_scaled_constraints()
+    bnd = ntw.system.get_arguments_bounds()
 
-sol_multi = solve_root_problem(rtfn_multi_ip, x0, kn)
-sol_multi = solve_root_problem(rtfn_multi_kn, sol_multi, kn, suppress_output=True)
-sol_dict_multi = ntw.system.write_solution_to_nodes(sol_multi)
+    sol_multi = solve_root_problem(rtfn_multi_ip, x0, kn)
+    sol_multi = solve_root_problem(rtfn_multi_kn, sol_multi, kn, suppress_output=True)
+    sol_dict_multi = ntw.system.write_solution_to_nodes(sol_multi)
 
-# Make 3 span
-ntw.system.num_span = NUM_SPAN
-# --- Remove the first computation loss
-rotor.remove_equation(INITIAL_LOSS.__class__, (0, 1))
-stator.remove_equation(INITIAL_LOSS.__class__, (0, 1))
+    ntw.system.num_span = NUM_SPAN
 
-# --- Add loss applier function
-stator.add_equation(AddAxialLosses(tip_gap=False), (0, 1))
-rotor.add_equation(AddAxialLosses(tip_gap=True), (0, 1))
-ntw.build()
+    ntw.build()
 
-x0 = ntw.system.get_scaled_guess(sol_dict_multi)
-kn = ntw.system.get_scaled_constraints()
+    x0 = ntw.system.get_scaled_guess(sol_dict_multi)
+    kn = ntw.system.get_scaled_constraints()
 
-rtfn_final = ntw.system.make_rootfinder('ipopt', opts=opts)
-sol_multi = solve_root_problem(rtfn_final, x0, kn, suppress_output=True)
-sol_dict_multi = ntw.system.write_solution_to_nodes(sol_multi)
+    rtfn_final = ntw.system.make_rootfinder('ipopt', opts=opts)
+    sol_multi = solve_root_problem(rtfn_final, x0, kn, suppress_output=True)
+    sol_dict_multi = ntw.system.write_solution_to_nodes(sol_multi)
 
-keys_loss, solutions_loss = compute_design_map(ntw, sol_multi, N_PTS)
+    sol_final = sol_multi
+else:
+    sol_final = solution
+
+keys_loss, solutions_loss = compute_design_map(ntw, sol_final, N_PTS)
 
 # ========================== DESIGN MAP CONTOUR PLOT
 # Extract eta_tt3 from solutions
+plt.style.use('dark_background')
 eta_tt3_idx = ntw.system.free_args.index('oth_eta_tt3')
-eta_tt3_position = ntw.system.get_arg_position(eta_tt3_idx)
+massflow_idx = ntw.system.free_args.index('oth_massflow3')
 
-eta_tt3_values = np.mean(
-    solutions_loss[:, eta_tt3_position[0] : eta_tt3_position[1]], axis=1
-)
+eta_tt3_pos = ntw.system.get_arg_position(eta_tt3_idx)
+massflow_pos = ntw.system.get_arg_position(massflow_idx)
+
+
+mf = solutions_loss[:, massflow_pos[0]] * ntw.system.free_args_scaling[massflow_idx]
+eta_tt = solutions_loss[:, eta_tt3_pos[0]]
+
+
+# eta_tt3_values = np.sum(mf * eta_tt, axis=1) / np.sum(mf, axis=1)
+eta_tt3_values = eta_tt
 
 # Extract phi and psi ranges
 phi_vals = keys_loss[:, 0]

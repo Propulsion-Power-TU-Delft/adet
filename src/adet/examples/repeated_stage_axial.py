@@ -63,8 +63,6 @@ setup_logger(
     suppress_modules=['matplotlib', 'jax'],
     banned_keywords=['STREAM', 'findfont', 'sBIT'],
 )
-logging.getLogger('jax').setLevel(logging.WARNING)
-
 
 # === CONFIGURATION
 # Simulation settings
@@ -180,7 +178,7 @@ stator = BladeRow(
     out_constraints={
         'geo': {
             'aspRatio': 2.0,
-            'num_blades': 20,
+            'solidity_midspan': 1.0,
             'thick_by_pitch': 0.02,
             'meridional_angle': Quantity(0, 'deg'),
         },
@@ -211,7 +209,7 @@ rotor = BladeRow(
     out_constraints={
         'geo': {
             'aspRatio': 2.0,
-            'num_blades': 20,
+            'solidity_midspan': 1.0,
             'thick_by_pitch': 0.02,
             'meridional_angle': Quantity(0, 'deg'),
         },
@@ -258,11 +256,11 @@ def build_network(num_stages, num_span, add_losses: bool = False):
     for row in blade_rows:
         row.set_spanwise_constant('geo_chord_ax1')
         if row.row_type == 'rotor':
-            row.set_boundary_cond('oth_workCoeff1', -0.7)
+            row.set_boundary_cond('oth_workCoeff1', -1.0)
 
     # First stage boundary conditions
     blade_rows[1].set_boundary_cond('oth_reactDegree_ts1', 0.5)
-    blade_rows[1].set_boundary_cond('oth_flowCoeff1', 0.4)
+    blade_rows[1].set_boundary_cond('oth_flowCoeff1', 0.5)
 
     if num_span > 1:
         blade_rows[0].add_equation(FreeVortexDistribution(), 1)
@@ -354,14 +352,17 @@ if RUN_MULTI:
     rootfind_span_loss = ntw.system.make_rootfinder(
         'ipopt',
         {
-            'error_on_fail': True,
-            'ipopt.max_wall_time': 10,
+            'error_on_fail': False,
+            'ipopt.max_wall_time': 20,
         },
     )
+    rtfn_kn = ntw.system.make_rootfinder('kinsol')
 
     sol_span_loss = solve_root_problem(
         rootfind_span_loss, x0_span_loss, kn_span_loss, bnd_span_loss
     )
+    sol_span_loss = solve_root_problem(rtfn_kn, sol_span_loss, kn_span_loss)
+
     sol_span_loss_dict = ntw.system.write_solution_to_nodes(sol_span_loss)
 
 

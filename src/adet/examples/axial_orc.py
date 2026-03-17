@@ -38,19 +38,20 @@ from adet.equations.nondimensional import (
     VolumetricFlowRatio,
     WorkCoefficient,
 )
-from adet.equations.utils import get_midspan_idx, residual_debugger, safe_mean
+from adet.equations.utils import get_midspan_idx, residual_debugger
 from adet.fluid.settings import ExternalFluidModel
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
-from adet.losses.leakage import DentonRectLeakage
+from adet.losses.leakage import DentonRectLeakage, DentonTrapLeakage
 from adet.losses.mixing import DentonMixingLoss, SieverdingBasePressure
-from adet.losses.profile import DentonRectProfile
+from adet.losses.profile import DentonRectProfile, DentonTrapProfile
 from adet.losses.secondary import SecondaryBSM
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.iter import grouper
 from adet.tools.loggers import setup_logger
+from adet.tools.strings import change_idx, get_index
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ plt.close('all')
 NUM_SPAN = 5
 SCALED = True
 PLOTS = True
+PLOT_MARKERS = True
 PRINTS = True
 INITIAL_LOSS = PercentageEntropyLoss(0.0)
 
@@ -112,7 +114,7 @@ _guess_reg.from_dict(
         'rhomass': abs_state.rhomass(),
         'k_prof': 0.3,  # Profile loading
         'zweifelCoeff': 0.85,
-        'num_blades': 20.0,
+        'num_blades': 30.0,
     }
 )
 
@@ -125,7 +127,7 @@ _bounds_reg.from_dict(
     {
         'U': (-0.1, 200.0),  # Reduce the search area
         'Vm': (20.0, 150.0),  # Reduce the search area
-        # 'num_blades': (1.0, 100.0),
+        'num_blades': (1.0, 100.0),
         'delta_smass_.*': (0.0, 20.0),
     }
 )
@@ -181,10 +183,10 @@ class AddAxialLosses(LossApplier):
 
 
 DUTY_COEFFS = {
-    'oth_flowCoeff1': 0.55,
-    'oth_volflowRatio1': 4,
+    'oth_flowCoeff1': 0.6,
+    'oth_ts_loadCoeff1': 3,
+    'oth_volflowRatio1': 3.0,
     'oth_reactDegree_ts1': 0.3,
-    'oth_ts_loadCoeff1': 4.0,
 }
 
 
@@ -196,11 +198,9 @@ LOSS_MODELS: dict[
     IsentropicProperties: (0, 1),
     SecondaryBSM: (0, 1),
     # Trapezoidals
-    # DentonTrapProfile: (0, 1),
-    # DentonTrapLeakage: (0, 1),
+    DentonTrapProfile: (0, 1),
+    DentonTrapLeakage: (0, 1),
     # Rectangulars
-    DentonRectProfile: (0, 1),
-    DentonRectLeakage: (0, 1),
     DentonMixingLoss: 1,
     ClearanceByHeight: 1,
     BladeBlockage: 1,
@@ -218,7 +218,7 @@ inlet = Inlet(
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
-            'hubtipRatio': 0.82,
+            'hubtipRatio': 0.9,
         },
         'tot': {
             'p': abs_state.p(),
@@ -273,8 +273,8 @@ rotor.shaft = shaft  # Assign the rotating shaft
 rotor.name = 'rotor'  # Not strictly required
 rotor.row_type = 'rotor'  # Set the type
 rotor.add_equation(WorkCoefficient(), (0, 1))
-rotor.set_boundary_cond('geo_aspRatio1', 3.0)
-stator.set_boundary_cond('geo_flare_angle1', Quantity(30, 'deg'))
+stator.set_boundary_cond('geo_flare_angle1', Quantity(20, 'deg'))
+rotor.set_boundary_cond('geo_flare_angle1', Quantity(20, 'deg'))
 # *** Duty coefficients
 rotor.bc_from_dict(DUTY_COEFFS)  # Duty coefficients at node 1
 
@@ -318,7 +318,9 @@ if __name__ == '__main__':
 
     x0_is = ntw.system.get_scaled_guess()
     kn_is = ntw.system.get_scaled_constraints()
-    bnd_is = ntw.system.get_arguments_bounds({'kin_alpha0': (-0.7, 0.7)})
+    bnd_is = ntw.system.get_arguments_bounds(
+        {'kin_alpha0': (-0.7, 0.7)},
+    )
     solution = solve_root_problem(
         rootfinder_is,
         x0_is,
@@ -356,27 +358,22 @@ if __name__ == '__main__':
         kn_loss = ntw.system.get_scaled_constraints()
         bnd_loss = ntw.system.get_arguments_bounds()
 
-        err_on_fail = int(
-            input('INPUT >>> Fail on rootfinding error? [0/1] '),
-        )
         rootfinder_loss = ntw.system.make_rootfinder(
             'ipopt',
             opts={
-                'error_on_fail': bool(err_on_fail),
+                'error_on_fail': True,
                 'ipopt.hessian_approximation': 'limited-memory',
             },
         )
-        rtfn_kn = ntw.system.make_rootfinder('kinsol')
+        rtfn_kin = ntw.system.make_rootfinder('kinsol')
 
-        solution = solve_root_problem(
-            rootfinder_loss,
-            x0_loss,
-            kn_loss,
-            # bnd_loss,
-            suppress_output=False,
-            perturbate_guess=False,
-        )
-        solution = solve_root_problem(rtfn_kn, solution, kn_loss)
+        try:
+            solution = solve_root_problem(rootfinder_loss, x0_loss, kn_loss, bnd_loss)
+            solution = solve_root_problem(rtfn_kin, solution, kn_loss)
+        except RuntimeError:
+            # Retry without bounds
+            solution = solve_root_problem(rootfinder_loss, x0_loss, kn_loss)
+            solution = solve_root_problem(rtfn_kin, solution, kn_loss)
 
         sol_dict_loss = ntw.system.write_solution_to_nodes(solution)
 
@@ -407,8 +404,6 @@ if __name__ == '__main__':
         )
         sol_dict_multi = ntw.system.write_solution_to_nodes(sol_multi)
 
-        # Make 3 span
-        ntw.system.num_span = NUM_SPAN
         # --- Remove the first computation loss
         rotor.remove_equation(INITIAL_LOSS.__class__, (0, 1))
         stator.remove_equation(INITIAL_LOSS.__class__, (0, 1))
@@ -416,6 +411,9 @@ if __name__ == '__main__':
         # --- Add loss applier function
         stator.add_equation(AddAxialLosses(tip_gap=False), (0, 1))
         rotor.add_equation(AddAxialLosses(tip_gap=True), (0, 1))
+
+        # Make multi span
+        ntw.system.num_span = NUM_SPAN
         ntw.build()
 
         x0 = ntw.system.get_scaled_guess(sol_dict_multi)
@@ -429,8 +427,115 @@ if __name__ == '__main__':
 
     ntw.print_structure()
 
+    user = input('INPUT >>> Compute speedline? [y/n] ')
+    if user in ('y', 'Y'):
+        # Remove and add variables
+        TO_POP = {
+            'geo': ['aspRatio', 'flare_angle', 'zweifelCoeff'],
+        }
+        TO_ADD = {
+            'geo': [
+                'height0',
+                'height1',
+                'metal_angle0',
+                'metal_angle1',
+                'chord_ax1',
+                'num_blades1',
+            ],
+        }
+        FINAL_DICT = sol_dict_loss
+
+        # Remove duty coefficients
+        [rotor.rm_boundary_cond(a) for a in DUTY_COEFFS]
+
+        # Omega + midspan inlet
+        shaft.omega = FINAL_DICT['kin_omega3'][0]
+        shaft.is_constrained = True
+        # Reassign to be re-read
+        rotor.shaft = shaft
+
+        inlet.boundary_conditions['geo']['rr_midspan'] = FINAL_DICT['geo_rr_midspan0']
+        inlet.boundary_conditions['geo'].pop('hubtipRatio')
+        inlet.boundary_conditions['kin'] = {'alpha': FINAL_DICT['kin_alpha0']}
+
+        for state, args in TO_POP.items():
+            for row in [stator, rotor]:
+                # Allow incidence
+                row.remove_equation(ZeroDeviation, 0)
+                row.remove_equation(ModifiedZweifel, (0, 1))
+                [row.outlet_bc[state].pop(k, None) for k in args]
+
+        for state, args in TO_ADD.items():
+            for row in [stator, rotor]:
+                for a in args:
+                    rel_arg = state + '_' + a
+                    rel_idx = get_index(rel_arg)
+                    abs_idx = row.network_maps[ntw][rel_idx]
+                    abs_arg = change_idx(rel_arg, abs_idx)
+                    print(rel_arg + '->' + abs_arg)
+                    row._boundary_conditions[rel_idx][state][a[:-1]] = FINAL_DICT[
+                        abs_arg
+                    ][0]
+
+        stator.remove_equation(INITIAL_LOSS.__class__, (0, 1))
+        rotor.remove_equation(INITIAL_LOSS.__class__, (0, 1))
+        stator.add_equation(AddAxialLosses(tip_gap=False), (0, 1))
+        rotor.add_equation(AddAxialLosses(tip_gap=True), (0, 1))
+
+        rotor.inlet_bc['geo'].pop('height')
+
+        ntw = ComponentNetwork(
+            fluid_settings, inlet, CasadiSystem(NUM_SPAN), [stator, rotor]
+        )
+        ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
+
+        ntw.build()
+
+        rtfn = ntw.system.make_rootfinder(
+            'ipopt',
+            {
+                'error_on_fail': True,
+                'ipopt.max_wall_time': 3,
+            },
+        )
+
+        design_mf = inlet.boundary_conditions['oth']['cum_massflow']
+        DIR_MASS_SPACE = np.linspace(design_mf, design_mf * 1.1, 80)
+        REV_MASS_SPACE = np.linspace(design_mf, design_mf / 1.1, 80)
+
+        rtfn_kin = ntw.system.make_rootfinder('kinsol')
+        massflows = []
+        efficiencies = []
+        eff_idx = ntw.system.free_args.index('oth_eta_tt3')
+
+        mf_idx = ntw.system.constraints.index('oth_cum_massflow0')
+
+        x0 = ntw.system.get_scaled_guess(FINAL_DICT)
+        kn = ntw.system.get_scaled_constraints()
+        kn[mf_idx] = np.array(
+            [DIR_MASS_SPACE[0] / ntw.system.constraints_scaling[mf_idx]]
+        )
+        sol_off = solve_root_problem(rtfn, x0, kn)
+        sol_off = solve_root_problem(rtfn_kin, x0, kn)
+        ntw.system.write_solution_to_nodes(sol_off)
+
+        for space in [DIR_MASS_SPACE, REV_MASS_SPACE]:
+            sol1 = None
+            for mf in space:
+                mf_idx = ntw.system.constraints.index('oth_cum_massflow0')
+                kn[mf_idx] = np.array([mf / ntw.system.constraints_scaling[mf_idx]])
+                try:
+                    if sol1 is None:
+                        sol1 = solve_root_problem(rtfn_kin, sol_off, kn)
+                    else:
+                        sol1 = solve_root_problem(rtfn_kin, sol1, kn)
+                    efficiencies.append(np.abs(sol1[eff_idx]))
+                    massflows.append(mf)
+                except RuntimeError:
+                    break
     # ------------ PLOTS ------------
     if PLOTS:
+        plt.style.use('dark_background')
         FONTSIZE = 18
         FONTDICT = {'fontsize': FONTSIZE}
 
@@ -493,36 +598,37 @@ if __name__ == '__main__':
                 ax=ax_merid,
                 color=color,
             )
-            ax_merid.plot(NUM_SPAN * [offset], inl_node.geo.rr, 'o', color='r')
-            ax_merid.plot(
-                NUM_SPAN * [offset] + ax_chord, out_node.geo.rr, 'o', color='r'
-            )
+            if PLOT_MARKERS:
+                ax_merid.plot(NUM_SPAN * [offset], inl_node.geo.rr, 'o', color='r')
+                ax_merid.plot(
+                    NUM_SPAN * [offset] + ax_chord, out_node.geo.rr, 'o', color='r'
+                )
 
-            ax_merid.plot(
-                NUM_SPAN * [offset],
-                inl_node.geo.rr + inl_node.geo.hh / 2,
-                '_',
-                color='g',
-            )
-            ax_merid.plot(
-                NUM_SPAN * [offset],
-                inl_node.geo.rr - inl_node.geo.hh / 2,
-                '_',
-                color='b',
-            )
+                ax_merid.plot(
+                    NUM_SPAN * [offset],
+                    inl_node.geo.rr + inl_node.geo.hh / 2,
+                    '_',
+                    color='g',
+                )
+                ax_merid.plot(
+                    NUM_SPAN * [offset],
+                    inl_node.geo.rr - inl_node.geo.hh / 2,
+                    '_',
+                    color='b',
+                )
 
-            ax_merid.plot(
-                NUM_SPAN * [offset] + ax_chord,
-                out_node.geo.rr + out_node.geo.hh / 2,
-                '_',
-                color='g',
-            )
-            ax_merid.plot(
-                NUM_SPAN * [offset] + ax_chord,
-                out_node.geo.rr - out_node.geo.hh / 2,
-                '_',
-                color='b',
-            )
+                ax_merid.plot(
+                    NUM_SPAN * [offset] + ax_chord,
+                    out_node.geo.rr + out_node.geo.hh / 2,
+                    '_',
+                    color='g',
+                )
+                ax_merid.plot(
+                    NUM_SPAN * [offset] + ax_chord,
+                    out_node.geo.rr - out_node.geo.hh / 2,
+                    '_',
+                    color='b',
+                )
 
             # Plot camberlines at midspan (3 blades for all rows)
             midspan_idx = ntw.system.num_span // 2
@@ -539,7 +645,7 @@ if __name__ == '__main__':
                     inlet_angle,
                     outlet_angle,
                     chord_ax,
-                    'k',
+                    'w',
                     axial_offset=offset,
                     tangential_offset=blade_num * pitch,
                 )
@@ -575,7 +681,7 @@ if __name__ == '__main__':
         fig, ax = plt.subplots(figsize=(5, 5))
 
         cmap = plt.colormaps.get('autumn')
-        for idx, (n0_idx, n1_idx) in enumerate(blade_rows):
+        for mf_idx, (n0_idx, n1_idx) in enumerate(blade_rows):
             inl_node = ntw.system.nodes[n0_idx]
             out_node = ntw.system.nodes[n1_idx]
 
@@ -594,9 +700,9 @@ if __name__ == '__main__':
             blade_type = 'Stator' if is_stator else 'Rotor'
             stage_num = n0_idx // 4
 
-            color = cmap(idx / (len(ntw.components) - 0.8))  # pyright:ignore
+            color = cmap(mf_idx / (len(ntw.components) - 0.8))  # pyright:ignore
 
-            if idx == 0:
+            if mf_idx == 0:
                 ax.plot(
                     span_normalized,
                     smass_in,

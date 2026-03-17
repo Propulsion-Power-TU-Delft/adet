@@ -30,7 +30,12 @@ from adet.equations.geometrical import (
 from adet.equations.special import GeometricalAdder
 from adet.geometry import BezierCurve, StraightLine
 from adet.losses.basic import ZeroDeviation
-from adet.losses.mixing import MixingMomentumBalances, SieverdingBasePressure
+from adet.losses.mixing import (
+    DentonMixingLoss,
+    MinimalChoke,
+    MixingMomentumBalances,
+    SieverdingBasePressure,
+)
 from adet.node import FlowNode
 
 if TYPE_CHECKING:
@@ -223,7 +228,6 @@ class DownstreamMixer(BaseComponent):
     constant_variables = GEOM_LINK + [
         # Keep reference frame alive
         'kin_omega',
-        # 'geo_metal_angle',
         # Keep the span geometry constant
         'geo_hh',
         'geo_rr',
@@ -252,6 +256,24 @@ class DownstreamMixer(BaseComponent):
             else:
                 # Add both to row and system
                 row.add_equation(eq(), (0, 1))
+
+
+class SimpleMixer(DownstreamMixer):
+    base_equations = [
+        # *** Fundamental
+        (MassConservation, (0, 1)),
+        (ConstRelEnthalpy, (0, 1)),
+        (DentonMixingLoss, (0, 1)),
+        (MinimalChoke, (0, 1)),
+        # *** Blockage
+        (BladePitch, 0),  # Only needed at the inlet
+        (BladeBlockage, 0),  # Blade + b.l. blockage
+        (ZeroBlockage, 1),  # No blockage mixed out
+        # Special adders - Mainly for plotting
+        (GeometricalAdder, 0),
+        (GeometricalAdder, 1),
+        (ZeroDeviation, 1),  # Creates a dummy metal angle (for plots)
+    ]
 
 
 @dataclass
@@ -299,6 +321,7 @@ class RowGeometry:
     axial_chord: float
     semi_cone_angle: bool = False
     axial_offset: float = 0.0
+    force_straight: bool = False
 
     def __post_init__(self):
         """
@@ -367,6 +390,10 @@ class RowGeometry:
             self._hub_curve = StraightLine(**hub_params.to_dict())
         except TypeError as e:
             raise TypeError(f'Impossible to create meridional curves: {e}')
+
+        if self.force_straight:
+            self._tip_curve = StraightLine(**tip_params.to_dict())
+            self._hub_curve = StraightLine(**hub_params.to_dict())
 
         self._le_curve = self.in_geo.get_line()
         self._te_curve = self.out_geo.get_line()
@@ -437,6 +464,7 @@ def plot_from_nodes(
     axial_offset: float = 0.0,
     color: tuple | str = 'k',
     ax=None,
+    force_straight: bool = False,
 ):
     """
     Utility plot function, for now the chord is
@@ -459,6 +487,7 @@ def plot_from_nodes(
         *args,
         semi_cone_angle=semi_cone_angle,
         axial_offset=axial_offset,
+        force_straight=force_straight,
     )
 
     lines = geom.plot_meridional_profile(color, ax=ax)

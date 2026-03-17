@@ -64,7 +64,7 @@ _greg.from_dict(
 )
 _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 
-NUM_SPAN = 11
+NUM_SPAN = 1
 PLOTS = True
 ENABLE_LOSSES = False
 RUN_MULTI = True
@@ -218,8 +218,7 @@ rootfinder_hecc_is = ntw_hecc.system.make_rootfinder(
     'ipopt',
     opts={
         'error_on_fail': True,
-        # 'ipopt.max_iter': 2000,
-        # 'ipopt.max_wall_time': 10,
+        'ipopt.max_wall_time': 10,
     },
 )
 solution_hecc_is = solve_root_problem(

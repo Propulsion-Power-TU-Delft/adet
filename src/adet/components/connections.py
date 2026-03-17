@@ -8,17 +8,11 @@ class Inlet:
     boundary_conditions: dict[str, dict[str, Any]]
 
 
-@dataclass(frozen=True)
 class Shaft:
-    omega: float | PlainQuantity
-    is_constrained: bool
+    def __init__(self, omega: float | PlainQuantity, is_constrained: bool):
+        self.omega = omega
+        self.is_constrained = is_constrained
 
-    # ------------------------------
-    # WARN: * Could be confusing *
-    # These method ensure that when reusing a BladeRow
-    # the shaft object is preserved in the new instance,
-    # so shaft links occur correctly
-    # -------------------------------
     def __copy__(self):
         return self
 

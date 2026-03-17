@@ -146,13 +146,16 @@ class BladeRatios(EquationBase):
         self,
         geo_pitch0,
         geo_solidity0,
+        geo_solidity_midspan0,
         geo_chord0,
         geo_bld_thick0,
         geo_thick_by_pitch0,
     ):
+        midspan = get_midspan_idx(geo_chord0)
         r1 = geo_pitch0 * geo_solidity0 - geo_chord0
+        r3 = geo_pitch0[midspan] * geo_solidity_midspan0 - geo_chord0[midspan]
         r2 = geo_bld_thick0 - geo_thick_by_pitch0 * geo_pitch0
-        return r1, r2
+        return r1, r2, r3
 
 
 class EndwallProperties(EquationBase):

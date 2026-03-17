@@ -292,3 +292,10 @@ class DentonMixingLoss(LossModel):
         smass_loss = self.eos(rlt_hmass0, rlt_p_loss)
 
         return oth_delta_smass_mixing0 - (smass_loss - stc_smass0)
+
+
+class MinimalChoke(EquationBase):
+    def residual(self, kin_W0, kin_W_choke0, kin_beta0, kin_beta1):
+        no_dev = kin_beta1 - kin_beta0
+        choke = kin_W0 - kin_W_choke0
+        return safe_if_else(kin_W0 >= kin_W_choke0, choke, no_dev)

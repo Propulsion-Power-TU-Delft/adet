@@ -22,6 +22,10 @@ def rm_index(argument: str) -> str:
     return variable_string[0]
 
 
+def change_idx(argument: str, new_idx: int):
+    return re.sub(r'\d+$', str(new_idx), argument)
+
+
 def get_index(argument: str) -> int:
     """
     Get an index from a string, where the index is supposed to

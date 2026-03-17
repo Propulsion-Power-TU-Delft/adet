@@ -7,7 +7,7 @@ Sometimes the CasADi api is slightly cryptic, sorry.
 """
 
 from abc import ABC, abstractmethod
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 from copy import deepcopy
 from itertools import accumulate
 import logging
@@ -995,43 +995,6 @@ class SystemAssembler(ABC):
         return self._solution_dispatcher.write_solution_to_nodes(
             solution_values, self.free_args_scaling
         )
-
-    def to_symbolic(self) -> tuple[sp.Expr, ...]:
-        """
-        Convert the symbolic representation of each equation
-        into absolute arguments
-        """
-        # Symbolic equation in the relative indices
-        sym_eqs_rel = []
-        for eq in self.equations.keys():
-            sym_eqs_rel.append(eq.to_symbolic())
-
-        # Symbolic equation in the absolute indices
-        sym_eqs_abs = []
-        for s_eq, eq in zip(sym_eqs_rel, self.equations.keys()):
-            kwarg_map = self._arg_maps[eq]
-            # Create a map of Relative -> Absolute arguments
-            arg_map = {arg: kwarg_map[arg] for arg in eq.arguments}
-
-            # Convert to symbols (not strictly necessary, but suggested)
-            arg_map = {sp.symbols(k): sp.symbols(v) for k, v in arg_map.items()}
-
-            if isinstance(s_eq, sp.Expr):
-                sym_eqs_abs.append(s_eq.subs(arg_map))
-            elif isinstance(s_eq, (list, tuple)):
-                for expr in s_eq:
-                    abs_expression = expr.subs(arg_map)
-                    sym_eqs_abs.append(abs_expression)
-            elif isinstance(s_eq, str):
-                sym_eqs_abs.append(s_eq)
-            else:
-                raise TypeError(
-                    f'Unknown type received while converting {self} to symbolic'
-                )
-
-        sym_eqs_abs = jax.tree.leaves(sym_eqs_abs)
-
-        return tuple(sym_eqs_abs)
 
     @abstractmethod
     def make_residual_function(self):
