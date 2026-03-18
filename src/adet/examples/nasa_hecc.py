@@ -49,7 +49,7 @@ _bounds_reg.from_dict(
         'U': (0, 600),
         'beta': (-1.48, 1.48),
         'relmach': (0.0, 1.04),
-        'eta_tt': (0.8, 1.0),
+        # 'eta_tt': (0.8, 1.0),
         # 'pRatio_tt': (0.0, 7.0),
         # 'delta_hmass_.*': (10.0, 1e5),
         # 'delta_hmass_loading': (10.0, 1e4),  # This tends to diverge, bound it
@@ -66,7 +66,7 @@ _greg.from_dict(
 )
 _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 
-NUM_SPAN = 1
+NUM_SPAN = 5
 PLOTS = True
 ENABLE_LOSSES = False
 RUN_MULTI = True
@@ -107,8 +107,7 @@ inlet = Inlet(
             'alpha': 0.0,
         },
         'oth': {
-            # 'cum_massflow': 4.989512,
-            'cum_massflow': 4.5,
+            'cum_massflow': 4.989512,
         },
     },
 )
@@ -263,13 +262,14 @@ if RUN_MULTI:
         rootfinder_hecc_multi,
         x0_multi,
         kn_hecc_multi,
-        # bnd_hecc_multi,
+        bnd_hecc_multi,
         suppress_output=True,
     )
     sol_multi_dict = ntw_hecc.system.write_solution_to_nodes(solution_hecc_multi)
 
 
 if __name__ == '__main__':
+    plt.style.use('dark_background')
     if RUN_MULTI:
         print('*** SOLVING MULTISPAN WITH LOSSES***')
         #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
@@ -292,7 +292,7 @@ if __name__ == '__main__':
             rootfinder_hecc_loss,
             x0_loss,
             kn_loss,
-            # bnd_loss,
+            bnd_loss,
             suppress_output=True,
         )
         solution_loss = solve_root_problem(rtfn_kin, solution_loss, kn_loss)
@@ -306,28 +306,28 @@ if __name__ == '__main__':
         0.85 * RPM_DES: (3.18, 4.6),
         0.75 * RPM_DES: (2.31, 3.86),
     }
-    N_PTS = 4
+    N_PTS = 5
 
     speed_lines = {
         rpm * 2 * np.pi / 60: np.linspace(k[0], k[1], N_PTS)
         for rpm, k in SPEED_LINES.items()
     }
 
-    ntw_hecc.build()
-    kn = ntw_hecc.get_scaled_constraints()
-    x0 = ntw_hecc.get_scaled_guess(sol_loss_dict)
-    bnd = ntw_hecc.get_arguments_bounds()
-
-    omega_idx = ntw_hecc.system.constraints.index('kin_omega1')
-    omega_scl = ntw_hecc.system.constraints_scaling[omega_idx]
-
-    mf_idx = ntw_hecc.system.constraints.index('oth_cum_massflow0')
-    mf_scl = ntw_hecc.system.constraints_scaling[mf_idx]
-
-    pr_idx = ntw_hecc.system.free_args.index('oth_pRatio_tt1')
-    pr_scl = ntw_hecc.system.free_args_scaling[pr_idx]
-    RUN_SPEEDLINE = True
+    RUN_SPEEDLINE = False
     if RUN_SPEEDLINE:
+        ntw_hecc.build()
+        kn = ntw_hecc.get_scaled_constraints()
+        x0 = ntw_hecc.get_scaled_guess(sol_loss_dict)
+        bnd = ntw_hecc.get_arguments_bounds()
+
+        omega_idx = ntw_hecc.system.constraints.index('kin_omega1')
+        omega_scl = ntw_hecc.system.constraints_scaling[omega_idx]
+
+        mf_idx = ntw_hecc.system.constraints.index('oth_cum_massflow0')
+        mf_scl = ntw_hecc.system.constraints_scaling[mf_idx]
+
+        pr_idx = ntw_hecc.system.free_args.index('oth_pRatio_tt1')
+        pr_scl = ntw_hecc.system.free_args_scaling[pr_idx]
         print('*** RUNNING SPEEDLINES ***')
         sol = None
         rtfn = ntw_hecc.system.make_rootfinder(
@@ -342,7 +342,7 @@ if __name__ == '__main__':
         eta_idx = ntw_hecc.system.free_args.index('oth_eta_tt1')
         eta_scl = ntw_hecc.system.free_args_scaling[eta_idx]
 
-        fig, axs = plt.subplots(2, 2, figsize=(12, 10))
+        fig, axs = plt.subplots(1, 2, figsize=(12, 10))
         for omega, massflows in speed_lines.items():
             pratios = []
             etas = []
@@ -366,74 +366,61 @@ if __name__ == '__main__':
                     pratios.append(pr)
                     etas.append(eta)
                     converged_count += 1
-                except Exception as e:
+                except Exception:
                     print(
-                        f'  Warning: convergence failed at mf={mf:.3f} kg/s, omega={omega:.0f} RPM'
+                        f'  Warning: '
+                        f'convergence failed at mf={mf:.3f} kg/s, omega={omega:.0f} RPM'
                     )
                     pratios.append(np.nan)
                     etas.append(np.nan)
 
             print(
-                f'Speed {omega:.0f} RPM: {converged_count}/{len(massflows)} points converged'
+                f'Speed {omega:.0f} RPM:'
+                f' {converged_count}/{len(massflows)} points converged'
             )
             print(
-                f'  Pressure ratios: {[f"{pr:.4f}" if not np.isnan(pr) else "nan" for pr in pratios]}'
+                f'  Pressure ratios:'
+                f' {[f"{pr:.4f}" if not np.isnan(pr) else "nan" for pr in pratios]}'
             )
+            rpm = omega / 2 / np.pi * 60
 
-            axs[0, 0].plot(
-                massflows,
+            axs[0].plot(
+                massflows * 2.2,
                 pratios,
-                label=f'{omega:.0f} RPM',
+                label=f'{rpm / RPM_DES:.2f} N_des',
                 marker='o',
                 markersize=5,
                 linewidth=2,
             )
-            axs[0, 1].plot(
-                massflows,
+            axs[1].plot(
+                massflows * 2.2,
                 etas,
-                label=f'{omega:.0f} RPM',
+                label=f'{rpm / RPM_DES:.2f} N_des',
                 marker='s',
-                markersize=5,
-                linewidth=2,
-            )
-            axs[1, 0].plot(
-                pratios,
-                etas,
-                label=f'{omega:.0f} RPM',
-                marker='^',
                 markersize=5,
                 linewidth=2,
             )
 
         # Pressure ratio vs mass flow
-        axs[0, 0].set_xlabel('Mass flow [kg/s]', fontsize=11)
-        axs[0, 0].set_ylabel('Pressure ratio [−]', fontsize=11)
-        axs[0, 0].set_title(
+        axs[0].set_xlabel('Mass flow [lbm/s]', fontsize=11)
+        axs[0].set_ylabel('Pressure ratio [−]', fontsize=11)
+        axs[0].set_title(
             'Compressor Map: Pressure Ratio', fontsize=12, fontweight='bold'
         )
-        axs[0, 0].legend(loc='best')
-        axs[0, 0].grid(True, alpha=0.3)
+        axs[0].legend(loc='best')
+        axs[0].grid(True, alpha=0.3)
 
-        # Efficiency vs mass flow
-        axs[0, 1].set_xlabel('Mass flow [kg/s]', fontsize=11)
-        axs[0, 1].set_ylabel('Total-to-total efficiency [−]', fontsize=11)
-        axs[0, 1].set_title(
-            'Compressor Map: Isentropic Efficiency', fontsize=12, fontweight='bold'
-        )
-        axs[0, 1].legend(loc='best')
-        axs[0, 1].grid(True, alpha=0.3)
+        axs[0].legend(loc='best')
+        axs[0].grid(True, alpha=0.3)
 
         # Efficiency vs pressure ratio
-        axs[1, 0].set_xlabel('Pressure ratio [−]', fontsize=11)
-        axs[1, 0].set_ylabel('Total-to-total efficiency [−]', fontsize=11)
-        axs[1, 0].set_title(
+        axs[1].set_xlabel('Mass flow [lbm/s]', fontsize=11)
+        axs[1].set_ylabel('Total-to-total efficiency [−]', fontsize=11)
+        axs[1].set_title(
             'Compressor Performance: η vs PR', fontsize=12, fontweight='bold'
         )
-        axs[1, 0].legend(loc='best')
-        axs[1, 0].grid(True, alpha=0.3)
-
-        # Hide fourth subplot
-        axs[1, 1].axis('off')
+        axs[1].legend(loc='best')
+        axs[1].grid(True, alpha=0.3)
 
         plt.tight_layout()
         plt.show()
@@ -471,17 +458,13 @@ if __name__ == '__main__':
         if not inlet_node or not outlet_node:
             raise ValueError('missing nodes')
 
-        lines = plot_from_nodes(
-            inlet_node,
-            outlet_node,
-            False,
-            offset,
-        )
+        lines = plot_from_nodes(inlet_node, outlet_node, False, offset, 'w')
 
         offset += outlet_node.geo.chord_ax[0]
 
     print(n1.oth)
     show_plots = input('Show plots? [y/N] ').strip().lower() == 'y'
+    fig.tight_layout()
     if show_plots:
         plt.show()
     else:
