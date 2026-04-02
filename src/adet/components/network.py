@@ -19,7 +19,6 @@ from adet.equations.nondimensional import AbsoluteMachNumber, RelativeMachNumber
 from adet.equations.special import ThermoVarsAdder
 from adet.fluid.settings import FluidSettings
 from adet.tools.iter import ensure_tuple
-from adet.tools.printing import print_logo
 from adet.tools.strings import get_index, rm_index
 
 T = TypeVar('T', bound=SystemAssembler)
@@ -56,7 +55,6 @@ class ComponentNetwork(Generic[T]):
         components: Sequence[BaseComponent],
     ) -> None:
         """Network of turbomachinery components"""
-        print_logo()
 
         self.system = backend
         self.system.fluid_settings = fluid_settings

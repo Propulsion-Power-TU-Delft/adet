@@ -49,7 +49,7 @@ _bounds_reg.from_dict(
         'U': (0, 600),
         'beta': (-1.48, 1.48),
         'relmach': (0.0, 1.04),
-        # 'eta_tt': (0.8, 1.0),
+        'eta_tt': (0.8, 1.0),
         # 'pRatio_tt': (0.0, 7.0),
         # 'delta_hmass_.*': (10.0, 1e5),
         # 'delta_hmass_loading': (10.0, 1e4),  # This tends to diverge, bound it
@@ -66,10 +66,11 @@ _greg.from_dict(
 )
 _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 
-NUM_SPAN = 5
+NUM_SPAN = 1
 PLOTS = True
 ENABLE_LOSSES = False
 RUN_MULTI = True
+RUN_SPEEDLINES = True
 RPM_DES = 21789
 # +++ Shaftskin_omega0 (node 0) is unknown,
 shaft = Shaft(
@@ -107,10 +108,11 @@ inlet = Inlet(
             'alpha': 0.0,
         },
         'oth': {
-            'cum_massflow': 4.989512,
+            'cum_massflow': 4.5,
         },
     },
 )
+
 
 EQS_ISENTROPIC = {
     ZeroDeviation(): 1,  # No slip
@@ -289,32 +291,26 @@ if __name__ == '__main__':
         kn_loss = ntw_hecc.system.get_scaled_constraints()
         bnd_loss = ntw_hecc.system.get_arguments_bounds()
         solution_loss = solve_root_problem(
-            rootfinder_hecc_loss,
-            x0_loss,
-            kn_loss,
-            bnd_loss,
-            suppress_output=True,
+            rootfinder_hecc_loss, x0_loss, kn_loss, bnd_loss, suppress_output=True
         )
         solution_loss = solve_root_problem(rtfn_kin, solution_loss, kn_loss)
         sol_loss_dict = ntw_hecc.system.write_solution_to_nodes(solution_loss)
         #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 
-    SPEED_LINES = {
-        RPM_DES: (4.5, 5.68),
-        0.95 * RPM_DES: (3.86, 5.4),
-        0.9 * RPM_DES: (3.6, 5.0),
-        0.85 * RPM_DES: (3.18, 4.6),
-        0.75 * RPM_DES: (2.31, 3.86),
-    }
-    N_PTS = 5
+    if RUN_SPEEDLINES:
+        SPEED_LINES = {
+            RPM_DES: (4.5, 5.68),
+            0.95 * RPM_DES: (3.86, 5.4),
+            0.9 * RPM_DES: (3.6, 5.0),
+            0.85 * RPM_DES: (3.18, 4.6),
+            0.75 * RPM_DES: (2.31, 3.86),
+        }
+        SPDL_PTS = 5
 
-    speed_lines = {
-        rpm * 2 * np.pi / 60: np.linspace(k[0], k[1], N_PTS)
-        for rpm, k in SPEED_LINES.items()
-    }
-
-    RUN_SPEEDLINE = False
-    if RUN_SPEEDLINE:
+        speed_lines = {
+            rpm * 2 * np.pi / 60: np.linspace(k[0], k[1], SPDL_PTS)
+            for rpm, k in SPEED_LINES.items()
+        }
         ntw_hecc.build()
         kn = ntw_hecc.get_scaled_constraints()
         x0 = ntw_hecc.get_scaled_guess(sol_loss_dict)
