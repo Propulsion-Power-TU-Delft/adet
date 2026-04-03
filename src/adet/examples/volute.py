@@ -146,6 +146,8 @@ def plot_volute(designs_dict, num_points=1000):
             label = r'$V_{\theta} = \mathrm{const.}$'
         elif design_name == 'fister':
             label = r'$rV_{\theta} = \mathrm{const.}$'
+        elif design_name == 'whitfield':
+            label = r'Whitfield'
         ax.plot(
             theta_distribution,
             outer_radius,
@@ -203,6 +205,8 @@ def plot_volute_area_trend(designs_dict, num_points=1000):
             label = r'$V_{\theta} = \mathrm{const.}$'
         elif design_name == 'fister':
             label = r'$rV_{\theta} = \mathrm{const.}$'
+        elif design_name == 'whitfield':
+            label = r'Whitfield'
         else:
             label = design_name
 
@@ -271,17 +275,13 @@ if __name__ == '__main__':
     GuessRegistry().set_fallback_value(0.8)
 
     design_methods = [
-        # 'whitfield',
+        'whitfield',
         'stepanoff',
         'fister',
     ]
     results = {}
 
     INLET = {
-        'tot': {
-            'p': Quantity(18.1, 'bar'),
-            'T': Quantity(300, 'degC'),
-        },
         'kin': {
             'omega': 0.0,
             'alpha': 0.0,
@@ -292,6 +292,10 @@ if __name__ == '__main__':
     }
 
     OUTLET = {
+        'tot': {
+            'p': Quantity(18.1, 'bar'),
+            'T': Quantity(300, 'degC'),
+        },
         'kin': {
             'alpha': Quantity(65, 'deg'),
             'omega': 0.0,
@@ -314,7 +318,7 @@ if __name__ == '__main__':
         system = CasadiSystem()
 
         fluid_model = ExternalFluidModel(
-            DebugAbstractState('REFPROP', 'MM'),
+            DebugAbstractState('HEOS', 'MM'),
         )
         fluid_settings = FluidSettings(fluid_model, ('p', 'T'))
         system.fluid_settings = fluid_settings
