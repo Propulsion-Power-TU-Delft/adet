@@ -1,15 +1,17 @@
+"""
+These are a `ghost` equation, but don't get scared!
+They essentially force the system to add the variables
+that are declared in their signature to the system without them appearing
+explicitly in any equation, it is currently REQUIRED to force
+the addition of thermodynamic vars to be used in state updates.
+Otherwise you might declare you want to update with (p,T) but they
+do not even appear in the system, leading to an exception
+"""
+
 from adet.equations import EquationBase
 
 
 class ThermoVarsAdder(EquationBase):
-    """
-    This is a `ghost` equation, but don't get scared!
-    It essentially forces to add variables
-    to the system at runtime without them appearing
-    explicitly in any equation, it is currently to force
-    the addition of thermodynamic vars to be used in state updates
-    """
-
     def residual(
         self,
         rlt_p0,
@@ -28,23 +30,11 @@ class ThermoVarsAdder(EquationBase):
         rlt_cvmass0,
         tot_cvmass0,
         stc_cvmass0,
-        # Visc
-        # stc_viscosity0,
-        # stc_T_critical0,
-        # stc_p_critical0,
     ):
         return ()
 
 
 class GeometricalAdder(EquationBase):
-    """
-    This is a `ghost` equation, but don't get scared!
-    It essentially forces to add variables
-    to the system at runtime without them appearing
-    explicitly in any equation, it is currently to force
-    the addition of thermodynamic vars to be used in state updates
-    """
-
     def residual(
         self,
         geo_height0,

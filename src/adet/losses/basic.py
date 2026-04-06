@@ -45,6 +45,23 @@ class PlaceHolderLoss(LossApplier):
         return ()
 
 
+class IsentropicLink(LossApplier):
+    """
+    Percentage increase of entropy w.r.t. the inlet conditions
+
+    Parameters
+    ----------
+    entropy_generation: float = 0.05
+        Relative increase of entropy (e.g. 0.05 -> 5% entropy increase)
+
+    .. math::
+        s_{1} = s_{0} \\cdot (1 + \\mathrm{C})
+    """
+
+    def residual(self, stc_smass0, stc_smass1):
+        return stc_smass1 - stc_smass0
+
+
 class PercentageEntropyLoss(LossApplier):
     """
     Percentage increase of entropy w.r.t. the inlet conditions

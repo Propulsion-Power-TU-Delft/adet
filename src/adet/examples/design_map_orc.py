@@ -25,7 +25,7 @@ from adet.equations.fundamental import (
     ZeroBlockage,
 )
 from adet.equations.geometrical import (
-    MeridionalVariable,
+    MeridionalGeometry,
     MinimalCamberLine,
     ModifiedZweifel,
 )
@@ -306,7 +306,7 @@ ntw = ComponentNetwork(
 rotor.set_spanwise_constant('geo_chord_ax1')
 stator.set_spanwise_constant('geo_chord_ax1', 'geo_hh0', 'kin_Vm0')
 rotor.copy_from_previous('geo_hh', 'geo_rr')
-rotor.remove_equation(MeridionalVariable, 0)
+rotor.remove_equation(MeridionalGeometry, 0)
 
 # Repeated stage definition
 ntw.system.add_equation(RepeatedStage(), (0, 1, 2, 3))

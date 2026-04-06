@@ -20,6 +20,10 @@ class FluidModel:
         return self.eos_object
 
 
+# TODO: Make this recognize which model you are feeding it and
+# adjust its type accordingly
+
+
 class EmptyFluidModel(FluidModel):
     def __init__(self, eos_object=None):
         pass

@@ -25,14 +25,14 @@ EQUATIONS = {
 BC = {
     'kin': {
         'omega': 0.0,
-        'alpha': Quantity(65, 'deg'),
+        'alpha': Quantity(0, 'deg'),
     },
     'oth': {
         'massflow': 0.132,
     },
     'geo': {
-        'rr': 0.0375,
-        'hh': 0.002,
+        'rr': 0.02,
+        'hh': 0.02 / 2,
     },
     'tot': {
         'p': 18.1e5,

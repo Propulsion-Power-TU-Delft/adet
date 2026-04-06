@@ -58,6 +58,11 @@ class BaseComponent(ABC):
     and outlet
     """
 
+    from_next_node: ClassVar[list[str]] = []
+    """
+    Variables that are inherited from the next node
+    """
+
     def __init__(
         self,
         name: str,
@@ -75,6 +80,7 @@ class BaseComponent(ABC):
         ] = {},
         from_previous_node: list[str] = [],
         constant_variables: list[str] = [],
+        from_next_node: list[str] = [],
     ):
         self.name = name
 
@@ -88,6 +94,10 @@ class BaseComponent(ABC):
         # === Get all the variables to copy from previous node
         self._from_prev_node: set[str] = set(
             self.__class__.from_previous_node + from_previous_node
+        )
+        # === Get all the variables to copy from previous node
+        self._from_next_node: set[str] = set(
+            self.__class__.from_next_node + from_next_node
         )
         # === Write the constant variables
         self._const_variables: set[str] = set(
@@ -189,7 +199,7 @@ class BaseComponent(ABC):
         parametrization), but if the user specifies it, the new
         camberline equations should substitute the existing one.
         """
-        # WARN: This intentionally only merges the base and user
+        # NOTE: This intentionally only merges the base and user
         # equations, but not an arbitrary single dictionary, because
         # it is not clear which of two instances to keep
 
@@ -393,7 +403,9 @@ class BaseComponent(ABC):
                 abs_idx = self.network_maps[ntw][rel_idx]
                 ntw.system.boundary_conditions[abs_idx][arg_state].pop(arg_type)
 
-    def _equalities_helper(self, mode: Literal['const', 'prev'], *arguments: str):
+    def _equalities_helper(
+        self, mode: Literal['const', 'prev', 'next'], *arguments: str
+    ):
         for arg in arguments:
             validate_arg_format(arg, include_digits=False)
             arg_state, arg_type = (get_arg_state(arg), get_arg_type(arg))
@@ -404,6 +416,8 @@ class BaseComponent(ABC):
                 self._const_variables.add(arg_no_idx)
             elif mode == 'prev':
                 self._from_prev_node.add(arg_no_idx)
+            elif mode == 'next':
+                self._from_next_node.add(arg_no_idx)
 
             # Add to networks
             for ntw in self._attached_networks:
@@ -411,11 +425,17 @@ class BaseComponent(ABC):
                     equality = (
                         f'{arg_no_idx}{i}' for i in self.network_maps[ntw].values()
                     )
-                elif mode == 'prev':
+                elif mode in 'prev':
                     inl_idx = min(self.network_maps[ntw].values())
                     equality = (
                         f'{arg_state}_{arg_type}{inl_idx - 1}',  # outlet of prev
                         f'{arg_state}_{arg_type}{inl_idx}',  # inlet of self
+                    )
+                elif mode in 'next':
+                    out_idx = max(self.network_maps[ntw].values())
+                    equality = (
+                        f'{arg_state}_{arg_type}{out_idx}',  # outlet of self
+                        f'{arg_state}_{arg_type}{out_idx + 1}',  # inlet of next
                     )
 
                 ntw.system.add_equalities(tuple(equality))

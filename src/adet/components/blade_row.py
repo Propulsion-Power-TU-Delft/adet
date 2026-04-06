@@ -21,15 +21,16 @@ from adet.equations.fundamental import (
 from adet.equations.geometrical import (
     BladeRatios,
     EndwallProperties,
-    MeridionalVariable,
+    MeridionalGeometry,
     MeridionalRatios,
     BladePitch,
+    MinimalCamberLine,
     RadialGeometry,
     TwoSegmentCamberline,
 )
 from adet.equations.special import GeometricalAdder
 from adet.geometry import BezierCurve, StraightLine
-from adet.losses.basic import ZeroDeviation
+from adet.losses.basic import IsentropicLink, PercentageEntropyLoss, ZeroDeviation
 from adet.losses.mixing import (
     DentonMixingLoss,
     MinimalChoke,
@@ -68,12 +69,12 @@ GEOM_LINK = [
 
 class BladeRow(BaseComponent):
     base_equations = [
-        # *** Fundamental equations - do not remove
-        (EulerEquation, (0, 1)),  # Adiabatic and steady
+        # *** Conservation equations
+        (EulerEquation, (0, 1)),
         (MassConservation, (0, 1)),
         # *** Meridional geometry
-        (MeridionalVariable, 0),
-        (MeridionalVariable, 1),
+        (MeridionalGeometry, 0),
+        (MeridionalGeometry, 1),
         (MeridionalRatios, (0, 1)),
         # *** Blockage - Zero by default
         (ZeroBlockage, 0),
@@ -85,8 +86,8 @@ class BladeRow(BaseComponent):
         (BladePitch, 1),
         (BladeRatios, 0),
         (BladeRatios, 1),
-        (TwoSegmentCamberline, (0, 1)),
-        # *** Common definitions (optional)
+        (MinimalCamberLine, (0, 1)),
+        # *** Common definitions (OPTIONAL)
         (EndwallProperties, 0),
         (EndwallProperties, 1),
         (MeridionalVelocityRatio, (0, 1)),
@@ -94,7 +95,7 @@ class BladeRow(BaseComponent):
 
     from_previous_node = ABSOLUTE_LINK + GEOM_LINK
 
-    # Store on both nodes
+    # Stored on both nodes
     constant_variables = [
         'kin_omega',
         'geo_chord',
@@ -166,7 +167,7 @@ class VanelessDiffuser(BaseComponent):
         (MassConservation, (0, 1)),
         # Meridional Geometry
         (GeometricalAdder, 0),
-        (MeridionalVariable, 1),
+        (MeridionalGeometry, 1),
         # No blades
         (ZeroBlockage, 0),
         (ZeroBlockage, 1),
@@ -185,6 +186,41 @@ class VanelessDiffuser(BaseComponent):
         self.outlet_bc['kin']['omega'] = 0
         # NOTE: Null axial chord => exactly radial diffuser
         self.outlet_bc['geo']['chord_ax'] = 0
+
+
+class IncidenceVolume(BaseComponent):
+    base_equations = [
+        # *** Fundamental
+        (MassConservation, (0, 1)),
+        (ConstRelEnthalpy, (0, 1)),
+        (IsentropicLink, (0, 1)),
+        (MeridionalGeometry, 1),  # TODO: Remove when link b.row.
+        # *** Blockage
+        (BladePitch, 1),
+        (BladeRatios, 1),
+        (ZeroBlockage, 0),  # No blockage at the inlet
+        (BladeBlockage, 1),  # Blade + b.l. blockage
+        (ZeroDeviation, 1),  # Align flow with blade
+    ]
+
+    # TODO: Restore for blade rows
+    # from_next_node = GEOM_LINK + [
+    #     # Copy the relevant geometry
+    #     'geo_hh',
+    #     'geo_rr',
+    #     'geo_num_blades',
+    #     'geo_metal_angle',
+    #     # Stay in the same MRF as blade row
+    #     'kin_omega',
+    # ]
+
+    constant_variables = [
+        # Keep reference frame alive
+        'kin_omega',
+        # Keep the span geometry constant
+        'geo_hh',
+        'geo_rr',
+    ]
 
 
 class DownstreamMixer(BaseComponent):
@@ -235,7 +271,9 @@ class DownstreamMixer(BaseComponent):
 
     def attach_network(self, network: 'ComponentNetwork[CasadiSystem]'):
         super().attach_network(network)
-        # Add base pressure and choking criterion to preceding row
+
+        # Add base pressure and choking criterion
+        # to preceding row
         row_position = network.components.index(self) - 1
         row = network.components[row_position]
         row_inl = row.network_maps[network][0]

@@ -16,7 +16,7 @@ from adet.equations.utils import get_midspan_idx, safe_abs, safe_min_clip, safe_
 #   mer_angle
 
 
-class MeridionalVariable(MeridionalGeom):
+class MeridionalGeometry(MeridionalGeom):
     # N + 1 equations
     # NOTE: = 2N when N == 1
     def residual(
@@ -72,11 +72,11 @@ class MeridionalRatios(EquationBase):
         midspan = get_midspan_idx(geo_chord_ax1)
 
         r1 = geo_heightRatio1 - geo_height1 / geo_height0
-        r2 = 2 * geo_chord_ax1[midspan] * np.tan(geo_flare_angle1) - (
+        r2 = np.tan(geo_flare_angle1) * 2 * geo_chord_ax1[midspan] - (
             geo_height1 - geo_height0
         )
-        r3 = geo_rr_midspan0 * geo_radiusRatio1 - geo_rr_midspan1
-        r4 = geo_chord_ax1[midspan] * geo_aspRatio1 - geo_height0
+        r3 = geo_radiusRatio1 * geo_rr_midspan0 - geo_rr_midspan1
+        r4 = geo_aspRatio1 * geo_chord_ax1[midspan] - geo_height0
 
         return r1, r2, r3, r4
 
@@ -137,9 +137,10 @@ class BladeRatios(EquationBase):
         geo_thick_by_pitch0,
     ):
         midspan = get_midspan_idx(geo_chord0)
+        # Ratios
         r1 = geo_pitch0 * geo_solidity0 - geo_chord0
-        r3 = geo_pitch0[midspan] * geo_solidity_midspan0 - geo_chord0[midspan]
-        r2 = geo_bld_thick0 - geo_thick_by_pitch0 * geo_pitch0
+        r3 = geo_solidity_midspan0 * geo_pitch0[midspan] - geo_chord0[midspan]
+        r2 = geo_thick_by_pitch0 * geo_pitch0 - geo_bld_thick0
         return r1, r2, r3
 
 

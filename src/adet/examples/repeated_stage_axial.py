@@ -27,7 +27,7 @@ from adet.equations.base_equation import LossApplier
 from adet.equations.definitions import RepeatedStage
 from adet.equations.fundamental import FreeVortexDistribution
 from adet.equations.geometrical import (
-    MeridionalVariable,
+    MeridionalGeometry,
     MinimalCamberLine,
     ParabolicCamberline,
 )
@@ -268,7 +268,7 @@ def build_network(num_stages, num_span, add_losses: bool = False):
         for row in blade_rows[1:]:
             if row.row_type == 'stator':
                 row.add_equation(FreeVortexDistribution(), 1)
-            row.remove_equation(MeridionalVariable, 0)
+            row.remove_equation(MeridionalGeometry, 0)
             row.copy_from_previous('geo_hh', 'geo_rr')
 
     # === STAGE-LEVEL EQUATIONS
