@@ -157,7 +157,6 @@ class TotalStaticMatching(EquationBase):
         rlt_smass0,
         kin_V0,
         kin_W0,
-        # Force to add density as variables in all states
     ):
         r1 = tot_hmass0 - (stc_hmass0 + kin_V0**2 / 2)
         r2 = rlt_hmass0 - (stc_hmass0 + kin_W0**2 / 2)

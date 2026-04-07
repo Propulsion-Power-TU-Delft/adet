@@ -66,8 +66,8 @@ setup_logger(
 
 # === CONFIGURATION
 # Simulation settings
-NUM_SPAN = 7  # Number of spanwise stations
-NUM_STAGES = 3  # Number of turbine stages (stator-rotor pairs)
+NUM_SPAN = 5  # Number of spanwise stations
+NUM_STAGES = 2  # Number of turbine stages (stator-rotor pairs)
 # Runtime options
 RUN_MULTI = True  # Run the multi streamline case
 ADD_LOSSES = True

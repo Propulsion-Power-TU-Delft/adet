@@ -2,9 +2,9 @@
 # Standard library
 import logging
 
+import CoolProp as cp
 import matplotlib.pyplot as plt
 import numpy as np
-import CoolProp as cp
 from pint import Quantity
 
 from adet.assembly import CasadiSystem
@@ -12,8 +12,9 @@ from adet.components import BladeRow, Inlet, Shaft
 from adet.components import ComponentNetwork
 from adet.components.blade_row import DownstreamMixer
 from adet.components.blade_row import plot_from_nodes
+from adet.equations.control_volumes import ChokingCriterion
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
-from adet.equations.fundamental import BladeBlockage, ChokingCriterion
+from adet.equations.fundamental import BladeBlockage
 from adet.equations.geometrical import MinimalCamberLine, ParabolicCamberline
 from adet.equations.nondimensional import (
     StaticPressRatio,
@@ -24,10 +25,7 @@ from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel
 from adet.fluid.settings import FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
-from adet.losses.mixing import (
-    AungierDeviationModel,
-    SieverdingBasePressure,
-)
+from adet.losses.mixing import AungierDeviationModel, SieverdingBasePressure
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState

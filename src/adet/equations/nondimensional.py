@@ -60,7 +60,7 @@ class TotalTotalExpansionEfficiency(EquationBase):
 
 
 class TotalTotalCompressionEfficiency(EquationBase):
-    manual_units = ('dimensionless',)
+    manual_units = ('J / kg',)
     input_pair = cp.PSmass_INPUTS
     output_quantities = ('hmass',)
 
@@ -73,7 +73,7 @@ class TotalTotalCompressionEfficiency(EquationBase):
         oth_eta_tt1,
     ):
         tot_hmass_is1 = self.eos(tot_p1, stc_smass0)
-        return oth_eta_tt1 - (tot_hmass_is1 - tot_hmass0) / (tot_hmass1 - tot_hmass0)
+        return oth_eta_tt1 * (tot_hmass1 - tot_hmass0) - (tot_hmass_is1 - tot_hmass0)
 
 
 class TotalStaticLoadingCoefficient(EquationBase):

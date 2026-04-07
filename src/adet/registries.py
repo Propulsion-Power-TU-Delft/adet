@@ -311,6 +311,7 @@ class GuessRegistry(BaseRegistry[str, float]):
         'pitch': 0.1,
         'bld_thick': 0.005,
         'mom_thick': 1e-5,
+        'thick_by_pitch': 0.01,
         'disp_thick.*': 2e-5,
         'num_blades.*': 20.0,
         'num_splitters': 20.0,
