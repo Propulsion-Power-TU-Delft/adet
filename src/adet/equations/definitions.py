@@ -46,41 +46,6 @@ class OptimalIncidence(EquationBase):
         return kin_beta_opt0 - np.atan2(kin_Wt1, kin_Wm0)
 
 
-class FullIncidence(EquationBase):
-    input_pair = cp.HmassSmass_INPUTS
-    output_quantities = ('rhomass',)
-    manual_units = ('kg / s', 'rad')
-
-    def residual(
-        self,
-        stc_rhomass0,
-        kin_Wm0,
-        geo_bld_thick0,
-        geo_pitch0,
-        geo_metal_angle0,
-        stc_smass0,
-        rlt_hmass0,
-        kin_W_th0,
-        geo_hh0,
-        kin_beta_opt0,
-    ):
-        hmass_th = rlt_hmass0 - kin_W_th0**2 / 2
-        Wt_th = kin_W_th0 * np.sin(geo_metal_angle0)
-        Wm_th = kin_W_th0 * np.cos(geo_metal_angle0)
-
-        rho_th = self.eos(hmass_th, stc_smass0)  # Isentropic
-
-        original_area = geo_hh0 * geo_pitch0
-        restrict_area = geo_hh0 * (
-            geo_pitch0 - geo_bld_thick0 / np.cos(geo_metal_angle0)
-        )
-
-        r1 = stc_rhomass0 * kin_Wm0 * original_area - rho_th * Wm_th * restrict_area
-        r2 = kin_beta_opt0 - np.atan2(Wt_th, kin_Wm0)
-
-        return r1, r2
-
-
 class RepeatedStage(EquationBase):
     """0 - [Stator] - 1 = 2 - [Rotor] - 3"""
 
