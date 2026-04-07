@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Generic, Mapping, Sequence, TypeVar
+from typing import Generic, Literal, Mapping, Sequence, TypeVar
 
 from adet.assembly import SystemAssembler
 from adet.components import BaseComponent
@@ -135,19 +135,28 @@ class ComponentNetwork(Generic[T]):
 
         # Add invariants from one node to the next
         if len(self.components) > 1:
-            # NOTE: Starts from 1 because the inlet is not linked
-            for comp in self.components[1:]:
-                inl_idx, _ = self._get_abs_indices(comp)
-                out_idx_prev = inl_idx - 1
+            # NOTE: 'prev' starts from 1, 'next' ends at -1
+            self._link_node_variables('prev')
+            self._link_node_variables('next')
 
-                # Link from previous node
-                for var in comp._from_prev_node:
-                    self.system.add_equalities(
-                        (
-                            f'{var + str(out_idx_prev)}',
-                            f'{var + str(inl_idx)}',
-                        )
-                    )
+    def _link_node_variables(self, mode: Literal['prev', 'next']):
+        comps = self.components[1:] if mode == 'prev' else self.components[:-1]
+        for comp in comps:
+            inl_idx, out_idx = self._get_abs_indices(comp)
+            if mode == 'prev':
+                variables, left_idx, right_idx = (
+                    comp._from_prev_node,
+                    inl_idx - 1,
+                    inl_idx,
+                )
+            else:
+                variables, left_idx, right_idx = (
+                    comp._from_next_node,
+                    out_idx,
+                    out_idx + 1,
+                )
+            for var in variables:
+                self.system.add_equalities((f'{var}{left_idx}', f'{var}{right_idx}'))
 
     def _get_abs_indices(self, component: BaseComponent):
         comp_idx = self.components.index(component)

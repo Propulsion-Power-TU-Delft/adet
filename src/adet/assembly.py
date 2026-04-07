@@ -21,7 +21,6 @@ import numpy as np
 from numpy.typing import NDArray
 from pint import Quantity
 from pint.facets.plain import PlainQuantity
-import sympy as sp
 
 from adet.constants import AdetArray, INVERSE_CP_NAMES_MAP, NodeStatesNames
 from adet.equations.base_equation import EquationBase
@@ -45,18 +44,31 @@ from adet.tools.strings import get_arg_state, get_arg_type, get_index, rm_index
 
 logger = logging.getLogger(__name__)
 
-
-def get_units_string(var):
-    return str(var.to_base_units().units)
-
-
 THERMO_PREFIXES = ('stc', 'tot', 'rlt')
 THERMO_CONST_SUFFIX = '__THERMOCONSTR'  # I don't like this
+
 
 _scale_reg = ScalingRegistry()
 _scalars_reg = ScalarsRegistry()
 _bounds_reg = VariableBoundsRegistry()
 _guess_reg = GuessRegistry()
+
+
+def get_units_string(var):
+    return str(var.to_base_units().units)
+
+
+def get_absolute_arg(int_map: dict[int, int], rel_arg: str):
+    abs_idx = get_index(rel_arg)
+    rel_idx = int_map[abs_idx]
+    return rm_index(rel_arg) + str(rel_idx)
+
+
+def get_relative_arg(int_map: dict[int, int], abs_arg: str):
+    abs_idx = get_index(abs_arg)
+    arg_map_inv = {v: k for k, v in int_map.items()}
+    rel_idx = arg_map_inv[abs_idx]
+    return rm_index(abs_arg) + str(rel_idx)
 
 
 class SystemSharedData:
@@ -70,14 +82,14 @@ class SystemSharedData:
         # Core structures
         self.equations: dict[EquationBase, tuple[int, ...]] = {}
         self.nodes: tuple[FlowNode, ...] = ()
-        self._arg_maps: dict[EquationBase, dict[str, str]] = {}
+        self._arg_maps: dict[EquationBase, dict[int, int]] = {}
 
         # Arguments
         self.declared_arguments: tuple[str, ...] = ()
         self.free_args: tuple[str, ...] = ()
         self.constraints: tuple[str, ...] = ()
         self.constraints_values: list[NDArray] = []
-        self.scalar_arguments: tuple[str, ...] = ()
+        self.scalar_arguments: set[str] = set()
 
         # Boundary conditions and constraints
         self.boundary_conditions: defaultdict[
@@ -236,12 +248,12 @@ class EquationRegistry:
             }
             self.data._arg_maps[eq] = {}
 
-            for arg in eq.arguments:
-                arg_rel_idx = get_index(arg)
+            for rel_arg in eq.arguments:
+                arg_rel_idx = get_index(rel_arg)
                 arg_abs_idx = index_map[arg_rel_idx]
 
-                arg_type = get_arg_type(arg)
-                arg_no_digit = rm_index(arg)
+                arg_type = get_arg_type(rel_arg)
+                arg_no_digit = rm_index(rel_arg)
 
                 system_arg = arg_no_digit + str(eq_position[arg_rel_idx])
                 system_arguments.append(system_arg)
@@ -251,10 +263,10 @@ class EquationRegistry:
 
                 # Create the variable in the node
                 self.data.nodes[arg_abs_idx].create_vars(arg_no_digit)
-                self.data._arg_maps[eq][arg] = arg_no_digit + str(arg_abs_idx)
+                self.data._arg_maps[eq][arg_rel_idx] = arg_abs_idx
 
         system_arguments = sorted(set(system_arguments))
-        self.data.scalar_arguments = tuple(scalar_arguments)
+        self.data.scalar_arguments = set(scalar_arguments)
 
         logger.debug(f'Arguments detected are: {", ".join(system_arguments)}')
 
@@ -493,21 +505,22 @@ class UnitScalingManager:
         self.data.equations_units = []
 
         """Check units for all equations"""
-        for eq, kwmap in self.data._arg_maps.items():
-            self.data.equations_units.append(self._get_eq_units(eq, kwmap))
+        for eq in self.data.equations:
+            int_map = self.data._arg_maps[eq]
+            self.data.equations_units.append(self._get_eq_units(eq, int_map))
 
         logger.debug('Units for the residual equations successfully verified')
 
     def _test_equation_units(
         self,
         equation: EquationBase,
-        kwmap: dict[str, str],
+        int_map: dict[int, int],
     ):
         args = []
-        for arg in equation.arguments:
-            absolute_argument = kwmap[arg]
-            units = self.data.arguments_units[absolute_argument]
-            if arg in self.data.scalar_arguments:
+        for rel_arg in equation.arguments:
+            abs_arg = get_absolute_arg(int_map, rel_arg)
+            units = self.data.arguments_units[abs_arg]
+            if abs_arg in self.data.scalar_arguments:
                 dummy_value = Quantity(np.nan, units)
             else:
                 dummy_value = Quantity(self.data.num_span * [np.nan], units)
@@ -516,12 +529,14 @@ class UnitScalingManager:
 
         return equation.residual(*args)
 
-    def _get_eq_units(self, equation: EquationBase, kwmap: dict[str, str]) -> list[str]:
+    def _get_eq_units(
+        self, equation: EquationBase, int_map: dict[int, int]
+    ) -> list[str]:
         """Get units for a single equation"""
         if equation.manual_units:
             return list(equation.manual_units)
 
-        res = self._test_equation_units(equation, kwmap)
+        res = self._test_equation_units(equation, int_map)
 
         if not isinstance(res, (list, tuple)):
             res = (res,)
@@ -1302,8 +1317,12 @@ class CasadiSystem(SystemAssembler):
 
         residuals = []
         for eq in self.equations:
-            kwmap = self._arg_maps[eq]  # Convert to abs args
-            args = [self._all_symbols[kwmap[k]] for k in eq.arguments]
+            int_map = self.data._arg_maps[eq]  # Convert to abs args
+
+            args = []
+            for rel_arg in eq.arguments:
+                abs_arg = get_absolute_arg(int_map, rel_arg)
+                args.append(self._all_symbols[abs_arg])
 
             # NOTE: No need to override the operators for now,
             # just use numpy operations  compatible with casadi
@@ -1342,6 +1361,23 @@ class CasadiSystem(SystemAssembler):
             )
             if answer not in ('y', 'Y', 'yes'):
                 sys.exit()
+
+    def get_residual_indices(self):
+        idx = 0
+        res_indices = {}
+        for r_expr in self.residual_expr:
+            n_eqs = max(r_expr.shape)
+
+            if n_eqs == 1:
+                final_idx = idx
+                res_indices[r_expr] = final_idx
+            else:
+                final_idx = idx + n_eqs - 1
+                res_indices[r_expr] = (idx, final_idx)
+
+            idx = final_idx + 1
+
+        return res_indices
 
     def _manual_units_check(
         self,
@@ -1642,9 +1678,9 @@ class JaxSystem(SystemAssembler):
         residual_indices = self._get_residual_positions()
         eq_lines = []
         for idx, eq in enumerate(self.equations):
-            kwmap = self._arg_maps[eq]
+            int_map = self._arg_maps[eq]
 
-            mapped_args = [kwmap[arg] for arg in eq.arguments]
+            mapped_args = [get_absolute_arg(int_map, arg) for arg in eq.arguments]
 
             eq_lines.append(
                 f'{residuals_name} = {residuals_name}.at'

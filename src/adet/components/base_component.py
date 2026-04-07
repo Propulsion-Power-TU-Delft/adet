@@ -374,6 +374,9 @@ class BaseComponent(ABC):
     def copy_from_previous(self, *arguments: str):
         self._equalities_helper('prev', *arguments)
 
+    def copy_from_next(self, *arguments: str):
+        self._equalities_helper('next', *arguments)
+
     def set_component_constants(self, *arguments: str):
         self._equalities_helper('const', *arguments)
 

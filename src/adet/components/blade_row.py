@@ -8,10 +8,10 @@ import numpy as np
 from adet.assembly import CasadiSystem
 from adet.components import BaseComponent, Shaft
 from adet.equations import EquationBase
-from adet.equations.definitions import MeridionalVelocityRatio
+from adet.equations.control_volumes import ChokingCriterion
+from adet.equations.definitions import MeridionalVelocityRatio, OptimalIncidence
 from adet.equations.fundamental import (
     BladeBlockage,
-    ChokingCriterion,
     ConstantAngMomentum,
     ConstRelEnthalpy,
     EulerEquation,
@@ -26,11 +26,10 @@ from adet.equations.geometrical import (
     BladePitch,
     MinimalCamberLine,
     RadialGeometry,
-    TwoSegmentCamberline,
 )
 from adet.equations.special import GeometricalAdder
 from adet.geometry import BezierCurve, StraightLine
-from adet.losses.basic import IsentropicLink, PercentageEntropyLoss, ZeroDeviation
+from adet.losses.basic import IsentropicLink, ZeroDeviation
 from adet.losses.mixing import (
     DentonMixingLoss,
     MinimalChoke,
@@ -62,8 +61,8 @@ rotating frame (omega)
 # Geometry
 GEOM_LINK = [
     'geo_height',
-    'geo_meridional_angle',
     'geo_rr_midspan',
+    'geo_meridional_angle',
 ]
 
 
@@ -194,32 +193,31 @@ class IncidenceVolume(BaseComponent):
         (MassConservation, (0, 1)),
         (ConstRelEnthalpy, (0, 1)),
         (IsentropicLink, (0, 1)),
-        (MeridionalGeometry, 1),  # TODO: Remove when link b.row.
+        (OptimalIncidence, (0, 1)),
+        (MeridionalGeometry, 0),
+        (GeometricalAdder, 1),
         # *** Blockage
-        (BladePitch, 1),
-        (BladeRatios, 1),
         (ZeroBlockage, 0),  # No blockage at the inlet
         (BladeBlockage, 1),  # Blade + b.l. blockage
         (ZeroDeviation, 1),  # Align flow with blade
     ]
 
     # TODO: Restore for blade rows
-    # from_next_node = GEOM_LINK + [
-    #     # Copy the relevant geometry
-    #     'geo_hh',
-    #     'geo_rr',
-    #     'geo_num_blades',
-    #     'geo_metal_angle',
-    #     # Stay in the same MRF as blade row
-    #     'kin_omega',
-    # ]
-
-    constant_variables = [
-        # Keep reference frame alive
+    from_next_node = [
+        # Copy the relevant geometry
+        'geo_bld_thick',
+        'oth_disp_thick',
+        'geo_num_blades',
+        'geo_metal_angle',
+        # Stay in the same MRF as blade row
         'kin_omega',
-        # Keep the span geometry constant
         'geo_hh',
         'geo_rr',
+    ]
+
+    constant_variables = GEOM_LINK + [
+        # Keep reference frame alive
+        'kin_omega',
     ]
 
 
