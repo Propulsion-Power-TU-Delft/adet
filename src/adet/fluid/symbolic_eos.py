@@ -151,9 +151,10 @@ if __name__ == '__main__':
 
     # Polymorphic
     eos.update(
-        cp.PSmass_INPUTS,
+        cp.PT_INPUTS,
         cs.MX.sym('p'),  # pyright:ignore
-        cs.MX.sym('s'),  # pyright:ignore
+        cs.MX.sym('T'),  # pyright:ignore
     )
 
     print(f'Hmass is {eos.hmass()}')
+    print(f'Smass is {eos.smass()}')

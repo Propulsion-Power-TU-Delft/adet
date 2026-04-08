@@ -2,6 +2,7 @@ import CoolProp as cp
 import numpy as np
 
 from adet.equations.base_equation import EquationBase
+from adet.equations.utils import minmax_bound
 
 
 class FullIncidence(EquationBase):
@@ -13,6 +14,7 @@ class FullIncidence(EquationBase):
         self,
         stc_rhomass0,
         kin_Wm0,
+        kin_Wt0,
         geo_bld_thick0,
         geo_pitch0,
         geo_metal_angle0,
@@ -23,7 +25,6 @@ class FullIncidence(EquationBase):
         kin_beta_opt0,
     ):
         hmass_th = rlt_hmass0 - kin_W_th0**2 / 2
-        Wt_th = kin_W_th0 * np.sin(geo_metal_angle0)
         Wm_th = kin_W_th0 * np.cos(geo_metal_angle0)
 
         rho_th = self.eos(hmass_th, stc_smass0)  # Isentropic
@@ -33,8 +34,9 @@ class FullIncidence(EquationBase):
             geo_pitch0 - geo_bld_thick0 / np.cos(geo_metal_angle0)
         )
 
+        # U = const (same radius) => No Wt change = no Vt change
         r1 = stc_rhomass0 * kin_Wm0 * original_area - rho_th * Wm_th * restrict_area
-        r2 = kin_beta_opt0 - np.atan2(Wt_th, kin_Wm0)
+        r2 = kin_beta_opt0 - np.atan2(kin_Wt0, Wm_th)
 
         return r1, r2
 

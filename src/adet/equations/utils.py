@@ -4,6 +4,7 @@ from typing import Literal, Mapping
 import casadi as cs
 import numpy as np
 from numpy.typing import NDArray
+from pint import DimensionalityError, Quantity
 from pint.facets.plain import PlainQuantity
 from sympy import Symbol
 
@@ -58,10 +59,9 @@ def minmax_bound(x, min_val: float, max_val: float) -> PlainQuantity | cs.MX:
         return x
 
 
-def safe_if_else(cond, if_true, if_false):
-    """The unit is based on the first expression"""
-    if isinstance(if_true, PlainQuantity):
-        return if_true
+def safe_if_else(cond, if_true, if_false) -> PlainQuantity | cs.MX:
+    if any_is_qty(if_true, if_false):
+        return if_true + if_false
     else:
         return cs.if_else(cond, if_true, if_false)
 

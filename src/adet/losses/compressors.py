@@ -1,6 +1,13 @@
 import numpy as np
 
-from adet.equations.utils import safe_abs
+from adet.equations.utils import (
+    minmax_bound,
+    safe_abs,
+    safe_if_else,
+    safe_max,
+    safe_min,
+    safe_sign,
+)
 from adet.losses.base_loss import LossModel
 from adet.equations.base_equation import DeviationModel, EquationBase, LossApplier
 
@@ -260,42 +267,214 @@ class SkinFrictionJansen(LossModel):
         return r1, r2, r3
 
 
-# TODO: WIP
-# *** Internal models
 class IncidenceVDB(LossModel):
-    def residual(self, args):
-        pass
+    """
+    Van den Braembussche incidence model
+    """
+
+    def residual(
+        self,
+        kin_beta_opt0,
+        kin_beta0,
+        geo_metal_angle0,
+        kin_relmach0,
+        kin_W_tip0,
+        oth_delta_hmass_incidence1,
+    ):
+        incidence = kin_beta0 - geo_metal_angle0
+        incidence_opt = kin_beta_opt0 - geo_metal_angle0
+
+        incidence *= safe_sign(geo_metal_angle0)
+        incidence_opt *= safe_sign(geo_metal_angle0)
+
+        C_te = safe_if_else(incidence > incidence_opt, 2.5, 2.0)
+
+        delta_i = 2.5 + 0.15 * (12.5 - 0.1 * kin_beta0) * (kin_relmach0 - 1.2) ** 2 / 2
+
+        incidence_diff = incidence - incidence_opt
+        dht = (
+            0.833 * (incidence_diff / (C_te * delta_i)) ** 2
+            + 0.1667 * incidence_diff / (C_te * delta_i)
+        ) * kin_W_tip0**2
+
+        return oth_delta_hmass_incidence1 - dht
 
 
-class NormalLEShock(LossModel):
-    def residual(self, args):
-        pass
+class IncidenceGalvas(LossModel):
+    def residual(
+        self,
+        kin_beta_opt0,
+        kin_Wt0,
+        kin_W0,
+        oth_incCoeff0,
+        oth_delta_hmass_incidence1,
+    ):
+
+        Wt0_opt = kin_W0 * np.sin(kin_beta_opt0)
+        lost_Wt = kin_Wt0 - Wt0_opt
+
+        return oth_delta_hmass_incidence1 - oth_incCoeff0 * lost_Wt**2
 
 
 class MixingJohnstonDean(LossModel):
-    def residual(self, args):
-        pass
+    def residual(
+        self,
+        kin_V0,
+        kin_alpha0,
+        oth_minWake_frac0,
+        oth_maxWake_frac0,
+        oth_cum_massflow0,
+        oth_massflow_choke0,
+        oth_delta_hmass_mixing0,
+    ):
+
+        MF_THRES = 0.8  # Ramp up wake frac from MF_THRES * m_choke
+        B = 1  # No sudden area change after impeller
+
+        slope_eps_mf = (oth_maxWake_frac0 - oth_minWake_frac0) / (
+            (1 - MF_THRES) * oth_massflow_choke0
+        )
+        offset_eps_mf = oth_maxWake_frac0 - slope_eps_mf * oth_massflow_choke0
+        linear_wake_frac = offset_eps_mf + slope_eps_mf * oth_cum_massflow0
+
+        wake_frac_lo = oth_minWake_frac0
+        # NOTE: The minimum is important otherwise the wake frac just goes up
+        wake_frac_hi = safe_min(linear_wake_frac, oth_maxWake_frac0)
+
+        wake_frac = safe_if_else(
+            oth_cum_massflow0 < MF_THRES * oth_massflow_choke0,
+            wake_frac_lo,
+            wake_frac_hi,
+        )
+        k1 = (1 - wake_frac - B) / (1 - wake_frac)  # pyright: ignore
+        k2 = 1 + np.tan(kin_alpha0) ** 2
+        dht = (1 / k2) * k1**2 * kin_V0**2 / 2
+        return oth_delta_hmass_mixing0 - dht
 
 
-class AmiranteVanDiffLoss(LossModel):
-    def residual(self, args):
-        pass
-
-
+# TODO: WIP
 # *** External Models
 class DiskFricDailyNece(LossModel):
-    def residual(self, args):
-        pass
+    def residual(
+        self,
+        stc_rhomass0,
+        stc_rhomass1,
+        kin_U1,
+        geo_rr1,
+        stc_viscosity1,
+        oth_massflow0,
+        oth_delta_hmass_disk1,
+    ):
+        rho_mean = (stc_rhomass0 + stc_rhomass1) / 2
+        Re_df = (kin_U1 * geo_rr1 * stc_rhomass1) / stc_viscosity1
+
+        f_df_lo = 2.67 / ((Re_df) ** 0.5)
+        f_df_hi = 0.0622 / ((Re_df) ** 0.2)
+
+        f_df = safe_if_else(Re_df < 3e5, f_df_lo, f_df_hi)
+
+        return oth_delta_hmass_disk1 - (
+            f_df * rho_mean * (geo_rr1**2) * (kin_U1**3)
+        ) / (4 * oth_massflow0)
 
 
 class RecirculationOh(LossModel):
-    def residual(self, args):
-        pass
+    def residual(
+        self,
+        kin_W_tip0,
+        kin_W1,
+        kin_U1,
+        geo_num_blades_eff1,
+        tot_hmass0,
+        tot_hmass1,
+        geo_rr_tip0,
+        geo_rr1,
+        kin_alpha1,
+        oth_delta_hmass_recirc1,
+    ):
+        work = safe_abs(tot_hmass0 - tot_hmass1)
+        rad_ratio = geo_rr_tip0 / geo_rr1
+
+        diff_fact = (
+            1
+            - kin_W1 / kin_W_tip0
+            + 0.75
+            * work
+            / kin_U1**2
+            * kin_W1
+            / kin_W_tip0
+            / (geo_num_blades_eff1 / np.pi * (1 - rad_ratio) + 2 * rad_ratio)
+        )
+        # return oth_delta_hmass_recirc1 - (
+        #     8e-5 * np.sinh(3.5 * kin_alpha1**3) * (diff_fact * kin_U1) ** 2
+        # )
+
+        return (
+            oth_delta_hmass_recirc1
+            - 0.02 * np.tan(kin_alpha1) * (diff_fact * kin_U1) ** 2
+        )
 
 
 class LeakageAungier(LossModel):
-    def residual(self, args):
-        pass
+    def residual(
+        self,
+        geo_rr_tip0,
+        geo_rr1,
+        geo_height0,
+        geo_height1,
+        kin_Vt1,
+        kin_Vt0,
+        geo_num_blades1,
+        geo_num_splitters1,
+        oth_massflow0,
+        stc_rhomass1,
+        kin_U1,
+        geo_chord_ax1,
+        geo_tip_clearance0,
+        oth_delta_hmass_leakage1,
+    ):
+        num_blades = geo_num_blades1 + geo_num_splitters1
+
+        R_mean = (geo_rr_tip0 + geo_rr1) / 2
+        H_mean = (geo_height0 + geo_height1) / 2
+        Dp_cl = (oth_massflow0 * ((geo_rr1 * kin_Vt1) - (geo_rr_tip0 * kin_Vt0))) / (
+            num_blades * R_mean * H_mean * geo_chord_ax1
+        )
+        U_cl = 0.816 * (2 * Dp_cl / stc_rhomass1) ** 0.5
+        m_cl = stc_rhomass1 * num_blades * geo_tip_clearance0 * geo_chord_ax1 * U_cl
+        return oth_delta_hmass_leakage1 - m_cl * U_cl * kin_U1 / (2 * oth_massflow0)
+
+
+class AmiranteDiffuserMomentum(EquationBase):
+    def residual(
+        self,
+        kin_alpha1,
+        geo_height1,
+        geo_rr1,
+        geo_rr0,
+        kin_V0,
+        kin_V1,
+        kin_Vt0,
+        kin_Vt1,
+        stc_viscosity1,
+        stc_rhomass1,
+    ):
+        WAKE_FRAC = 0.3
+        FRIC_CONST = 0.01
+
+        delta_rad = safe_min(0.001 * geo_rr0, geo_rr1 - geo_rr0)
+        x_log = delta_rad / np.cos(kin_alpha1)
+        Re = (stc_rhomass1 * kin_V1 * x_log) / stc_viscosity1
+        Re = 1e5
+        Cf = FRIC_CONST * (1.8e5 / Re) ** 0.2
+        # Dissipation work
+        Wf = (Cf * (kin_V1 * geo_rr1) ** 2 * delta_rad) / (
+            geo_height1 * geo_rr0 * geo_rr1 * np.cos(kin_alpha1)
+        )
+
+        return geo_rr0 * kin_Vt0 - geo_rr1 * kin_Vt1 * (
+            1 + Wf / (WAKE_FRAC * kin_V1 * kin_V0)
+        )
 
 
 class CompressorLosses(LossApplier):
@@ -306,10 +485,21 @@ class CompressorLosses(LossApplier):
         oth_delta_hmass_skin0,
         oth_delta_hmass_loading,
         oth_delta_hmass_clearance0,
+        oth_delta_hmass_mixing0,
+        oth_delta_hmass_incidence0,
+        oth_delta_hmass_recirc0,
+        oth_delta_hmass_leakage0,
+        oth_delta_hmass_disk0,
     ):
         return tot_hmass0 - (
             oth_tot_hmass_is0
             + oth_delta_hmass_skin0
+            + oth_delta_hmass_incidence0
+            # SHOCK MISSING
             + oth_delta_hmass_loading
             + oth_delta_hmass_clearance0
+            + oth_delta_hmass_mixing0
+            + oth_delta_hmass_disk0
+            + oth_delta_hmass_recirc0
+            + oth_delta_hmass_leakage0
         )

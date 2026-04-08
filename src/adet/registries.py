@@ -181,6 +181,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'viscosity': 'Pa * s',
         # Others
         '.*massflow': 'kg / s',
+        'massflow_.*': 'kg / s',
         'mach.*': 'dimensionless',
         'mermach': 'dimensionless',
         'relmach.*': 'dimensionless',
@@ -192,6 +193,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         '.*Coeff': 'dimensionless',
         '.*Efficiency': 'dimensionless',
         '.*Func': 'dimensionless',
+        '.*_frac': 'dimensionless',
         '.*Ratio.*': 'dimensionless',
         'Cf_.*': 'dimensionless',  # Friction factor
         'Cd_.*': 'dimensionless',  # Friction factor

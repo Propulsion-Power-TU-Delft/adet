@@ -3,12 +3,13 @@ from pint import Quantity
 import matplotlib.pyplot as plt
 import numpy as np
 
+from adet.equations.base_equation import LossApplier
 from adet.equations.control_volumes import FullIncidence
-from adet.equations.fundamental import BladeBlockage, EulerEquation, ZeroBlockage
+from adet.equations.utils import residual_debugger
 from adet.solution import solve_root_problem
 from adet.assembly import CasadiSystem
 from adet.components import BladeRow
-from adet.components.blade_row import IncidenceVolume, VanelessDiffuser, plot_from_nodes
+from adet.components.blade_row import VanelessDiffuser, plot_from_nodes
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 
@@ -31,9 +32,16 @@ from adet.losses.basic import (
 )
 
 from adet.losses.compressors import (
+    AmiranteDiffuserMomentum,
     BackstromSlip,
     BladeLoadingCoppage,
     ClearanceJansen,
+    DiskFricDailyNece,
+    IncidenceGalvas,
+    IncidenceVDB,
+    LeakageAungier,
+    MixingJohnstonDean,
+    RecirculationOh,
     SkinFrictionJansen,
     CompressorLosses,
 )
@@ -55,9 +63,9 @@ _bounds_reg.from_dict(
         'beta': (-1.48, 1.48),
         'relmach': (0.0, 1.04),
         'eta_tt': (0.8, 1.0),
-        # 'pRatio_tt': (0.0, 7.0),
-        # 'delta_hmass_.*': (10.0, 1e5),
-        # 'delta_hmass_loading': (10.0, 1e4),  # This tends to diverge, bound it
+        'pRatio_tt': (2.0, 7.0),
+        # 'delta_hmass_.*': (10.0, 2e4),
+        # 'delta_hmass_recirc': (10.0, 1.4e4),  # This tends to diverge, bound it
     }
 )
 
@@ -71,12 +79,13 @@ _greg.from_dict(
 )
 _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 
-NUM_SPAN = 5
+NUM_SPAN = 1
 PLOTS = True
-ENABLE_LOSSES = False
-RUN_MULTI = False
-RUN_SPEEDLINES = False
-RPM_DES = 21789
+ENABLE_LOSSES = True
+RUN_MULTI = True
+RUN_SPEEDLINES = True
+SPDL_PTS = 5
+RPM_DES = 21700
 # +++ Shaftskin_omega0 (node 0) is unknown,
 shaft = Shaft(
     omega=Quantity(RPM_DES, 'rpm'),
@@ -129,21 +138,36 @@ EQS_WITH_LOSSES = {
     ClearanceJansen(): (0, 1),
     SkinFrictionJansen(): (0, 1),
     BladeLoadingCoppage(): (0, 1),
+    # --- APPLIERS
     CompressorLosses(): 1,  # Apply losses
     # PercentageEntropyLoss(0.0): (0, 1),
+    # --- NEW MODELS
+    FullIncidence(): 0,
+    MixingJohnstonDean(): 1,
+    # IncidenceGalvas(): (0, 1),
+    IncidenceVDB(): (0, 1),
+    RecirculationOh(): (0, 1),
+    LeakageAungier(): (0, 1),
+    DiskFricDailyNece(): (0, 1),
 }
 
 
 # - # - # - # - #
 # Metal angle distribution
 METAL_ANGLE = np.array([-30, -44, -53])
+BLADE_THICKNESS = np.array([0.003048, 0.000762])
 angle_values = resample_linear(METAL_ANGLE, NUM_SPAN)
+thick_distribution = resample_linear(BLADE_THICKNESS, NUM_SPAN)
+
 if NUM_SPAN == 1:
     angle_values = np.array([-44])
+    thick_distribution = np.array([0.002])
+
 angle_distribution = Quantity(angle_values, 'deg')
+
+
 # - # - # - # - #
 
-incVol = IncidenceVolume('incVol')
 # +++ Components
 impeller = BladeRow(
     name='rotor',
@@ -160,6 +184,7 @@ impeller = BladeRow(
             'bld_thick': 0.002,
             'tip_clearance': Quantity(0.3048, 'mm'),
         },
+        'oth': {'incCoeff': 0.7},
     },
     out_constraints={
         'geo': {
@@ -180,20 +205,22 @@ impeller = BladeRow(
             'slip_factCoeff': 5.0,
             'abs_roughness': Quantity(1.524, 'micron'),
             'bl_loadingCoeff': 0.75,
+            # Mixing
+            'minWake_frac': 0.3,
+            'maxWake_frac': 0.65,
+            'massflow_choke': 5.6,
+            #
         },
     },
     extra_equations={
         # ZeroDeviation(): 1,
         MinimalCamberLine(): (0, 1),
         EffectiveBladeNumber(): 1,
-        FullIncidence(): 0,
         # *** Enthalpy based Losses
         IsentropicProperties(): (0, 1),
-        TotalTotalCompressionEfficiency(): (0, 1),
         # *** Blockage (optional)
         # Definitions
         # WorkCoefficient(): (0, 1),
-        # TotalTotalPressureRatio(): (0, 1),
         **EQS_ISENTROPIC,
     },
 )
@@ -207,7 +234,7 @@ vaneless_diff = VanelessDiffuser(
         },
     },
     extra_equations={
-        PercTotalPressureLoss(0.0): (0, 1),  # Isentropic
+        PercTotalPressureLoss(0.05): (0, 1),  # 5% loss
     },
 )
 
@@ -221,8 +248,11 @@ ntw_hecc = ComponentNetwork(
     ],
 )
 
+
+# Overall efficiency
+ntw_hecc.system.add_equation(TotalTotalCompressionEfficiency(), (0, 3))
+ntw_hecc.system.add_equation(TotalTotalPressureRatio(), (0, 3))
 ntw_hecc.system.add_spanwise_constants('kin_Vm0', 'geo_hh0')
-incVol.set_spanwise_constant('kin_Vm1')
 impeller.set_spanwise_constant('stc_p1')
 vaneless_diff.set_spanwise_constant('stc_p1')
 
@@ -259,6 +289,7 @@ if RUN_MULTI:
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
     ntw_hecc.system.num_span = NUM_SPAN
     impeller.set_boundary_cond('geo_metal_angle0', angle_distribution)
+    impeller.set_boundary_cond('geo_bld_thick0', thick_distribution)
 
     ntw_hecc.build()
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
@@ -325,13 +356,16 @@ if __name__ == '__main__':
 
     if RUN_SPEEDLINES:
         SPEED_LINES = {
-            RPM_DES: (4.5, 5.68),
+            21700: (4.5, 5.6),
             0.95 * RPM_DES: (3.86, 5.4),
             0.9 * RPM_DES: (3.6, 5.0),
             0.85 * RPM_DES: (3.18, 4.6),
             0.75 * RPM_DES: (2.31, 3.86),
         }
-        SPDL_PTS = 5
+
+        # MIN_MASS = [3.2, 3.6, 4.5]
+        # SPEEDS = [18400, 19500, 20600, 21700]
+        # MASS_CHOKES = [4.5, 4.8, 5.25, 5.6]
 
         speed_lines = {
             rpm * 2 * np.pi / 60: np.linspace(k[0], k[1], SPDL_PTS)
@@ -348,7 +382,7 @@ if __name__ == '__main__':
         mf_idx = ntw_hecc.system.constraints.index('oth_cum_massflow0')
         mf_scl = ntw_hecc.system.constraints_scaling[mf_idx]
 
-        pr_idx = ntw_hecc.system.free_args.index('oth_pRatio_tt1')
+        pr_idx = ntw_hecc.system.free_args.index('oth_pRatio_tt3')
         pr_scl = ntw_hecc.system.free_args_scaling[pr_idx]
         print('*** RUNNING SPEEDLINES ***')
         sol = None
@@ -359,9 +393,10 @@ if __name__ == '__main__':
                 'ipopt.max_iter': 500,
             },
         )
+        rtfn_kin = ntw_hecc.system.make_rootfinder('kinsol')
 
         # Find indices for additional parameters
-        eta_idx = ntw_hecc.system.free_args.index('oth_eta_tt1')
+        eta_idx = ntw_hecc.system.free_args.index('oth_eta_tt3')
         eta_scl = ntw_hecc.system.free_args_scaling[eta_idx]
 
         fig, axs = plt.subplots(1, 2, figsize=(12, 10))
@@ -382,6 +417,7 @@ if __name__ == '__main__':
                         sol = solve_root_problem(
                             rtfn, sol, kn, bnd, suppress_output=True
                         )
+                    sol = solve_root_problem(rtfn_kin, sol, kn)
 
                     pr = sol[pr_idx][0] * pr_scl
                     eta = sol[eta_idx][0] * eta_scl
@@ -391,8 +427,10 @@ if __name__ == '__main__':
                 except Exception:
                     print(
                         f'  Warning: '
-                        f'convergence failed at mf={mf:.3f} kg/s, omega={omega:.0f} RPM'
+                        f'convergence failed at mf={mf:.3f} kg/s, '
+                        f'omega={omega * 60 / (2 * np.pi):.0f} RPM'
                     )
+                    sol = None
                     pratios.append(np.nan)
                     etas.append(np.nan)
 
@@ -496,13 +534,34 @@ if __name__ == '__main__':
     else:
         plt.close('all')
 
-    plt.plot(n1.oth.delta_hmass_loading)
-    plt.plot(n1.oth.delta_hmass_clearance)
-    plt.plot(n1.oth.delta_hmass_skin)
+    globals().update(residual_debugger(AmiranteDiffuserMomentum(), [n2, n3]))
+    spanwise = np.arange(len(n1.oth.delta_hmass_loading))
+    plt.stackplot(
+        spanwise,
+        n1.oth.delta_hmass_loading,
+        n1.oth.delta_hmass_clearance,
+        n1.oth.delta_hmass_skin,
+        n1.oth.delta_hmass_mixing,
+        n1.oth.delta_hmass_incidence,
+        n1.oth.delta_hmass_recirc,
+        n1.oth.delta_hmass_leakage,
+        n1.oth.delta_hmass_disk,
+        labels=[
+            'loading',
+            'clearance',
+            'skin',
+            'mixing',
+            'incidence',
+            'recirculation',
+            'leakage',
+            'disk',
+        ],
+    )
     plt.ylabel('Enthalpy loss [J / kg / K]')
     plt.xlabel('Spanwise station []')
-    plt.legend(['loading', 'clearance', 'skin'])
+    plt.legend(loc='upper left')
     plt.grid()
+
     if show_plots:
         plt.show()
     else:
