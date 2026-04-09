@@ -221,6 +221,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'rr': 'm',
         'rr_.*': 'm',
         'tip_clearance': 'm',
+        'back_clearance': 'm',
         'abs_roughness': 'm',
         '.*area': 'm**2',
         # Blade parameters

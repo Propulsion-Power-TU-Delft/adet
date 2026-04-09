@@ -1,15 +1,8 @@
 import numpy as np
 
-from adet.equations.utils import (
-    minmax_bound,
-    safe_abs,
-    safe_if_else,
-    safe_max,
-    safe_min,
-    safe_sign,
-)
+from adet.equations.base_equation import DeviationModel, EquationBase
+from adet.equations.utils import safe_abs, safe_if_else, safe_min, safe_sign
 from adet.losses.base_loss import LossModel
-from adet.equations.base_equation import DeviationModel, EquationBase, LossApplier
 
 
 class WorkCoefficientEstimate(EquationBase):
@@ -109,37 +102,22 @@ class BladeLoadingCoppage(LossModel):
         tot_hmass0,
         tot_hmass1,
         # Geometry
-        geo_hh0,
-        geo_rr0,
         geo_rr_tip0,
         geo_rr_midspan1,
         # Kinematics
         kin_U1,
         kin_W1,
         kin_W_tip0,
-        kin_Wm0,
-        kin_Wt0,
-        kin_omega0,
         geo_num_blades_eff1,
         # Coefficients
         oth_bl_loadingCoeff1,  # 0.75
         oth_delta_hmass_loading1,
     ):
-        num_span = max(geo_rr0.shape)
-        if num_span == 1:
-            W_loc_tip = kin_W_tip0
-            r_loc_tip = geo_rr_tip0
-        else:
-            W_loc_tip = (kin_Wm0**2 + (kin_Wt0 + kin_omega0 * geo_hh0 / 2) ** 2) ** 0.5
-            r_loc_tip = geo_rr0 + geo_hh0 / 2
 
-        W_ratio = kin_W1 / W_loc_tip
-
+        W_ratio = kin_W1 / kin_W_tip0
         work = tot_hmass1 - tot_hmass0
-
-        r0_by_r1 = r_loc_tip / geo_rr_midspan1
-
-        diffusion_coeff = (
+        r0_by_r1 = geo_rr_tip0 / geo_rr_midspan1
+        diff_fact = (
             1
             - W_ratio
             + oth_bl_loadingCoeff1
@@ -148,7 +126,7 @@ class BladeLoadingCoppage(LossModel):
             / (((geo_num_blades_eff1 / np.pi) * (1 - r0_by_r1)) + (2 * r0_by_r1))
         )
 
-        return oth_delta_hmass_loading1 - 0.05 * (diffusion_coeff * kin_U1) ** 2
+        return oth_delta_hmass_loading1 - 0.05 * (diff_fact * kin_U1) ** 2
 
 
 class ClearanceJansen(LossModel):
@@ -174,18 +152,18 @@ class ClearanceJansen(LossModel):
             (geo_rr_tip0**2 - geo_rr_hub0**2)
             / ((geo_rr_midspan1 - geo_rr_tip0) * (1 + stc_rhomass1 / stc_rhomass0))
         )
+        abs_Vt1 = safe_abs(kin_Vt1)
+
         return oth_delta_hmass_clearance1 - (
             0.6
             * geo_tip_clearance0
             / geo_height1
-            * kin_Vt1
+            * abs_Vt1
             * (
-                safe_abs(
-                    (4 * np.pi / (geo_height1 * geo_num_blades_eff1))
-                    * K
-                    * kin_Vt1
-                    * kin_Vm0
-                )
+                (4 * np.pi / (geo_height1 * geo_num_blades_eff1))
+                * K
+                * abs_Vt1
+                * kin_Vm0
             )
             ** 0.5
         )
@@ -199,15 +177,16 @@ class SkinFrictionJansen(LossModel):
         geo_rr_tip0,
         geo_rr_hub0,
         geo_rr0,
-        geo_rr_midspan1,
+        geo_rr1,
         geo_height1,
         geo_chord_ax1,
         geo_num_blades_eff1,
-        geo_metal_angle0,
         geo_metal_angle1,
         # Kinematics
         kin_V0,
         kin_V1,
+        kin_beta_hub0,
+        kin_beta_tip0,
         kin_W1,
         kin_W_tip0,
         kin_W_hub0,
@@ -224,7 +203,7 @@ class SkinFrictionJansen(LossModel):
             np.pi
             / 8
             * (
-                2 * geo_rr_midspan1
+                2 * geo_rr1
                 - geo_rr_tip0
                 - geo_rr_hub0
                 - geo_height1
@@ -233,7 +212,7 @@ class SkinFrictionJansen(LossModel):
             * (
                 2
                 / (
-                    (np.cos(geo_metal_angle0[0]) + np.cos(geo_metal_angle0[-1])) / 2
+                    (np.cos(kin_beta_hub0) + np.cos(kin_beta_tip0)) / 2
                     + np.cos(geo_metal_angle1)
                 )
             )
@@ -248,7 +227,7 @@ class SkinFrictionJansen(LossModel):
             )
         )
 
-        w_mean = (kin_V0 + kin_V1 + kin_W_tip0 + 2 * kin_W_hub0 + 3 * kin_W1) / 8
+        w_mean = (kin_V0[-1] + kin_V1 + kin_W_tip0 + 2 * kin_W_hub0 + 3 * kin_W1) / 8
 
         Re = oth_cum_massflow0 / ((stc_viscosity0 + stc_viscosity1) / 2 * D_hyd)
         Re_e = (Re - 2000) * oth_abs_roughness1 / D_hyd
@@ -304,14 +283,14 @@ class IncidenceGalvas(LossModel):
     def residual(
         self,
         kin_beta_opt0,
-        kin_Wt0,
+        kin_beta0,
         kin_W0,
         oth_incCoeff0,
         oth_delta_hmass_incidence1,
     ):
 
-        Wt0_opt = kin_W0 * np.sin(kin_beta_opt0)
-        lost_Wt = kin_Wt0 - Wt0_opt
+        lost_angle = safe_abs(kin_beta_opt0 - kin_beta0)
+        lost_Wt = kin_W0 * np.sin(lost_angle)
 
         return oth_delta_hmass_incidence1 - oth_incCoeff0 * lost_Wt**2
 
@@ -352,8 +331,6 @@ class MixingJohnstonDean(LossModel):
         return oth_delta_hmass_mixing0 - dht
 
 
-# TODO: WIP
-# *** External Models
 class DiskFricDailyNece(LossModel):
     def residual(
         self,
@@ -361,21 +338,25 @@ class DiskFricDailyNece(LossModel):
         stc_rhomass1,
         kin_U1,
         geo_rr1,
+        geo_height1,
         stc_viscosity1,
         oth_massflow0,
         oth_delta_hmass_disk1,
+        geo_back_clearance1,
     ):
         rho_mean = (stc_rhomass0 + stc_rhomass1) / 2
-        Re_df = (kin_U1 * geo_rr1 * stc_rhomass1) / stc_viscosity1
+        Re1 = (kin_U1 * geo_rr1 * stc_rhomass1) / stc_viscosity1
 
-        f_df_lo = 2.67 / ((Re_df) ** 0.5)
-        f_df_hi = 0.0622 / ((Re_df) ** 0.2)
+        cl_ratio = geo_back_clearance1 / geo_height1
+        f_df_lo = 3.700 * cl_ratio**0.1 / (Re1**0.5)
+        f_df_hi = 0.102 * cl_ratio**0.1 / (Re1**0.2)
 
-        f_df = safe_if_else(Re_df < 3e5, f_df_lo, f_df_hi)
+        f_df = safe_if_else(Re1 < 3e5, f_df_lo, f_df_hi)
 
-        return oth_delta_hmass_disk1 - (
-            f_df * rho_mean * (geo_rr1**2) * (kin_U1**3)
-        ) / (4 * oth_massflow0)
+        return (
+            oth_delta_hmass_disk1
+            - 0.25 * (f_df * rho_mean * geo_rr1**2 * kin_U1**3) / oth_massflow0
+        )
 
 
 class RecirculationOh(LossModel):
@@ -388,31 +369,30 @@ class RecirculationOh(LossModel):
         tot_hmass0,
         tot_hmass1,
         geo_rr_tip0,
-        geo_rr1,
+        geo_rr_midspan1,
         kin_alpha1,
+        oth_bl_loadingCoeff1,
         oth_delta_hmass_recirc1,
     ):
-        work = safe_abs(tot_hmass0 - tot_hmass1)
-        rad_ratio = geo_rr_tip0 / geo_rr1
-
+        W_ratio = kin_W1 / kin_W_tip0
+        work = tot_hmass1 - tot_hmass0
+        r0_by_r1 = geo_rr_tip0 / geo_rr_midspan1
         diff_fact = (
             1
-            - kin_W1 / kin_W_tip0
-            + 0.75
-            * work
-            / kin_U1**2
-            * kin_W1
-            / kin_W_tip0
-            / (geo_num_blades_eff1 / np.pi * (1 - rad_ratio) + 2 * rad_ratio)
+            - W_ratio
+            + oth_bl_loadingCoeff1
+            * (work / kin_U1**2)
+            * W_ratio
+            / (((geo_num_blades_eff1 / np.pi) * (1 - r0_by_r1)) + (2 * r0_by_r1))
         )
-        # return oth_delta_hmass_recirc1 - (
-        #     8e-5 * np.sinh(3.5 * kin_alpha1**3) * (diff_fact * kin_U1) ** 2
-        # )
+        return oth_delta_hmass_recirc1 - (
+            8e-5 * np.sinh(3.5 * kin_alpha1**3) * (diff_fact * kin_U1) ** 2
+        )
 
-        return (
-            oth_delta_hmass_recirc1
-            - 0.02 * np.tan(kin_alpha1) * (diff_fact * kin_U1) ** 2
-        )
+        # return (
+        #     oth_delta_hmass_recirc1
+        #     - 0.02 * np.tan(kin_alpha1) * (diff_fact * kin_U1) ** 2
+        # )
 
 
 class LeakageAungier(LossModel):
@@ -474,32 +454,4 @@ class AmiranteDiffuserMomentum(EquationBase):
 
         return geo_rr0 * kin_Vt0 - geo_rr1 * kin_Vt1 * (
             1 + Wf / (WAKE_FRAC * kin_V1 * kin_V0)
-        )
-
-
-class CompressorLosses(LossApplier):
-    def residual(
-        self,
-        tot_hmass0,
-        oth_tot_hmass_is0,
-        oth_delta_hmass_skin0,
-        oth_delta_hmass_loading,
-        oth_delta_hmass_clearance0,
-        oth_delta_hmass_mixing0,
-        oth_delta_hmass_incidence0,
-        oth_delta_hmass_recirc0,
-        oth_delta_hmass_leakage0,
-        oth_delta_hmass_disk0,
-    ):
-        return tot_hmass0 - (
-            oth_tot_hmass_is0
-            + oth_delta_hmass_skin0
-            + oth_delta_hmass_incidence0
-            # SHOCK MISSING
-            + oth_delta_hmass_loading
-            + oth_delta_hmass_clearance0
-            + oth_delta_hmass_mixing0
-            + oth_delta_hmass_disk0
-            + oth_delta_hmass_recirc0
-            + oth_delta_hmass_leakage0
         )

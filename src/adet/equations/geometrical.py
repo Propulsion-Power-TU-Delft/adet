@@ -174,8 +174,11 @@ class EndwallProperties(EquationBase):
         r_hub = geo_rr_midspan0 - delta_radius
         r_tip = geo_rr_midspan0 + delta_radius
 
-        Wt_hub = kin_Vt0[midspan] - kin_omega0 * r_hub
-        Wt_tip = kin_Vt0[midspan] - kin_omega0 * r_tip
+        U_hub = kin_omega0 * r_hub
+        U_tip = kin_omega0 * r_tip
+
+        Wt_hub = kin_Vt0[midspan] - U_hub
+        Wt_tip = kin_Vt0[midspan] - U_tip
 
         # Residual Equations
         r1 = geo_rr_hub0 - r_hub

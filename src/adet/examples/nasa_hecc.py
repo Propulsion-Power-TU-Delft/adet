@@ -25,6 +25,7 @@ from adet.equations.nondimensional import (
 )
 from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
+
 from adet.losses.basic import (
     PercTotalPressureLoss,
     PercentageEntropyLoss,
@@ -38,12 +39,10 @@ from adet.losses.compressors import (
     ClearanceJansen,
     DiskFricDailyNece,
     IncidenceGalvas,
-    IncidenceVDB,
     LeakageAungier,
     MixingJohnstonDean,
     RecirculationOh,
     SkinFrictionJansen,
-    CompressorLosses,
 )
 from adet.registries import GuessRegistry, VariableBoundsRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
@@ -62,10 +61,12 @@ _bounds_reg.from_dict(
         'U': (0, 600),
         'beta': (-1.48, 1.48),
         'relmach': (0.0, 1.04),
-        'eta_tt': (0.8, 1.0),
+        'eta_tt': (0.5, 1.0),
         'pRatio_tt': (2.0, 7.0),
         # 'delta_hmass_.*': (10.0, 2e4),
         # 'delta_hmass_recirc': (10.0, 1.4e4),  # This tends to diverge, bound it
+        # 'T': (0.9 * 288.16, 3 * 288.16),
+        # 'p': (0.8e5, 6e5),
     }
 )
 
@@ -84,7 +85,7 @@ PLOTS = True
 ENABLE_LOSSES = True
 RUN_MULTI = True
 RUN_SPEEDLINES = True
-SPDL_PTS = 5
+SPDL_PTS = 20
 RPM_DES = 21700
 # +++ Shaftskin_omega0 (node 0) is unknown,
 shaft = Shaft(
@@ -102,7 +103,7 @@ fluid_model_real = ExternalFluidModel(
     DebugAbstractState('HEOS', 'Air'),  # This just counts the number of updates
 )
 fluid_model_ideal = AnalyticalFluidModel(
-    IdealGasState(1.4, 287, 1.8e-5),
+    IdealGasState(1.4, 287, 2e-5),
 )
 
 fluid_settings = FluidSettings(
@@ -110,6 +111,35 @@ fluid_settings = FluidSettings(
     update_variables=('p', 'T'),  # Thermodynamic iteration variables
     update_length=2,  # Single phase => Two update vars
 )
+
+
+class LossPicker(LossApplier):
+    def residual(
+        self,
+        tot_hmass0,
+        oth_tot_hmass_is0,
+        oth_delta_hmass_skin0,
+        oth_delta_hmass_loading0,
+        oth_delta_hmass_clearance0,
+        oth_delta_hmass_mixing0,
+        oth_delta_hmass_incidence0,
+        oth_delta_hmass_recirc0,
+        oth_delta_hmass_leakage0,
+        oth_delta_hmass_disk0,
+    ):
+        return tot_hmass0 - (
+            oth_tot_hmass_is0
+            + oth_delta_hmass_skin0
+            + oth_delta_hmass_incidence0
+            # ( WARN: SHOCK MISSING)
+            + oth_delta_hmass_clearance0
+            + oth_delta_hmass_mixing0
+            + oth_delta_hmass_disk0
+            + oth_delta_hmass_recirc0
+            + oth_delta_hmass_leakage0
+            + oth_delta_hmass_loading0
+        )
+
 
 # +++ Boundary conditions
 inlet = Inlet(
@@ -122,7 +152,7 @@ inlet = Inlet(
             'alpha': 0.0,
         },
         'oth': {
-            'cum_massflow': 4.98,
+            'cum_massflow': 5.3,
         },
     },
 )
@@ -134,18 +164,18 @@ EQS_ISENTROPIC = {
 }
 
 EQS_WITH_LOSSES = {
+    # *** SLIP
     BackstromSlip(): (0, 1),
+    # *** PICKERS
+    LossPicker(): 1,  # Apply losses
+    # PercentageEntropyLoss(0.0): (0, 1),
+    # *** LOSS MODELS
     ClearanceJansen(): (0, 1),
     SkinFrictionJansen(): (0, 1),
     BladeLoadingCoppage(): (0, 1),
-    # --- APPLIERS
-    CompressorLosses(): 1,  # Apply losses
-    # PercentageEntropyLoss(0.0): (0, 1),
-    # --- NEW MODELS
     FullIncidence(): 0,
+    IncidenceGalvas(): (0, 1),
     MixingJohnstonDean(): 1,
-    # IncidenceGalvas(): (0, 1),
-    IncidenceVDB(): (0, 1),
     RecirculationOh(): (0, 1),
     LeakageAungier(): (0, 1),
     DiskFricDailyNece(): (0, 1),
@@ -184,7 +214,7 @@ impeller = BladeRow(
             'bld_thick': 0.002,
             'tip_clearance': Quantity(0.3048, 'mm'),
         },
-        'oth': {'incCoeff': 0.7},
+        'oth': {'incCoeff': 0.5},
     },
     out_constraints={
         'geo': {
@@ -195,6 +225,7 @@ impeller = BladeRow(
             # *** Blades specs
             'metal_angle': Quantity(-30, 'deg'),
             'thick_by_pitch': 0.02,  # Thickness by pitch ratio
+            'back_clearance': 0.001,  # Back face clearance
             'chord_ax': Quantity(0.133879895, 'm'),
             'num_blades': 15,
             'num_splitters': 15,
@@ -278,7 +309,7 @@ solution_hecc_is = solve_root_problem(
     rootfinder_hecc_is,
     x0,
     kn_hecc_is,
-    # bnd_hecc_is,
+    bnd_hecc_is,
     suppress_output=False,
 )
 solution_hecc_is = solve_root_problem(rtfn_kin, solution_hecc_is, kn_hecc_is)
@@ -355,17 +386,13 @@ if __name__ == '__main__':
         #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 
     if RUN_SPEEDLINES:
-        SPEED_LINES = {
-            21700: (4.5, 5.6),
-            0.95 * RPM_DES: (3.86, 5.4),
-            0.9 * RPM_DES: (3.6, 5.0),
-            0.85 * RPM_DES: (3.18, 4.6),
-            0.75 * RPM_DES: (2.31, 3.86),
-        }
+        SPEEDS = [21700, 20600, 19500, 18400]
+        MASS_CHOKES = [5.6, 5.25, 4.8, 4.5]
+        MIN_MASS = [m - 1.3 for m in MASS_CHOKES]
 
-        # MIN_MASS = [3.2, 3.6, 4.5]
-        # SPEEDS = [18400, 19500, 20600, 21700]
-        # MASS_CHOKES = [4.5, 4.8, 5.25, 5.6]
+        mass_limits = [(ms, mc) for ms, mc in zip(MIN_MASS, MASS_CHOKES)]
+
+        SPEED_LINES = dict(zip(SPEEDS, mass_limits))
 
         speed_lines = {
             rpm * 2 * np.pi / 60: np.linspace(k[0], k[1], SPDL_PTS)
@@ -399,25 +426,30 @@ if __name__ == '__main__':
         eta_idx = ntw_hecc.system.free_args.index('oth_eta_tt3')
         eta_scl = ntw_hecc.system.free_args_scaling[eta_idx]
 
-        fig, axs = plt.subplots(1, 2, figsize=(12, 10))
+        choke_idx = ntw_hecc.system.constraints.index('oth_massflow_choke1')
+        choke_scl = ntw_hecc.system.constraints_scaling[choke_idx]
+
+        fig, axs = plt.subplots(1, 2, figsize=(12, 7))
         for omega, massflows in speed_lines.items():
             pratios = []
             etas = []
             converged_count = 0
             kn[omega_idx] = np.array([omega / omega_scl])
+            kn[choke_idx] = np.array([massflows[-1] / choke_scl])
             for mf in massflows:
                 kn[mf_idx] = np.array([mf / mf_scl])
 
+                prev_sol = sol
                 try:
-                    if sol is None:
-                        sol = solve_root_problem(
-                            rtfn, x0, kn, bnd, suppress_output=True
-                        )
-                    else:
-                        sol = solve_root_problem(
-                            rtfn, sol, kn, bnd, suppress_output=True
-                        )
-                    sol = solve_root_problem(rtfn_kin, sol, kn)
+                    # if sol is None:
+                    #     sol = solve_root_problem(
+                    #         rtfn, x0, kn, bnd, suppress_output=True
+                    #     )
+                    # else:
+                    #     sol = solve_root_problem(
+                    #         rtfn, sol, kn, bnd, suppress_output=True
+                    #     )
+                    sol = solve_root_problem(rtfn_kin, x0, kn)
 
                     pr = sol[pr_idx][0] * pr_scl
                     eta = sol[eta_idx][0] * eta_scl
@@ -430,7 +462,6 @@ if __name__ == '__main__':
                         f'convergence failed at mf={mf:.3f} kg/s, '
                         f'omega={omega * 60 / (2 * np.pi):.0f} RPM'
                     )
-                    sol = None
                     pratios.append(np.nan)
                     etas.append(np.nan)
 
@@ -476,6 +507,7 @@ if __name__ == '__main__':
         # Efficiency vs pressure ratio
         axs[1].set_xlabel('Mass flow [lbm/s]', fontsize=11)
         axs[1].set_ylabel('Total-to-total efficiency [−]', fontsize=11)
+        axs[1].set_ylim(0.79, 0.865)
         axs[1].set_title(
             'Compressor Performance: η vs PR', fontsize=12, fontweight='bold'
         )

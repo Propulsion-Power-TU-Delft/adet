@@ -4,7 +4,7 @@ from typing import Literal, Mapping
 import casadi as cs
 import numpy as np
 from numpy.typing import NDArray
-from pint import DimensionalityError, Quantity
+from pint import Quantity
 from pint.facets.plain import PlainQuantity
 from sympy import Symbol
 
@@ -23,11 +23,11 @@ def get_midspan_idx(var):
     return midspan
 
 
-def safe_abs(x) -> PlainQuantity | cs.MX:
-    if isinstance(x, PlainQuantity):
-        return (x**2) ** 0.5
-    else:
+def safe_abs(x) -> Quantity | cs.MX:
+    if isinstance(x, cs.MX):
         return cs.fabs(x)
+    else:
+        return (x**2) ** 0.5
 
 
 def any_is_qty(*args):
