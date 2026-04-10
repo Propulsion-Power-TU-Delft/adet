@@ -2,8 +2,9 @@ import logging
 from pint import Quantity
 import matplotlib.pyplot as plt
 import numpy as np
+import CoolProp as cp
 
-from adet.equations.base_equation import LossApplier
+from adet.equations.base_equation import EquationBase, LossApplier
 from adet.equations.control_volumes import FullIncidence
 from adet.equations.utils import residual_debugger
 from adet.solution import solve_root_problem
@@ -21,7 +22,6 @@ from adet.equations.geometrical import MinimalCamberLine
 from adet.equations.nondimensional import (
     WorkCoefficient,
     TotalTotalPressureRatio,
-    TotalTotalCompressionEfficiency,
 )
 from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
@@ -81,12 +81,13 @@ _greg.from_dict(
 _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 
 NUM_SPAN = 1
-PLOTS = True
+PLOTS = False  # Set to False to skip plotting section
 ENABLE_LOSSES = True
 RUN_MULTI = True
 RUN_SPEEDLINES = True
 SPDL_PTS = 20
 RPM_DES = 21700
+SHOW_PLOTS = True  # Set to False for non-interactive testing
 # +++ Shaftskin_omega0 (node 0) is unknown,
 shaft = Shaft(
     omega=Quantity(RPM_DES, 'rpm'),
@@ -114,31 +115,49 @@ fluid_settings = FluidSettings(
 
 
 class LossPicker(LossApplier):
+    manual_units = ('J / kg', 'dimensionless')
+    input_pair = cp.PSmass_INPUTS
+    output_quantities = ('hmass',)
+
     def residual(
         self,
         tot_hmass0,
-        oth_tot_hmass_is0,
-        oth_delta_hmass_skin0,
-        oth_delta_hmass_loading0,
-        oth_delta_hmass_clearance0,
-        oth_delta_hmass_mixing0,
-        oth_delta_hmass_incidence0,
-        oth_delta_hmass_recirc0,
-        oth_delta_hmass_leakage0,
-        oth_delta_hmass_disk0,
+        tot_hmass1,
+        oth_delta_hmass_skin1,
+        oth_delta_hmass_loading1,
+        oth_delta_hmass_clearance1,
+        oth_delta_hmass_mixing1,
+        oth_delta_hmass_incidence1,
+        oth_delta_hmass_recirc1,
+        oth_delta_hmass_leakage1,
+        oth_delta_hmass_disk1,
+        oth_eta_tt1,
+        tot_p1,
+        stc_smass0,
     ):
-        return tot_hmass0 - (
-            oth_tot_hmass_is0
-            + oth_delta_hmass_skin0
-            + oth_delta_hmass_incidence0
+        tot_hmass_is1 = self.eos(tot_p1, stc_smass0)
+
+        # Loss addition
+        r1 = tot_hmass1 - (
+            tot_hmass_is1
+            + oth_delta_hmass_skin1
+            + oth_delta_hmass_incidence1
             # ( WARN: SHOCK MISSING)
-            + oth_delta_hmass_clearance0
-            + oth_delta_hmass_mixing0
-            + oth_delta_hmass_disk0
-            + oth_delta_hmass_recirc0
-            + oth_delta_hmass_leakage0
-            + oth_delta_hmass_loading0
+            + oth_delta_hmass_clearance1
+            + oth_delta_hmass_mixing1
+            + oth_delta_hmass_loading1
+            # Internal
+            # + oth_delta_hmass_disk1
+            # + oth_delta_hmass_recirc1
+            # + oth_delta_hmass_leakage1
         )
+
+        # Efficiency computation
+
+        eta_tt = (tot_hmass_is1 - tot_hmass0) / (tot_hmass1 - tot_hmass0)
+        r2 = oth_eta_tt1 - eta_tt
+
+        return r1, r2
 
 
 # +++ Boundary conditions
@@ -167,7 +186,7 @@ EQS_WITH_LOSSES = {
     # *** SLIP
     BackstromSlip(): (0, 1),
     # *** PICKERS
-    LossPicker(): 1,  # Apply losses
+    LossPicker(): (0, 1),  # Apply losses
     # PercentageEntropyLoss(0.0): (0, 1),
     # *** LOSS MODELS
     ClearanceJansen(): (0, 1),
@@ -214,7 +233,9 @@ impeller = BladeRow(
             'bld_thick': 0.002,
             'tip_clearance': Quantity(0.3048, 'mm'),
         },
-        'oth': {'incCoeff': 0.5},
+        'oth': {
+            'incCoeff': 0.5,
+        },
     },
     out_constraints={
         'geo': {
@@ -233,12 +254,12 @@ impeller = BladeRow(
         'oth': {
             # 'eta_tt': 0.821,  # Total total efficiency
             # For losses
-            'slip_factCoeff': 5.0,
+            'slip_factCoeff': 3.2,
             'abs_roughness': Quantity(1.524, 'micron'),
             'bl_loadingCoeff': 0.75,
             # Mixing
             'minWake_frac': 0.3,
-            'maxWake_frac': 0.65,
+            'maxWake_frac': 0.5,
             'massflow_choke': 5.6,
             #
         },
@@ -281,7 +302,6 @@ ntw_hecc = ComponentNetwork(
 
 
 # Overall efficiency
-ntw_hecc.system.add_equation(TotalTotalCompressionEfficiency(), (0, 3))
 ntw_hecc.system.add_equation(TotalTotalPressureRatio(), (0, 3))
 ntw_hecc.system.add_spanwise_constants('kin_Vm0', 'geo_hh0')
 impeller.set_spanwise_constant('stc_p1')
@@ -423,16 +443,38 @@ if __name__ == '__main__':
         rtfn_kin = ntw_hecc.system.make_rootfinder('kinsol')
 
         # Find indices for additional parameters
-        eta_idx = ntw_hecc.system.free_args.index('oth_eta_tt3')
+        eta_idx = ntw_hecc.system.free_args.index('oth_eta_tt1')
         eta_scl = ntw_hecc.system.free_args_scaling[eta_idx]
 
         choke_idx = ntw_hecc.system.constraints.index('oth_massflow_choke1')
         choke_scl = ntw_hecc.system.constraints_scaling[choke_idx]
 
+        # Find indices for loss components (active ones from LossPicker)
+        loss_names = [
+            'oth_delta_hmass_skin1',
+            'oth_delta_hmass_incidence1',
+            'oth_delta_hmass_clearance1',
+            'oth_delta_hmass_mixing1',
+            'oth_delta_hmass_loading1',
+        ]
+        loss_indices = {}
+        loss_scales = {}
+        for loss_name in loss_names:
+            try:
+                idx = ntw_hecc.system.free_args.index(loss_name)
+                loss_indices[loss_name] = idx
+                loss_scales[loss_name] = ntw_hecc.system.free_args_scaling[idx]
+            except ValueError:
+                # Loss variable might not be in free_args (could be pinned)
+                pass
+
         fig, axs = plt.subplots(1, 2, figsize=(12, 7))
+        loss_data_by_speed = {}  # Store losses for stackplot
+
         for omega, massflows in speed_lines.items():
             pratios = []
             etas = []
+            losses_dict = {name: [] for name in loss_indices.keys()}
             converged_count = 0
             kn[omega_idx] = np.array([omega / omega_scl])
             kn[choke_idx] = np.array([massflows[-1] / choke_scl])
@@ -455,6 +497,12 @@ if __name__ == '__main__':
                     eta = sol[eta_idx][0] * eta_scl
                     pratios.append(pr)
                     etas.append(eta)
+
+                    # Extract loss values
+                    for loss_name, idx in loss_indices.items():
+                        loss_val = sol[idx][0] * loss_scales[loss_name]
+                        losses_dict[loss_name].append(loss_val)
+
                     converged_count += 1
                 except Exception:
                     print(
@@ -464,6 +512,8 @@ if __name__ == '__main__':
                     )
                     pratios.append(np.nan)
                     etas.append(np.nan)
+                    for loss_name in loss_indices.keys():
+                        losses_dict[loss_name].append(np.nan)
 
             print(
                 f'Speed {omega:.0f} RPM:'
@@ -474,6 +524,12 @@ if __name__ == '__main__':
                 f' {[f"{pr:.4f}" if not np.isnan(pr) else "nan" for pr in pratios]}'
             )
             rpm = omega / 2 / np.pi * 60
+
+            # Store loss data for this speedline
+            loss_data_by_speed[rpm] = {
+                'massflows': massflows,
+                'losses': losses_dict,
+            }
 
             axs[0].plot(
                 massflows * 2.2,
@@ -507,7 +563,7 @@ if __name__ == '__main__':
         # Efficiency vs pressure ratio
         axs[1].set_xlabel('Mass flow [lbm/s]', fontsize=11)
         axs[1].set_ylabel('Total-to-total efficiency [−]', fontsize=11)
-        axs[1].set_ylim(0.79, 0.865)
+        # axs[1].set_ylim(0.79, 0.865)
         axs[1].set_title(
             'Compressor Performance: η vs PR', fontsize=12, fontweight='bold'
         )
@@ -515,86 +571,142 @@ if __name__ == '__main__':
         axs[1].grid(True, alpha=0.3)
 
         plt.tight_layout()
-        plt.show()
+        if SHOW_PLOTS:
+            plt.show()
+        else:
+            print('Speedline performance plots generated (not shown)')
+            plt.close(fig)
+
+        # Create stackplots for losses at each speedline
+        num_speedlines = len(loss_data_by_speed)
+        fig_loss, axs_loss = plt.subplots(
+            num_speedlines, 1, figsize=(10, 4 * num_speedlines)
+        )
+
+        # Handle single speedline case (axs_loss won't be an array)
+        if num_speedlines == 1:
+            axs_loss = [axs_loss]
+
+        for ax_idx, (rpm, data) in enumerate(sorted(loss_data_by_speed.items())):
+            massflows = data['massflows']
+            losses = data['losses']
+
+            # Prepare data for stackplot: convert to arrays, handle NaNs
+            loss_values = []
+            loss_labels = []
+
+            for loss_name in loss_indices.keys():
+                loss_array = np.array(losses[loss_name])
+                # Replace NaNs with 0 for stackplot
+                loss_array = np.nan_to_num(loss_array, nan=0.0)
+                loss_values.append(loss_array)
+                # Clean up label name
+                label = loss_name.replace('oth_delta_hmass_', '').replace('1', '')
+                loss_labels.append(label)
+
+            # Create stackplot
+            ax = axs_loss[ax_idx]
+            ax.stackplot(
+                massflows * 2.2,
+                *loss_values,
+                labels=loss_labels,
+                alpha=0.8,
+            )
+            ax.set_xlabel('Mass flow [lbm/s]', fontsize=11)
+            ax.set_ylabel('Enthalpy loss [J/kg]', fontsize=11)
+            ax.set_title(
+                f'Loss Breakdown: {rpm / RPM_DES:.2f} N_des ({rpm:.0f} RPM)',
+                fontsize=12,
+                fontweight='bold',
+            )
+            ax.legend(loc='upper left', fontsize=10)
+            ax.grid(True, alpha=0.3)
+
+        fig_loss.tight_layout()
+        if SHOW_PLOTS:
+            plt.show()
+        else:
+            print('Loss stackplots generated (not shown)')
+            plt.close(fig_loss)
 
     # ---------------- PLOT ---------------------
-    n0 = ntw_hecc.system.nodes[0]
-    n1 = ntw_hecc.system.nodes[1]
-    n2 = ntw_hecc.system.nodes[2]
-    n3 = ntw_hecc.system.nodes[3]
+    if PLOTS:
+        n0 = ntw_hecc.system.nodes[0]
+        n1 = ntw_hecc.system.nodes[1]
+        n2 = ntw_hecc.system.nodes[2]
+        n3 = ntw_hecc.system.nodes[3]
 
-    fig, axs = plt.subplots(2, 2, figsize=(8, 20))
-    if len(ntw_hecc.components) > 2:
-        plottable_components = ntw_hecc.components[1:]
-    else:
-        plottable_components = ntw_hecc.components
+        fig, axs = plt.subplots(2, 2, figsize=(8, 20))
+        if len(ntw_hecc.components) > 2:
+            plottable_components = ntw_hecc.components[1:]
+        else:
+            plottable_components = ntw_hecc.components
 
-    for cmp_idx, comp in enumerate(plottable_components):
-        inlet_node = comp.get_inlet_node(ntw_hecc)
-        outlet_node = comp.get_outlet_node(ntw_hecc)
+        for cmp_idx, comp in enumerate(plottable_components):
+            inlet_node = comp.get_inlet_node(ntw_hecc)
+            outlet_node = comp.get_outlet_node(ntw_hecc)
 
-        if inlet_node is None or outlet_node is None:
-            raise ValueError('Missing nodes')
+            if inlet_node is None or outlet_node is None:
+                raise ValueError('Missing nodes')
 
-        node_idx = 0
-        for n in (inlet_node, outlet_node):
-            ax = axs[cmp_idx][node_idx]
+            node_idx = 0
+            for n in (inlet_node, outlet_node):
+                ax = axs[cmp_idx][node_idx]
 
-            ax.set_title(f'Node number {2 * cmp_idx + node_idx}')
-            ax.set_aspect('equal')
-            n.kin.plot(n.geo, 8, ax)
+                ax.set_title(f'Node number {2 * cmp_idx + node_idx}')
+                ax.set_aspect('equal')
+                n.kin.plot(n.geo, 8, ax)
 
-            node_idx += 1
+                node_idx += 1
 
-    fig, ax = plt.subplots()
-    ax.set_aspect('equal')
-    offset = 0.0
-    for comp in plottable_components:
-        inlet_node = comp.get_inlet_node(ntw_hecc)
-        outlet_node = comp.get_outlet_node(ntw_hecc)
-        if not inlet_node or not outlet_node:
-            raise ValueError('missing nodes')
+        fig, ax = plt.subplots()
+        ax.set_aspect('equal')
+        offset = 0.0
+        for comp in plottable_components:
+            inlet_node = comp.get_inlet_node(ntw_hecc)
+            outlet_node = comp.get_outlet_node(ntw_hecc)
+            if not inlet_node or not outlet_node:
+                raise ValueError('missing nodes')
 
-        lines = plot_from_nodes(inlet_node, outlet_node, False, offset, 'k')
+            lines = plot_from_nodes(inlet_node, outlet_node, False, offset, 'k')
 
-        offset += outlet_node.geo.chord_ax[0]
+            offset += outlet_node.geo.chord_ax[0]
 
-    show_plots = input('Show plots? [y/N] ').strip().lower() == 'y'
-    fig.tight_layout()
-    if show_plots:
-        plt.show()
-    else:
-        plt.close('all')
+        fig.tight_layout()
+        if SHOW_PLOTS:
+            plt.show()
+        else:
+            plt.close('all')
 
-    globals().update(residual_debugger(AmiranteDiffuserMomentum(), [n2, n3]))
-    spanwise = np.arange(len(n1.oth.delta_hmass_loading))
-    plt.stackplot(
-        spanwise,
-        n1.oth.delta_hmass_loading,
-        n1.oth.delta_hmass_clearance,
-        n1.oth.delta_hmass_skin,
-        n1.oth.delta_hmass_mixing,
-        n1.oth.delta_hmass_incidence,
-        n1.oth.delta_hmass_recirc,
-        n1.oth.delta_hmass_leakage,
-        n1.oth.delta_hmass_disk,
-        labels=[
-            'loading',
-            'clearance',
-            'skin',
-            'mixing',
-            'incidence',
-            'recirculation',
-            'leakage',
-            'disk',
-        ],
-    )
-    plt.ylabel('Enthalpy loss [J / kg / K]')
-    plt.xlabel('Spanwise station []')
-    plt.legend(loc='upper left')
-    plt.grid()
+        globals().update(residual_debugger(AmiranteDiffuserMomentum(), [n2, n3]))
+        spanwise = np.arange(len(n1.oth.delta_hmass_loading))
+        plt.stackplot(
+            spanwise,
+            n1.oth.delta_hmass_loading,
+            n1.oth.delta_hmass_clearance,
+            n1.oth.delta_hmass_skin,
+            n1.oth.delta_hmass_mixing,
+            n1.oth.delta_hmass_incidence,
+            n1.oth.delta_hmass_recirc,
+            n1.oth.delta_hmass_leakage,
+            n1.oth.delta_hmass_disk,
+            labels=[
+                'loading',
+                'clearance',
+                'skin',
+                'mixing',
+                'incidence',
+                'recirculation',
+                'leakage',
+                'disk',
+            ],
+        )
+        plt.ylabel('Enthalpy loss [J / kg / K]')
+        plt.xlabel('Spanwise station []')
+        plt.legend(loc='upper left')
+        plt.grid()
 
-    if show_plots:
-        plt.show()
-    else:
-        plt.close('all')
+        if SHOW_PLOTS:
+            plt.show()
+        else:
+            plt.close('all')

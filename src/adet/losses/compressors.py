@@ -199,6 +199,7 @@ class SkinFrictionJansen(LossModel):
         oth_Cf_rough1,
         oth_delta_hmass_skin1,
     ):
+        # *** Hydraulic length and diameter
         L_hyd = (
             np.pi
             / 8
@@ -244,6 +245,11 @@ class SkinFrictionJansen(LossModel):
         r3 = oth_delta_hmass_skin1 - 2 * safe_abs(Cf) * (L_hyd / D_hyd) * (w_mean**2)
 
         return r1, r2, r3
+
+        # # 1. Cf_smooth equation
+        # r1 = 1 / sqrt_smooth - 2 * np.log10(2.51 / (Re * sqrt_smooth))
+        # # 2. Cf_rough equation
+        # r2 = 1 / sqrt_rough - 2 * np.log10(oth_abs_roughness1 / (3.71 * D_hyd))
 
 
 class IncidenceVDB(LossModel):
@@ -356,6 +362,42 @@ class DiskFricDailyNece(LossModel):
         return (
             oth_delta_hmass_disk1
             - 0.25 * (f_df * rho_mean * geo_rr1**2 * kin_U1**3) / oth_massflow0
+        )
+
+
+class ClearanceBrasz(LossModel):
+    def residual(
+        self,
+        geo_rr_hub0,
+        geo_rr_tip0,
+        geo_rr1,
+        stc_rhomass0,
+        stc_rhomass1,
+        geo_tip_clearance0,
+        geo_height1,
+        kin_Vt1,
+        kin_Vm0,
+        geo_num_blades_eff1,
+        oth_delta_hmass_clearance1,
+    ):
+        k = (geo_rr_tip0**2 - geo_rr_hub0**2) / (
+            (geo_rr1 - geo_rr_tip0) * (1 + stc_rhomass1 / stc_rhomass0)
+        )
+
+        abs_Vt1 = safe_abs(kin_Vt1)
+        return oth_delta_hmass_clearance1 - (
+            0.6
+            * geo_tip_clearance0
+            * abs_Vt1
+            / (geo_height1 + geo_tip_clearance0 / 2)
+            * np.sqrt(
+                4
+                * np.pi
+                * abs_Vt1
+                * kin_Vm0
+                * k
+                / ((geo_height1 + geo_tip_clearance0 / 2) * geo_num_blades_eff1)
+            )
         )
 
 
