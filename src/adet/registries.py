@@ -190,6 +190,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'gamma_pv': 'dimensionless',
         # Dimensionless REGEX
         'eta_[s-t]{2}': 'dimensionless',  # eta_tt, eta_ts
+        'eta_imp': 'dimensionless',  # impeller
         '.*Coeff': 'dimensionless',
         '.*Efficiency': 'dimensionless',
         '.*Func': 'dimensionless',
@@ -220,6 +221,7 @@ class DefaultUnitsRegistry(BaseRegistry[str, str]):
         'hh': 'm',
         'rr': 'm',
         'rr_.*': 'm',
+        'hyd_.*': 'm',
         'tip_clearance': 'm',
         'back_clearance': 'm',
         'abs_roughness': 'm',

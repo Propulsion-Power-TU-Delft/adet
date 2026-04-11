@@ -103,7 +103,7 @@ class EquationBase(ABC):
         expected_sequence = range(max(seen_indices) + 1)
         if set(seen_indices) != set(expected_sequence):
             raise ValueError(
-                f'Non sequential nodes found {seen_indices} '
+                f'Non sequential nodes found {set(seen_indices)} '
                 f'in {self.__class__.__name__}'
             )
 

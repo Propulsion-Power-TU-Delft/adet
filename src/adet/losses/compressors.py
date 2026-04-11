@@ -1,7 +1,7 @@
 import numpy as np
 
 from adet.equations.base_equation import DeviationModel, EquationBase
-from adet.equations.utils import safe_abs, safe_if_else, safe_min, safe_sign
+from adet.equations.utils import safe_abs, safe_if_else, safe_mean, safe_min, safe_sign
 from adet.losses.base_loss import LossModel
 
 
@@ -123,7 +123,7 @@ class BladeLoadingCoppage(LossModel):
             + oth_bl_loadingCoeff1
             * (work / kin_U1**2)
             * W_ratio
-            / (((geo_num_blades_eff1 / np.pi) * (1 - r0_by_r1)) + (2 * r0_by_r1))
+            / (geo_num_blades_eff1 / np.pi * (1 - r0_by_r1) + 2 * r0_by_r1)
         )
 
         return oth_delta_hmass_loading1 - 0.05 * (diff_fact * kin_U1) ** 2
@@ -139,24 +139,26 @@ class ClearanceJansen(LossModel):
         geo_height1,
         geo_rr_hub0,
         geo_rr_tip0,
-        geo_rr_midspan1,
+        geo_rr1,
         geo_num_blades_eff1,
         geo_tip_clearance0,
+        geo_tip_clearance1,
         # Thermo
         stc_rhomass0,
         stc_rhomass1,
         # Enthalpy prod
         oth_delta_hmass_clearance1,
     ):
+        clearance = (geo_tip_clearance0 + geo_tip_clearance1) / 2
         K = safe_abs(
             (geo_rr_tip0**2 - geo_rr_hub0**2)
-            / ((geo_rr_midspan1 - geo_rr_tip0) * (1 + stc_rhomass1 / stc_rhomass0))
+            / ((geo_rr1 - geo_rr_tip0) * (1 + stc_rhomass1 / stc_rhomass0))
         )
         abs_Vt1 = safe_abs(kin_Vt1)
 
         return oth_delta_hmass_clearance1 - (
             0.6
-            * geo_tip_clearance0
+            * clearance
             / geo_height1
             * abs_Vt1
             * (
@@ -169,24 +171,131 @@ class ClearanceJansen(LossModel):
         )
 
 
+class ClearanceBrasz(LossModel):
+    def residual(
+        self,
+        geo_rr1,
+        geo_rr_hub0,
+        geo_rr_tip0,
+        geo_height1,
+        geo_tip_clearance0,
+        geo_tip_clearance1,
+        geo_num_blades_eff1,
+        kin_Vt1,
+        kin_Vm0,
+        stc_rhomass0,
+        stc_rhomass1,
+        oth_delta_hmass_clearance1,
+    ):
+        clearance = (geo_tip_clearance0 + geo_tip_clearance1) / 2
+
+        K = (geo_rr_tip0**2 - geo_rr_hub0**2) / (
+            (geo_rr1 - geo_rr_tip0) * (1 + stc_rhomass1 / stc_rhomass0)
+        )
+        abs_Vt1 = safe_abs(kin_Vt1)
+
+        return oth_delta_hmass_clearance1 - (
+            0.6
+            * clearance
+            * abs_Vt1
+            / (geo_height1 + clearance / 2)
+            * np.sqrt(
+                4
+                * np.pi
+                * abs_Vt1
+                * kin_Vm0
+                * K
+                / ((geo_height1 + clearance / 2) * geo_num_blades_eff1)
+            )
+        )
+
+
+class HydraulicQuantities(EquationBase):
+    def residual(
+        self,
+        geo_rr1,
+        geo_rr_tip0,
+        geo_rr_hub0,
+        geo_height1,
+        geo_chord_ax1,
+        geo_metal_angle_hub0,
+        geo_metal_angle_tip0,
+        geo_metal_angle1,
+        geo_num_blades_eff1,
+        geo_hyd_diam1,
+        geo_hyd_len1,
+    ):
+        L_hyd = (
+            np.pi
+            / 8
+            * (
+                2 * geo_rr1
+                - geo_rr_tip0
+                - geo_rr_hub0
+                - geo_height1
+                + 2 * geo_chord_ax1
+            )
+            * (
+                4
+                / (
+                    (np.cos(geo_metal_angle_hub0) + np.cos(geo_metal_angle_tip0))
+                    + 2 * np.cos(geo_metal_angle1)
+                )
+            )
+        )
+
+        # D_hyd = (
+        #     np.pi
+        #     * ((2 * geo_rr_tip0) ** 2 - (2 * geo_rr_hub0) ** 2)
+        #     / (
+        #         (4 * np.pi * geo_rr0)
+        #         + geo_num_blades_eff1 * 2 * (geo_rr_tip0 - geo_rr_hub0)
+        #     )
+        # )
+
+        metal_cosine_sum0 = np.cos(geo_metal_angle_tip0) + np.cos(geo_metal_angle_hub0)
+        D_hyd = (
+            2
+            * geo_rr1
+            * (
+                (
+                    np.cos(geo_metal_angle1)
+                    / (
+                        geo_num_blades_eff1 / np.pi
+                        + 2 * geo_rr1 * np.cos(geo_metal_angle1) / geo_height1
+                    )
+                )
+                + (
+                    0.5
+                    * (geo_rr_tip0 / geo_rr1 + geo_rr_hub0 / geo_rr1)
+                    * (metal_cosine_sum0 / 2)
+                )
+                / (
+                    geo_num_blades_eff1 / np.pi
+                    + (
+                        (2 * (geo_rr_tip0 + geo_rr_hub0))
+                        / (2 * (geo_rr_tip0 - geo_rr_hub0))
+                    )
+                    * (metal_cosine_sum0 / 2)
+                )
+            )
+        )
+
+        r1 = geo_hyd_len1 - L_hyd
+        r2 = geo_hyd_diam1 - D_hyd
+
+        return r1, r2
+
+
 class SkinFrictionJansen(LossModel):
     def residual(
         self,
         oth_cum_massflow0,
-        # Geometry
-        geo_rr_tip0,
-        geo_rr_hub0,
-        geo_rr0,
-        geo_rr1,
-        geo_height1,
-        geo_chord_ax1,
-        geo_num_blades_eff1,
-        geo_metal_angle1,
+        geo_hyd_len1,
+        geo_hyd_diam1,
         # Kinematics
         kin_V0,
         kin_V1,
-        kin_beta_hub0,
-        kin_beta_tip0,
         kin_W1,
         kin_W_tip0,
         kin_W_hub0,
@@ -199,53 +308,28 @@ class SkinFrictionJansen(LossModel):
         oth_Cf_rough1,
         oth_delta_hmass_skin1,
     ):
-        # *** Hydraulic length and diameter
-        L_hyd = (
-            np.pi
-            / 8
-            * (
-                2 * geo_rr1
-                - geo_rr_tip0
-                - geo_rr_hub0
-                - geo_height1
-                + 2 * geo_chord_ax1
-            )
-            * (
-                2
-                / (
-                    (np.cos(kin_beta_hub0) + np.cos(kin_beta_tip0)) / 2
-                    + np.cos(geo_metal_angle1)
-                )
-            )
-        )
-
-        D_hyd = (
-            np.pi
-            * ((2 * geo_rr_tip0) ** 2 - (2 * geo_rr_hub0) ** 2)
-            / (
-                (4 * np.pi * geo_rr0)
-                + geo_num_blades_eff1 * 2 * (geo_rr_tip0 - geo_rr_hub0)
-            )
-        )
-
         w_mean = (kin_V0[-1] + kin_V1 + kin_W_tip0 + 2 * kin_W_hub0 + 3 * kin_W1) / 8
+        mu_mean = (stc_viscosity0 + stc_viscosity1) / 2
 
-        Re = oth_cum_massflow0 / ((stc_viscosity0 + stc_viscosity1) / 2 * D_hyd)
-        Re_e = (Re - 2000) * oth_abs_roughness1 / D_hyd
+        Re = oth_cum_massflow0 / (mu_mean * geo_hyd_diam1)
+        Re_e = (Re - 2000) * oth_abs_roughness1 / geo_hyd_diam1
 
         r1 = 4 * oth_Cf_smooth1 - (
             (1 / np.log10((2.51 / (Re * np.sqrt(4 * oth_Cf_smooth1))) ** -2)) ** 2
         )
         r2 = (
             4 * oth_Cf_rough1
-            - (1 / np.log10((oth_abs_roughness1 / (3.71 * D_hyd)) ** -2)) ** 2
+            - (1 / np.log10((oth_abs_roughness1 / (3.71 * geo_hyd_diam1)) ** -2)) ** 2
         )
 
         Cf = oth_Cf_smooth1 + (oth_Cf_rough1 - oth_Cf_smooth1) * (1 - (60 / Re_e))
-        r3 = oth_delta_hmass_skin1 - 2 * safe_abs(Cf) * (L_hyd / D_hyd) * (w_mean**2)
+        r3 = oth_delta_hmass_skin1 - 2 * safe_abs(Cf) * (
+            geo_hyd_len1 / geo_hyd_diam1
+        ) * (w_mean**2)
 
         return r1, r2, r3
 
+        # TODO: More readable formulation (singular like this)
         # # 1. Cf_smooth equation
         # r1 = 1 / sqrt_smooth - 2 * np.log10(2.51 / (Re * sqrt_smooth))
         # # 2. Cf_rough equation
@@ -288,9 +372,9 @@ class IncidenceVDB(LossModel):
 class IncidenceGalvas(LossModel):
     def residual(
         self,
-        kin_beta_opt0,
-        kin_beta0,
         kin_W0,
+        kin_beta0,
+        kin_beta_opt0,
         oth_incCoeff0,
         oth_delta_hmass_incidence1,
     ):
@@ -298,7 +382,7 @@ class IncidenceGalvas(LossModel):
         lost_angle = safe_abs(kin_beta_opt0 - kin_beta0)
         lost_Wt = kin_W0 * np.sin(lost_angle)
 
-        return oth_delta_hmass_incidence1 - oth_incCoeff0 * lost_Wt**2
+        return oth_delta_hmass_incidence1 - oth_incCoeff0 * lost_Wt**2 / 2
 
 
 class MixingJohnstonDean(LossModel):
@@ -312,9 +396,18 @@ class MixingJohnstonDean(LossModel):
         oth_massflow_choke0,
         oth_delta_hmass_mixing0,
     ):
+        #        ^ eps
+        #        |        <--hi------>
+        #        |          /````````` eps_max
+        #        | <--lo-> /
+        #        | _______/ eps_min
+        #        |
+        #        |-------------> m / m_choke
+        #                 |  |
+        #         MF_THRES   1
 
         MF_THRES = 0.8  # Ramp up wake frac from MF_THRES * m_choke
-        B = 1  # No sudden area change after impeller
+        B = 1  # hypothesis! No sudden area change after impeller
 
         slope_eps_mf = (oth_maxWake_frac0 - oth_minWake_frac0) / (
             (1 - MF_THRES) * oth_massflow_choke0
@@ -323,7 +416,6 @@ class MixingJohnstonDean(LossModel):
         linear_wake_frac = offset_eps_mf + slope_eps_mf * oth_cum_massflow0
 
         wake_frac_lo = oth_minWake_frac0
-        # NOTE: The minimum is important otherwise the wake frac just goes up
         wake_frac_hi = safe_min(linear_wake_frac, oth_maxWake_frac0)
 
         wake_frac = safe_if_else(
@@ -334,6 +426,7 @@ class MixingJohnstonDean(LossModel):
         k1 = (1 - wake_frac - B) / (1 - wake_frac)  # pyright: ignore
         k2 = 1 + np.tan(kin_alpha0) ** 2
         dht = (1 / k2) * k1**2 * kin_V0**2 / 2
+
         return oth_delta_hmass_mixing0 - dht
 
 
@@ -365,42 +458,6 @@ class DiskFricDailyNece(LossModel):
         )
 
 
-class ClearanceBrasz(LossModel):
-    def residual(
-        self,
-        geo_rr_hub0,
-        geo_rr_tip0,
-        geo_rr1,
-        stc_rhomass0,
-        stc_rhomass1,
-        geo_tip_clearance0,
-        geo_height1,
-        kin_Vt1,
-        kin_Vm0,
-        geo_num_blades_eff1,
-        oth_delta_hmass_clearance1,
-    ):
-        k = (geo_rr_tip0**2 - geo_rr_hub0**2) / (
-            (geo_rr1 - geo_rr_tip0) * (1 + stc_rhomass1 / stc_rhomass0)
-        )
-
-        abs_Vt1 = safe_abs(kin_Vt1)
-        return oth_delta_hmass_clearance1 - (
-            0.6
-            * geo_tip_clearance0
-            * abs_Vt1
-            / (geo_height1 + geo_tip_clearance0 / 2)
-            * np.sqrt(
-                4
-                * np.pi
-                * abs_Vt1
-                * kin_Vm0
-                * k
-                / ((geo_height1 + geo_tip_clearance0 / 2) * geo_num_blades_eff1)
-            )
-        )
-
-
 class RecirculationOh(LossModel):
     def residual(
         self,
@@ -427,9 +484,9 @@ class RecirculationOh(LossModel):
             * W_ratio
             / (((geo_num_blades_eff1 / np.pi) * (1 - r0_by_r1)) + (2 * r0_by_r1))
         )
-        return oth_delta_hmass_recirc1 - (
-            8e-5 * np.sinh(3.5 * kin_alpha1**3) * (diff_fact * kin_U1) ** 2
-        )
+        dht = 8e-5 * np.sinh(3.5 * kin_alpha1**3) * (diff_fact * kin_U1) ** 2
+
+        return oth_delta_hmass_recirc1 - safe_mean(dht)
 
         # return (
         #     oth_delta_hmass_recirc1
@@ -451,20 +508,43 @@ class LeakageAungier(LossModel):
         oth_massflow0,
         stc_rhomass1,
         kin_U1,
-        geo_chord_ax1,
+        geo_hyd_len1,
         geo_tip_clearance0,
+        geo_tip_clearance1,
         oth_delta_hmass_leakage1,
     ):
         num_blades = geo_num_blades1 + geo_num_splitters1
+        clearance = (geo_tip_clearance0 + geo_tip_clearance1) / 2
 
         R_mean = (geo_rr_tip0 + geo_rr1) / 2
         H_mean = (geo_height0 + geo_height1) / 2
         Dp_cl = (oth_massflow0 * ((geo_rr1 * kin_Vt1) - (geo_rr_tip0 * kin_Vt0))) / (
-            num_blades * R_mean * H_mean * geo_chord_ax1
+            num_blades * R_mean * H_mean * geo_hyd_len1
         )
         U_cl = 0.816 * (2 * Dp_cl / stc_rhomass1) ** 0.5
-        m_cl = stc_rhomass1 * num_blades * geo_tip_clearance0 * geo_chord_ax1 * U_cl
+        m_cl = stc_rhomass1 * num_blades * clearance * geo_hyd_len1 * U_cl
         return oth_delta_hmass_leakage1 - m_cl * U_cl * kin_U1 / (2 * oth_massflow0)
+
+
+class LeakageLostWork(LossModel):
+    def residual(
+        self,
+        oth_worklossCoeff1,
+        tot_hmass0,
+        tot_hmass1,
+        geo_tip_clearance0,
+        geo_tip_clearance1,
+        geo_height1,
+        oth_delta_hmass_leakage1,
+    ):
+
+        work = tot_hmass1 - tot_hmass0
+        clearance = (geo_tip_clearance0 + geo_tip_clearance1) / 2
+
+        # LEAKAGE WORK LOSS!
+        dht_leakage_lost = oth_worklossCoeff1 * work * clearance / geo_height1
+
+        return oth_delta_hmass_leakage1 - dht_leakage_lost
 
 
 class AmiranteDiffuserMomentum(EquationBase):

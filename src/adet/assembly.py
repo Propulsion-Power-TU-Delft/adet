@@ -142,7 +142,7 @@ class EquationRegistry:
                 f'Detected indices in the definition of '
                 f'`{equation.__class__.__name__}` {tuple(local_indices)} '
                 f'is not equal to the length of the prescribed '
-                f'absolute nodal position {abs_position}'
+                f'nodal position {abs_position}'
             )
 
         # Check that an equation of the same type does not exist at the same location
