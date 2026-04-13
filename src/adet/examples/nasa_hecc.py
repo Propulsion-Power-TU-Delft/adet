@@ -1,10 +1,11 @@
 import logging
+
 from pint import Quantity
 import matplotlib.pyplot as plt
 import numpy as np
 import CoolProp as cp
 
-from adet.equations.base_equation import EquationBase, LossApplier
+from adet.equations.base_equation import LossApplier
 from adet.equations.control_volumes import FullIncidence
 from adet.equations.utils import residual_debugger
 from adet.solution import solve_root_problem
@@ -40,6 +41,7 @@ from adet.losses.compressors import (
     DiskFricDailyNece,
     HydraulicQuantities,
     IncidenceGalvas,
+    IncidenceVDB,
     LeakageAungier,
     LeakageLostWork,
     MixingJohnstonDean,
@@ -83,14 +85,16 @@ _greg.from_dict(
 _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 
 NUM_SPAN = 1
-PLOTS = True  # Set to False to skip plotting section
 ENABLE_LOSSES = True
 RUN_MULTI = True
 RUN_SPEEDLINES = True
-SPDL_PTS = 50
-RPM_DES = 21000
+SPDL_PTS = 20  # Number of speedline points
+RPM_DES = 21000  #
+#
+RUN_PLOTS = True  # Set to False to skip plotting section
 SHOW_PLOTS = True  # Set to False for non-interactive testing
-# +++ Shaftskin_omega0 (node 0) is unknown,
+
+# +++ Shafts
 shaft = Shaft(
     omega=Quantity(RPM_DES, 'rpm'),
     is_constrained=True,
@@ -117,13 +121,12 @@ fluid_settings = FluidSettings(
 
 
 class LossPicker(LossApplier):
-    # manual_units = ('Pa', 'J / kg')
-    # input_pair = cp.HmassSmass_INPUTS
-    # output_quantities = ('hmass',)
+    manual_units = ('Pa', 'J / kg')
+    input_pair = cp.PSmass_INPUTS
+    output_quantities = ('hmass',)
 
     def residual(
         self,
-        tot_T0,
         stc_smass0,
         stc_smass1,
         tot_hmass0,
@@ -137,7 +140,9 @@ class LossPicker(LossApplier):
         oth_delta_hmass_recirc1,
         oth_delta_hmass_disk1,
         oth_tot_T_is1,
-        oth_eta_tt1,
+        oth_eta_tt3,
+        tot_p2,
+        tot_p3,
     ):
         # Channel losses
         dht_int = (
@@ -152,15 +157,15 @@ class LossPicker(LossApplier):
             + oth_delta_hmass_disk1
         )
 
+        tot_hmass_is3 = self.eos(tot_p3, stc_smass0)
+
         delta_s = dht_int / oth_tot_T_is1
 
         work = tot_hmass1 - tot_hmass0
-        work_ideal = work - dht_int
-        tot_hmass_is1 = tot_hmass0 + work_ideal
 
         # Residuals
         r1 = stc_smass1 - (stc_smass0 + delta_s)
-        r2 = work * oth_eta_tt1 - (tot_hmass_is1 - tot_hmass0)
+        r2 = work * oth_eta_tt3 - (tot_hmass_is3 - tot_hmass0)
 
         return r1, r2
 
@@ -191,20 +196,20 @@ EQS_WITH_LOSSES = {
     # *** SLIP
     BackstromSlip(): (0, 1),
     # *** PICKERS
-    LossPicker(): (0, 1),  # Apply losses
+    # LossPicker(): (0, 1),  # Apply losses
     # PercentageEntropyLoss(0.0): (0, 1),
     # *** LOSS MODELS
     ClearanceBrasz(): (0, 1),
     SkinFrictionJansen(): (0, 1),
     BladeLoadingCoppage(): (0, 1),
     FullIncidence(): 0,
-    IncidenceGalvas(): (0, 1),
-    # IncidenceVDB(): (0, 1),
+    # IncidenceGalvas(): (0, 1),
+    IncidenceVDB(): (0, 1),
     MixingJohnstonDean(): 1,
     RecirculationOh(): (0, 1),
     # WARN: The combination of these two leak models is a bit unclear
-    # LeakageAungier(): (0, 1),
-    LeakageLostWork(): (0, 1),
+    LeakageAungier(): (0, 1),
+    # LeakageLostWork(): (0, 1),
     DiskFricDailyNece(): (0, 1),
 }
 
@@ -221,7 +226,6 @@ if NUM_SPAN == 1:
     thick_distribution = np.array([0.002])
 
 angle_distribution = Quantity(angle_values, 'deg')
-
 
 # - # - # - # - #
 
@@ -267,13 +271,14 @@ impeller = BladeRow(
             # 'eta_tt': 0.821,  # Total total efficiency
             # For losses
             'slip_factCoeff': 5.0,
-            'worklossCoeff': 0.2,
+            'worklossCoeff': 0.3,
             'abs_roughness': Quantity(1.524, 'micron'),
             'bl_loadingCoeff': 0.75,
             # Mixing
             'minWake_frac': 0.3,
             'maxWake_frac': 0.65,
-            'massflow_choke': 5.6,
+            'wake_frac': 0.3,  # Starter to remove
+            'massflow_choke': 5.8,
             #
         },
     },
@@ -300,7 +305,7 @@ vaneless_diff = VanelessDiffuser(
         },
     },
     extra_equations={
-        PercTotalPressureLoss(0.05): (0, 1),  # 5% loss
+        # PercTotalPressureLoss(0.03): (0, 1),  # 5% loss
     },
 )
 
@@ -316,7 +321,6 @@ ntw_hecc = ComponentNetwork(
 
 
 # Overall efficiency
-ntw_hecc.system.add_equation(TotalTotalCompressionEfficiency(), (0, 3))
 ntw_hecc.system.add_equation(TotalTotalPressureRatio(), (0, 3))
 ntw_hecc.system.add_spanwise_constants('kin_Vm0', 'geo_hh0')
 impeller.set_spanwise_constant('stc_p1')
@@ -399,6 +403,8 @@ if __name__ == '__main__':
         for eq, pos in EQS_WITH_LOSSES.items():
             impeller.add_equation(eq, pos)
 
+        ntw_hecc.system.boundary_conditions[1]['oth'].pop('wake_frac')
+        ntw_hecc.system.add_equation(LossPicker(), (0, 1, 2, 3))
         ntw_hecc.build()
 
         rootfinder_hecc_loss = ntw_hecc.system.make_rootfinder(
@@ -421,12 +427,11 @@ if __name__ == '__main__':
         #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 
     if RUN_SPEEDLINES:
-        # SPEEDS = [21700, 20600, 19500, 18400]
         SPEEDS = [21e3, 20e3, 19e3, 18e3]
-        MASS_CHOKES = [5.6, 5.25, 4.8, 4.5]
-        MIN_MASS = [m - 1.5 for m in MASS_CHOKES]
+        MASS_CHOKES = [6.1, 5.7, 5.1, 4.8]
+        MIN_MASS = [m - 2.0 for m in MASS_CHOKES]
 
-        mass_limits = [(ms, mc) for ms, mc in zip(MIN_MASS, MASS_CHOKES)]
+        mass_limits = [(ms, mc - 0.5) for ms, mc in zip(MIN_MASS, MASS_CHOKES)]
 
         SPEED_LINES = dict(zip(SPEEDS, mass_limits))
 
@@ -671,7 +676,7 @@ if __name__ == '__main__':
         print(f'Computed speedline data saved to {output_path}')
 
     # ---------------- PLOT ---------------------
-    if PLOTS:
+    if RUN_PLOTS and not RUN_SPEEDLINES:
         n0 = ntw_hecc.system.nodes[0]
         n1 = ntw_hecc.system.nodes[1]
         n2 = ntw_hecc.system.nodes[2]
@@ -752,3 +757,5 @@ if __name__ == '__main__':
             plt.show()
         else:
             plt.close('all')
+
+        print

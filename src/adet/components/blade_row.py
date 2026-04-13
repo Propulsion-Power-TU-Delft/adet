@@ -181,7 +181,15 @@ class VanelessDiffuser(BaseComponent):
         'geo_meridional_angle',
     ]
 
-    from_previous_node = ABSOLUTE_LINK + GEOM_LINK + ['geo_hh', 'geo_rr']
+    from_previous_node = (
+        ABSOLUTE_LINK
+        + GEOM_LINK
+        + [
+            'geo_hh',
+            'geo_rr',
+            'oth_wake_frac',
+        ]
+    )
 
     def _post_init(self):
         self.outlet_bc['kin']['omega'] = 0

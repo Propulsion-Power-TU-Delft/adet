@@ -1,7 +1,15 @@
 import numpy as np
+import CoolProp as cp
 
 from adet.equations.base_equation import DeviationModel, EquationBase
-from adet.equations.utils import safe_abs, safe_if_else, safe_mean, safe_min, safe_sign
+from adet.equations.utils import (
+    safe_abs,
+    safe_if_else,
+    safe_max,
+    safe_mean,
+    safe_min,
+    safe_sign,
+)
 from adet.losses.base_loss import LossModel
 
 
@@ -394,6 +402,7 @@ class MixingJohnstonDean(LossModel):
         oth_maxWake_frac0,
         oth_cum_massflow0,
         oth_massflow_choke0,
+        oth_wake_frac0,
         oth_delta_hmass_mixing0,
     ):
         #        ^ eps
@@ -406,7 +415,7 @@ class MixingJohnstonDean(LossModel):
         #                 |  |
         #         MF_THRES   1
 
-        MF_THRES = 0.8  # Ramp up wake frac from MF_THRES * m_choke
+        MF_THRES = 0.75  # Ramp up wake frac from MF_THRES * m_choke
         B = 1  # hypothesis! No sudden area change after impeller
 
         slope_eps_mf = (oth_maxWake_frac0 - oth_minWake_frac0) / (
@@ -418,16 +427,18 @@ class MixingJohnstonDean(LossModel):
         wake_frac_lo = oth_minWake_frac0
         wake_frac_hi = safe_min(linear_wake_frac, oth_maxWake_frac0)
 
-        wake_frac = safe_if_else(
+        r_wake = oth_wake_frac0 - safe_if_else(
             oth_cum_massflow0 < MF_THRES * oth_massflow_choke0,
             wake_frac_lo,
             wake_frac_hi,
         )
-        k1 = (1 - wake_frac - B) / (1 - wake_frac)  # pyright: ignore
+        k1 = (1 - oth_wake_frac0 - B) / (1 - oth_wake_frac0)  # pyright: ignore
         k2 = 1 + np.tan(kin_alpha0) ** 2
         dht = (1 / k2) * k1**2 * kin_V0**2 / 2
 
-        return oth_delta_hmass_mixing0 - dht
+        r_dht = oth_delta_hmass_mixing0 - dht
+
+        return r_wake, r_dht
 
 
 class DiskFricDailyNece(LossModel):
@@ -439,7 +450,7 @@ class DiskFricDailyNece(LossModel):
         geo_rr1,
         geo_height1,
         stc_viscosity1,
-        oth_massflow0,
+        oth_cum_massflow0,
         oth_delta_hmass_disk1,
         geo_back_clearance1,
     ):
@@ -454,7 +465,7 @@ class DiskFricDailyNece(LossModel):
 
         return (
             oth_delta_hmass_disk1
-            - 0.25 * (f_df * rho_mean * geo_rr1**2 * kin_U1**3) / oth_massflow0
+            - 0.25 * (f_df * rho_mean * geo_rr1**2 * kin_U1**3) / oth_cum_massflow0
         )
 
 
@@ -548,6 +559,10 @@ class LeakageLostWork(LossModel):
 
 
 class AmiranteDiffuserMomentum(EquationBase):
+    input_pair = cp.PSmass_INPUTS
+    manual_units = ('m^2 / s', 'K')
+    output_quantities = ('hmass',)
+
     def residual(
         self,
         kin_alpha1,
@@ -557,23 +572,39 @@ class AmiranteDiffuserMomentum(EquationBase):
         kin_V0,
         kin_V1,
         kin_Vt0,
+        stc_p0,
+        stc_p1,
+        stc_rhomass1,
+        stc_cpmass1,
+        stc_cvmass1,
+        stc_T0,
+        stc_T1,
         kin_Vt1,
         stc_viscosity1,
-        stc_rhomass1,
+        oth_wake_frac0,
     ):
-        WAKE_FRAC = 0.3
+        # constants TODO: unhardcode
         FRIC_CONST = 0.01
+        ETA_POLY = 0.93
 
-        delta_rad = safe_min(0.001 * geo_rr0, geo_rr1 - geo_rr0)
+        delta_rad = safe_max(0.001 * geo_rr0, geo_rr1 - geo_rr0)
         x_log = delta_rad / np.cos(kin_alpha1)
         Re = (stc_rhomass1 * kin_V1 * x_log) / stc_viscosity1
-        Re = 1e5
         Cf = FRIC_CONST * (1.8e5 / Re) ** 0.2
         # Dissipation work
         Wf = (Cf * (kin_V1 * geo_rr1) ** 2 * delta_rad) / (
             geo_height1 * geo_rr0 * geo_rr1 * np.cos(kin_alpha1)
         )
 
-        return geo_rr0 * kin_Vt0 - geo_rr1 * kin_Vt1 * (
-            1 + Wf / (WAKE_FRAC * kin_V1 * kin_V0)
+        r1 = geo_rr0 * kin_Vt0 - geo_rr1 * kin_Vt1 * (
+            1 + Wf / (oth_wake_frac0 * kin_V1 * kin_V0)
         )
+
+        p_ratio = stc_p1 / stc_p0
+        gamma = stc_cpmass1 / stc_cvmass1
+
+        exponent = (gamma - 1) / (ETA_POLY * gamma)
+
+        r2 = stc_T1 - stc_T0 * (p_ratio) ** exponent
+
+        return r1, r2
