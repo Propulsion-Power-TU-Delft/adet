@@ -412,6 +412,7 @@ class ScalarsRegistry(BaseRegistry[str, int]):
         # 'tip_clearance': -1,
         'aspRatio': -1,
         'cum_.*': -1,
+        'massflow_choke': -1,
         'meridional_angle': -1,
         'num_blades': -1,
         '.*AreaAve': -1,

@@ -585,7 +585,7 @@ class AmiranteDiffuserMomentum(EquationBase):
     ):
         # constants TODO: unhardcode
         FRIC_CONST = 0.01
-        ETA_POLY = 0.93
+        ETA_POLY = 0.9
 
         delta_rad = safe_max(0.001 * geo_rr0, geo_rr1 - geo_rr0)
         x_log = delta_rad / np.cos(kin_alpha1)

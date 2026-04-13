@@ -84,15 +84,15 @@ _greg.from_dict(
 )
 _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 
-NUM_SPAN = 1
+NUM_SPAN = 5
 ENABLE_LOSSES = True
 RUN_MULTI = True
 RUN_SPEEDLINES = True
 SPDL_PTS = 20  # Number of speedline points
 RPM_DES = 21000  #
 #
-RUN_PLOTS = True  # Set to False to skip plotting section
-SHOW_PLOTS = True  # Set to False for non-interactive testing
+RUN_PLOTS = False  # Set to False to skip plotting section
+SHOW_PLOTS = False  # Set to False for non-interactive testing
 
 # +++ Shafts
 shaft = Shaft(
@@ -181,7 +181,7 @@ inlet = Inlet(
             'alpha': 0.0,
         },
         'oth': {
-            'cum_massflow': 4.3,
+            'cum_massflow': 4.1,
         },
     },
 )
@@ -203,20 +203,34 @@ EQS_WITH_LOSSES = {
     SkinFrictionJansen(): (0, 1),
     BladeLoadingCoppage(): (0, 1),
     FullIncidence(): 0,
-    # IncidenceGalvas(): (0, 1),
-    IncidenceVDB(): (0, 1),
+    IncidenceGalvas(): (0, 1),
+    # IncidenceVDB(): (0, 1),
     MixingJohnstonDean(): 1,
     RecirculationOh(): (0, 1),
     # WARN: The combination of these two leak models is a bit unclear
-    LeakageAungier(): (0, 1),
-    # LeakageLostWork(): (0, 1),
+    # LeakageAungier(): (0, 1),
+    LeakageLostWork(): (0, 1),
     DiskFricDailyNece(): (0, 1),
 }
 
+# *** Speedline definitions
+SPEEDS = [21e3, 20e3, 19e3, 18e3]
+MASS_CHOKES = [5.7, 5.5, 4.9, 4.6]
+MIN_MASS = [m - 2.0 for m in MASS_CHOKES]
+mass_limits = [(ms, mc) for ms, mc in zip(MIN_MASS, MASS_CHOKES)]
+SPEED_LINES = dict(zip(SPEEDS, mass_limits))
 
-# - # - # - # - #
-# Metal angle distribution
+# *** Metal angle definition
 METAL_ANGLE = np.array([-30, -44, -53])
+HEIGHT = 0.0640433
+R_MID = 0.07416165
+deltaH = HEIGHT / NUM_SPAN
+r_min = R_MID - HEIGHT / 2
+r_max = R_MID + HEIGHT / 2
+rr = np.linspace(r_min + deltaH / 2, r_max - deltaH / 2, NUM_SPAN)
+angle_values = -30 - 23 / (r_max - r_min) * (rr - r_min)
+
+# *** Thickness distribution
 BLADE_THICKNESS = np.array([0.003048, 0.000762])
 angle_values = resample_linear(METAL_ANGLE, NUM_SPAN)
 thick_distribution = resample_linear(BLADE_THICKNESS, NUM_SPAN)
@@ -238,15 +252,14 @@ impeller = BladeRow(
         'geo': {
             # *** Meridional geometry
             'meridional_angle': Quantity(0, 'deg'),
-            'rr_midspan': Quantity(0.07416165, 'm'),
-            'height': Quantity(0.0670433, 'm'),
+            'rr_midspan': R_MID,
+            'height': HEIGHT,
             # *** Blades specs
             'metal_angle': Quantity(-44, 'deg'),
             'metal_angle_hub': Quantity(-30, 'deg'),
             'metal_angle_tip': Quantity(-53, 'deg'),
-            'bld_thick': 0.023,
+            'bld_thick': 0.002,
             'tip_clearance': Quantity(0.235, 'mm'),
-            # 'tip_clearance': Quantity(0.7620, 'mm'),
         },
         'oth': {
             'incCoeff': 0.5,
@@ -261,14 +274,13 @@ impeller = BladeRow(
             # *** Blades specs
             'metal_angle': Quantity(-30, 'deg'),
             'thick_by_pitch': 0.02,  # Thickness by pitch ratio
-            'back_clearance': 0.001,  # Back face clearance
+            'back_clearance': 0.005,  # Back face clearance
             'tip_clearance': Quantity(0.304, 'mm'),
             'chord_ax': Quantity(0.133879895, 'm'),
             'num_blades': 15,
             'num_splitters': 15,
         },
         'oth': {
-            # 'eta_tt': 0.821,  # Total total efficiency
             # For losses
             'slip_factCoeff': 5.0,
             'worklossCoeff': 0.3,
@@ -278,8 +290,7 @@ impeller = BladeRow(
             'minWake_frac': 0.3,
             'maxWake_frac': 0.65,
             'wake_frac': 0.3,  # Starter to remove
-            'massflow_choke': 5.8,
-            #
+            'massflow_choke': MASS_CHOKES[0],
         },
     },
     extra_equations={
@@ -422,27 +433,15 @@ if __name__ == '__main__':
             bnd_loss,
             suppress_output=False,
         )
-        # solution_loss = solve_root_problem(rtfn_kin, solution_loss, kn_loss)
+        solution_loss = solve_root_problem(rtfn_kin, solution_loss, kn_loss)
         sol_loss_dict = ntw_hecc.system.write_solution_to_nodes(solution_loss)
         #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 
     if RUN_SPEEDLINES:
-        SPEEDS = [21e3, 20e3, 19e3, 18e3]
-        MASS_CHOKES = [6.1, 5.7, 5.1, 4.8]
-        MIN_MASS = [m - 2.0 for m in MASS_CHOKES]
-
-        mass_limits = [(ms, mc - 0.5) for ms, mc in zip(MIN_MASS, MASS_CHOKES)]
-
-        SPEED_LINES = dict(zip(SPEEDS, mass_limits))
-
         speed_lines = {
             rpm * 2 * np.pi / 60: np.linspace(k[0], k[1], SPDL_PTS)
             for rpm, k in SPEED_LINES.items()
         }
-        ntw_hecc.build()
-        kn = ntw_hecc.get_scaled_constraints()
-        x0 = ntw_hecc.get_scaled_guess(sol_loss_dict)
-        bnd = ntw_hecc.get_arguments_bounds()
 
         omega_idx = ntw_hecc.system.constraints.index('kin_omega1')
         omega_scl = ntw_hecc.system.constraints_scaling[omega_idx]
@@ -450,22 +449,7 @@ if __name__ == '__main__':
         mf_idx = ntw_hecc.system.constraints.index('oth_cum_massflow0')
         mf_scl = ntw_hecc.system.constraints_scaling[mf_idx]
 
-        pr_idx = ntw_hecc.system.free_args.index('oth_pRatio_tt3')
-        pr_scl = ntw_hecc.system.free_args_scaling[pr_idx]
         print('*** RUNNING SPEEDLINES ***')
-        sol = None
-        rtfn = ntw_hecc.system.make_rootfinder(
-            'ipopt',
-            opts={
-                'error_on_fail': False,
-                'ipopt.max_iter': 500,
-            },
-        )
-        rtfn_kin = ntw_hecc.system.make_rootfinder('kinsol')
-
-        # Find indices for additional parameters
-        eta_idx = ntw_hecc.system.free_args.index('oth_eta_tt3')
-        eta_scl = ntw_hecc.system.free_args_scaling[eta_idx]
 
         choke_idx = ntw_hecc.system.constraints.index('oth_massflow_choke1')
         choke_scl = ntw_hecc.system.constraints_scaling[choke_idx]
@@ -492,7 +476,10 @@ if __name__ == '__main__':
         fig, axs = plt.subplots(1, 2, figsize=(12, 7))
         loss_data_by_speed = {}  # Store losses for stackplot
         computed_speedline_data = {}  # Store computed results for comparison
+        all_converged_solutions = []  # Store all converged solutions
 
+        sol = ntw_hecc.system.get_scaled_guess(sol_loss_dict)
+        kn = ntw_hecc.system.get_scaled_constraints()
         for omega, massflows in speed_lines.items():
             pratios = []
             etas = []
@@ -503,22 +490,39 @@ if __name__ == '__main__':
             for mf in massflows:
                 kn[mf_idx] = np.array([mf / mf_scl])
 
-                prev_sol = sol
-                try:
-                    # if sol is None:
-                    #     sol = solve_root_problem(
-                    #         rtfn, x0, kn, bnd, suppress_output=True
-                    #     )
-                    # else:
-                    #     sol = solve_root_problem(
-                    #         rtfn, sol, kn, bnd, suppress_output=True
-                    #     )
-                    sol = solve_root_problem(rtfn_kin, x0, kn)
+                # Find closest previous solution to use as initial guess
+                # Prioritize mass flow proximity, use pr as tie-breaker
+                if all_converged_solutions:
+                    mf_range = max(massflows) - min(massflows) + 1e-6
+                    pr_range = (
+                        max(prev_pr for _, prev_pr, _ in all_converged_solutions)
+                        - min(prev_pr for _, prev_pr, _ in all_converged_solutions)
+                        + 1e-6
+                    )
+                    min_distance = float('inf')
+                    closest_sol = sol
+                    for prev_mf, prev_pr, prev_sol in all_converged_solutions:
+                        # Normalize differences for balanced weighting
+                        mf_diff_norm = (mf - prev_mf) / mf_range
+                        pr_diff_norm = 0.0  # pr_diff not applicable yet
+                        # Use Euclidean distance (currently just mf difference)
+                        distance = abs(mf_diff_norm)
+                        if distance < min_distance:
+                            min_distance = distance
+                            closest_sol = prev_sol
+                    sol = closest_sol.copy()
 
-                    pr = sol[pr_idx][0] * pr_scl
-                    eta = sol[eta_idx][0] * eta_scl
+                try:
+                    sol = solve_root_problem(rtfn_kin, sol, kn)
+                    sol_dict = ntw_hecc.system.solution_to_dict(sol)
+
+                    pr = np.average(sol_dict['oth_pRatio_tt3'])
+                    eta = np.average(sol_dict['oth_eta_tt3'])
                     pratios.append(pr)
                     etas.append(eta)
+
+                    # Store converged solution
+                    all_converged_solutions.append((mf, pr, sol.copy()))
 
                     # Extract loss values
                     for loss_name, idx in loss_indices.items():
@@ -593,7 +597,6 @@ if __name__ == '__main__':
         # Efficiency vs pressure ratio
         axs[1].set_xlabel('Mass flow [lbm/s]', fontsize=11)
         axs[1].set_ylabel('Total-to-total efficiency [−]', fontsize=11)
-        # axs[1].set_ylim(0.90, 0.96)
         axs[1].set_title(
             'Compressor Performance: η vs PR', fontsize=12, fontweight='bold'
         )
@@ -676,12 +679,11 @@ if __name__ == '__main__':
         print(f'Computed speedline data saved to {output_path}')
 
     # ---------------- PLOT ---------------------
+    n0 = ntw_hecc.system.nodes[0]
+    n1 = ntw_hecc.system.nodes[1]
+    n2 = ntw_hecc.system.nodes[2]
+    n3 = ntw_hecc.system.nodes[3]
     if RUN_PLOTS and not RUN_SPEEDLINES:
-        n0 = ntw_hecc.system.nodes[0]
-        n1 = ntw_hecc.system.nodes[1]
-        n2 = ntw_hecc.system.nodes[2]
-        n3 = ntw_hecc.system.nodes[3]
-
         fig, axs = plt.subplots(2, 2, figsize=(8, 20))
         if len(ntw_hecc.components) > 2:
             plottable_components = ntw_hecc.components[1:]
