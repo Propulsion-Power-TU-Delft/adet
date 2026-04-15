@@ -1,4 +1,5 @@
 # === IMPORTS
+from adet.equations.utils import get_midspan_idx
 from copy import deepcopy
 import logging
 import pathlib
@@ -14,7 +15,7 @@ from pint import Quantity
 from adet.assembly import CasadiSystem
 from adet.components import BladeRow, Inlet, Shaft
 from adet.components import ComponentNetwork
-from adet.equations.base_equation import EquationBase
+from adet.equations.base_equation import EquationBase, LossApplier
 from adet.equations.definitions import (
     BoundaryLayerRatios,
     ClearanceByHeight,
@@ -31,7 +32,7 @@ from adet.equations.geometrical import (
     MinimalCamberLine,
     ModifiedZweifel,
     MeridionalRatios,
-    MeridionalHack,
+    MeridionalRatioHack,
 )
 from adet.equations.nondimensional import (
     FlowCoefficient,
@@ -41,10 +42,9 @@ from adet.equations.nondimensional import (
     VolumetricFlowRatio,
     WorkCoefficient,
 )
-from adet.examples.axial_orc import AddAxialLosses
 from adet.fluid.settings import ExternalFluidModel
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
+from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation, IsentropicLink
 from adet.losses.leakage import DentonRectLeakage, DentonTrapLeakage
 from adet.losses.mixing import DentonMixingLoss, SieverdingBasePressure
 from adet.losses.profile import DentonRectProfile, DentonTrapProfile
@@ -74,6 +74,44 @@ INITIAL_LOSS = PercentageEntropyLoss(0.0)
 
 
 # ================================================
+
+
+class AddAxialLosses(LossApplier):
+    scaling_factor = (0.1,)
+
+    def __init__(
+        self,
+        tip_gap: bool,
+        scaling_factor: list[float] | None = None,
+    ):
+        super().__init__(scaling_factor)
+        self.tip_gap = tip_gap
+
+    def residual(
+        self,
+        stc_smass0,
+        stc_smass1,
+        oth_delta_smass_mixing1,
+        oth_delta_smass_leakage1,
+        oth_delta_smass_profile1,
+        oth_delta_smass_secondary1,
+    ):
+        midspan = get_midspan_idx(stc_smass0)
+        main_loss = (
+            0.0
+            + oth_delta_smass_mixing1
+            + oth_delta_smass_profile1
+            + oth_delta_smass_secondary1[midspan]
+        )
+
+        leak_loss = oth_delta_smass_leakage1[midspan]
+
+        if self.tip_gap:
+            return stc_smass1 - (stc_smass0 + main_loss + leak_loss)
+        else:
+            return stc_smass1 - (stc_smass0 + main_loss)
+
+
 def compute_design_map(
     ntw, first_sol, n_points, starter_keys=None, starter_solutions=None
 ):
@@ -111,8 +149,9 @@ def compute_design_map(
             # Overwrite the knowns
             kn[phi_idx] = np.array([phi * ntw.system.constraints_scaling[phi_idx]])
             kn[psi_idx] = np.array([psi * ntw.system.constraints_scaling[psi_idx]])
+            solution = x0
             try:
-                solution = solve_root_problem(rtfn_kin, x0, kn)
+                solution = solve_root_problem(rtfn_kin, x0, kn, suppress_output=True)
             except RuntimeError:
                 solution = np.full(solution.shape, np.nan)
 
@@ -137,14 +176,14 @@ def compute_design_map(
 abs_state = DebugAbstractState('REFPROP', 'MM')
 abs_state.debug_print = False
 
-N_PTS = 40
+N_PTS = 30
 
 # Stable solution
 DUTY_COEFFS = {
     'oth_flowCoeff1': 0.4,
-    'oth_ts_loadCoeff1': 3,
-    'oth_volflowRatio1': 3.0,
-    'oth_reactDegree_ts1': 0.3,
+    'oth_ts_loadCoeff1': 3.0,
+    'oth_volflowRatio1': 4.0,
+    # 'oth_reactDegree_ts1': 0.3,
 }
 
 PHI_SPAN = np.linspace(0.4, 1.4, N_PTS)
@@ -186,7 +225,7 @@ _guess_reg.from_dict(
         'rhomass': abs_state.rhomass(),
         'k_prof': 0.3,  # Profile loading
         'zweifelCoeff': 0.85,
-        'num_blades': 20.0,
+        'num_blades': 100.0,
     }
 )
 
@@ -197,10 +236,11 @@ _bounds_reg.reset()
 # _bounds_reg.ignore_defaults = True
 _bounds_reg.from_dict(
     {
-        'U': (-0.1, 200.0),  # Reduce the search area
+        'U': (-0.1, 300.0),  # Reduce the search area
         'Vm': (20.0, 150.0),  # Reduce the search area
         # 'num_blades': (1.0, 100.0),
         'delta_smass_.*': (0.0, 20.0),
+        'k_prof': (-2.0, 2.0),
     }
 )
 if fluid_settings.model == real_model:
@@ -231,7 +271,6 @@ LOSS_MODELS: dict[
     # DentonRectProfile: (0, 1),
     DentonMixingLoss: 1,
     ClearanceByHeight: 1,
-    BladeBlockage: 1,
     BoundaryLayerRatios: 1,
     SieverdingBasePressure: (0, 1),
     ModifiedZweifel: (0, 1),
@@ -242,11 +281,11 @@ LOSS_MODELS: dict[
 inlet = Inlet(
     {
         'oth': {
-            'cum_massflow': 10,
+            'cum_massflow': 100,
         },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
-            'hubtipRatio': 0.9,
+            # 'hubtipRatio': 0.9,
         },
         'tot': {
             'p': abs_state.p(),
@@ -266,12 +305,15 @@ stator = BladeRow(
         },
     },
     out_constraints={
+        'stc': {
+            'p': 1.462617e6,
+        },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
             'thick_by_pitch': 0.02,
             'clearance_by_height': 0.01,
             # *** Num blades
-            'num_blades': 20,
+            'num_blades': 60,
         },
         'oth': {  # NOTE: These are not used on first pass
             # *** Boundary layer ratios
@@ -295,26 +337,19 @@ stator = BladeRow(
     constant_variables=['geo_rr_midspan'],
 )
 
-# ============ Modify rows
+# ============ Modify rotor
 rotor = deepcopy(stator)  # Reuse the stator as template
 rotor.shaft = shaft  # Assign the rotating shaft
-rotor.name = 'rotor'  # Not strictly required
-rotor.row_type = 'rotor'  # Set the type
+rotor.name = 'rotor'
+rotor.row_type = 'rotor'  # Set the type (useless now)
 rotor.add_equation(WorkCoefficient(), (0, 1))
 
-# stator.set_boundary_cond('geo_flare_angle1', Quantity(20, 'deg'))
-# rotor.set_boundary_cond('geo_flare_angle1', Quantity(20, 'deg'))
-# stator.set_boundary_cond('geo_aspRatio1', 2)
-# rotor.set_boundary_cond('geo_aspRatio1', 2)
+rotor.rm_boundary_cond('stc_p1')
+
 
 # *** Duty coefficients
+rotor.bc_from_dict({'geo_hubtipRatio1': 0.818})
 rotor.bc_from_dict(DUTY_COEFFS)  # Duty coefficients at node 1
-
-# Testing a hack
-stator.remove_equation(MeridionalRatios, (0, 1))
-# rotor.remove_equation(MeridionalRatios, (0, 1))
-
-stator.add_equation(MeridionalHack(), (0, 1))
 
 # ================================================
 # Create network
@@ -330,10 +365,20 @@ stator.set_spanwise_constant('geo_chord_ax1', 'geo_hh0', 'kin_Vm0')
 rotor.copy_from_previous('geo_hh', 'geo_rr')
 rotor.remove_equation(MeridionalGeometry, 0)
 
-# Copy the stator flare to the rotor
-ntw.system.add_equalities(
-    ('geo_flare_angle1', 'geo_flare_angle3'),
-)
+# *** Flare angle hack ***
+####
+# stator.set_boundary_cond('geo_aspRatio1', 3)
+# rotor.set_boundary_cond('geo_aspRatio1', 3)
+# stator.set_boundary_cond('geo_flare_angle1', Quantity(40, 'deg'))
+# rotor.set_boundary_cond('geo_flare_angle1', Quantity(40, 'deg'))
+####
+stator.remove_equation(MeridionalRatios, (0, 1))
+stator.add_equation(MeridionalRatioHack(), (0, 1))
+rotor.remove_equation(MeridionalRatios, (0, 1))
+rotor.add_equation(MeridionalRatioHack(), (0, 1))
+####
+# Force constant flare angle
+# ntw.system.add_equalities(('geo_flare_angle1', 'geo_flare_angle3'))
 
 # Repeated stage definition
 ntw.system.add_equation(RepeatedStage(), (0, 1, 2, 3))
@@ -382,10 +427,6 @@ rotor.set_boundary_cond('geo_zweifelCoeff1', 0.85)
 stator.rm_boundary_cond('geo_num_blades1')
 stator.set_boundary_cond('geo_zweifelCoeff1', 0.85)
 
-# --- Remove zero blockage
-rotor.remove_equation(ZeroBlockage, 1)
-stator.remove_equation(ZeroBlockage, 1)
-
 for eq, pos in LOSS_MODELS.items():
     stator.add_equation(eq(), pos)
     rotor.add_equation(eq(), pos)
@@ -416,6 +457,7 @@ solution = solve_root_problem(
     rootfinder_loss,
     x0_loss,
     kn_loss,
+    bnd_loss,
     suppress_output=False,
     perturbate_guess=False,
 )

@@ -13,7 +13,7 @@ from adet.equations.geometrical import ParabolicCamberline
 CONTOUR_LEVELS = 50
 
 # Setup paths
-data_dir = pathlib.Path(__file__).parent.parent.parent.parent / 'data'
+data_dir = pathlib.Path(__file__).parent.parent.parent.parent / 'outputs'
 
 # Load all data from pickle file
 print('Loading design map data from pickle file...')
@@ -153,7 +153,7 @@ for plot_idx, (linear_idx, phi_idx, psi_idx) in enumerate(selected_indices):
                 alpha=0.6,
             )
 
-            offset += chord_ax_val * 1.1
+            offset += chord_ax_val * 1.05
         except Exception as e:
             print(
                 f'Error plotting pair {pair_idx} for point ({phi_idx}, {psi_idx}): {e}'
@@ -286,7 +286,8 @@ for plot_idx, (linear_idx, phi_idx, psi_idx) in enumerate(selected_indices):
             offset += chord_ax_val * 1.1
         except Exception as e:
             print(
-                f'Error plotting camberlines for pair {pair_idx} at point ({phi_idx}, {psi_idx}): {e}'
+                f'Error plotting camberlines for pair {pair_idx} at '
+                f'point ({phi_idx}, {psi_idx}): {e}'
             )
             continue
 
@@ -310,10 +311,9 @@ eta_grid = eta_tt3_values.reshape((N_PTS, N_PTS))
 mf_grid = massflow.reshape((N_PTS, N_PTS))
 
 # Create design map contour plots
-fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+fig, ax1 = plt.subplots(figsize=(8, 6))
 
-# Plot 1: Efficiency map
-ax1 = axes[0]
+# Plot: Efficiency map
 contour1 = ax1.contourf(
     phi_grid, psi_grid, eta_grid, levels=CONTOUR_LEVELS, cmap='viridis'
 )
@@ -326,43 +326,17 @@ contour1_lines = ax1.contour(
     alpha=0.3,
     linewidths=0.5,
 )
-# ax1.clabel(
-#     contour1_lines,
-#     inline=True,
-#     fontsize=10,
-# )
+ax1.clabel(
+    contour1_lines,
+    inline=True,
+    fontsize=10,
+)
 cbar1 = plt.colorbar(contour1, ax=ax1)
 cbar1.set_label('Total-to-Total Efficiency', rotation=270, labelpad=20)
 ax1.set_xlabel(r'Flow Coefficient $\phi$', fontsize=14)
 ax1.set_ylabel(r'Loading Coefficient $\psi$', fontsize=14)
 ax1.set_title('Design Map: Total-to-Total Efficiency', fontsize=16)
 ax1.grid(True, alpha=0.2)
-
-# Plot 2: Massflow map
-ax2 = axes[1]
-contour2 = ax2.contourf(
-    phi_grid, psi_grid, mf_grid, levels=CONTOUR_LEVELS, cmap='plasma'
-)
-contour2_lines = ax2.contour(
-    phi_grid,
-    psi_grid,
-    mf_grid,
-    levels=CONTOUR_LEVELS,
-    colors='black',
-    alpha=0.3,
-    linewidths=0.5,
-)
-# ax2.clabel(
-#     contour2_lines,
-#     inline=True,
-#     fontsize=10,
-# )
-cbar2 = plt.colorbar(contour2, ax=ax2)
-cbar2.set_label('Mass Flow Rate [kg/s]', rotation=270, labelpad=20)
-ax2.set_xlabel(r'Flow Coefficient $\phi$', fontsize=14)
-ax2.set_ylabel(r'Loading Coefficient $\psi$', fontsize=14)
-ax2.set_title('Design Map: Mass Flow Rate', fontsize=16)
-ax2.grid(True, alpha=0.2)
 
 plt.tight_layout()
 plt.savefig(data_dir / 'design_map_orc.png', dpi=150, bbox_inches='tight')

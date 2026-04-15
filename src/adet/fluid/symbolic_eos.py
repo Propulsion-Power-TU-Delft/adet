@@ -149,7 +149,7 @@ if __name__ == '__main__':
         viscosity=2e-5,
     )
 
-    # Polymorphic
+    # Polymorphic!
     eos.update(
         cp.PT_INPUTS,
         cs.MX.sym('p'),  # pyright:ignore

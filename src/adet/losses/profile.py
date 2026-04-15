@@ -48,12 +48,10 @@ def trapezoidal_vel_profile(
     # are assuming the value of the sign by using the max function
     # => Solution = Take the absolute value of k_prof
 
-    # Manual Bounding
-    abs_k = safe_abs(k_prof)
-    bnd_k = minmax_bound(abs_k, 0.01, 1.5)
+    k_prof = safe_abs(k_prof)
 
-    W_mid_ss = 2 * bnd_k * kin_W1 + delta_W
-    W_mid_ps = cs.fmax(bnd_k * kin_W0 - delta_W, kin_W0 / MIN_CLIP)
+    W_mid_ss = 2 * k_prof * kin_W1 + delta_W
+    W_mid_ps = cs.fmax(k_prof * kin_W0 - delta_W, kin_W0 / MIN_CLIP)
 
     # Full velocity distribution
     W_distr_ss = cs.horzcat(1 * kin_W0, W_mid_ss, W_mid_ss, kin_W1)  # Suction

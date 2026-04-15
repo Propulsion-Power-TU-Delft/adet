@@ -8,6 +8,8 @@ from adet.equations.utils import (
     safe_sum,
     safe_if_else,
     safe_abs,
+    safe_min,
+    minmax_bound,
 )
 
 
@@ -82,14 +84,17 @@ class MeridionalRatios(EquationBase):
             geo_height1 - geo_height0
         )
         r3 = geo_radiusRatio1 * geo_rr_midspan0 - geo_rr_midspan1
-        r4 = geo_aspRatio1 * geo_chord_ax1[midspan] - geo_height0
+        r4 = geo_aspRatio1 * geo_chord_ax1[midspan] - (geo_height0 + geo_height1) / 2
 
         return r1, r2, r3, r4
 
 
-class MeridionalHack(EquationBase):
-    manual_units = ('dimensionless', 'dimensionless', 'm', 'dimensionless')
+# WARN: This is a hacky way of achieving what I am trying to do
+# it can be done but leads to defining within the equations the
+# constant values for the dynamic constraints you want to define
 
+
+class MeridionalRatioHack(EquationBase):
     def residual(
         self,
         geo_height0,
@@ -105,22 +110,22 @@ class MeridionalHack(EquationBase):
 
         r1 = geo_heightRatio1 - geo_height1 / geo_height0
         r2 = geo_radiusRatio1 * geo_rr_midspan0 - geo_rr_midspan1
+
         r3 = np.tan(geo_flare_angle1) * 2 * geo_chord_ax1[midspan] - (
             geo_height1 - geo_height0
         )
 
         # This is a hacky way of imposing dynamic constraints
+        mid_chord = geo_chord_ax1[midspan]
         ASP_RATIO_TARGET = 3.0
-        FLARE_ANGLE_MAX = 0.57
+        FLARE_ANGLE_MAX = 30 * np.pi / 180
 
-        ar = (geo_height0 + geo_height1) / (2 * geo_chord_ax1[midspan])
-        tan_flare_angle = (geo_height1 - geo_height0) / (2 * geo_chord_ax1[midspan])
+        # Aspect-ratio based height
+        height_AR = mid_chord * ASP_RATIO_TARGET
+        # Bounding max flare height
+        height_FL_MAX = geo_height0 + 2 * mid_chord * np.tan(FLARE_ANGLE_MAX)
 
-        cond = tan_flare_angle <= FLARE_ANGLE_MAX
-        r_asp = ASP_RATIO_TARGET - ar
-        r_flare = np.tan(FLARE_ANGLE_MAX) - tan_flare_angle
-
-        r4 = safe_if_else(cond, r_asp, r_flare)
+        r4 = geo_height1 - safe_min(height_AR, height_FL_MAX)
 
         return r1, r2, r3, r4
 
