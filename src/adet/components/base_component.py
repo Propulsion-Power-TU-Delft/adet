@@ -2,7 +2,7 @@ from abc import ABC
 from collections import defaultdict
 import inspect
 import logging
-from typing import Any, ClassVar, Literal, TYPE_CHECKING, Type, TypeAlias
+from typing import Any, ClassVar, Literal, TYPE_CHECKING, Type, TypeAlias, Mapping
 
 from pint.facets.plain import PlainQuantity
 
@@ -380,7 +380,7 @@ class BaseComponent(ABC):
     def set_component_constants(self, *arguments: str):
         self._equalities_helper('const', *arguments)
 
-    def bc_from_dict(self, bound_conds: dict[str, AdetArray]):
+    def bc_from_dict(self, bound_conds: Mapping[str, AdetArray]):
         for arg, value in bound_conds.items():
             self.set_boundary_cond(arg, value)
 

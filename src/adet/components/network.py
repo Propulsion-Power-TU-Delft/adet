@@ -202,18 +202,8 @@ class ComponentNetwork(Generic[T]):
         return self.system.get_scaled_constraints()
 
     def get_arguments_bounds(self, custom_bounds: dict[str, tuple[float, float]] = {}):
+        # TODO: Add physical bounds detection
         physical_bounds = {}
-        for comp in self.components:
-            if not isinstance(comp, BladeRow):
-                continue
-            else:
-                pass
-                # WARN: This overconstrains the problem
-                # inl_idx, out_idx = self._get_abs_indices(comp)
-                # if comp.row_type == 'stator':
-                #     physical_bounds[f'kin_U{inl_idx}'] = (-0.1, 0.1)
-                #     physical_bounds[f'kin_U{out_idx}'] = (-0.1, 0.1)
-
         custom_bounds = {**physical_bounds, **custom_bounds}
         return self.system.get_arguments_bounds(custom_bounds)
 

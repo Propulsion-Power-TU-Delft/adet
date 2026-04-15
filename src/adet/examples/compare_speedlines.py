@@ -79,36 +79,32 @@ def plot_comparison(exp_data, comp_data):
     """Create comparison plots for experimental vs computed data"""
     if comp_data is None:
         print('Cannot create comparison plots without computed data')
-        return
-
-    # Create figure with subplots
-    fig, axs = plt.subplots(1, 2, figsize=(14, 5))
+        return None, None
 
     # Sort by RPM for consistent plotting
     rpms = sorted(set(exp_data.keys()) & set(comp_data.keys()), key=float)
 
-    colors = plt.get_cmap('viridis')(np.linspace(0, 1, len(rpms)))
+    # Create figure 1: Pressure ratio comparison
+    fig1, ax = plt.subplots(figsize=(19, 12))
+    colors = plt.get_cmap('viridis')(np.linspace(0, 0.8, len(rpms)))
 
-    # Plot 1: Pressure ratio comparison
-    ax = axs[0]
     for rpm, color in zip(rpms, colors):
         exp = exp_data[rpm]
-        # Convert to lbm/s
-        exp_mf = exp['massflows'] * 2.2
+        exp_mf = exp['massflows']
         ax.plot(
             exp_mf,
             exp['pratios'],
             'o',
             color=color,
-            label=f'{float(rpm) / 21000:.2f} N_des (exp)',
-            markersize=6,
-            linewidth=2,
+            label=f'{int(float(rpm) / 1000)}k rpm (experimental)',
+            markersize=8,
+            linewidth=2.5,
             alpha=0.7,
         )
 
         if rpm in comp_data:
             comp = comp_data[rpm]
-            comp_mf = np.array(comp['massflows']) * 2.2
+            comp_mf = np.array(comp['massflows'])
             comp_pr = np.array([pr for pr in comp['pratios'] if pr is not None])
             comp_mf_valid = comp_mf[: len(comp_pr)]
             ax.plot(
@@ -116,56 +112,101 @@ def plot_comparison(exp_data, comp_data):
                 comp_pr,
                 '-',
                 color=color,
-                label=f'{float(rpm) / 21000:.2f} N_des (comp)',
-                linewidth=2,
+                label=f'{int(float(rpm) / 1000)}k rpm (computed)',
+                linewidth=2.5,
                 alpha=0.7,
             )
 
-    ax.set_xlabel('Mass flow [lbm/s]', fontsize=11)
-    ax.set_ylabel('Pressure ratio [−]', fontsize=11)
-    ax.set_title('Pressure Ratio Comparison', fontsize=12, fontweight='bold')
-    ax.legend(loc='best', fontsize=9)
-    ax.grid(True, alpha=0.3)
+            # Add ±2% error band
+            error_lower = comp_pr * 0.98
+            error_upper = comp_pr * 1.02
+            ax.fill_between(
+                comp_mf_valid,
+                error_lower,
+                error_upper,
+                color=color,
+                alpha=0.2,
+            )
+            ax.tick_params('both', labelsize=22)
 
-    # Plot 2: Efficiency comparison
-    ax = axs[1]
-    for rpm, color in zip(rpms, colors):
+    ax.set_xlabel('Mass flow [kg/s]', fontsize=26)
+    ax.set_ylabel('Pressure ratio [−]', fontsize=26)
+    ax.legend(loc='upper left', fontsize=22)
+    ax.grid(True, alpha=0.5)
+    fig1.tight_layout()
+    fig1.savefig(
+        'C:\\Users\\fvaccari\\OneDrive - Delft University of Technology\\latex'
+        '\\gpps26_ADeT\\Images\\HECC_pratios.pdf'
+    )
+
+    # Create figure 2: Efficiency comparison with separate subplot for each speedline
+    fig2, axs = plt.subplots(2, 2, figsize=(17, 13), sharey=True, sharex=True)
+    axs = axs.flatten()
+
+    for idx, rpm in enumerate(rpms):
+        ax = axs[idx]
         exp = exp_data[rpm]
-        exp_mf = exp['massflows'] * 2.2
+        exp_mf = exp['massflows']
+        color = colors[idx]
+
+        # Plot experimental data
         ax.plot(
             exp_mf,
             exp['etas'],
             'o',
             color=color,
-            label=f'{float(rpm) / 21000:.2f} N_des (exp)',
-            markersize=6,
-            linewidth=2,
-            alpha=0.7,
+            label=f'{int(float(rpm) / 1000)}k rpm (experimental)',
+            markersize=8,
+            linewidth=2.5,
+            alpha=0.8,
         )
 
+        # Plot computed data with error bars
         if rpm in comp_data:
             comp = comp_data[rpm]
-            comp_mf = np.array(comp['massflows']) * 2.2
+            comp_mf = np.array(comp['massflows'])
             comp_eta = np.array([100 * eta for eta in comp['etas'] if eta is not None])
             comp_mf_valid = comp_mf[: len(comp_eta)]
+
+            # Plot computed line
             ax.plot(
                 comp_mf_valid,
                 comp_eta,
                 '-',
                 color=color,
-                label=f'{float(rpm) / 21000:.2f} N_des (comp)',
-                linewidth=2,
-                alpha=0.7,
+                label=f'{int(float(rpm) / 1000)}k rpm (computed)',
+                linewidth=2.5,
+                alpha=0.8,
             )
 
-    ax.set_xlabel('Mass flow [lbm/s]', fontsize=11)
-    ax.set_ylabel('Total-to-total efficiency [%]', fontsize=11)
-    ax.set_title('Efficiency Comparison', fontsize=12, fontweight='bold')
-    ax.legend(loc='best', fontsize=9)
-    ax.grid(True, alpha=0.3)
+            # Add ±2% error band
+            error_lower = comp_eta * 0.98
+            error_upper = comp_eta * 1.02
+            ax.fill_between(
+                comp_mf_valid,
+                error_lower,
+                error_upper,
+                color=color,
+                alpha=0.2,
+                # label=r'$\pm$ 2% error',
+            )
 
-    fig.tight_layout()
-    return fig
+        ax.set_ylim(75, 90)
+        ax.legend(loc='best', fontsize=25)
+        ax.grid(True, alpha=0.5)
+        ax.tick_params('both', labelsize=22)
+
+    axs[2].set_xlabel('Mass flow [kg/s]', fontsize=26)
+    axs[3].set_xlabel('Mass flow [kg/s]', fontsize=26)
+    axs[0].set_ylabel('Total-to-total efficiency [%]', fontsize=26)
+    axs[2].set_ylabel('Total-to-total efficiency [%]', fontsize=26)
+
+    fig2.tight_layout()
+    fig2.savefig(
+        'C:\\Users\\fvaccari\\OneDrive - Delft University of Technology\\latex'
+        '\\gpps26_ADeT\\Images\\HECC_efficiencies.pdf'
+    )
+    return fig1, fig2
 
 
 if __name__ == '__main__':
@@ -184,6 +225,5 @@ if __name__ == '__main__':
         print('\nComputed speedlines:', list(comp_data.keys()))
 
     # Create comparison plots
-    fig = plot_comparison(exp_data, comp_data)
-    if fig:
-        plt.show()
+    fig1, fig2 = plot_comparison(exp_data, comp_data)
+    plt.show()

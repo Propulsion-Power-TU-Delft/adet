@@ -1,12 +1,14 @@
 # === IMPORTS
 from copy import deepcopy
 import logging
+import pathlib
+import pickle
 import sys
 from typing import Type
-import numpy as np
 
 import CoolProp as cp
 import matplotlib.pyplot as plt
+import numpy as np
 from pint import Quantity
 
 from adet.assembly import CasadiSystem
@@ -28,6 +30,8 @@ from adet.equations.geometrical import (
     MeridionalGeometry,
     MinimalCamberLine,
     ModifiedZweifel,
+    MeridionalRatios,
+    MeridionalHack,
 )
 from adet.equations.nondimensional import (
     FlowCoefficient,
@@ -42,10 +46,7 @@ from adet.fluid.settings import ExternalFluidModel
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.losses.leakage import DentonRectLeakage, DentonTrapLeakage
-from adet.losses.mixing import (
-    DentonMixingLoss,
-    SieverdingBasePressure,
-)
+from adet.losses.mixing import DentonMixingLoss, SieverdingBasePressure
 from adet.losses.profile import DentonRectProfile, DentonTrapProfile
 from adet.losses.secondary import SecondaryBSM
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
@@ -83,6 +84,9 @@ def compute_design_map(
     solutions = np.zeros((n_points**2, len(first_sol)))
     solutions[0] = first_sol.flatten()
 
+    # Store solution dicts for each point
+    solution_dicts = []
+
     kn = ntw.system.get_scaled_constraints()
 
     curr_index = 0
@@ -101,7 +105,7 @@ def compute_design_map(
                 x0 = solutions[idx]
                 while np.isnan(x0).any():
                     idx -= 1
-                    print('Walk back!!')
+                    logger.warning('Solution cache miss, going to best next one')
                     x0 = solutions[idx]
 
             # Overwrite the knowns
@@ -115,9 +119,16 @@ def compute_design_map(
             keys[curr_index, :] = curr_key
             solutions[curr_index, :] = solution.flatten()
 
+            # Store the full solution dict
+            if not np.isnan(solution).any():
+                sol_dict = ntw.system.write_solution_to_nodes(solution)
+            else:
+                sol_dict = None
+            solution_dicts.append(sol_dict)
+
             curr_index += 1
 
-    return keys, solutions
+    return keys, solutions, solution_dicts
 
 
 # ================================================
@@ -143,7 +154,6 @@ real_model = ExternalFluidModel(abs_state)
 INLET_PRESSURE = 1.3 * abs_state.p_critical()
 INLET_TEMPERATURE = 1.045 * abs_state.T_critical()
 abs_state.update(cp.PT_INPUTS, INLET_PRESSURE, INLET_TEMPERATURE)
-
 
 fluid_settings = FluidSettings(
     model=real_model,
@@ -217,6 +227,8 @@ LOSS_MODELS: dict[
     SecondaryBSM: (0, 1),
     DentonTrapLeakage: (0, 1),
     DentonTrapProfile: (0, 1),
+    # DentonRectLeakage: (0, 1),
+    # DentonRectProfile: (0, 1),
     DentonMixingLoss: 1,
     ClearanceByHeight: 1,
     BladeBlockage: 1,
@@ -289,10 +301,20 @@ rotor.shaft = shaft  # Assign the rotating shaft
 rotor.name = 'rotor'  # Not strictly required
 rotor.row_type = 'rotor'  # Set the type
 rotor.add_equation(WorkCoefficient(), (0, 1))
-stator.set_boundary_cond('geo_flare_angle1', Quantity(20, 'deg'))
-rotor.set_boundary_cond('geo_flare_angle1', Quantity(20, 'deg'))
+
+# stator.set_boundary_cond('geo_flare_angle1', Quantity(20, 'deg'))
+# rotor.set_boundary_cond('geo_flare_angle1', Quantity(20, 'deg'))
+# stator.set_boundary_cond('geo_aspRatio1', 2)
+# rotor.set_boundary_cond('geo_aspRatio1', 2)
+
 # *** Duty coefficients
 rotor.bc_from_dict(DUTY_COEFFS)  # Duty coefficients at node 1
+
+# Testing a hack
+stator.remove_equation(MeridionalRatios, (0, 1))
+# rotor.remove_equation(MeridionalRatios, (0, 1))
+
+stator.add_equation(MeridionalHack(), (0, 1))
 
 # ================================================
 # Create network
@@ -307,6 +329,11 @@ rotor.set_spanwise_constant('geo_chord_ax1')
 stator.set_spanwise_constant('geo_chord_ax1', 'geo_hh0', 'kin_Vm0')
 rotor.copy_from_previous('geo_hh', 'geo_rr')
 rotor.remove_equation(MeridionalGeometry, 0)
+
+# Copy the stator flare to the rotor
+ntw.system.add_equalities(
+    ('geo_flare_angle1', 'geo_flare_angle3'),
+)
 
 # Repeated stage definition
 ntw.system.add_equation(RepeatedStage(), (0, 1, 2, 3))
@@ -398,6 +425,7 @@ sol_dict_loss = ntw.system.write_solution_to_nodes(solution)
 
 # === MULTI SPAN
 if MULTI:
+    print('********** RUN WITH 3 SPAN **********')
     ntw.system.num_span = 3
     if NUM_SPAN > 1:
         rotor.add_equation(FreeVortexDistribution(), 1)
@@ -417,8 +445,8 @@ if MULTI:
     kn = ntw.system.get_scaled_constraints()
     bnd = ntw.system.get_arguments_bounds()
 
-    sol_multi = solve_root_problem(rtfn_multi_ip, x0, kn)
-    sol_multi = solve_root_problem(rtfn_multi_kn, sol_multi, kn, suppress_output=True)
+    # sol_multi = solve_root_problem(rtfn_multi_ip, x0, kn, bnd, suppress_output=False)
+    sol_multi = solve_root_problem(rtfn_multi_kn, x0, kn, suppress_output=True)
     sol_dict_multi = ntw.system.write_solution_to_nodes(sol_multi)
 
     ntw.system.num_span = NUM_SPAN
@@ -436,52 +464,39 @@ if MULTI:
 else:
     sol_final = solution
 
-keys_loss, solutions_loss = compute_design_map(ntw, sol_final, N_PTS)
+keys_loss, solutions_loss, solution_dicts = compute_design_map(ntw, sol_final, N_PTS)
 
-# ========================== DESIGN MAP CONTOUR PLOT
+# ========================== SAVE DESIGN MAP DATA
 # Extract eta_tt3 from solutions
-plt.style.use('dark_background')
 eta_tt3_idx = ntw.system.free_args.index('oth_eta_tt3')
 massflow_idx = ntw.system.free_args.index('oth_massflow3')
 
 eta_tt3_pos = ntw.system.get_arg_position(eta_tt3_idx)
 massflow_pos = ntw.system.get_arg_position(massflow_idx)
 
-
 mf = solutions_loss[:, massflow_pos[0]] * ntw.system.free_args_scaling[massflow_idx]
 eta_tt = solutions_loss[:, eta_tt3_pos[0]]
-
-
-# eta_tt3_values = np.sum(mf * eta_tt, axis=1) / np.sum(mf, axis=1)
 eta_tt3_values = eta_tt
 
 # Extract phi and psi ranges
 phi_vals = keys_loss[:, 0]
 psi_vals = keys_loss[:, 1]
 
-# Reshape into grids (N_PTS x N_PTS)
-eta_tt3_grid = eta_tt3_values.reshape((N_PTS, N_PTS))
-phi_grid = phi_vals.reshape((N_PTS, N_PTS))
-psi_grid = psi_vals.reshape((N_PTS, N_PTS))
+# Save complete design map data using pickle
+data_dir = pathlib.Path(__file__).parent.parent.parent.parent / 'outputs'
+data_dir.mkdir(parents=True, exist_ok=True)
 
-# Create contour plot
-fig, ax = plt.subplots(figsize=(10, 8))
-LEVELS = 20
-cs = ax.contourf(phi_grid, psi_grid, eta_tt3_grid, levels=LEVELS, cmap='viridis')
-ax.contour(
-    phi_grid,
-    psi_grid,
-    eta_tt3_grid,
-    levels=LEVELS,
-    colors='black',
-    alpha=0.3,
-    linewidths=0.2,
-)
-cbar = fig.colorbar(cs, ax=ax)
-cbar.set_label(r'$\eta_{tt}$ [-]')
-ax.set_xlabel(r'Flow Coefficient $\phi$ [-]')
-ax.set_ylabel(r'Loading Coefficient $\psi$ [-]')
-ax.set_title('Design Map: Total-Total Efficiency')
-ax.grid(True, alpha=0.3)
-fig.tight_layout()
-plt.show()
+# Bundle all data into a single pickle file
+design_map_data = {
+    'solution_dicts': solution_dicts,
+    'keys_loss': keys_loss,
+    'phi_vals': phi_vals,
+    'psi_vals': psi_vals,
+    'eta_tt3_values': eta_tt3_values,
+    'massflow': mf,
+    'N_PTS': N_PTS,
+}
+
+with open(data_dir / 'design_map_orc.pkl', 'wb') as f:
+    pickle.dump(design_map_data, f)
+logger.info(f'Design map data saved to {data_dir / "design_map_orc.pkl"}')

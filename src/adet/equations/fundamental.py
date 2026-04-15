@@ -1,13 +1,10 @@
 """Module that gathers fundamental equations for internal flows"""
 
 import numpy as np
-import CoolProp as cp
 
 from adet.equations import EquationBase
 from adet.equations.utils import (
     get_midspan_idx,
-    minmax_bound,
-    safe_max,
     safe_sum,
     span_fin_diff,
 )

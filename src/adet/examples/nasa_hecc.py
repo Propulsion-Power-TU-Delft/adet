@@ -65,7 +65,7 @@ _bounds_reg.from_dict(
         'U': (0, 600),
         'beta': (-1.48, 1.48),
         'relmach': (0.0, 1.04),
-        # 'eta_tt': (0.5, 1.0),
+        'eta_tt': (0.5, 1.0),
         'pRatio_tt': (2.0, 7.0),
         # 'delta_hmass_.*': (10.0, 2e4),
         # 'delta_hmass_recirc': (10.0, 1.4e4),  # This tends to diverge, bound it
@@ -87,12 +87,12 @@ _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 NUM_SPAN = 5
 ENABLE_LOSSES = True
 RUN_MULTI = True
-RUN_SPEEDLINES = True
-SPDL_PTS = 20  # Number of speedline points
+RUN_SPEEDLINES = False
+SPDL_PTS = 50  # Number of speedline points
 RPM_DES = 21000  #
 #
-RUN_PLOTS = False  # Set to False to skip plotting section
-SHOW_PLOTS = False  # Set to False for non-interactive testing
+RUN_PLOTS = True  # plotting section
+SHOW_PLOTS = True  # non-interactive testing
 
 # +++ Shafts
 shaft = Shaft(
@@ -139,6 +139,7 @@ class LossPicker(LossApplier):
         oth_delta_hmass_leakage1,
         oth_delta_hmass_recirc1,
         oth_delta_hmass_disk1,
+        oth_delta_hmass_lost1,
         oth_tot_T_is1,
         oth_eta_tt3,
         tot_p2,
@@ -146,12 +147,17 @@ class LossPicker(LossApplier):
     ):
         # Channel losses
         dht_int = (
-            oth_delta_hmass_skin1
+            0.0
+            + oth_delta_hmass_skin1
             + oth_delta_hmass_incidence1
             + oth_delta_hmass_clearance1
             + oth_delta_hmass_mixing1
+            + oth_delta_hmass_leakage1
             + oth_delta_hmass_loading1
-            # Leakage lost work
+            + oth_delta_hmass_lost1
+        )
+        dht_ext = (
+            0.0
             + oth_delta_hmass_leakage1
             + oth_delta_hmass_recirc1
             + oth_delta_hmass_disk1
@@ -165,7 +171,7 @@ class LossPicker(LossApplier):
 
         # Residuals
         r1 = stc_smass1 - (stc_smass0 + delta_s)
-        r2 = work * oth_eta_tt3 - (tot_hmass_is3 - tot_hmass0)
+        r2 = (work + dht_ext) * oth_eta_tt3 - (tot_hmass_is3 - tot_hmass0)
 
         return r1, r2
 
@@ -196,7 +202,6 @@ EQS_WITH_LOSSES = {
     # *** SLIP
     BackstromSlip(): (0, 1),
     # *** PICKERS
-    # LossPicker(): (0, 1),  # Apply losses
     # PercentageEntropyLoss(0.0): (0, 1),
     # *** LOSS MODELS
     ClearanceBrasz(): (0, 1),
@@ -208,16 +213,16 @@ EQS_WITH_LOSSES = {
     MixingJohnstonDean(): 1,
     RecirculationOh(): (0, 1),
     # WARN: The combination of these two leak models is a bit unclear
-    # LeakageAungier(): (0, 1),
+    LeakageAungier(): (0, 1),
     LeakageLostWork(): (0, 1),
     DiskFricDailyNece(): (0, 1),
 }
 
 # *** Speedline definitions
 SPEEDS = [21e3, 20e3, 19e3, 18e3]
-MASS_CHOKES = [5.7, 5.5, 4.9, 4.6]
-MIN_MASS = [m - 2.0 for m in MASS_CHOKES]
-mass_limits = [(ms, mc) for ms, mc in zip(MIN_MASS, MASS_CHOKES)]
+MASS_CHOKES = [5.6, 5.3, 4.9, 4.6]
+MIN_MASS = [4.07, 3.72, 3.5, 3.12]
+mass_limits = [(ms, mc + 0.0) for ms, mc in zip(MIN_MASS, MASS_CHOKES)]
 SPEED_LINES = dict(zip(SPEEDS, mass_limits))
 
 # *** Metal angle definition
@@ -240,8 +245,6 @@ if NUM_SPAN == 1:
     thick_distribution = np.array([0.002])
 
 angle_distribution = Quantity(angle_values, 'deg')
-
-# - # - # - # - #
 
 # +++ Components
 impeller = BladeRow(
@@ -274,7 +277,7 @@ impeller = BladeRow(
             # *** Blades specs
             'metal_angle': Quantity(-30, 'deg'),
             'thick_by_pitch': 0.02,  # Thickness by pitch ratio
-            'back_clearance': 0.005,  # Back face clearance
+            'back_clearance': 0.001,  # Back face clearance
             'tip_clearance': Quantity(0.304, 'mm'),
             'chord_ax': Quantity(0.133879895, 'm'),
             'num_blades': 15,
@@ -282,7 +285,7 @@ impeller = BladeRow(
         },
         'oth': {
             # For losses
-            'slip_factCoeff': 5.0,
+            'slip_factCoeff': 2.5,
             'worklossCoeff': 0.3,
             'abs_roughness': Quantity(1.524, 'micron'),
             'bl_loadingCoeff': 0.75,
@@ -423,6 +426,7 @@ if __name__ == '__main__':
             opts={'error_on_fail': False},
         )
         rtfn_kin = ntw_hecc.system.make_rootfinder('kinsol')
+        rtfn_ip = ntw_hecc.system.make_rootfinder('ipopt')
         x0_loss = ntw_hecc.system.get_scaled_guess(sol_multi_dict)
         kn_loss = ntw_hecc.system.get_scaled_constraints()
         bnd_loss = ntw_hecc.system.get_arguments_bounds()
@@ -513,11 +517,16 @@ if __name__ == '__main__':
                     sol = closest_sol.copy()
 
                 try:
-                    sol = solve_root_problem(rtfn_kin, sol, kn)
+                    sol = solve_root_problem(rtfn_kin, sol, kn, suppress_output=True)
+
                     sol_dict = ntw_hecc.system.solution_to_dict(sol)
 
                     pr = np.average(sol_dict['oth_pRatio_tt3'])
                     eta = np.average(sol_dict['oth_eta_tt3'])
+
+                    if pr > 8 or eta > 1.0 or eta < 0.8:
+                        raise RuntimeError
+
                     pratios.append(pr)
                     etas.append(eta)
 
@@ -531,9 +540,8 @@ if __name__ == '__main__':
 
                     converged_count += 1
                 except Exception:
-                    print(
-                        f'  Warning: '
-                        f'convergence failed at mf={mf:.3f} kg/s, '
+                    logger.warning(
+                        f'Convergence failed at mf={mf:.3f} kg/s, '
                         f'omega={omega * 60 / (2 * np.pi):.0f} RPM'
                     )
                     pratios.append(np.nan)
@@ -711,6 +719,8 @@ if __name__ == '__main__':
         ax.set_aspect('equal')
         offset = 0.0
         for comp in plottable_components:
+            if comp == vaneless_diff:
+                continue
             inlet_node = comp.get_inlet_node(ntw_hecc)
             outlet_node = comp.get_outlet_node(ntw_hecc)
             if not inlet_node or not outlet_node:
@@ -718,7 +728,26 @@ if __name__ == '__main__':
 
             lines = plot_from_nodes(inlet_node, outlet_node, False, offset, 'k')
 
+            # Only plot impeller outlet
+            ax.plot(
+                np.ones(NUM_SPAN) * offset,
+                inlet_node.geo.rr,
+                'o',
+                color='r',
+                markersize=5,
+            )
+
             offset += outlet_node.geo.chord_ax[0]
+            hh_points = (
+                offset - outlet_node.geo.height / 2 + np.cumsum(outlet_node.geo.hh)
+            )
+            ax.plot(
+                hh_points,
+                outlet_node.geo.rr,
+                'o',
+                color='r',
+                markersize=5,
+            )
 
         fig.tight_layout()
         if SHOW_PLOTS:
@@ -759,5 +788,3 @@ if __name__ == '__main__':
             plt.show()
         else:
             plt.close('all')
-
-        print

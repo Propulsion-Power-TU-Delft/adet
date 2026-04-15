@@ -2,7 +2,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from adet.equations.base_equation import CamberLineGeom, EquationBase, MeridionalGeom
-from adet.equations.utils import get_midspan_idx, safe_abs, safe_min_clip, safe_sum
+from adet.equations.utils import (
+    get_midspan_idx,
+    safe_min_clip,
+    safe_sum,
+    safe_if_else,
+    safe_abs,
+)
 
 
 # NOTE:
@@ -77,6 +83,44 @@ class MeridionalRatios(EquationBase):
         )
         r3 = geo_radiusRatio1 * geo_rr_midspan0 - geo_rr_midspan1
         r4 = geo_aspRatio1 * geo_chord_ax1[midspan] - geo_height0
+
+        return r1, r2, r3, r4
+
+
+class MeridionalHack(EquationBase):
+    manual_units = ('dimensionless', 'dimensionless', 'm', 'dimensionless')
+
+    def residual(
+        self,
+        geo_height0,
+        geo_height1,
+        geo_heightRatio1,
+        geo_chord_ax1,
+        geo_rr_midspan0,
+        geo_rr_midspan1,
+        geo_radiusRatio1,
+        geo_flare_angle1,
+    ):
+        midspan = get_midspan_idx(geo_chord_ax1)
+
+        r1 = geo_heightRatio1 - geo_height1 / geo_height0
+        r2 = geo_radiusRatio1 * geo_rr_midspan0 - geo_rr_midspan1
+        r3 = np.tan(geo_flare_angle1) * 2 * geo_chord_ax1[midspan] - (
+            geo_height1 - geo_height0
+        )
+
+        # This is a hacky way of imposing dynamic constraints
+        ASP_RATIO_TARGET = 3.0
+        FLARE_ANGLE_MAX = 0.57
+
+        ar = (geo_height0 + geo_height1) / (2 * geo_chord_ax1[midspan])
+        tan_flare_angle = (geo_height1 - geo_height0) / (2 * geo_chord_ax1[midspan])
+
+        cond = tan_flare_angle <= FLARE_ANGLE_MAX
+        r_asp = ASP_RATIO_TARGET - ar
+        r_flare = np.tan(FLARE_ANGLE_MAX) - tan_flare_angle
+
+        r4 = safe_if_else(cond, r_asp, r_flare)
 
         return r1, r2, r3, r4
 
@@ -391,6 +435,7 @@ class ParabolicCamberline(CamberLineGeom):
         axial_offset=0.0,
         tangential_offset=0.0,
         n_points=50,
+        **kwargs,
     ):
         """
         Plot a 2D parabolic camber line on the given axis.
@@ -413,12 +458,15 @@ class ParabolicCamberline(CamberLineGeom):
             Offset in tangential/pitch direction (default: 0.0)
         n_points : int, optional
             Number of points to generate along camber line (default: 50)
+        **kwargs : optional
+            Additional keyword arguments passed to matplotlib's plot function
+            (e.g., linewidth, linestyle, alpha)
         """
         a, b, _ = self._compute_parabola(inlet_angle, outlet_angle, chord_ax)
         x = np.linspace(0, chord_ax, n_points)
         y = a * x**2 + b * x
 
-        axis.plot(axial_offset + x, tangential_offset + y, color=color)
+        axis.plot(axial_offset + x, tangential_offset + y, color=color, **kwargs)
 
     def plot_3d_blade(
         self,

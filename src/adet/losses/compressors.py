@@ -546,7 +546,7 @@ class LeakageLostWork(LossModel):
         geo_tip_clearance0,
         geo_tip_clearance1,
         geo_height1,
-        oth_delta_hmass_leakage1,
+        oth_delta_hmass_lost1,
     ):
 
         work = tot_hmass1 - tot_hmass0
@@ -555,7 +555,7 @@ class LeakageLostWork(LossModel):
         # LEAKAGE WORK LOSS!
         dht_leakage_lost = oth_worklossCoeff1 * work * clearance / geo_height1
 
-        return oth_delta_hmass_leakage1 - dht_leakage_lost
+        return oth_delta_hmass_lost1 - dht_leakage_lost
 
 
 class AmiranteDiffuserMomentum(EquationBase):
