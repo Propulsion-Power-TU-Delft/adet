@@ -1,10 +1,10 @@
 [project]
-name = "adet"
+name = "ADeT"
 version = "0.0.1"
 description = "Autodiff DEsigner for Turbomachinery"
 readme = "README.md"
 authors = [
-    { name = "fvaccari", email = "f.vaccari@tudelft.nl" }
+    { name = "Francesco Vaccari", email = "f.vaccari@tudelft.nl" }
 ]
 requires-python = ">=3.12"
 dependencies = [
@@ -12,10 +12,9 @@ dependencies = [
     "bezier>=2024.6.20",
     "casadi>=3.7.2",
     "coolprop>=7.1.0",
+    "jax>=0.9.2",
     "matplotlib>=3.10.7",
-    "optimistix>=0.0.11",
     "pint>=0.25",
-    "rich>=14.2.0",
     "sympy>=1.14.0",
 ]
 
@@ -34,6 +33,7 @@ dev = [
     "pdbpp>=0.11.7",
     "pytest>=8.4.2",
     "ruff>=0.14.3",
+    "ty>=0.0.30",
 ]
 docs = [
     "myst-parser>=4.0.1",
@@ -49,15 +49,18 @@ exclude = ["\\Interactive**", "**\\.venv"]
 [tool.ty.rules]
 invalid-method-override = "ignore"
 
+[tool.ty.analysis]
+allowed-unresolved-imports = ["some_untyped_lib.**"]
+
 [tool.ruff]
 line-length = 88
 
 [tool.ruff.lint]
-# - Enable pycodestyle errors and warnings (E, W) and pyflakes (F)
+# Enable pycodestyle errors and warnings (E, W) and pyflakes (F)
 select = ["E", "W", "F", "ARG", "C4"]
-# - Don't report unused imports (pyright does already)
+# Don't report unused imports
 ignore = ["F401"]
-# - Avoid trying to fix flake8-bugbear (`B`) violations.
+# Avoid trying to fix flake8-bugbear (`B`) violations.
 unfixable = ["B"]
 
 [tool.ruff.lint.per-file-ignores]
