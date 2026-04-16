@@ -454,6 +454,7 @@ class VariableBoundsRegistry(
         'rr_.*': (1e-4, 3.0),
         'hh': (1e-8, 1.0),
         'height': (1e-5, 3.0),
+        'flare_angle': (-1.5, 1.5),
         # *** OTHERS
         '.*solidity': (0.05, 10.0),
         '.*massflow': (1e-4, 5e4),

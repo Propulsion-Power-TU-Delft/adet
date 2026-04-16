@@ -15,9 +15,243 @@ CONTOUR_LEVELS = 50
 # Setup paths
 data_dir = pathlib.Path(__file__).parent.parent.parent.parent / 'outputs'
 
+
+def plot_quantity(qty: str, ax):
+    qties = []
+    for dic in solution_dicts:
+        if dic is None:
+            continue
+        qties.append(dic[qty])
+    ax.plot(qties, 'o', alpha=0.4)
+
+    return
+
+
+def plot_profile_at_point(
+    phi_target,
+    psi_target,
+    design_map,
+    plot_type='both',
+    figsize=(12, 5),
+):
+    """
+    Plot blade profile (meridional channel and/or camber lines) at a specific phi/psi
+    point.
+
+    Parameters
+    ----------
+    phi_target : float
+        Target flow coefficient (phi)
+    psi_target : float
+        Target loading coefficient (psi)
+    design_map : dict
+        Design map dictionary loaded from pickle file
+    plot_type : str
+        Type of plot: 'meridional', 'camber', or 'both' (default: 'both')
+    figsize : tuple
+        Figure size (default: (12, 5))
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The generated figure
+    """
+    solution_dicts = design_map['solution_dicts']
+    phi_vals = design_map['phi_vals']
+    psi_vals = design_map['psi_vals']
+
+    # Find the closest point to the target phi/psi
+    distances = np.sqrt((phi_vals - phi_target) ** 2 + (psi_vals - psi_target) ** 2)
+    linear_idx = np.argmin(distances)
+
+    sol_dict = solution_dicts[linear_idx]
+
+    if sol_dict is None:
+        raise ValueError(
+            f'No solution found at phi={phi_target:.3f}, psi={psi_target:.3f}'
+        )
+
+    phi_actual = phi_vals[linear_idx]
+    psi_actual = psi_vals[linear_idx]
+
+    if plot_type == 'both':
+        fig, axes = plt.subplots(1, 2, figsize=figsize)
+    else:
+        fig, ax_single = plt.subplots(figsize=figsize)
+        axes = [ax_single]
+
+    # Plot meridional channel
+    if plot_type in ('meridional', 'both'):
+        ax = axes[0]
+        ax.set_aspect('equal')
+        ax.set_ylabel('radius [m]')
+        ax.set_xlabel('axial [m]')
+        ax.grid(True, alpha=0.3)
+        ax.set_title(f'Meridional Channel: φ={phi_actual:.3f}, ψ={psi_actual:.3f}')
+
+        offset = 0.0
+        node_pairs = [(0, 1), (2, 3)]
+        colors = ['steelblue', 'coral']
+
+        for pair_idx, (node_in, node_out) in enumerate(node_pairs):
+            rr_in = sol_dict.get(f'geo_rr{node_in}', None)
+            height_in = sol_dict.get(f'geo_height{node_in}', None)
+            chord_ax_out = sol_dict.get(f'geo_chord_ax{node_out}', None)
+            rr_out = sol_dict.get(f'geo_rr{node_out}', None)
+            height_out = sol_dict.get(f'geo_height{node_out}', None)
+
+            if (
+                rr_in is None
+                or height_in is None
+                or rr_out is None
+                or height_out is None
+            ):
+                continue
+
+            rr_in_val = rr_in[0] if hasattr(rr_in, '__len__') else rr_in
+            height_in_val = height_in[0] if hasattr(height_in, '__len__') else height_in
+            rr_out_val = rr_out[0] if hasattr(rr_out, '__len__') else rr_out
+            height_out_val = (
+                height_out[0] if hasattr(height_out, '__len__') else height_out
+            )
+            chord_ax_val = (
+                chord_ax_out[0] if hasattr(chord_ax_out, '__len__') else chord_ax_out
+            )
+
+            x_inlet = offset
+            x_outlet = offset + chord_ax_val
+
+            r_hub_inlet = rr_in_val - height_in_val / 2
+            r_tip_inlet = rr_in_val + height_in_val / 2
+            r_hub_outlet = rr_out_val - height_out_val / 2
+            r_tip_outlet = rr_out_val + height_out_val / 2
+
+            color = colors[pair_idx]
+
+            ax.plot(
+                [x_inlet, x_outlet],
+                [r_hub_inlet, r_hub_outlet],
+                color=color,
+                linewidth=2,
+            )
+            ax.plot(
+                [x_inlet, x_outlet],
+                [r_tip_inlet, r_tip_outlet],
+                color=color,
+                linewidth=2,
+            )
+            ax.plot(
+                [x_inlet, x_inlet],
+                [r_hub_inlet, r_tip_inlet],
+                color=color,
+                linewidth=1.5,
+                linestyle='--',
+                alpha=0.6,
+            )
+            ax.plot(
+                [x_outlet, x_outlet],
+                [r_hub_outlet, r_tip_outlet],
+                color=color,
+                linewidth=1.5,
+                linestyle='--',
+                alpha=0.6,
+            )
+
+            offset += chord_ax_val * 1.05
+
+        ax.plot([0.0, offset], [0.0, 0.0], color='r', linestyle='dashdot', linewidth=2)
+
+    # Plot camber lines
+    if plot_type in ('camber', 'both'):
+        ax = axes[1] if plot_type == 'both' else axes[0]
+        ax.set_aspect('equal')
+        ax.set_ylabel('tangential [m]')
+        ax.set_xlabel('axial [m]')
+        ax.grid(True, alpha=0.3)
+        ax.set_title(f'Camber Lines: φ={phi_actual:.3f}, ψ={psi_actual:.3f}')
+
+        pbl = ParabolicCamberline()
+        offset = 0.0
+        node_pairs = [(0, 1), (2, 3)]
+        colors_blade = ['steelblue', 'coral']
+
+        for pair_idx, (node_in, node_out) in enumerate(node_pairs):
+            metal_angle_in = sol_dict.get(f'geo_metal_angle{node_in}', None)
+            metal_angle_out = sol_dict.get(f'geo_metal_angle{node_out}', None)
+            chord_ax = sol_dict.get(f'geo_chord_ax{node_out}', None)
+            pitch = sol_dict.get(f'geo_pitch{node_out}', None)
+
+            if (
+                metal_angle_in is None
+                or metal_angle_out is None
+                or chord_ax is None
+                or pitch is None
+            ):
+                continue
+
+            metal_angle_in_val = (
+                metal_angle_in[0]
+                if hasattr(metal_angle_in, '__len__')
+                else metal_angle_in
+            )
+            metal_angle_out_val = (
+                metal_angle_out[0]
+                if hasattr(metal_angle_out, '__len__')
+                else metal_angle_out
+            )
+            chord_ax_val = chord_ax[0] if hasattr(chord_ax, '__len__') else chord_ax
+            pitch_val = pitch[0] if hasattr(pitch, '__len__') else pitch
+
+            color = colors_blade[pair_idx]
+
+            num_blades = 3
+            for blade_num in range(num_blades):
+                pbl.plot_camber_line(
+                    ax,
+                    metal_angle_in_val,
+                    metal_angle_out_val,
+                    chord_ax_val,
+                    color,
+                    axial_offset=offset,
+                    tangential_offset=blade_num * pitch_val,
+                    linewidth=1.5,
+                )
+
+            if hasattr(metal_angle_in_val, '__len__') and hasattr(
+                metal_angle_out_val, '__len__'
+            ):
+                pbl.plot_camber_line(
+                    ax,
+                    metal_angle_in_val[0],
+                    metal_angle_out_val[0],
+                    chord_ax_val,
+                    'orange',
+                    axial_offset=offset,
+                    linewidth=1.5,
+                    linestyle='--',
+                    alpha=0.7,
+                )
+                pbl.plot_camber_line(
+                    ax,
+                    metal_angle_in_val[-1],
+                    metal_angle_out_val[-1],
+                    chord_ax_val,
+                    'seagreen',
+                    axial_offset=offset,
+                    linewidth=1.5,
+                    linestyle='--',
+                    alpha=0.7,
+                )
+
+            offset += chord_ax_val * 1.1
+
+    plt.tight_layout()
+    return fig
+
+
 # Load all data from pickle file
 print('Loading design map data from pickle file...')
-with open(data_dir / 'design_map_orc.pkl', 'rb') as f:
+with open(data_dir / 'design_map_orc_vr4_dynC.pkl', 'rb') as f:
     design_map = pickle.load(f)
 
 solution_dicts = design_map['solution_dicts']

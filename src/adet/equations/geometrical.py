@@ -10,6 +10,7 @@ from adet.equations.utils import (
     safe_abs,
     safe_min,
     minmax_bound,
+    safe_max,
 )
 
 
@@ -94,7 +95,25 @@ class MeridionalRatios(EquationBase):
 # constant values for the dynamic constraints you want to define
 
 
-class MeridionalRatioHack(EquationBase):
+class FlareAngleLimitedAR(EquationBase):
+    def __init__(
+        self,
+        aspect_ratio_targ: float,
+        max_flare: float,
+        **kwargs,
+    ):
+        """
+        Parameters
+        ----------
+        aspect_ratio_targ: float
+            The target aspect ratio you want to achieve
+        max_flare: float,
+            The maximum flare angle above which the b.c. switches to it
+        """
+        super().__init__(**kwargs)
+        self._aspect_ratio = aspect_ratio_targ
+        self._max_flare = max_flare
+
     def residual(
         self,
         geo_height0,
@@ -111,21 +130,23 @@ class MeridionalRatioHack(EquationBase):
         r1 = geo_heightRatio1 - geo_height1 / geo_height0
         r2 = geo_radiusRatio1 * geo_rr_midspan0 - geo_rr_midspan1
 
-        r3 = np.tan(geo_flare_angle1) * 2 * geo_chord_ax1[midspan] - (
-            geo_height1 - geo_height0
-        )
-
         # This is a hacky way of imposing dynamic constraints
-        mid_chord = geo_chord_ax1[midspan]
-        ASP_RATIO_TARGET = 3.0
-        FLARE_ANGLE_MAX = 30 * np.pi / 180
+        ar_tgt = self._aspect_ratio
+        flr_max = self._max_flare
 
-        # Aspect-ratio based height
-        height_AR = mid_chord * ASP_RATIO_TARGET
-        # Bounding max flare height
-        height_FL_MAX = geo_height0 + 2 * mid_chord * np.tan(FLARE_ANGLE_MAX)
+        mid_chord_ax = geo_chord_ax1[midspan]
+        tan_flare_max = np.tan(flr_max)
 
-        r4 = geo_height1 - safe_min(height_AR, height_FL_MAX)
+        half_delta_height = (geo_height1 - geo_height0) / 2
+        ave_height = (geo_height0 + geo_height1) / 2
+
+        chord_AR = ave_height / ar_tgt
+        chord_FL_MAX = half_delta_height / tan_flare_max
+
+        # Define the flare angle
+        r3 = geo_flare_angle1 - np.arctan(half_delta_height / mid_chord_ax)
+        # Set the axial chord
+        r4 = mid_chord_ax - safe_max(chord_AR, chord_FL_MAX)
 
         return r1, r2, r3, r4
 

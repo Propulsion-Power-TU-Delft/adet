@@ -5,7 +5,7 @@ import logging
 import pathlib
 import pickle
 import sys
-from typing import Type
+from typing import Type, Literal
 
 import CoolProp as cp
 import matplotlib.pyplot as plt
@@ -32,7 +32,7 @@ from adet.equations.geometrical import (
     MinimalCamberLine,
     ModifiedZweifel,
     MeridionalRatios,
-    MeridionalRatioHack,
+    FlareAngleLimitedAR,
 )
 from adet.equations.nondimensional import (
     FlowCoefficient,
@@ -65,11 +65,21 @@ setup_logger(
 plt.close('all')
 
 # === SETTINGS
-MULTI = False  # Whether to run multi or not
+MULTI = False  # Run single or multi-span
 NUM_SPAN = 1
-SCALED = True
-PLOTS = True
-PRINTS = True
+MAP_POINTS = 50  # Grid is the square of this
+
+# Volumetric flow ratio
+VOL_FLOW = 4.0
+FLARE_ANGLE = 40  # deg
+FLARE_MAX = 30  # deg
+ASP_RATIO = 3.0
+
+# Axial chord specification
+CHORD_METHOD: Literal['flare_angle', 'aspRatio', 'dynamic']
+CHORD_METHOD = 'dynamic'
+
+# Loss used at first pass
 INITIAL_LOSS = PercentageEntropyLoss(0.0)
 
 
@@ -176,18 +186,17 @@ def compute_design_map(
 abs_state = DebugAbstractState('REFPROP', 'MM')
 abs_state.debug_print = False
 
-N_PTS = 30
 
 # Stable solution
 DUTY_COEFFS = {
     'oth_flowCoeff1': 0.4,
     'oth_ts_loadCoeff1': 3.0,
-    'oth_volflowRatio1': 4.0,
+    'oth_volflowRatio1': round(float(VOL_FLOW), 1),
     # 'oth_reactDegree_ts1': 0.3,
 }
 
-PHI_SPAN = np.linspace(0.4, 1.4, N_PTS)
-PSI_SPAN = np.linspace(3.0, 10.0, N_PTS)
+PHI_SPAN = np.linspace(0.4, 1.4, MAP_POINTS)
+PSI_SPAN = np.linspace(3.0, 10.0, MAP_POINTS)
 
 real_model = ExternalFluidModel(abs_state)
 INLET_PRESSURE = 1.3 * abs_state.p_critical()
@@ -367,17 +376,30 @@ rotor.remove_equation(MeridionalGeometry, 0)
 
 # *** Flare angle hack ***
 ####
-# stator.set_boundary_cond('geo_aspRatio1', 3)
-# rotor.set_boundary_cond('geo_aspRatio1', 3)
-# stator.set_boundary_cond('geo_flare_angle1', Quantity(40, 'deg'))
-# rotor.set_boundary_cond('geo_flare_angle1', Quantity(40, 'deg'))
-####
-stator.remove_equation(MeridionalRatios, (0, 1))
-stator.add_equation(MeridionalRatioHack(), (0, 1))
-rotor.remove_equation(MeridionalRatios, (0, 1))
-rotor.add_equation(MeridionalRatioHack(), (0, 1))
-####
-# Force constant flare angle
+flare_max_rad = FLARE_MAX * np.pi / 180
+match CHORD_METHOD:
+    case 'aspRatio':
+        stator.set_boundary_cond('geo_aspRatio1', ASP_RATIO)
+        rotor.set_boundary_cond('geo_aspRatio1', ASP_RATIO)
+        identifier = f'aspRatio_{ASP_RATIO}'
+    case 'flare_angle':
+        stator.set_boundary_cond('geo_flare_angle1', Quantity(FLARE_ANGLE, 'deg'))
+        rotor.set_boundary_cond('geo_flare_angle1', Quantity(FLARE_ANGLE, 'deg'))
+        identifier = f'flare_angle_{FLARE_ANGLE}'
+    case 'dynamic':
+        stator.remove_equation(MeridionalRatios, (0, 1))
+        rotor.remove_equation(MeridionalRatios, (0, 1))
+        stator.add_equation(
+            FlareAngleLimitedAR(ASP_RATIO, flare_max_rad),
+            (0, 1),
+        )
+        rotor.add_equation(
+            FlareAngleLimitedAR(ASP_RATIO, flare_max_rad),
+            (0, 1),
+        )
+        identifier = '_dyn'
+
+# OPTIONAL: Force constant flare angle
 # ntw.system.add_equalities(('geo_flare_angle1', 'geo_flare_angle3'))
 
 # Repeated stage definition
@@ -390,7 +412,7 @@ ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, 3))
 ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
 
 # Build
-ntw.system.build(SCALED)
+ntw.system.build(True)
 
 # ============ Isentropic Solution ============
 rootfinder_is = ntw.system.make_rootfinder(
@@ -506,7 +528,9 @@ if MULTI:
 else:
     sol_final = solution
 
-keys_loss, solutions_loss, solution_dicts = compute_design_map(ntw, sol_final, N_PTS)
+keys_loss, solutions_loss, solution_dicts = compute_design_map(
+    ntw, sol_final, MAP_POINTS
+)
 
 # ========================== SAVE DESIGN MAP DATA
 # Extract eta_tt3 from solutions
@@ -536,9 +560,11 @@ design_map_data = {
     'psi_vals': psi_vals,
     'eta_tt3_values': eta_tt3_values,
     'massflow': mf,
-    'N_PTS': N_PTS,
+    'N_PTS': MAP_POINTS,
 }
 
-with open(data_dir / 'design_map_orc.pkl', 'wb') as f:
+vol_flow = DUTY_COEFFS['oth_volflowRatio1']
+
+with open(data_dir / f'des_map_orc_vr{vol_flow}_{identifier}.pkl', 'wb') as f:
     pickle.dump(design_map_data, f)
 logger.info(f'Design map data saved to {data_dir / "design_map_orc.pkl"}')
