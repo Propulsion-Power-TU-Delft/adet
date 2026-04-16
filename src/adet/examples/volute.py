@@ -1,6 +1,9 @@
 import logging
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from pint import Quantity
 
 from adet.solution import solve_root_problem
@@ -122,12 +125,14 @@ class VoluteLoss(EquationBase):
         return tot_p1 - (tot_p0 - deltaPt)
 
 
-def plot_volute(designs_dict, num_points=1000):
+def plot_volute(designs_dict, num_points=1000, opt_radii=None):
     """Plot all volute designs in a single figure.
 
     Args:
         designs_dict: Dictionary with design names as keys and (n0, n1) tuples as values
         num_points: Number of points for radius distribution
+        opt_radii: Optional array of 8 cross-section radii (m) from the optimisation,
+            placed at theta = k * 2*pi/8 for k = 1..8.
     """
     fig = plt.figure(figsize=(13, 13), dpi=150)
     ax = fig.add_subplot(111, projection='polar')
@@ -167,6 +172,22 @@ def plot_volute(designs_dict, num_points=1000):
         label='Current design',
         linewidth=3.5,
     )
+
+    if opt_radii is not None:
+        # 8 stations at theta = k*2pi/8 for k=1..8; include tongue at (0, 0)
+        opt_theta = np.concatenate([[0.0], np.linspace(2 * np.pi / 8, 2 * np.pi, 8)])
+        opt_r = np.concatenate([[0.0], opt_radii])
+        opt_outer = stator_radius + 2 * opt_r
+        ax.plot(
+            opt_theta,
+            opt_outer,
+            marker='o',
+            markersize=8,
+            linewidth=2.5,
+            linestyle='--',
+            label='Optimum (max power)',
+        )
+
     ax.set_xlabel(r'$\theta$ [rad]', fontsize=30)
     ax.set_ylabel(r'$r$ [m]', fontsize=30)
     ax.tick_params(labelsize=15)
@@ -186,12 +207,14 @@ def plot_volute(designs_dict, num_points=1000):
     fig.show()
 
 
-def plot_volute_area_trend(designs_dict, num_points=1000):
+def plot_volute_area_trend(designs_dict, num_points=1000, opt_radii=None):
     """Plot area trend for all volute designs in a linear graph.
 
     Args:
         designs_dict: Dictionary with design names as keys and (n0, n1) tuples as values
         num_points: Number of points for area distribution
+        opt_radii: Optional array of 8 cross-section radii (m) from the optimisation,
+            placed at theta = k * 2*pi/8 for k = 1..8.
     """
     fig, ax = plt.subplots(figsize=(12, 8), dpi=150)
 
@@ -230,6 +253,20 @@ def plot_volute_area_trend(designs_dict, num_points=1000):
         label='Current design',
     )
 
+    if opt_radii is not None:
+        # 8 stations at theta = k*2pi/8 for k=1..8; include tongue at (0, 0)
+        opt_theta = np.concatenate([[0.0], np.linspace(2 * np.pi / 8, 2 * np.pi, 8)])
+        opt_areas = np.concatenate([[0.0], np.pi * opt_radii**2])
+        ax.plot(
+            opt_theta,
+            opt_areas * 1e4,  # Convert to cm²
+            marker='o',
+            markersize=8,
+            linewidth=2.5,
+            linestyle='--',
+            label='Optimum (max power)',
+        )
+
     ax.set_xlabel(r'$\theta$ [rad]', fontsize=24)
     ax.set_ylabel(r'Area [cm$^2$]', fontsize=24)
     ax.tick_params(labelsize=17)
@@ -242,6 +279,16 @@ def plot_volute_area_trend(designs_dict, num_points=1000):
     plt.tight_layout()
 
     fig.show()
+
+
+def load_optimal_power_individual(xlsx_path: Path) -> np.ndarray:
+    """Return the R1-R8 cross-section radii (in metres) of the max-power individual."""
+    df = pd.read_excel(xlsx_path)
+    best = df.loc[df['Power'].idxmax()]
+    radii_mm = best[['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8']].to_numpy(
+        dtype=float
+    )
+    return radii_mm / 1000.0  # mm → m
 
 
 class ConstantAngMomentum(EquationBase):
@@ -275,7 +322,7 @@ if __name__ == '__main__':
     GuessRegistry().set_fallback_value(0.8)
 
     design_methods = [
-        'whitfield',
+        # 'whitfield',
         'stepanoff',
         'fister',
     ]
@@ -379,6 +426,10 @@ if __name__ == '__main__':
         print(f'Volute outlet velocity is {n1.kin.V[0]:.3f} m/s')
         print(f'Radius ratio is {n1.geo.radiusRatio}')
 
+    # Load optimal power individual from optimisation results
+    data_path = Path(__file__).parents[3] / 'data' / 'optimization_results.xlsx'
+    opt_radii = load_optimal_power_individual(data_path)
+
     # Plot all three designs
-    plot_volute(results)
-    plot_volute_area_trend(results)
+    plot_volute(results, opt_radii=opt_radii)
+    plot_volute_area_trend(results, opt_radii=opt_radii)
