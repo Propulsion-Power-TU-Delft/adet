@@ -8,6 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from adet.equations.geometrical import ParabolicCamberline
+from adet.tools.strings import get_index
 
 # Constants
 CONTOUR_LEVELS = 50
@@ -16,13 +17,78 @@ CONTOUR_LEVELS = 50
 data_dir = pathlib.Path(__file__).parent.parent.parent.parent / 'outputs'
 
 
-def plot_quantity(qty: str, ax):
-    qties = []
+def plot_contour_quantity(
+    qty: str,
+    ax,
+    design_map,
+    cmap='viridis',
+    levels=CONTOUR_LEVELS,
+    clabel='',
+):
+    """
+    Plot a quantity as a 2D contour map with phi (x) and psi (y) axes.
+
+    Parameters
+    ----------
+    qty : str
+        Key for quantity to plot in solution dicts
+    ax : matplotlib.axes.Axes
+        Axes to plot on
+    design_map : dict
+        Design map dictionary loaded from pickle file
+    cmap : str
+        Colormap (default: 'viridis')
+    levels : int
+        Number of contour levels (default: CONTOUR_LEVELS)
+    clabel : str
+        Colorbar label (default: qty name)
+    """
+    solution_dicts = design_map['solution_dicts']
+    phi_vals = design_map['phi_vals']
+    psi_vals = design_map['psi_vals']
+    N_PTS = design_map['N_PTS']
+
+    # Extract quantity values
+    qty_values = []
     for dic in solution_dicts:
         if dic is None:
+            qty_values.append(np.nan)
             continue
-        qties.append(dic[qty])
-    ax.plot(qties, 'o', alpha=0.4)
+
+        val = dic.get(qty, None)
+        if val is None:
+            qty_values.append(np.nan)
+        else:
+            # Convert arrays to scalar (take first element)
+            val = val[0] if hasattr(val, '__len__') else val
+            qty_values.append(val)
+
+    qty_values = np.array(qty_values)
+
+    # Reshape data into 2D grids
+    phi_grid = phi_vals.reshape((N_PTS, N_PTS))
+    psi_grid = psi_vals.reshape((N_PTS, N_PTS))
+    qty_grid = qty_values.reshape((N_PTS, N_PTS))
+
+    # Create contour plot
+    contourf = ax.contourf(phi_grid, psi_grid, qty_grid, levels=levels, cmap=cmap)
+    contour_lines = ax.contour(
+        phi_grid,
+        psi_grid,
+        qty_grid,
+        levels=levels,
+        colors='black',
+        alpha=0.3,
+        linewidths=0.5,
+    )
+    ax.clabel(contour_lines, inline=True, fontsize=8)
+
+    cbar = plt.colorbar(contourf, ax=ax)
+    cbar.set_label(clabel if clabel else qty, rotation=270, labelpad=20)
+    ax.set_xlabel(r'Flow Coefficient $\phi$', fontsize=12)
+    ax.set_ylabel(r'Loading Coefficient $\psi$', fontsize=12)
+    ax.set_title(f'{clabel if clabel else qty}', fontsize=14)
+    ax.grid(True, alpha=0.2)
 
     return
 
@@ -250,8 +316,12 @@ def plot_profile_at_point(
 
 
 # Load all data from pickle file
+CAMBER_TYPE = 'minrect'
+REACTION = 0.5
+FILENAME = f'des_map_R{REACTION}_vr4.0_dyn_fmax30_ar3.0_{CAMBER_TYPE}.pkl'
+
 print('Loading design map data from pickle file...')
-with open(data_dir / 'design_map_orc_vr4_dynC.pkl', 'rb') as f:
+with open(data_dir / FILENAME, 'rb') as f:
     design_map = pickle.load(f)
 
 solution_dicts = design_map['solution_dicts']
@@ -272,6 +342,10 @@ for phi_idx in phi_indices:
         selected_indices.append((linear_idx, phi_idx, psi_idx))
 
 fig, axes = plt.subplots(2, 3, figsize=(16, 10))
+fig.suptitle(
+    f'Meridional Channels | Camberline: {CAMBER_TYPE} | R={REACTION}',
+    fontsize=14,
+)
 axes = axes.flatten()
 
 print('Plotting meridional channels...')
@@ -398,14 +472,15 @@ for plot_idx, (linear_idx, phi_idx, psi_idx) in enumerate(selected_indices):
     ax.plot([0.0, offset], [0.0, 0.0], color='r', linestyle='dashdot', linewidth=2)
 
 plt.tight_layout()
-print(
-    f'Meridional channels plot saved to {data_dir / "meridional_channels_6points.png"}'
-)
 
 # ========================== PLOT CAMBER LINES
 print('Plotting camber lines...')
 
 fig, axes = plt.subplots(2, 3, figsize=(16, 10))
+fig.suptitle(
+    f'Camber Lines | Camberline: {CAMBER_TYPE} | R={REACTION}',
+    fontsize=14,
+)
 axes = axes.flatten()
 
 pbl = ParabolicCamberline()
@@ -526,54 +601,75 @@ for plot_idx, (linear_idx, phi_idx, psi_idx) in enumerate(selected_indices):
             continue
 
 plt.tight_layout()
-plt.savefig(data_dir / 'camberlines_6points.png', dpi=150, bbox_inches='tight')
-print(f'Camberlines plot saved to {data_dir / "camberlines_6points.png"}')
 
-# ========================== PLOT DESIGN MAP
-print('Plotting design map...')
+# ========================== PLOT DESIGN MAP QUANTITIES
+print('Plotting design map quantities...')
 
-
-# Extract data from the pickle
-eta_tt3_values = design_map['eta_tt3_values']
-massflow = design_map['massflow']
-keys_loss = design_map['keys_loss']
-
-# Reshape data into 2D grids for contour plotting
-phi_grid = phi_vals.reshape((N_PTS, N_PTS))
-psi_grid = psi_vals.reshape((N_PTS, N_PTS))
-eta_grid = eta_tt3_values.reshape((N_PTS, N_PTS))
-mf_grid = massflow.reshape((N_PTS, N_PTS))
-
-# Create design map contour plots
-fig, ax1 = plt.subplots(figsize=(8, 6))
-
-# Plot: Efficiency map
-contour1 = ax1.contourf(
-    phi_grid, psi_grid, eta_grid, levels=CONTOUR_LEVELS, cmap='viridis'
+# Figure 1: TT Efficiency contour map
+fig, ax = plt.subplots(figsize=(8, 6))
+plot_contour_quantity(
+    'oth_eta_tt3',
+    ax,
+    design_map,
+    clabel='Total-to-Total Efficiency',
 )
-contour1_lines = ax1.contour(
-    phi_grid,
-    psi_grid,
-    eta_grid,
-    levels=CONTOUR_LEVELS,
-    colors='black',
-    alpha=0.3,
-    linewidths=0.5,
+ax.set_title(
+    f'Total-to-Total Efficiency | Camberline: {CAMBER_TYPE} | R={REACTION}',
+    fontsize=12,
 )
-ax1.clabel(
-    contour1_lines,
-    inline=True,
-    fontsize=10,
-)
-cbar1 = plt.colorbar(contour1, ax=ax1)
-cbar1.set_label('Total-to-Total Efficiency', rotation=270, labelpad=20)
-ax1.set_xlabel(r'Flow Coefficient $\phi$', fontsize=14)
-ax1.set_ylabel(r'Loading Coefficient $\psi$', fontsize=14)
-ax1.set_title('Design Map: Total-to-Total Efficiency', fontsize=16)
-ax1.grid(True, alpha=0.2)
-
 plt.tight_layout()
-plt.savefig(data_dir / 'design_map_orc.png', dpi=150, bbox_inches='tight')
-print(f'Design map plot saved to {data_dir / "design_map_orc.png"}')
 
-plt.show()
+# Figure 2: Stator losses
+print('Plotting stator losses...')
+fig_stator, axes_stator = plt.subplots(2, 2, figsize=(14, 10))
+axes_stator = axes_stator.flatten()
+
+loss_keys_stator = [
+    ('oth_delta_smass_profile1', 'Profile Loss'),
+    ('oth_delta_smass_secondary1', 'Secondary Loss'),
+    ('oth_delta_smass_mixing1', 'Mixing Loss'),
+]
+
+for idx, (qty_key, label) in enumerate(loss_keys_stator):
+    plot_contour_quantity(
+        qty_key,
+        axes_stator[idx],
+        design_map,
+        clabel=f'Stator {label}',
+    )
+
+fig_stator.suptitle(
+    f'Stator Loss Components | Camberline: {CAMBER_TYPE} | R={REACTION}',
+    fontsize=16,
+    y=1.00,
+)
+plt.tight_layout()
+
+# Figure 3: Rotor losses
+print('Plotting rotor losses...')
+fig_rotor, axes_rotor = plt.subplots(2, 2, figsize=(14, 10))
+axes_rotor = axes_rotor.flatten()
+
+loss_keys_rotor = [
+    ('oth_delta_smass_profile3', 'Profile Loss'),
+    ('oth_delta_smass_secondary3', 'Secondary Loss'),
+    ('oth_delta_smass_mixing3', 'Mixing Loss'),
+    ('oth_delta_smass_leakage3', 'Leakage Loss'),
+]
+
+for idx, (qty_key, label) in enumerate(loss_keys_rotor):
+    plot_contour_quantity(
+        qty_key,
+        axes_rotor[idx],
+        design_map,
+        clabel=f'Rotor {label}',
+    )
+
+fig_rotor.suptitle(
+    f'Rotor Loss Components | Camberline: {CAMBER_TYPE} | R={REACTION}',
+    fontsize=16,
+    y=1.00,
+)
+plt.tight_layout()
+
+plt.show(block=False)

@@ -4,7 +4,6 @@ from copy import deepcopy
 import logging
 import pathlib
 import pickle
-import sys
 from typing import Type, Literal
 
 import CoolProp as cp
@@ -22,17 +21,14 @@ from adet.equations.definitions import (
     IsentropicProperties,
     RepeatedStage,
 )
-from adet.equations.fundamental import (
-    BladeBlockage,
-    FreeVortexDistribution,
-    ZeroBlockage,
-)
 from adet.equations.geometrical import (
     MeridionalGeometry,
     MinimalCamberLine,
     ModifiedZweifel,
     MeridionalRatios,
     FlareAngleLimitedAR,
+    ParabolicCamberline,
+    TwoSegmentCamberline,
 )
 from adet.equations.nondimensional import (
     FlowCoefficient,
@@ -44,10 +40,10 @@ from adet.equations.nondimensional import (
 )
 from adet.fluid.settings import ExternalFluidModel
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation, IsentropicLink
+from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.losses.leakage import DentonRectLeakage, DentonTrapLeakage
-from adet.losses.mixing import DentonMixingLoss, SieverdingBasePressure
 from adet.losses.profile import DentonRectProfile, DentonTrapProfile
+from adet.losses.mixing import DentonMixingLoss, SieverdingBasePressure
 from adet.losses.secondary import SecondaryBSM
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
 from adet.solution import solve_root_problem
@@ -65,61 +61,63 @@ setup_logger(
 plt.close('all')
 
 # === SETTINGS
-MULTI = False  # Run single or multi-span
 NUM_SPAN = 1
-MAP_POINTS = 50  # Grid is the square of this
+MAP_POINTS = 10  # Grid is the square of this
 
 # Volumetric flow ratio
+REACT_DEGREE = 0.5
 VOL_FLOW = 4.0
-FLARE_ANGLE = 40  # deg
-FLARE_MAX = 30  # deg
+FLARE_ANGLE = 30  # deg
 ASP_RATIO = 3.0
 
 # Axial chord specification
 CHORD_METHOD: Literal['flare_angle', 'aspRatio', 'dynamic']
 CHORD_METHOD = 'dynamic'
+FLARE_MAX = 30  # deg - ONLY USED IN DYNAMIC !
 
-# Loss used at first pass
+# Loss used at first pass (isentropic)
 INITIAL_LOSS = PercentageEntropyLoss(0.0)
 
 
 # ================================================
-
-
 class AddAxialLosses(LossApplier):
-    scaling_factor = (0.1,)
+    scaling_factor = (0.1, 0.1)
 
     def __init__(
         self,
-        tip_gap: bool,
+        has_tip_gap: bool,
         scaling_factor: list[float] | None = None,
     ):
         super().__init__(scaling_factor)
-        self.tip_gap = tip_gap
+        self._has_tip_gap = has_tip_gap
 
     def residual(
         self,
         stc_smass0,
         stc_smass1,
         oth_delta_smass_mixing1,
-        oth_delta_smass_leakage1,
         oth_delta_smass_profile1,
         oth_delta_smass_secondary1,
+        oth_delta_smass_leakage1,
+        oth_delta_smass_main1,
     ):
-        midspan = get_midspan_idx(stc_smass0)
         main_loss = (
             0.0
             + oth_delta_smass_mixing1
             + oth_delta_smass_profile1
-            + oth_delta_smass_secondary1[midspan]
+            + oth_delta_smass_secondary1
         )
 
-        leak_loss = oth_delta_smass_leakage1[midspan]
+        leak_loss = oth_delta_smass_leakage1
 
-        if self.tip_gap:
-            return stc_smass1 - (stc_smass0 + main_loss + leak_loss)
+        r1 = oth_delta_smass_main1 - main_loss
+
+        if self._has_tip_gap:
+            r3 = stc_smass1 - (stc_smass0 + main_loss + leak_loss)
         else:
-            return stc_smass1 - (stc_smass0 + main_loss)
+            r3 = stc_smass1 - (stc_smass0 + main_loss)
+
+        return r1, r3
 
 
 def compute_design_map(
@@ -192,10 +190,10 @@ DUTY_COEFFS = {
     'oth_flowCoeff1': 0.4,
     'oth_ts_loadCoeff1': 3.0,
     'oth_volflowRatio1': round(float(VOL_FLOW), 1),
-    # 'oth_reactDegree_ts1': 0.3,
+    'oth_reactDegree_ts1': round(float(REACT_DEGREE), 1),
 }
 
-PHI_SPAN = np.linspace(0.4, 1.4, MAP_POINTS)
+PHI_SPAN = np.linspace(0.35, 1.45, MAP_POINTS)
 PSI_SPAN = np.linspace(3.0, 10.0, MAP_POINTS)
 
 real_model = ExternalFluidModel(abs_state)
@@ -239,25 +237,35 @@ _guess_reg.from_dict(
 )
 
 # ================================================
-# *** Variable bounds
+# *** Variable BOUNDS
 _bounds_reg = VariableBoundsRegistry()
 _bounds_reg.reset()
 # _bounds_reg.ignore_defaults = True
 _bounds_reg.from_dict(
     {
         'U': (-0.1, 300.0),  # Reduce the search area
-        'Vm': (20.0, 150.0),  # Reduce the search area
+        'V': (20.0, 150.0),  # Reduce the search area
         # 'num_blades': (1.0, 100.0),
-        'delta_smass_.*': (0.0, 20.0),
-        'k_prof': (-2.0, 2.0),
+        'delta_smass_.*': (0.0, 50.0),
+        # 'k_prof': (-3.5, 3.5),
     }
 )
+MAX_V = 250
 if fluid_settings.model == real_model:
     _bounds_reg.from_dict(
         {
-            'p': (abs_state.p_critical() * 0.5, 1.5 * INLET_PRESSURE),
-            'T': (abs_state.T_critical() * 0.5, 1.5 * INLET_TEMPERATURE),
-            'hmass': (abs_state.hmass() - 200**2, abs_state.hmass() + 200**2),
+            'p': (
+                abs_state.p_critical() * 0.5,
+                1.5 * INLET_PRESSURE,
+            ),
+            'T': (
+                abs_state.T_critical() * 0.5,
+                1.5 * INLET_TEMPERATURE,
+            ),
+            'hmass': (
+                abs_state.hmass() - MAX_V**2,
+                abs_state.hmass() + MAX_V**2,
+            ),
         }
     )
 
@@ -274,10 +282,10 @@ LOSS_MODELS: dict[
     # *** Blade row losses
     IsentropicProperties: (0, 1),
     SecondaryBSM: (0, 1),
-    DentonTrapLeakage: (0, 1),
-    DentonTrapProfile: (0, 1),
-    # DentonRectLeakage: (0, 1),
-    # DentonRectProfile: (0, 1),
+    # DentonTrapLeakage: (0, 1),
+    # DentonTrapProfile: (0, 1),
+    DentonRectLeakage: (0, 1),
+    DentonRectProfile: (0, 1),
     DentonMixingLoss: 1,
     ClearanceByHeight: 1,
     BoundaryLayerRatios: 1,
@@ -314,15 +322,16 @@ stator = BladeRow(
         },
     },
     out_constraints={
-        'stc': {
-            'p': 1.462617e6,
-        },
+        # # This was coded in TurboSim
+        # 'stc': {
+        #     'p': 1.462617e6,
+        # },
         'geo': {
             'meridional_angle': Quantity(0, 'deg'),
             'thick_by_pitch': 0.02,
             'clearance_by_height': 0.01,
             # *** Num blades
-            'num_blades': 60,
+            'num_blades': 30,
         },
         'oth': {  # NOTE: These are not used on first pass
             # *** Boundary layer ratios
@@ -340,7 +349,8 @@ stator = BladeRow(
     extra_equations={
         ZeroDeviation(): 0,  # No incidence (design)
         ZeroDeviation(): 1,  # No deviation
-        MinimalCamberLine(): (0, 1),
+        # MinimalCamberLine(): (0, 1),
+        ParabolicCamberline(): (0, 1),
         INITIAL_LOSS: (0, 1),
     },
     constant_variables=['geo_rr_midspan'],
@@ -353,7 +363,8 @@ rotor.name = 'rotor'
 rotor.row_type = 'rotor'  # Set the type (useless now)
 rotor.add_equation(WorkCoefficient(), (0, 1))
 
-rotor.rm_boundary_cond('stc_p1')
+if 'stc' in stator._boundary_conditions:
+    rotor.rm_boundary_cond('stc_p1')
 
 
 # *** Duty coefficients
@@ -376,7 +387,6 @@ rotor.remove_equation(MeridionalGeometry, 0)
 
 # *** Flare angle hack ***
 ####
-flare_max_rad = FLARE_MAX * np.pi / 180
 match CHORD_METHOD:
     case 'aspRatio':
         stator.set_boundary_cond('geo_aspRatio1', ASP_RATIO)
@@ -387,6 +397,7 @@ match CHORD_METHOD:
         rotor.set_boundary_cond('geo_flare_angle1', Quantity(FLARE_ANGLE, 'deg'))
         identifier = f'flare_angle_{FLARE_ANGLE}'
     case 'dynamic':
+        flare_max_rad = FLARE_MAX * np.pi / 180
         stator.remove_equation(MeridionalRatios, (0, 1))
         rotor.remove_equation(MeridionalRatios, (0, 1))
         stator.add_equation(
@@ -397,7 +408,7 @@ match CHORD_METHOD:
             FlareAngleLimitedAR(ASP_RATIO, flare_max_rad),
             (0, 1),
         )
-        identifier = '_dyn'
+        identifier = f'dyn_fmax{FLARE_MAX}_ar{ASP_RATIO}'
 
 # OPTIONAL: Force constant flare angle
 # ntw.system.add_equalities(('geo_flare_angle1', 'geo_flare_angle3'))
@@ -457,8 +468,8 @@ rotor.remove_equation(INITIAL_LOSS.__class__, (0, 1))
 stator.remove_equation(INITIAL_LOSS.__class__, (0, 1))
 
 # --- Add loss applier function
-stator.add_equation(AddAxialLosses(tip_gap=False), (0, 1))
-rotor.add_equation(AddAxialLosses(tip_gap=True), (0, 1))
+stator.add_equation(AddAxialLosses(has_tip_gap=False), (0, 1))
+rotor.add_equation(AddAxialLosses(has_tip_gap=True), (0, 1))
 
 ntw.build()
 
@@ -475,75 +486,20 @@ rootfinder_loss = ntw.system.make_rootfinder(
 )
 rtfn_kn = ntw.system.make_rootfinder('kinsol')
 
-solution = solve_root_problem(
-    rootfinder_loss,
-    x0_loss,
-    kn_loss,
-    bnd_loss,
-    suppress_output=False,
-    perturbate_guess=False,
-)
-solution = solve_root_problem(rtfn_kn, solution, kn_loss)
+try:
+    solution = solve_root_problem(rootfinder_loss, x0_loss, kn_loss)
+except RuntimeError:
+    solution = solve_root_problem(rootfinder_loss, x0_loss, kn_loss, bnd_loss)
+
+sol_loss = solve_root_problem(rtfn_kn, solution, kn_loss)
 
 sol_dict_loss = ntw.system.write_solution_to_nodes(solution)
 
-# === MULTI SPAN
-if MULTI:
-    print('********** RUN WITH 3 SPAN **********')
-    ntw.system.num_span = 3
-    if NUM_SPAN > 1:
-        rotor.add_equation(FreeVortexDistribution(), 1)
-        stator.add_equation(FreeVortexDistribution(), 1)
-
-    ntw.build()
-
-    opts = {
-        'error_on_fail': False,
-        'ipopt.hessian_approximation': 'limited-memory',
-    }
-
-    rtfn_multi_ip = ntw.system.make_rootfinder('ipopt', opts=opts)
-    rtfn_multi_kn = ntw.system.make_rootfinder('kinsol')
-
-    x0 = ntw.system.get_scaled_guess(sol_dict_loss)
-    kn = ntw.system.get_scaled_constraints()
-    bnd = ntw.system.get_arguments_bounds()
-
-    # sol_multi = solve_root_problem(rtfn_multi_ip, x0, kn, bnd, suppress_output=False)
-    sol_multi = solve_root_problem(rtfn_multi_kn, x0, kn, suppress_output=True)
-    sol_dict_multi = ntw.system.write_solution_to_nodes(sol_multi)
-
-    ntw.system.num_span = NUM_SPAN
-
-    ntw.build()
-
-    x0 = ntw.system.get_scaled_guess(sol_dict_multi)
-    kn = ntw.system.get_scaled_constraints()
-
-    rtfn_final = ntw.system.make_rootfinder('ipopt', opts=opts)
-    sol_multi = solve_root_problem(rtfn_final, x0, kn, suppress_output=True)
-    sol_dict_multi = ntw.system.write_solution_to_nodes(sol_multi)
-
-    sol_final = sol_multi
-else:
-    sol_final = solution
-
 keys_loss, solutions_loss, solution_dicts = compute_design_map(
-    ntw, sol_final, MAP_POINTS
+    ntw, sol_loss, MAP_POINTS
 )
 
 # ========================== SAVE DESIGN MAP DATA
-# Extract eta_tt3 from solutions
-eta_tt3_idx = ntw.system.free_args.index('oth_eta_tt3')
-massflow_idx = ntw.system.free_args.index('oth_massflow3')
-
-eta_tt3_pos = ntw.system.get_arg_position(eta_tt3_idx)
-massflow_pos = ntw.system.get_arg_position(massflow_idx)
-
-mf = solutions_loss[:, massflow_pos[0]] * ntw.system.free_args_scaling[massflow_idx]
-eta_tt = solutions_loss[:, eta_tt3_pos[0]]
-eta_tt3_values = eta_tt
-
 # Extract phi and psi ranges
 phi_vals = keys_loss[:, 0]
 psi_vals = keys_loss[:, 1]
@@ -558,13 +514,14 @@ design_map_data = {
     'keys_loss': keys_loss,
     'phi_vals': phi_vals,
     'psi_vals': psi_vals,
-    'eta_tt3_values': eta_tt3_values,
-    'massflow': mf,
     'N_PTS': MAP_POINTS,
 }
 
 vol_flow = DUTY_COEFFS['oth_volflowRatio1']
+react = DUTY_COEFFS['oth_reactDegree_ts1']
 
-with open(data_dir / f'des_map_orc_vr{vol_flow}_{identifier}.pkl', 'wb') as f:
+filename = f'des_map_R{react}_vr{vol_flow}_{identifier}.pkl'
+with open(data_dir / filename, 'wb') as f:
     pickle.dump(design_map_data, f)
-logger.info(f'Design map data saved to {data_dir / "design_map_orc.pkl"}')
+
+logger.info(f'Design map data saved to {data_dir / filename}')
