@@ -1,9 +1,9 @@
-import CoolProp as cp
 import casadi as cs
+import CoolProp as cp
 import numpy as np
 
+from adet.equations.utils import safe_abs, trapezoid2
 from adet.losses.base_loss import LossModel
-from adet.equations.utils import minmax_bound, safe_abs, safe_max, safe_min, trapezoid2
 
 
 def trapezoidal_vel_profile(

@@ -1,7 +1,7 @@
-import CoolProp as cp
 import casadi as cs
+import CoolProp as cp
 
-from adet.equations.utils import safe_abs, trapezoid2
+from adet.equations.utils import trapezoid2
 from adet.losses.base_loss import LossModel
 from adet.losses.profile import rectangular_vel_profile, trapezoidal_vel_profile
 

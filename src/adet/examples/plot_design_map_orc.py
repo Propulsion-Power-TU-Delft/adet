@@ -2,16 +2,18 @@
 Regenerate meridional channel plots from saved design map data
 """
 
-import pickle
 import pathlib
-import numpy as np
+import pickle
+
 import matplotlib.pyplot as plt
+import numpy as np
+from scipy.interpolate import RectBivariateSpline
 
 from adet.equations.geometrical import ParabolicCamberline
-from adet.tools.strings import get_index
 
 # Constants
-CONTOUR_LEVELS = 50
+CONTOUR_LEVELS = 30
+SPLINE_GRID_FACTOR = 3  # Refinement factor for spline grid
 
 # Setup paths
 data_dir = pathlib.Path(__file__).parent.parent.parent.parent / 'outputs'
@@ -24,6 +26,7 @@ def plot_contour_quantity(
     cmap='viridis',
     levels=CONTOUR_LEVELS,
     clabel='',
+    interpolate='none',
 ):
     """
     Plot a quantity as a 2D contour map with phi (x) and psi (y) axes.
@@ -42,6 +45,9 @@ def plot_contour_quantity(
         Number of contour levels (default: CONTOUR_LEVELS)
     clabel : str
         Colorbar label (default: qty name)
+    interpolate : str
+        Interpolation method: 'spline' for bicubic spline, 'none' for raw data
+        (default: 'spline')
     """
     solution_dicts = design_map['solution_dicts']
     phi_vals = design_map['phi_vals']
@@ -59,7 +65,6 @@ def plot_contour_quantity(
         if val is None:
             qty_values.append(np.nan)
         else:
-            # Convert arrays to scalar (take first element)
             val = val[0] if hasattr(val, '__len__') else val
             qty_values.append(val)
 
@@ -70,12 +75,44 @@ def plot_contour_quantity(
     psi_grid = psi_vals.reshape((N_PTS, N_PTS))
     qty_grid = qty_values.reshape((N_PTS, N_PTS))
 
+    # Apply interpolation based on method
+    if interpolate == 'spline':
+        valid_mask = ~np.isnan(qty_grid)
+        if np.any(valid_mask):
+            phi_min, phi_max = phi_grid.min(), phi_grid.max()
+            psi_min, psi_max = psi_grid.min(), psi_grid.max()
+
+            # Create bicubic spline (handles NaN gracefully)
+            spl = RectBivariateSpline(
+                phi_grid[:, 0], psi_grid[0, :], qty_grid, kx=3, ky=3
+            )
+
+            # Create finer grid for smooth contours
+            n_fine = N_PTS * SPLINE_GRID_FACTOR
+            phi_fine = np.linspace(phi_min, phi_max, n_fine)
+            psi_fine = np.linspace(psi_min, psi_max, n_fine)
+            phi_grid_fine, psi_grid_fine = np.meshgrid(phi_fine, psi_fine)
+
+            # Evaluate spline on fine grid
+            qty_grid_fine = spl(phi_fine, psi_fine, grid=True)
+        else:
+            phi_grid_fine = phi_grid
+            psi_grid_fine = psi_grid
+            qty_grid_fine = qty_grid
+    else:
+        # No interpolation, use raw data
+        phi_grid_fine = phi_grid
+        psi_grid_fine = psi_grid
+        qty_grid_fine = qty_grid
+
     # Create contour plot
-    contourf = ax.contourf(phi_grid, psi_grid, qty_grid, levels=levels, cmap=cmap)
+    contourf = ax.contourf(
+        phi_grid_fine, psi_grid_fine, qty_grid_fine, levels=levels, cmap=cmap
+    )
     contour_lines = ax.contour(
-        phi_grid,
-        psi_grid,
-        qty_grid,
+        phi_grid_fine,
+        psi_grid_fine,
+        qty_grid_fine,
         levels=levels,
         colors='black',
         alpha=0.3,
@@ -316,9 +353,9 @@ def plot_profile_at_point(
 
 
 # Load all data from pickle file
-CAMBER_TYPE = 'minrect'
-REACTION = 0.5
-FILENAME = f'des_map_R{REACTION}_vr4.0_dyn_fmax30_ar3.0_{CAMBER_TYPE}.pkl'
+IDENTIFIER = ''
+REACTION = 0.3
+FILENAME = f'des_map_R{REACTION}_vr4.0_dyn_fmax30_ar3.0.pkl'
 
 print('Loading design map data from pickle file...')
 with open(data_dir / FILENAME, 'rb') as f:
@@ -341,14 +378,16 @@ for phi_idx in phi_indices:
         linear_idx = phi_idx * N_PTS + psi_idx
         selected_indices.append((linear_idx, phi_idx, psi_idx))
 
-fig, axes = plt.subplots(2, 3, figsize=(16, 10))
+fig, axes = plt.subplots(2, 3, figsize=(16, 12))
 fig.suptitle(
-    f'Meridional Channels | Camberline: {CAMBER_TYPE} | R={REACTION}',
+    f'Meridional Channels with Camber Lines | identifier {IDENTIFIER} | R={REACTION}',
     fontsize=14,
 )
 axes = axes.flatten()
 
-print('Plotting meridional channels...')
+pbl = ParabolicCamberline()
+
+print('Plotting meridional channels with camber lines below...')
 for plot_idx, (linear_idx, phi_idx, psi_idx) in enumerate(selected_indices):
     if linear_idx >= len(solution_dicts):
         continue
@@ -378,19 +417,14 @@ for plot_idx, (linear_idx, phi_idx, psi_idx) in enumerate(selected_indices):
     ax.grid(True, alpha=0.3)
     ax.set_title(f'φ={phi_vals[linear_idx]:.3f}, ψ={psi_vals[linear_idx]:.3f}')
 
-    # Plot meridional geometry with straight lines
-    # Solution dict has keys like 'geo_rr0', 'geo_height0', 'geo_chord_ax0', etc.
-    # Nodes: 0 (inlet), 1 (stator outlet/rotor inlet), 2 (rotor outlet)
-
     offset = 0.0
-    # Node indices for stator: 0->1, rotor: 1->2
-    node_pairs = [(0, 1), (2, 3)]  # Assuming stator and rotor
-
+    node_pairs = [(0, 1), (2, 3)]
     colors = ['steelblue', 'coral']
 
+    # First pass: collect min radius
+    min_radius = float('inf')
     for pair_idx, (node_in, node_out) in enumerate(node_pairs):
         try:
-            # Get geometry data from solution dict
             rr_in = sol_dict.get(f'geo_rr{node_in}', None)
             height_in = sol_dict.get(f'geo_height{node_in}', None)
             chord_ax_out = sol_dict.get(f'geo_chord_ax{node_out}', None)
@@ -405,7 +439,37 @@ for plot_idx, (linear_idx, phi_idx, psi_idx) in enumerate(selected_indices):
             ):
                 continue
 
-            # Handle both scalar and array cases
+            rr_in_val = rr_in[0] if hasattr(rr_in, '__len__') else rr_in
+            height_in_val = height_in[0] if hasattr(height_in, '__len__') else height_in
+            rr_out_val = rr_out[0] if hasattr(rr_out, '__len__') else rr_out
+            height_out_val = (
+                height_out[0] if hasattr(height_out, '__len__') else height_out
+            )
+
+            r_hub_inlet = rr_in_val - height_in_val / 2
+            r_hub_outlet = rr_out_val - height_out_val / 2
+            min_radius = min(min_radius, r_hub_inlet, r_hub_outlet)
+        except Exception:
+            continue
+
+    # Plot meridional geometry
+    offset = 0.0
+    for pair_idx, (node_in, node_out) in enumerate(node_pairs):
+        try:
+            rr_in = sol_dict.get(f'geo_rr{node_in}', None)
+            height_in = sol_dict.get(f'geo_height{node_in}', None)
+            chord_ax_out = sol_dict.get(f'geo_chord_ax{node_out}', None)
+            rr_out = sol_dict.get(f'geo_rr{node_out}', None)
+            height_out = sol_dict.get(f'geo_height{node_out}', None)
+
+            if (
+                rr_in is None
+                or height_in is None
+                or rr_out is None
+                or height_out is None
+            ):
+                continue
+
             rr_in_val = rr_in[0] if hasattr(rr_in, '__len__') else rr_in
             height_in_val = height_in[0] if hasattr(height_in, '__len__') else height_in
             rr_out_val = rr_out[0] if hasattr(rr_out, '__len__') else rr_out
@@ -416,7 +480,6 @@ for plot_idx, (linear_idx, phi_idx, psi_idx) in enumerate(selected_indices):
                 chord_ax_out[0] if hasattr(chord_ax_out, '__len__') else chord_ax_out
             )
 
-            # Calculate inlet/outlet positions and radii
             x_inlet = offset
             x_outlet = offset + chord_ax_val
 
@@ -427,23 +490,18 @@ for plot_idx, (linear_idx, phi_idx, psi_idx) in enumerate(selected_indices):
 
             color = colors[pair_idx]
 
-            # Plot hub line
             ax.plot(
                 [x_inlet, x_outlet],
                 [r_hub_inlet, r_hub_outlet],
                 color=color,
                 linewidth=2,
             )
-
-            # Plot tip line
             ax.plot(
                 [x_inlet, x_outlet],
                 [r_tip_inlet, r_tip_outlet],
                 color=color,
                 linewidth=2,
             )
-
-            # Plot inlet and outlet vertical lines
             ax.plot(
                 [x_inlet, x_inlet],
                 [r_hub_inlet, r_tip_inlet],
@@ -461,144 +519,70 @@ for plot_idx, (linear_idx, phi_idx, psi_idx) in enumerate(selected_indices):
                 alpha=0.6,
             )
 
-            offset += chord_ax_val * 1.05
+            offset += chord_ax_val * 1.07
         except Exception as e:
             print(
                 f'Error plotting pair {pair_idx} for point ({phi_idx}, {psi_idx}): {e}'
             )
             continue
 
-    # Plot centerline
-    ax.plot([0.0, offset], [0.0, 0.0], color='r', linestyle='dashdot', linewidth=2)
+    # Plot camberlines below minimum radius
+    if min_radius != float('inf'):
+        offset = 0.0
+        for pair_idx, (node_in, node_out) in enumerate(node_pairs):
+            try:
+                metal_angle_in = sol_dict.get(f'geo_metal_angle{node_in}', None)
+                metal_angle_out = sol_dict.get(f'geo_metal_angle{node_out}', None)
+                chord_ax = sol_dict.get(f'geo_chord_ax{node_out}', None)
+                pitch = sol_dict.get(f'geo_pitch{node_out}', None)
 
-plt.tight_layout()
+                if (
+                    metal_angle_in is None
+                    or metal_angle_out is None
+                    or chord_ax is None
+                    or pitch is None
+                ):
+                    continue
 
-# ========================== PLOT CAMBER LINES
-print('Plotting camber lines...')
+                metal_angle_in_val = (
+                    metal_angle_in[0]
+                    if hasattr(metal_angle_in, '__len__')
+                    else metal_angle_in
+                )
+                metal_angle_out_val = (
+                    metal_angle_out[0]
+                    if hasattr(metal_angle_out, '__len__')
+                    else metal_angle_out
+                )
+                chord_ax_val = chord_ax[0] if hasattr(chord_ax, '__len__') else chord_ax
+                pitch_val = pitch[0] if hasattr(pitch, '__len__') else pitch
 
-fig, axes = plt.subplots(2, 3, figsize=(16, 10))
-fig.suptitle(
-    f'Camber Lines | Camberline: {CAMBER_TYPE} | R={REACTION}',
-    fontsize=14,
-)
-axes = axes.flatten()
+                color = colors[pair_idx]
 
-pbl = ParabolicCamberline()
+                # Offset camberlines below the minimum radius
+                camber_spacing = pitch_val * 3
+                radial_offset = min_radius - camber_spacing - 0.01
 
-for plot_idx, (linear_idx, phi_idx, psi_idx) in enumerate(selected_indices):
-    if linear_idx >= len(solution_dicts):
-        continue
+                num_blades = 3
+                for blade_num in range(num_blades):
+                    pbl.plot_camber_line(
+                        ax,
+                        metal_angle_in_val,
+                        metal_angle_out_val,
+                        chord_ax_val,
+                        color,
+                        axial_offset=offset,
+                        tangential_offset=radial_offset + blade_num * pitch_val,
+                        linewidth=1.5,
+                    )
 
-    sol_dict = solution_dicts[linear_idx]
-
-    # Skip if no solution
-    if sol_dict is None:
-        axes[plot_idx].text(
-            0.5,
-            0.5,
-            'No solution',
-            ha='center',
-            va='center',
-            transform=axes[plot_idx].transAxes,
-        )
-        axes[plot_idx].set_title(
-            rf'$\phi$={phi_vals[linear_idx]:.3f}, $\psi$={psi_vals[linear_idx]:.3f}'
-        )
-        continue
-
-    ax = axes[plot_idx]
-    ax.set_aspect('equal')
-    ax.set_ylabel('tangential [m]')
-    ax.set_xlabel('axial [m]')
-    ax.grid(True, alpha=0.3)
-    ax.set_title(f'φ={phi_vals[linear_idx]:.3f}, ψ={psi_vals[linear_idx]:.3f}')
-
-    offset = 0.0
-    node_pairs = [(0, 1), (2, 3)]
-    colors_blade = ['steelblue', 'coral']
-
-    for pair_idx, (node_in, node_out) in enumerate(node_pairs):
-        try:
-            # Get geometry data from solution dict
-            metal_angle_in = sol_dict.get(f'geo_metal_angle{node_in}', None)
-            metal_angle_out = sol_dict.get(f'geo_metal_angle{node_out}', None)
-            chord_ax = sol_dict.get(f'geo_chord_ax{node_out}', None)
-            pitch = sol_dict.get(f'geo_pitch{node_out}', None)
-
-            if (
-                metal_angle_in is None
-                or metal_angle_out is None
-                or chord_ax is None
-                or pitch is None
-            ):
+                offset += chord_ax_val * 1.05
+            except Exception as e:
+                print(
+                    f'Error plotting camberlines for pair {pair_idx} at '
+                    f'point ({phi_idx}, {psi_idx}): {e}'
+                )
                 continue
-
-            # Handle both scalar and array cases
-            metal_angle_in_val = (
-                metal_angle_in[0]
-                if hasattr(metal_angle_in, '__len__')
-                else metal_angle_in
-            )
-            metal_angle_out_val = (
-                metal_angle_out[0]
-                if hasattr(metal_angle_out, '__len__')
-                else metal_angle_out
-            )
-            chord_ax_val = chord_ax[0] if hasattr(chord_ax, '__len__') else chord_ax
-            pitch_val = pitch[0] if hasattr(pitch, '__len__') else pitch
-
-            color = colors_blade[pair_idx]
-
-            # Plot 3 camberlines at tangential positions
-            num_blades = 3
-            for blade_num in range(num_blades):
-                pbl.plot_camber_line(
-                    ax,
-                    metal_angle_in_val,
-                    metal_angle_out_val,
-                    chord_ax_val,
-                    color,
-                    axial_offset=offset,
-                    tangential_offset=blade_num * pitch_val,
-                    linewidth=1.5,
-                )
-
-            # Plot hub and tip camberlines
-            metal_angle_in_hub = sol_dict.get(f'geo_metal_angle{node_in}', None)
-            metal_angle_out_hub = sol_dict.get(f'geo_metal_angle{node_out}', None)
-            if hasattr(metal_angle_in_hub, '__len__') and hasattr(
-                metal_angle_out_hub, '__len__'
-            ):
-                pbl.plot_camber_line(
-                    ax,
-                    metal_angle_in_hub[0],
-                    metal_angle_out_hub[0],
-                    chord_ax_val,
-                    'orange',
-                    axial_offset=offset,
-                    linewidth=1.5,
-                    linestyle='--',
-                    alpha=0.7,
-                )
-                pbl.plot_camber_line(
-                    ax,
-                    metal_angle_in_hub[-1],
-                    metal_angle_out_hub[-1],
-                    chord_ax_val,
-                    'seagreen',
-                    axial_offset=offset,
-                    linewidth=1.5,
-                    linestyle='--',
-                    alpha=0.7,
-                )
-
-            offset += chord_ax_val * 1.1
-        except Exception as e:
-            print(
-                f'Error plotting camberlines for pair {pair_idx} at '
-                f'point ({phi_idx}, {psi_idx}): {e}'
-            )
-            continue
 
 plt.tight_layout()
 
@@ -614,14 +598,14 @@ plot_contour_quantity(
     clabel='Total-to-Total Efficiency',
 )
 ax.set_title(
-    f'Total-to-Total Efficiency | Camberline: {CAMBER_TYPE} | R={REACTION}',
+    f'Total-to-Total Efficiency | identifier {IDENTIFIER} | R={REACTION}',
     fontsize=12,
 )
 plt.tight_layout()
 
 # Figure 2: Stator losses
 print('Plotting stator losses...')
-fig_stator, axes_stator = plt.subplots(2, 2, figsize=(14, 10))
+fig_stator, axes_stator = plt.subplots(2, 2, figsize=(12, 10))
 axes_stator = axes_stator.flatten()
 
 loss_keys_stator = [
@@ -639,7 +623,7 @@ for idx, (qty_key, label) in enumerate(loss_keys_stator):
     )
 
 fig_stator.suptitle(
-    f'Stator Loss Components | Camberline: {CAMBER_TYPE} | R={REACTION}',
+    f'Stator Loss Components | identifier {IDENTIFIER} | R={REACTION}',
     fontsize=16,
     y=1.00,
 )
@@ -647,7 +631,7 @@ plt.tight_layout()
 
 # Figure 3: Rotor losses
 print('Plotting rotor losses...')
-fig_rotor, axes_rotor = plt.subplots(2, 2, figsize=(14, 10))
+fig_rotor, axes_rotor = plt.subplots(2, 2, figsize=(12, 10))
 axes_rotor = axes_rotor.flatten()
 
 loss_keys_rotor = [
@@ -666,7 +650,7 @@ for idx, (qty_key, label) in enumerate(loss_keys_rotor):
     )
 
 fig_rotor.suptitle(
-    f'Rotor Loss Components | Camberline: {CAMBER_TYPE} | R={REACTION}',
+    f'Rotor Loss Components | identifier {IDENTIFIER} | R={REACTION}',
     fontsize=16,
     y=1.00,
 )

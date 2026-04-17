@@ -1,10 +1,9 @@
 # === IMPORTS
-from adet.equations.utils import get_midspan_idx
-from copy import deepcopy
 import logging
 import pathlib
 import pickle
-from typing import Type, Literal
+from copy import deepcopy
+from typing import Literal, Type
 
 import CoolProp as cp
 import matplotlib.pyplot as plt
@@ -12,8 +11,7 @@ import numpy as np
 from pint import Quantity
 
 from adet.assembly import CasadiSystem
-from adet.components import BladeRow, Inlet, Shaft
-from adet.components import ComponentNetwork
+from adet.components import BladeRow, ComponentNetwork, Inlet, Shaft
 from adet.equations.base_equation import EquationBase, LossApplier
 from adet.equations.definitions import (
     BoundaryLayerRatios,
@@ -22,13 +20,11 @@ from adet.equations.definitions import (
     RepeatedStage,
 )
 from adet.equations.geometrical import (
-    MeridionalGeometry,
-    MinimalCamberLine,
-    ModifiedZweifel,
-    MeridionalRatios,
     FlareAngleLimitedAR,
+    MeridionalGeometry,
+    MeridionalRatios,
+    ModifiedZweifel,
     ParabolicCamberline,
-    TwoSegmentCamberline,
 )
 from adet.equations.nondimensional import (
     FlowCoefficient,
@@ -38,12 +34,11 @@ from adet.equations.nondimensional import (
     VolumetricFlowRatio,
     WorkCoefficient,
 )
-from adet.fluid.settings import ExternalFluidModel
-from adet.fluid.settings import FluidSettings
+from adet.fluid.settings import ExternalFluidModel, FluidSettings
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
-from adet.losses.leakage import DentonRectLeakage, DentonTrapLeakage
-from adet.losses.profile import DentonRectProfile, DentonTrapProfile
+from adet.losses.leakage import DentonTrapLeakage
 from adet.losses.mixing import DentonMixingLoss, SieverdingBasePressure
+from adet.losses.profile import DentonTrapProfile
 from adet.losses.secondary import SecondaryBSM
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
 from adet.solution import solve_root_problem
@@ -62,10 +57,10 @@ plt.close('all')
 
 # === SETTINGS
 NUM_SPAN = 1
-MAP_POINTS = 10  # Grid is the square of this
+MAP_POINTS = 50  # Grid is the square of this
 
 # Volumetric flow ratio
-REACT_DEGREE = 0.5
+REACT_DEGREE = 0.7
 VOL_FLOW = 4.0
 FLARE_ANGLE = 30  # deg
 ASP_RATIO = 3.0
@@ -124,6 +119,13 @@ def compute_design_map(
     ntw, first_sol, n_points, starter_keys=None, starter_solutions=None
 ):
     rtfn_kin = ntw.system.make_rootfinder('kinsol')
+    rtfn_ip = ntw.system.make_rootfinder(
+        'ipopt',
+        opts={
+            'error_on_fail': True,
+            'ipopt.max_wall_time': 1.0,
+        },
+    )
 
     keys = np.zeros((n_points**2, 2))
 
@@ -134,6 +136,7 @@ def compute_design_map(
     solution_dicts = []
 
     kn = ntw.system.get_scaled_constraints()
+    bnd = ntw.system.get_arguments_bounds()
 
     curr_index = 0
     phi_idx = ntw.system.constraints.index('oth_flowCoeff3')
@@ -161,7 +164,24 @@ def compute_design_map(
             try:
                 solution = solve_root_problem(rtfn_kin, x0, kn, suppress_output=True)
             except RuntimeError:
-                solution = np.full(solution.shape, np.nan)
+                # Try bounded and unbounded ipopt
+                logger.info('KINSOL failed, trying IPOPT...')
+                try:
+                    solution = solve_root_problem(
+                        rtfn_ip, x0, kn, bnd, suppress_output=True
+                    )
+                except RuntimeError:
+                    try:
+                        solution = solve_root_problem(
+                            rtfn_ip, x0, kn, suppress_output=True
+                        )
+                    except RuntimeError:
+                        logger.info('IPOPT failure, default to closest solution')
+                        # Just re-use previous solution
+                        # => no cache misses
+                        solution = x0
+
+                # solution = np.full(solution.shape, np.nan)
 
             keys[curr_index, :] = curr_key
             solutions[curr_index, :] = solution.flatten()
@@ -169,8 +189,13 @@ def compute_design_map(
             # Store the full solution dict
             if not np.isnan(solution).any():
                 sol_dict = ntw.system.write_solution_to_nodes(solution)
+                if sol_dict['oth_eta_tt3'] > 1.0 or sol_dict['oth_eta_tt3'] < 0.5:
+                    sol_dict = None
+                    logger.warning(f'Failed point at phi={phi:.2f}, psi={psi:.2f}')
             else:
                 sol_dict = None
+                logger.warning(f'Failed point at phi={phi:.2f}, psi={psi:.2f}')
+
             solution_dicts.append(sol_dict)
 
             curr_index += 1
@@ -193,7 +218,7 @@ DUTY_COEFFS = {
     'oth_reactDegree_ts1': round(float(REACT_DEGREE), 1),
 }
 
-PHI_SPAN = np.linspace(0.35, 1.45, MAP_POINTS)
+PHI_SPAN = np.linspace(0.4, 1.5, MAP_POINTS)
 PSI_SPAN = np.linspace(3.0, 10.0, MAP_POINTS)
 
 real_model = ExternalFluidModel(abs_state)
@@ -282,10 +307,10 @@ LOSS_MODELS: dict[
     # *** Blade row losses
     IsentropicProperties: (0, 1),
     SecondaryBSM: (0, 1),
-    # DentonTrapLeakage: (0, 1),
-    # DentonTrapProfile: (0, 1),
-    DentonRectLeakage: (0, 1),
-    DentonRectProfile: (0, 1),
+    DentonTrapLeakage: (0, 1),
+    DentonTrapProfile: (0, 1),
+    # DentonRectLeakage: (0, 1),
+    # DentonRectProfile: (0, 1),
     DentonMixingLoss: 1,
     ClearanceByHeight: 1,
     BoundaryLayerRatios: 1,
@@ -298,9 +323,10 @@ LOSS_MODELS: dict[
 inlet = Inlet(
     {
         'oth': {
-            'cum_massflow': 100,
+            # 'cum_massflow': 100,
         },
         'geo': {
+            'rr_midspan': 0.1,
             'meridional_angle': Quantity(0, 'deg'),
             # 'hubtipRatio': 0.9,
         },

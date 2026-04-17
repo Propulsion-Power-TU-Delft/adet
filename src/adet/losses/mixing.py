@@ -177,7 +177,7 @@ def incomp_mixing_zeta(
     oth_mom_thick0,
     oth_disp_thick0,
 ):
-    w = geo_pitch0 * np.cos(geo_metal_angle0)  # Throat
+    w = geo_pitch0 * np.cos(geo_metal_angle0)  # outlet throat
     cpb = (oth_p_base0 - stc_p0) / dyn_press
 
     return (
