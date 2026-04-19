@@ -60,7 +60,7 @@ NUM_SPAN = 1
 MAP_POINTS = 50  # Grid is the square of this
 
 # Volumetric flow ratio
-REACT_DEGREE = 0.7
+REACT_DEGREE = 0.3
 VOL_FLOW = 4.0
 FLARE_ANGLE = 30  # deg
 ASP_RATIO = 3.0

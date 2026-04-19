@@ -165,13 +165,16 @@ class AddAxialLosses(LossApplier):
         oth_delta_smass_leakage1,
         oth_delta_smass_profile1,
         oth_delta_smass_secondary1,
+        kin_relmach1,
     ):
         n_span = max(stc_smass0.shape)
         midspan = get_midspan_idx(stc_smass0)
+        delta_smass_shock = (kin_relmach1 - 1.2) * oth_delta_smass_mixing1 / 4
         main_loss = (
             oth_delta_smass_mixing1
             + oth_delta_smass_profile1
             + oth_delta_smass_secondary1[midspan]
+            + delta_smass_shock
         )
 
         # Linear distribution of tip leakage

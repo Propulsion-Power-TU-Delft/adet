@@ -1,39 +1,33 @@
 import logging
 
-from pint import Quantity
+import CoolProp as cp
 import matplotlib.pyplot as plt
 import numpy as np
-import CoolProp as cp
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes, mark_inset
+from pint import Quantity
 
-from adet.equations.base_equation import LossApplier
-from adet.equations.control_volumes import FullIncidence
-from adet.equations.utils import residual_debugger
-from adet.solution import solve_root_problem
 from adet.assembly import CasadiSystem
 from adet.components import BladeRow
 from adet.components.blade_row import VanelessDiffuser, plot_from_nodes
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
-
+from adet.equations.base_equation import LossApplier
+from adet.equations.control_volumes import FullIncidence
 from adet.equations.definitions import (
-    IsentropicProperties,
     EffectiveBladeNumber,
+    IsentropicProperties,
 )
 from adet.equations.geometrical import MinimalCamberLine
 from adet.equations.nondimensional import (
-    TotalTotalCompressionEfficiency,
-    WorkCoefficient,
     TotalTotalPressureRatio,
 )
+from adet.equations.utils import residual_debugger
 from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
-
 from adet.losses.basic import (
-    PercTotalPressureLoss,
     PercentageEntropyLoss,
     ZeroDeviation,
 )
-
 from adet.losses.compressors import (
     BackstromSlip,
     BladeLoadingCoppage,
@@ -41,7 +35,6 @@ from adet.losses.compressors import (
     DiskFricDailyNece,
     HydraulicQuantities,
     IncidenceGalvas,
-    IncidenceVDB,
     LeakageAungier,
     LeakageLostWork,
     MixingJohnstonDean,
@@ -49,6 +42,7 @@ from adet.losses.compressors import (
     SkinFrictionJansen,
 )
 from adet.registries import GuessRegistry, VariableBoundsRegistry
+from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.interpolation import resample_linear
 from adet.tools.loggers import setup_logger
@@ -187,7 +181,7 @@ inlet = Inlet(
             'alpha': 0.0,
         },
         'oth': {
-            'cum_massflow': 4.1,
+            'cum_massflow': 4.3,
         },
     },
 )
@@ -439,7 +433,87 @@ if __name__ == '__main__':
         )
         solution_loss = solve_root_problem(rtfn_kin, solution_loss, kn_loss)
         sol_loss_dict = ntw_hecc.system.write_solution_to_nodes(solution_loss)
+        n0 = ntw_hecc.system.nodes[0]
+        n1 = ntw_hecc.system.nodes[1]
+        n2 = ntw_hecc.system.nodes[2]
+        n3 = ntw_hecc.system.nodes[3]
         #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
+
+        # Loss breakdown bar plot at design point
+        if RUN_PLOTS:
+            fig, ax = plt.subplots(figsize=(10, 6))
+
+            # Extract loss components from node (spanwise average)
+            loss_components = {
+                'Skin Friction': np.mean(n1.oth.delta_hmass_skin),
+                'Incidence': np.mean(n1.oth.delta_hmass_incidence),
+                'Clearance': np.mean(n1.oth.delta_hmass_clearance),
+                'Mixing': np.mean(n1.oth.delta_hmass_mixing),
+                'Loading': np.mean(n1.oth.delta_hmass_loading),
+                'Leakage': np.mean(n1.oth.delta_hmass_leakage),
+                'Recirculation': np.mean(n1.oth.delta_hmass_recirc),
+                'Disk Friction': np.mean(n1.oth.delta_hmass_disk),
+            }
+
+            # Calculate work
+            work = np.mean(n1.tot.hmass) - np.mean(n0.tot.hmass)
+
+            # Calculate dht_ext
+            dht_ext = (
+                np.mean(n1.oth.delta_hmass_leakage)
+                + np.mean(n1.oth.delta_hmass_recirc)
+                + np.mean(n1.oth.delta_hmass_disk)
+            )
+
+            # Normalize by (work + dht_ext)
+            denominator = work + dht_ext
+            normalized_losses = {
+                k: v / denominator * 100 for k, v in loss_components.items()
+            }
+
+            # Create bar plot
+            names = list(normalized_losses.keys())
+            values = list(normalized_losses.values())
+            colormap = plt.get_cmap('viridis')
+
+            colors = colormap(np.linspace(0, 1, len(names)))
+
+            bars = ax.bar(
+                names,
+                values,
+                color=colors,
+                # edgecolor='black',
+                # linewidth=1.5,
+            )
+
+            # Add value labels on bars
+            for bar in bars:
+                height = bar.get_height()
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2.0,
+                    height,
+                    f'{height:.2f}%',
+                    ha='center',
+                    va='bottom',
+                    fontsize=10,
+                    fontweight='bold',
+                )
+
+            ax.set_ylabel('Loss / (Work + dht_ext) [%]', fontsize=12, fontweight='bold')
+            # ax.set_title(
+            #     'Loss Breakdown at Design Point\n'
+            #     f'Shaft Work: {work:.0f} J/kg, External Losses: {dht_ext:.0f} J/kg',
+            #     fontsize=12,
+            #     fontweight='bold',
+            # )
+            ax.grid(True, alpha=0.3, axis='y')
+            plt.xticks(rotation=45, ha='right')
+            fig.tight_layout()
+
+            if SHOW_PLOTS:
+                plt.show()
+            else:
+                plt.close(fig)
 
     if RUN_SPEEDLINES:
         speed_lines = {
@@ -505,7 +579,7 @@ if __name__ == '__main__':
                     )
                     min_distance = float('inf')
                     closest_sol = sol
-                    for prev_mf, prev_pr, prev_sol in all_converged_solutions:
+                    for prev_mf, _, prev_sol in all_converged_solutions:
                         # Normalize differences for balanced weighting
                         mf_diff_norm = (mf - prev_mf) / mf_range
                         pr_diff_norm = 0.0  # pr_diff not applicable yet
@@ -687,10 +761,6 @@ if __name__ == '__main__':
         print(f'Computed speedline data saved to {output_path}')
 
     # ---------------- PLOT ---------------------
-    n0 = ntw_hecc.system.nodes[0]
-    n1 = ntw_hecc.system.nodes[1]
-    n2 = ntw_hecc.system.nodes[2]
-    n3 = ntw_hecc.system.nodes[3]
     if RUN_PLOTS and not RUN_SPEEDLINES:
         fig, axs = plt.subplots(2, 2, figsize=(8, 20))
         if len(ntw_hecc.components) > 2:
@@ -715,9 +785,12 @@ if __name__ == '__main__':
 
                 node_idx += 1
 
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(10, 7))
         ax.set_aspect('equal')
         offset = 0.0
+        impeller_outlet_x = None
+        impeller_outlet_y = None
+
         for comp in plottable_components:
             if comp == vaneless_diff:
                 continue
@@ -726,28 +799,106 @@ if __name__ == '__main__':
             if not inlet_node or not outlet_node:
                 raise ValueError('missing nodes')
 
-            lines = plot_from_nodes(inlet_node, outlet_node, False, offset, 'k')
+            lines = plot_from_nodes(
+                inlet_node,
+                outlet_node,
+                False,
+                offset,
+                'k',
+                ax,
+            )
 
+            MAIN_MARK_SIZE = 7
+            STT_COLOR = '#b31529'
             # Only plot impeller outlet
             ax.plot(
                 np.ones(NUM_SPAN) * offset,
                 inlet_node.geo.rr,
                 'o',
-                color='r',
-                markersize=5,
+                color=STT_COLOR,
+                markersize=MAIN_MARK_SIZE,
             )
 
             offset += outlet_node.geo.chord_ax[0]
             hh_points = (
                 offset - outlet_node.geo.height / 2 + np.cumsum(outlet_node.geo.hh)
             )
+            rr_points = hh_points - outlet_node.geo.hh / 2
             ax.plot(
-                hh_points,
+                rr_points,
                 outlet_node.geo.rr,
                 'o',
-                color='r',
-                markersize=5,
+                color=STT_COLOR,
+                markersize=MAIN_MARK_SIZE,
             )
+            ax.grid(alpha=0.4)
+            # Store outlet location for inset
+            impeller_outlet_x = rr_points
+            impeller_outlet_y = outlet_node.geo.rr
+
+        # Increase label and title font sizes
+        ax.set_xlabel(
+            r'z [m]',
+            fontsize=20,
+            # fontweight='bold',
+        )
+        ax.set_ylabel(
+            r'r [m]',
+            fontsize=20,
+            # fontweight='bold',
+        )
+        # ax.set_title('Impeller Geometry', fontsize=14, fontweight='bold')
+        ax.tick_params(axis='both', labelsize=15)
+
+        # Add inset axis for zoomed region
+        axins = inset_axes(
+            ax, width='40%', height='40%', loc='upper left', borderpad=1.5
+        )
+        axins.set_aspect('equal')
+
+        # Plot zoomed region on inset
+        inset_offset = 0.0
+        for comp in plottable_components:
+            if comp == vaneless_diff:
+                continue
+            inlet_node = comp.get_inlet_node(ntw_hecc)
+            outlet_node = comp.get_outlet_node(ntw_hecc)
+
+            # Plot geometry on inset
+            plot_from_nodes(
+                inlet_node,
+                outlet_node,
+                False,
+                inset_offset,
+                'k',
+                axins,
+            )
+
+            inset_offset += outlet_node.geo.chord_ax[0]
+
+            # Replot outlet points on inset
+            if impeller_outlet_x is not None and impeller_outlet_y is not None:
+                axins.plot(
+                    impeller_outlet_x,
+                    impeller_outlet_y,
+                    'o',
+                    color=STT_COLOR,
+                    markersize=10,
+                )
+
+        # Set zoom region
+        axins.set_xlim(0.125, 0.145)
+        axins.set_ylim(0.21, 0.218)
+        axins.tick_params(labelbottom=False, labelleft=False)
+        # axins.set_xlabel('Axial [m]', fontsize=11, fontweight='bold')
+        # axins.set_ylabel('Radial [m]', fontsize=11, fontweight='bold')
+        # axins.set_title('Outlet Detail', fontsize=12, fontweight='bold')
+
+        # Add grid to inset
+        axins.grid(True, alpha=0.3)
+
+        # Connect inset to main axis with lines
+        mark_inset(ax, axins, loc1=2, loc2=4, fc='none', ec='0.5')
 
         fig.tight_layout()
         if SHOW_PLOTS:

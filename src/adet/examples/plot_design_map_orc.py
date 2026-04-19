@@ -7,16 +7,43 @@ import pickle
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.gridspec import GridSpec
 from scipy.interpolate import RectBivariateSpline
 
 from adet.equations.geometrical import ParabolicCamberline
 
 # Constants
-CONTOUR_LEVELS = 30
+CONTOUR_LEVELS = 50
+PLOT_LOSSES = False
 SPLINE_GRID_FACTOR = 3  # Refinement factor for spline grid
+
+# Font sizes
+TICK_SIZE = 14
+LABEL_SIZE = 16
+TITLE_SIZE = 14
+AXIS_LABEL_SIZE = 20
+COLORBAR_LABEL_SIZE = 26
+
+plt.rcParams.update(
+    {
+        'text.usetex': True,
+        'font.family': 'serif',
+    }
+)
 
 # Setup paths
 data_dir = pathlib.Path(__file__).parent.parent.parent.parent / 'outputs'
+
+
+def get_mean_radius(sol_dict):
+    """Extract mean radius from solution dict for nondimensionalization."""
+    radii = []
+    for node_idx in [0, 1, 2, 3]:
+        rr = sol_dict.get(f'geo_rr{node_idx}')
+        if rr is not None:
+            val = rr[0] if hasattr(rr, '__len__') else rr
+            radii.append(val)
+    return np.mean(radii) if radii else 1.0
 
 
 def plot_contour_quantity(
@@ -58,7 +85,10 @@ def plot_contour_quantity(
     qty_values = []
     for dic in solution_dicts:
         if dic is None:
-            qty_values.append(np.nan)
+            if qty == 'oth_eta_tt3':
+                qty_values.append(0.7)
+            else:
+                qty_values.append(np.nan)
             continue
 
         val = dic.get(qty, None)
@@ -121,11 +151,20 @@ def plot_contour_quantity(
     ax.clabel(contour_lines, inline=True, fontsize=8)
 
     cbar = plt.colorbar(contourf, ax=ax)
-    cbar.set_label(clabel if clabel else qty, rotation=270, labelpad=20)
-    ax.set_xlabel(r'Flow Coefficient $\phi$', fontsize=12)
-    ax.set_ylabel(r'Loading Coefficient $\psi$', fontsize=12)
-    ax.set_title(f'{clabel if clabel else qty}', fontsize=14)
+    cbar.set_label(
+        clabel if clabel else qty,
+        rotation=0,
+        labelpad=20,
+        fontsize=COLORBAR_LABEL_SIZE,
+        ha='center',
+    )
+
+    cbar.ax.tick_params('both', labelsize=TICK_SIZE)
+    ax.tick_params('both', labelsize=TICK_SIZE)
+    ax.set_ylabel(r'$K_{is}$', fontdict={'fontsize': AXIS_LABEL_SIZE})
+    ax.set_xlabel(r'$\phi$', fontdict={'fontsize': AXIS_LABEL_SIZE})
     ax.grid(True, alpha=0.2)
+    fig.tight_layout()
 
     return
 
@@ -136,6 +175,7 @@ def plot_profile_at_point(
     design_map,
     plot_type='both',
     figsize=(12, 5),
+    axes=None,
 ):
     """
     Plot blade profile (meridional channel and/or camber lines) at a specific phi/psi
@@ -153,11 +193,15 @@ def plot_profile_at_point(
         Type of plot: 'meridional', 'camber', or 'both' (default: 'both')
     figsize : tuple
         Figure size (default: (12, 5))
+    axes : array-like, optional
+        Pre-created axes for plotting (meridional, camber). If None, creates new figure.
 
     Returns
     -------
-    fig : matplotlib.figure.Figure
-        The generated figure
+    fig : matplotlib.figure.Figure or None
+        The generated figure (None if axes provided)
+    sol_dict : dict
+        Solution dictionary at the target point
     """
     solution_dicts = design_map['solution_dicts']
     phi_vals = design_map['phi_vals']
@@ -177,20 +221,27 @@ def plot_profile_at_point(
     phi_actual = phi_vals[linear_idx]
     psi_actual = psi_vals[linear_idx]
 
-    if plot_type == 'both':
-        fig, axes = plt.subplots(1, 2, figsize=figsize)
-    else:
-        fig, ax_single = plt.subplots(figsize=figsize)
-        axes = [ax_single]
+    fig = None
+    if axes is None:
+        if plot_type == 'both':
+            fig, axes = plt.subplots(1, 2, figsize=figsize)
+        else:
+            fig, ax_single = plt.subplots(figsize=figsize)
+            axes = [ax_single]
 
     # Plot meridional channel
     if plot_type in ('meridional', 'both'):
         ax = axes[0]
         ax.set_aspect('equal')
-        ax.set_ylabel('radius [m]')
-        ax.set_xlabel('axial [m]')
+        r_mean = get_mean_radius(sol_dict)
+        ax.set_ylabel(r'$\tilde{r}$', fontsize=AXIS_LABEL_SIZE)
+        ax.set_xlabel(r'$\tilde{z}$', fontsize=AXIS_LABEL_SIZE)
+        ax.tick_params('both', labelsize=TICK_SIZE)
         ax.grid(True, alpha=0.3)
-        ax.set_title(f'Meridional Channel: φ={phi_actual:.3f}, ψ={psi_actual:.3f}')
+        ax.set_title(
+            f'Meridional Channel: φ={phi_actual:.3f}, ψ={psi_actual:.3f}',
+            fontsize=TITLE_SIZE,
+        )
 
         offset = 0.0
         node_pairs = [(0, 1), (2, 3)]
@@ -221,13 +272,13 @@ def plot_profile_at_point(
                 chord_ax_out[0] if hasattr(chord_ax_out, '__len__') else chord_ax_out
             )
 
-            x_inlet = offset
-            x_outlet = offset + chord_ax_val
+            x_inlet = offset / r_mean
+            x_outlet = (offset + chord_ax_val) / r_mean
 
-            r_hub_inlet = rr_in_val - height_in_val / 2
-            r_tip_inlet = rr_in_val + height_in_val / 2
-            r_hub_outlet = rr_out_val - height_out_val / 2
-            r_tip_outlet = rr_out_val + height_out_val / 2
+            r_hub_inlet = (rr_in_val - height_in_val / 2) / r_mean
+            r_tip_inlet = (rr_in_val + height_in_val / 2) / r_mean
+            r_hub_outlet = (rr_out_val - height_out_val / 2) / r_mean
+            r_tip_outlet = (rr_out_val + height_out_val / 2) / r_mean
 
             color = colors[pair_idx]
 
@@ -262,16 +313,27 @@ def plot_profile_at_point(
 
             offset += chord_ax_val * 1.05
 
-        ax.plot([0.0, offset], [0.0, 0.0], color='r', linestyle='dashdot', linewidth=2)
+        ax.plot(
+            [0.0, offset / r_mean],
+            [0.0, 0.0],
+            color='r',
+            linestyle='dashdot',
+            linewidth=2,
+        )
 
     # Plot camber lines
     if plot_type in ('camber', 'both'):
         ax = axes[1] if plot_type == 'both' else axes[0]
         ax.set_aspect('equal')
-        ax.set_ylabel('tangential [m]')
-        ax.set_xlabel('axial [m]')
+        r_mean = get_mean_radius(sol_dict)
+        ax.set_ylabel(r'$\theta$', fontsize=AXIS_LABEL_SIZE)
+        ax.set_xlabel(r'$\tilde{z}$', fontsize=AXIS_LABEL_SIZE)
+        ax.tick_params('both', labelsize=TICK_SIZE)
         ax.grid(True, alpha=0.3)
-        ax.set_title(f'Camber Lines: φ={phi_actual:.3f}, ψ={psi_actual:.3f}')
+        ax.set_title(
+            f'Camber Lines: phi={phi_actual:.3f}, psi={psi_actual:.3f}',
+            fontsize=TITLE_SIZE,
+        )
 
         pbl = ParabolicCamberline()
         offset = 0.0
@@ -307,16 +369,16 @@ def plot_profile_at_point(
 
             color = colors_blade[pair_idx]
 
-            num_blades = 3
+            num_blades = 2
             for blade_num in range(num_blades):
                 pbl.plot_camber_line(
                     ax,
                     metal_angle_in_val,
                     metal_angle_out_val,
-                    chord_ax_val,
+                    chord_ax_val / r_mean,
                     color,
-                    axial_offset=offset,
-                    tangential_offset=blade_num * pitch_val,
+                    axial_offset=offset / r_mean,
+                    tangential_offset=blade_num * pitch_val / r_mean,
                     linewidth=1.5,
                 )
 
@@ -327,9 +389,9 @@ def plot_profile_at_point(
                     ax,
                     metal_angle_in_val[0],
                     metal_angle_out_val[0],
-                    chord_ax_val,
+                    chord_ax_val / r_mean,
                     'orange',
-                    axial_offset=offset,
+                    axial_offset=offset / r_mean,
                     linewidth=1.5,
                     linestyle='--',
                     alpha=0.7,
@@ -338,9 +400,9 @@ def plot_profile_at_point(
                     ax,
                     metal_angle_in_val[-1],
                     metal_angle_out_val[-1],
-                    chord_ax_val,
+                    chord_ax_val / r_mean,
                     'seagreen',
-                    axial_offset=offset,
+                    axial_offset=offset / r_mean,
                     linewidth=1.5,
                     linestyle='--',
                     alpha=0.7,
@@ -348,8 +410,9 @@ def plot_profile_at_point(
 
             offset += chord_ax_val * 1.1
 
-    plt.tight_layout()
-    return fig
+    if fig is not None:
+        plt.tight_layout()
+    return fig, sol_dict
 
 
 # Load all data from pickle file
@@ -368,221 +431,174 @@ N_PTS = design_map['N_PTS']
 
 print(f'Loaded {len(solution_dicts)} solution dictionaries')
 
-# Select 6 representative points from the phi/psi grid
-phi_indices = [0, N_PTS // 2, N_PTS - 1]
-psi_indices = [0, N_PTS - 1]
+# Select 4 corner points using closest point logic
+# Find nearest points to target phi/psi combinations (all in row 0, cols 0-3)
+corner_targets = [
+    (0.4, 3, 0, 0),  # phi=0.4, K_is=3 → col 0
+    (1.4, 3, 0, 1),  # phi=1.4, K_is=3 → col 1
+    (0.4, 10, 0, 2),  # phi=0.4, K_is=10 → col 2
+    (1.4, 10, 0, 3),  # phi=1.4, K_is=10 → col 3
+]
 
-selected_indices = []
-for phi_idx in phi_indices:
-    for psi_idx in psi_indices:
-        linear_idx = phi_idx * N_PTS + psi_idx
-        selected_indices.append((linear_idx, phi_idx, psi_idx))
+corner_defs = []
+for phi_target, psi_target, row, col in corner_targets:
+    distances = np.sqrt((phi_vals - phi_target) ** 2 + (psi_vals - psi_target) ** 2)
+    linear_idx = np.argmin(distances)
+    phi_idx = linear_idx // N_PTS
+    psi_idx = linear_idx % N_PTS
+    corner_defs.append((phi_idx, psi_idx, row, col))
 
-fig, axes = plt.subplots(2, 3, figsize=(16, 12))
-fig.suptitle(
-    f'Meridional Channels with Camber Lines | identifier {IDENTIFIER} | R={REACTION}',
-    fontsize=14,
+# 2 rows × 4 cols:
+# Four design points in a row, each stacked vertically (meridional, camber)
+fig = plt.figure(figsize=(16, 8))
+gs = GridSpec(
+    2,
+    4,
+    figure=fig,
+    hspace=0.4,
+    wspace=0.3,
 )
-axes = axes.flatten()
 
 pbl = ParabolicCamberline()
+node_pairs = [(0, 1), (2, 3)]
+colors = ['steelblue', 'coral']
 
-print('Plotting meridional channels with camber lines below...')
-for plot_idx, (linear_idx, phi_idx, psi_idx) in enumerate(selected_indices):
-    if linear_idx >= len(solution_dicts):
-        continue
+print('Plotting 4 corner designs...')
+for phi_idx, psi_idx, row, col in corner_defs:
+    linear_idx = phi_idx * N_PTS + psi_idx
+    sol_dict = solution_dicts[linear_idx] if linear_idx < len(solution_dicts) else None
+    phi_val = phi_vals[linear_idx]
+    psi_val = psi_vals[linear_idx]
+    label = rf'$\phi={phi_val:.3f},\ K_{{is}}={psi_val:.2f}$'
 
-    sol_dict = solution_dicts[linear_idx]
+    ax_mer = fig.add_subplot(gs[row, col])
+    ax_cam = fig.add_subplot(gs[row + 1, col], sharex=ax_mer)
 
-    # Skip if no solution
     if sol_dict is None:
-        print(f'Skipping point ({phi_idx}, {psi_idx}) - no solution')
-        axes[plot_idx].text(
-            0.5,
-            0.5,
-            'No solution',
-            ha='center',
-            va='center',
-            transform=axes[plot_idx].transAxes,
-        )
-        axes[plot_idx].set_title(
-            rf'$\phi$={phi_vals[linear_idx]:.3f}, $\psi$={psi_vals[linear_idx]:.3f}'
-        )
+        print(f'Skipping corner ({phi_idx}, {psi_idx}) - no solution')
+        for ax in (ax_mer, ax_cam):
+            ax.text(
+                0.5,
+                0.5,
+                'No solution',
+                ha='center',
+                va='center',
+                transform=ax.transAxes,
+                fontsize=LABEL_SIZE,
+            )
+            ax.set_title(label, fontsize=TITLE_SIZE)
         continue
 
-    ax = axes[plot_idx]
-    ax.set_aspect('equal')
-    ax.set_ylabel('radius [m]')
-    ax.set_xlabel('axial [m]')
-    ax.grid(True, alpha=0.3)
-    ax.set_title(f'φ={phi_vals[linear_idx]:.3f}, ψ={psi_vals[linear_idx]:.3f}')
+    # --- Meridional channel ---
+    ax_mer.set_aspect('equal')
+    r_mean = get_mean_radius(sol_dict)
+    ax_mer.set_ylabel(r'$\tilde{r}$', fontsize=AXIS_LABEL_SIZE)
+    ax_mer.set_xlabel(r'$\tilde{z}$', fontsize=AXIS_LABEL_SIZE)
+    ax_mer.tick_params('both', labelsize=TICK_SIZE)
+    ax_mer.grid(True, alpha=0.3)
+    ax_mer.set_title(label, fontsize=TITLE_SIZE)
 
-    offset = 0.0
-    node_pairs = [(0, 1), (2, 3)]
-    colors = ['steelblue', 'coral']
-
-    # First pass: collect min radius
     min_radius = float('inf')
-    for pair_idx, (node_in, node_out) in enumerate(node_pairs):
+    for node_in, node_out in node_pairs:
         try:
-            rr_in = sol_dict.get(f'geo_rr{node_in}', None)
-            height_in = sol_dict.get(f'geo_height{node_in}', None)
-            chord_ax_out = sol_dict.get(f'geo_chord_ax{node_out}', None)
-            rr_out = sol_dict.get(f'geo_rr{node_out}', None)
-            height_out = sol_dict.get(f'geo_height{node_out}', None)
-
-            if (
-                rr_in is None
-                or height_in is None
-                or rr_out is None
-                or height_out is None
-            ):
+            rr_in = sol_dict.get(f'geo_rr{node_in}')
+            height_in = sol_dict.get(f'geo_height{node_in}')
+            rr_out = sol_dict.get(f'geo_rr{node_out}')
+            height_out = sol_dict.get(f'geo_height{node_out}')
+            if any(v is None for v in (rr_in, height_in, rr_out, height_out)):
                 continue
-
-            rr_in_val = rr_in[0] if hasattr(rr_in, '__len__') else rr_in
-            height_in_val = height_in[0] if hasattr(height_in, '__len__') else height_in
-            rr_out_val = rr_out[0] if hasattr(rr_out, '__len__') else rr_out
-            height_out_val = (
-                height_out[0] if hasattr(height_out, '__len__') else height_out
-            )
-
-            r_hub_inlet = rr_in_val - height_in_val / 2
-            r_hub_outlet = rr_out_val - height_out_val / 2
-            min_radius = min(min_radius, r_hub_inlet, r_hub_outlet)
+            rr_in_v = rr_in[0] if hasattr(rr_in, '__len__') else rr_in
+            h_in_v = height_in[0] if hasattr(height_in, '__len__') else height_in
+            rr_out_v = rr_out[0] if hasattr(rr_out, '__len__') else rr_out
+            h_out_v = height_out[0] if hasattr(height_out, '__len__') else height_out
+            min_radius = min(min_radius, rr_in_v - h_in_v / 2, rr_out_v - h_out_v / 2)
         except Exception:
             continue
 
-    # Plot meridional geometry
     offset = 0.0
     for pair_idx, (node_in, node_out) in enumerate(node_pairs):
         try:
-            rr_in = sol_dict.get(f'geo_rr{node_in}', None)
-            height_in = sol_dict.get(f'geo_height{node_in}', None)
-            chord_ax_out = sol_dict.get(f'geo_chord_ax{node_out}', None)
-            rr_out = sol_dict.get(f'geo_rr{node_out}', None)
-            height_out = sol_dict.get(f'geo_height{node_out}', None)
-
-            if (
-                rr_in is None
-                or height_in is None
-                or rr_out is None
-                or height_out is None
+            rr_in = sol_dict.get(f'geo_rr{node_in}')
+            height_in = sol_dict.get(f'geo_height{node_in}')
+            chord_ax_out = sol_dict.get(f'geo_chord_ax{node_out}')
+            rr_out = sol_dict.get(f'geo_rr{node_out}')
+            height_out = sol_dict.get(f'geo_height{node_out}')
+            if any(
+                v is None for v in (rr_in, height_in, chord_ax_out, rr_out, height_out)
             ):
                 continue
-
-            rr_in_val = rr_in[0] if hasattr(rr_in, '__len__') else rr_in
-            height_in_val = height_in[0] if hasattr(height_in, '__len__') else height_in
-            rr_out_val = rr_out[0] if hasattr(rr_out, '__len__') else rr_out
-            height_out_val = (
-                height_out[0] if hasattr(height_out, '__len__') else height_out
-            )
-            chord_ax_val = (
+            rr_in_v = rr_in[0] if hasattr(rr_in, '__len__') else rr_in
+            h_in_v = height_in[0] if hasattr(height_in, '__len__') else height_in
+            rr_out_v = rr_out[0] if hasattr(rr_out, '__len__') else rr_out
+            h_out_v = height_out[0] if hasattr(height_out, '__len__') else height_out
+            chord_ax_v = (
                 chord_ax_out[0] if hasattr(chord_ax_out, '__len__') else chord_ax_out
             )
-
-            x_inlet = offset
-            x_outlet = offset + chord_ax_val
-
-            r_hub_inlet = rr_in_val - height_in_val / 2
-            r_tip_inlet = rr_in_val + height_in_val / 2
-            r_hub_outlet = rr_out_val - height_out_val / 2
-            r_tip_outlet = rr_out_val + height_out_val / 2
-
             color = colors[pair_idx]
-
-            ax.plot(
-                [x_inlet, x_outlet],
-                [r_hub_inlet, r_hub_outlet],
-                color=color,
-                linewidth=2,
-            )
-            ax.plot(
-                [x_inlet, x_outlet],
-                [r_tip_inlet, r_tip_outlet],
-                color=color,
-                linewidth=2,
-            )
-            ax.plot(
-                [x_inlet, x_inlet],
-                [r_hub_inlet, r_tip_inlet],
+            x_in, x_out = offset / r_mean, (offset + chord_ax_v) / r_mean
+            r_hub_in = (rr_in_v - h_in_v / 2) / r_mean
+            r_tip_in = (rr_in_v + h_in_v / 2) / r_mean
+            r_hub_out = (rr_out_v - h_out_v / 2) / r_mean
+            r_tip_out = (rr_out_v + h_out_v / 2) / r_mean
+            ax_mer.plot([x_in, x_out], [r_hub_in, r_hub_out], color=color, linewidth=2)
+            ax_mer.plot([x_in, x_out], [r_tip_in, r_tip_out], color=color, linewidth=2)
+            ax_mer.plot(
+                [x_in, x_in],
+                [r_hub_in, r_tip_in],
                 color=color,
                 linewidth=1.5,
                 linestyle='--',
                 alpha=0.6,
             )
-            ax.plot(
-                [x_outlet, x_outlet],
-                [r_hub_outlet, r_tip_outlet],
+            ax_mer.plot(
+                [x_out, x_out],
+                [r_hub_out, r_tip_out],
                 color=color,
                 linewidth=1.5,
                 linestyle='--',
                 alpha=0.6,
             )
-
-            offset += chord_ax_val * 1.07
+            offset += chord_ax_v * 1.07
         except Exception as e:
             print(
-                f'Error plotting pair {pair_idx} for point ({phi_idx}, {psi_idx}): {e}'
+                f'Error in meridional pair {pair_idx} corner ({phi_idx},{psi_idx}): {e}'
             )
-            continue
 
-    # Plot camberlines below minimum radius
-    if min_radius != float('inf'):
-        offset = 0.0
-        for pair_idx, (node_in, node_out) in enumerate(node_pairs):
-            try:
-                metal_angle_in = sol_dict.get(f'geo_metal_angle{node_in}', None)
-                metal_angle_out = sol_dict.get(f'geo_metal_angle{node_out}', None)
-                chord_ax = sol_dict.get(f'geo_chord_ax{node_out}', None)
-                pitch = sol_dict.get(f'geo_pitch{node_out}', None)
+    # --- Camber lines ---
+    ax_cam.set_aspect('equal')
+    ax_cam.set_ylabel(r'$\theta$', fontsize=AXIS_LABEL_SIZE)
+    ax_cam.set_xlabel(r'$\tilde{z}$', fontsize=AXIS_LABEL_SIZE)
+    ax_cam.tick_params('both', labelsize=TICK_SIZE)
+    ax_cam.grid(True, alpha=0.3)
 
-                if (
-                    metal_angle_in is None
-                    or metal_angle_out is None
-                    or chord_ax is None
-                    or pitch is None
-                ):
-                    continue
-
-                metal_angle_in_val = (
-                    metal_angle_in[0]
-                    if hasattr(metal_angle_in, '__len__')
-                    else metal_angle_in
-                )
-                metal_angle_out_val = (
-                    metal_angle_out[0]
-                    if hasattr(metal_angle_out, '__len__')
-                    else metal_angle_out
-                )
-                chord_ax_val = chord_ax[0] if hasattr(chord_ax, '__len__') else chord_ax
-                pitch_val = pitch[0] if hasattr(pitch, '__len__') else pitch
-
-                color = colors[pair_idx]
-
-                # Offset camberlines below the minimum radius
-                camber_spacing = pitch_val * 3
-                radial_offset = min_radius - camber_spacing - 0.01
-
-                num_blades = 3
-                for blade_num in range(num_blades):
-                    pbl.plot_camber_line(
-                        ax,
-                        metal_angle_in_val,
-                        metal_angle_out_val,
-                        chord_ax_val,
-                        color,
-                        axial_offset=offset,
-                        tangential_offset=radial_offset + blade_num * pitch_val,
-                        linewidth=1.5,
-                    )
-
-                offset += chord_ax_val * 1.05
-            except Exception as e:
-                print(
-                    f'Error plotting camberlines for pair {pair_idx} at '
-                    f'point ({phi_idx}, {psi_idx}): {e}'
-                )
+    offset = 0.0
+    for pair_idx, (node_in, node_out) in enumerate(node_pairs):
+        try:
+            ma_in = sol_dict.get(f'geo_metal_angle{node_in}')
+            ma_out = sol_dict.get(f'geo_metal_angle{node_out}')
+            chord_ax = sol_dict.get(f'geo_chord_ax{node_out}')
+            pitch = sol_dict.get(f'geo_pitch{node_out}')
+            if any(v is None for v in (ma_in, ma_out, chord_ax, pitch)):
                 continue
+            ma_in_v = ma_in[0] if hasattr(ma_in, '__len__') else ma_in
+            ma_out_v = ma_out[0] if hasattr(ma_out, '__len__') else ma_out
+            chord_ax_v = chord_ax[0] if hasattr(chord_ax, '__len__') else chord_ax
+            pitch_v = pitch[0] if hasattr(pitch, '__len__') else pitch
+            color = colors[pair_idx]
+            for blade_num in range(2):
+                pbl.plot_camber_line(
+                    ax_cam,
+                    ma_in_v,
+                    ma_out_v,
+                    chord_ax_v / r_mean,
+                    color,
+                    axial_offset=offset / r_mean,
+                    tangential_offset=blade_num * pitch_v / r_mean,
+                    linewidth=1.5,
+                )
+            offset += chord_ax_v * 1.1
+        except Exception as e:
+            print(f'Error in camber pair {pair_idx} corner ({phi_idx},{psi_idx}): {e}')
 
 plt.tight_layout()
 
@@ -595,65 +611,72 @@ plot_contour_quantity(
     'oth_eta_tt3',
     ax,
     design_map,
-    clabel='Total-to-Total Efficiency',
+    clabel=r'$\eta_{tt}$',
 )
-ax.set_title(
-    f'Total-to-Total Efficiency | identifier {IDENTIFIER} | R={REACTION}',
-    fontsize=12,
-)
+
+# fig.savefig(
+#     'C:\\Users\\fvaccari\\OneDrive - Delft University of Technology\\latex'
+#     '\\gpps26_ADeT\\Images\\design_map_orc.pdf'
+# )
+# ax.set_title(
+#     f'Total-to-Total Efficiency | identifier {IDENTIFIER} | R={REACTION}',
+#     fontsize=12,
+# )
+
 plt.tight_layout()
 
-# Figure 2: Stator losses
-print('Plotting stator losses...')
-fig_stator, axes_stator = plt.subplots(2, 2, figsize=(12, 10))
-axes_stator = axes_stator.flatten()
+if PLOT_LOSSES:
+    # Figure 2: Stator losses
+    print('Plotting stator losses...')
+    fig_stator, axes_stator = plt.subplots(2, 2, figsize=(12, 10))
+    axes_stator = axes_stator.flatten()
 
-loss_keys_stator = [
-    ('oth_delta_smass_profile1', 'Profile Loss'),
-    ('oth_delta_smass_secondary1', 'Secondary Loss'),
-    ('oth_delta_smass_mixing1', 'Mixing Loss'),
-]
+    loss_keys_stator = [
+        ('oth_delta_smass_profile1', 'Profile Loss'),
+        ('oth_delta_smass_secondary1', 'Secondary Loss'),
+        ('oth_delta_smass_mixing1', 'Mixing Loss'),
+    ]
 
-for idx, (qty_key, label) in enumerate(loss_keys_stator):
-    plot_contour_quantity(
-        qty_key,
-        axes_stator[idx],
-        design_map,
-        clabel=f'Stator {label}',
+    for idx, (qty_key, label) in enumerate(loss_keys_stator):
+        plot_contour_quantity(
+            qty_key,
+            axes_stator[idx],
+            design_map,
+            clabel=f'Stator {label}',
+        )
+
+    fig_stator.suptitle(
+        f'Stator Loss Components | identifier {IDENTIFIER} | R={REACTION}',
+        fontsize=16,
+        y=1.00,
     )
+    plt.tight_layout()
 
-fig_stator.suptitle(
-    f'Stator Loss Components | identifier {IDENTIFIER} | R={REACTION}',
-    fontsize=16,
-    y=1.00,
-)
-plt.tight_layout()
+    # Figure 3: Rotor losses
+    print('Plotting rotor losses...')
+    fig_rotor, axes_rotor = plt.subplots(2, 2, figsize=(12, 10))
+    axes_rotor = axes_rotor.flatten()
 
-# Figure 3: Rotor losses
-print('Plotting rotor losses...')
-fig_rotor, axes_rotor = plt.subplots(2, 2, figsize=(12, 10))
-axes_rotor = axes_rotor.flatten()
+    loss_keys_rotor = [
+        ('oth_delta_smass_profile3', 'Profile Loss'),
+        ('oth_delta_smass_secondary3', 'Secondary Loss'),
+        ('oth_delta_smass_mixing3', 'Mixing Loss'),
+        ('oth_delta_smass_leakage3', 'Leakage Loss'),
+    ]
 
-loss_keys_rotor = [
-    ('oth_delta_smass_profile3', 'Profile Loss'),
-    ('oth_delta_smass_secondary3', 'Secondary Loss'),
-    ('oth_delta_smass_mixing3', 'Mixing Loss'),
-    ('oth_delta_smass_leakage3', 'Leakage Loss'),
-]
+    for idx, (qty_key, label) in enumerate(loss_keys_rotor):
+        plot_contour_quantity(
+            qty_key,
+            axes_rotor[idx],
+            design_map,
+            clabel=f'Rotor {label}',
+        )
 
-for idx, (qty_key, label) in enumerate(loss_keys_rotor):
-    plot_contour_quantity(
-        qty_key,
-        axes_rotor[idx],
-        design_map,
-        clabel=f'Rotor {label}',
+    fig_rotor.suptitle(
+        f'Rotor Loss Components | identifier {IDENTIFIER} | R={REACTION}',
+        fontsize=16,
+        y=1.00,
     )
-
-fig_rotor.suptitle(
-    f'Rotor Loss Components | identifier {IDENTIFIER} | R={REACTION}',
-    fontsize=16,
-    y=1.00,
-)
-plt.tight_layout()
+    plt.tight_layout()
 
 plt.show(block=False)

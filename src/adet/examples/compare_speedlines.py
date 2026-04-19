@@ -16,6 +16,13 @@ data_dir = (
     / 'nasa_hecc'
 )
 
+plt.rcParams.update(
+    {
+        'text.usetex': True,
+        'font.family': 'serif',
+    }
+)
+
 # Load speedline_data module using importlib
 speedline_data_path = data_dir / 'speedline_data.py'
 if not speedline_data_path.exists():
@@ -96,7 +103,7 @@ def plot_comparison(exp_data, comp_data):
             exp['pratios'],
             'o',
             color=color,
-            label=f'{int(float(rpm) / 1000)}k rpm (experimental)',
+            label=f'{int(float(rpm) / 1000)}k rpm (exp.)',
             markersize=8,
             linewidth=2.5,
             alpha=0.7,
@@ -112,7 +119,7 @@ def plot_comparison(exp_data, comp_data):
                 comp_pr,
                 '-',
                 color=color,
-                label=f'{int(float(rpm) / 1000)}k rpm (computed)',
+                label=f'{int(float(rpm) / 1000)}k rpm (comp.)',
                 linewidth=2.5,
                 alpha=0.7,
             )
@@ -127,11 +134,12 @@ def plot_comparison(exp_data, comp_data):
                 color=color,
                 alpha=0.2,
             )
-            ax.tick_params('both', labelsize=22)
+            ax.tick_params('both', labelsize=30)
 
-    ax.set_xlabel('Mass flow [kg/s]', fontsize=26)
-    ax.set_ylabel('Pressure ratio [−]', fontsize=26)
-    ax.legend(loc='upper left', fontsize=22)
+    ax.set_xlabel(r'$\dot{m}$ [kg/s]', fontsize=35)
+    ax.set_ylabel(r'$\beta_{tt}$ [−]', fontsize=35)
+
+    ax.legend(loc='upper left', fontsize=30)
     ax.grid(True, alpha=0.5)
     fig1.tight_layout()
     fig1.savefig(
@@ -155,7 +163,7 @@ def plot_comparison(exp_data, comp_data):
             exp['etas'],
             'o',
             color=color,
-            label=f'{int(float(rpm) / 1000)}k rpm (experimental)',
+            label=f'{int(float(rpm) / 1000)}k rpm (exp.)',
             markersize=8,
             linewidth=2.5,
             alpha=0.8,
@@ -174,7 +182,7 @@ def plot_comparison(exp_data, comp_data):
                 comp_eta,
                 '-',
                 color=color,
-                label=f'{int(float(rpm) / 1000)}k rpm (computed)',
+                label=f'{int(float(rpm) / 1000)}k rpm (comp.)',
                 linewidth=2.5,
                 alpha=0.8,
             )
@@ -192,14 +200,14 @@ def plot_comparison(exp_data, comp_data):
             )
 
         ax.set_ylim(75, 90)
-        ax.legend(loc='best', fontsize=25)
+        ax.legend(loc='lower left', fontsize=35)
         ax.grid(True, alpha=0.5)
-        ax.tick_params('both', labelsize=22)
+        ax.tick_params('both', labelsize=30)
 
-    axs[2].set_xlabel('Mass flow [kg/s]', fontsize=26)
-    axs[3].set_xlabel('Mass flow [kg/s]', fontsize=26)
-    axs[0].set_ylabel('Total-to-total efficiency [%]', fontsize=26)
-    axs[2].set_ylabel('Total-to-total efficiency [%]', fontsize=26)
+    axs[2].set_xlabel(r'$\dot{m}$ [kg/s]', fontsize=35)
+    axs[3].set_xlabel(r'$\dot{m}$ [kg/s]', fontsize=35)
+    axs[0].set_ylabel(r'$\eta_{tt}$ [\%]', fontsize=35)
+    axs[2].set_ylabel(r'$\eta_{tt}$ [\%]', fontsize=35)
 
     fig2.tight_layout()
     fig2.savefig(

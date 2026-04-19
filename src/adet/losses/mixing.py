@@ -270,11 +270,10 @@ class DentonMixingLoss(LossModel):
         rlt_hmass0,
         stc_smass0,
         stc_speed_sound0,
-        kin_relmach0,
         oth_delta_smass_mixing0,
     ):
         # No deviation
-        velocity = safe_if_else(kin_relmach0 >= 1, stc_speed_sound0, kin_W0)
+        velocity = safe_min(stc_speed_sound0, kin_W0)
         dyn_press = 0.5 * stc_rhomass0 * velocity**2  # Dynamic head
         zeta = incomp_mixing_zeta(
             dyn_press,
@@ -286,12 +285,12 @@ class DentonMixingLoss(LossModel):
             oth_mom_thick0,
             oth_disp_thick0,
         )
-        zeta = minmax_bound(zeta, 0.0, 1.0)
+        # zeta = minmax_bound(zeta, 0.0, 1.0)
 
-        rlt_p_loss = rlt_p0 - dyn_press * zeta
-        smass_loss = self.eos(rlt_hmass0, rlt_p_loss)
+        rlt_p1_loss = rlt_p0 - dyn_press * zeta
+        smass1_loss = self.eos(rlt_hmass0, rlt_p1_loss)
 
-        return oth_delta_smass_mixing0 - (smass_loss - stc_smass0)
+        return oth_delta_smass_mixing0 - (smass1_loss - stc_smass0)
 
 
 class MinimalChoke(EquationBase):
