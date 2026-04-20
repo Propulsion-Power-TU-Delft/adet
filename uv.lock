@@ -30,6 +30,7 @@ name = "adet"
 version = "0.0.1"
 source = { editable = "." }
 dependencies = [
+    { name = "ambiance" },
     { name = "art" },
     { name = "bezier" },
     { name = "casadi" },
@@ -61,6 +62,7 @@ docs = [
 
 [package.metadata]
 requires-dist = [
+    { name = "ambiance", specifier = ">=1.3.1" },
     { name = "art", specifier = ">=6.5" },
     { name = "bezier", specifier = ">=2024.6.20" },
     { name = "casadi", specifier = ">=3.7.2" },
@@ -97,6 +99,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/a6/f8/d9c74d0daf3f742840fd818d69cfae176fa332022fd44e3469487d5a9420/alabaster-1.0.0.tar.gz", hash = "sha256:c00dca57bca26fa62a6d7d0a9fcce65f3e026e9bfe33e9c538fd3fbb2144fd9e", size = 24210, upload-time = "2024-07-26T18:15:03.762Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7e/b3/6b4067be973ae96ba0d615946e314c5ae35f9f993eca561b356540bb0c2b/alabaster-1.0.0-py3-none-any.whl", hash = "sha256:fc6786402dc3fcb2de3cabd5fe455a2db534b371124f1f21de8731783dec828b", size = 13929, upload-time = "2024-07-26T18:15:02.05Z" },
+]
+
+[[package]]
+name = "ambiance"
+version = "1.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "scipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/de/98/6ca0da97a869aed1375e0eaa7ecbc7d9dc1253065ebad3f33be339957ba2/ambiance-1.3.1.tar.gz", hash = "sha256:ceff180945a96996da5a3aceff2f2ff4f1ae67dadd24919675223c8e01d0a416", size = 16966, upload-time = "2022-09-25T15:17:12.18Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/eb/b7/a9543c04d696a4bfe8a4959da6452f926c9766b3c27e9ef89db0a727965b/ambiance-1.3.1-py3-none-any.whl", hash = "sha256:d7ccd04390e59727ffca5c54079586fe0b40419db5445b524db563a9405f015a", size = 15403, upload-time = "2022-09-25T15:17:07.385Z" },
 ]
 
 [[package]]
