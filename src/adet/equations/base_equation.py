@@ -1,15 +1,17 @@
-from abc import ABC, abstractmethod
-from inspect import getfullargspec
 import logging
-from typing import Any, Callable, ClassVar, Self, cast
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from enum import Enum
+from inspect import getfullargspec
+from typing import Annotated, Any, Callable, ClassVar, Self, cast, get_type_hints
 
 import casadi as cs
 import sympy as sp
+from pint import Quantity
 
 from adet.fluid.casadi_eos import CasadiEos
 from adet.tools.context import override_operators
 from adet.tools.strings import get_index, validate_arg_format
-
 
 logger = logging.getLogger(__name__)
 
@@ -219,3 +221,65 @@ class CamberLineGeom(UniqueEquation): ...
 class MeridionalGeom(UniqueEquation): ...
 class MeridAreaBlockage(UniqueEquation): ...
 # fmt: on
+
+
+# New implemetation
+@dataclass(frozen=True)
+class VarType:
+    symbol: str
+    description: str
+    unit: str
+
+
+class Vars(Enum):
+    # *** Thermodynamics
+    # *** Total
+    V_MAG = VarType('V', 'Absolute velocity', 'm / s')
+    V_TAN = VarType('Vt', 'Absolute velocity (tangential)', 'm / s')
+    V_MER = VarType('Vm', 'Absolute velocity (meridional)', 'm / s')
+    W_MAG = VarType('W', 'Relative Velocity', 'm / s')
+    W_TAN = VarType('Wt', 'Relative Velocity (tangential)', 'm / s')
+    W_MER = VarType('Wm', 'Relative Velocity (meridional)', 'm / s')
+
+
+class ThermoVars(Enum):
+    TEMPERATURE = VarType('T', 'Specific enthalpy', 'J / kg')
+    PRESSURE = VarType('p', 'Specific entropy', 'J / kg / K')
+    ENTROPY = VarType('smass', 'Specific entropy', 'J / kg / K')
+    ENTHALPY = VarType('hmass', 'Specific enthalpy', 'J / kg')
+
+
+Enthalpy = Annotated[cs.MX, Quantity, ThermoVars.ENTHALPY]
+Entropy = Annotated[cs.MX, Quantity, ThermoVars.ENTROPY]
+
+
+class Equation:
+    def residual(self) -> float:
+        raise NotImplementedError
+
+    @property
+    def arguments(self):
+        args_type_hints = get_type_hints(self.residual, include_extras=True)
+
+        var_types = []
+        for hint in args_type_hints.values():
+            for valid_types in hint.__metadata__:
+                if isinstance(valid_types, Vars):
+                    var_types.append(valid_types)
+
+        return var_types
+
+
+class DummyEq(Equation):
+    def residual(
+        self,
+        s: Entropy,
+        h: Enthalpy,
+    ):
+        pass
+
+
+if __name__ == '__main__':
+    eq = DummyEq()
+
+    print([arg.value.symbol for arg in eq.arguments])
