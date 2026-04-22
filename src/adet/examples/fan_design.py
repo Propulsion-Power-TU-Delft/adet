@@ -54,12 +54,13 @@ fan_blade = BladeRow(
             'p': 1.2 * std_atm.pressure,
         },
         'geo': {
-            'thick_by_pitch': 0.0,
             'hubtipRatio': 0.3,
-            'heightRatio': 1.0,
+            'heightRatio': 1.0,  # Assume constant channel height
+            'meridional_angle': 0.0,
+            # Irrelevant
+            'bld_thick': 1,
             'num_blades': 1,
             'chord_ax': 1,
-            'meridional_angle': 0.0,
         },
     },
     extra_equations={

@@ -78,6 +78,13 @@ _greg.from_dict(
 )
 _greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 
+plt.rcParams.update(
+    {
+        'text.usetex': True,
+        'font.family': 'serif',
+    }
+)
+
 NUM_SPAN = 5
 ENABLE_LOSSES = True
 RUN_MULTI = True
@@ -181,7 +188,7 @@ inlet = Inlet(
             'alpha': 0.0,
         },
         'oth': {
-            'cum_massflow': 4.3,
+            'cum_massflow': 4.98,
         },
     },
 )
@@ -440,80 +447,82 @@ if __name__ == '__main__':
         #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 
         # Loss breakdown bar plot at design point
-        if RUN_PLOTS:
-            fig, ax = plt.subplots(figsize=(10, 6))
-
-            # Extract loss components from node (spanwise average)
-            loss_components = {
-                'Skin Friction': np.mean(n1.oth.delta_hmass_skin),
-                'Incidence': np.mean(n1.oth.delta_hmass_incidence),
-                'Clearance': np.mean(n1.oth.delta_hmass_clearance),
-                'Mixing': np.mean(n1.oth.delta_hmass_mixing),
-                'Loading': np.mean(n1.oth.delta_hmass_loading),
-                'Leakage': np.mean(n1.oth.delta_hmass_leakage),
-                'Recirculation': np.mean(n1.oth.delta_hmass_recirc),
-                'Disk Friction': np.mean(n1.oth.delta_hmass_disk),
-            }
-
-            # Calculate work
-            work = np.mean(n1.tot.hmass) - np.mean(n0.tot.hmass)
-
-            # Calculate dht_ext
-            dht_ext = (
-                np.mean(n1.oth.delta_hmass_leakage)
-                + np.mean(n1.oth.delta_hmass_recirc)
-                + np.mean(n1.oth.delta_hmass_disk)
-            )
-
-            # Normalize by (work + dht_ext)
-            denominator = work + dht_ext
-            normalized_losses = {
-                k: v / denominator * 100 for k, v in loss_components.items()
-            }
-
-            # Create bar plot
-            names = list(normalized_losses.keys())
-            values = list(normalized_losses.values())
-            colormap = plt.get_cmap('viridis')
-
-            colors = colormap(np.linspace(0, 1, len(names)))
-
-            bars = ax.bar(
-                names,
-                values,
-                color=colors,
-                # edgecolor='black',
-                # linewidth=1.5,
-            )
-
-            # Add value labels on bars
-            for bar in bars:
-                height = bar.get_height()
-                ax.text(
-                    bar.get_x() + bar.get_width() / 2.0,
-                    height,
-                    f'{height:.2f}%',
-                    ha='center',
-                    va='bottom',
-                    fontsize=10,
-                    fontweight='bold',
-                )
-
-            ax.set_ylabel('Loss / (Work + dht_ext) [%]', fontsize=12, fontweight='bold')
-            # ax.set_title(
-            #     'Loss Breakdown at Design Point\n'
-            #     f'Shaft Work: {work:.0f} J/kg, External Losses: {dht_ext:.0f} J/kg',
-            #     fontsize=12,
-            #     fontweight='bold',
-            # )
-            ax.grid(True, alpha=0.3, axis='y')
-            plt.xticks(rotation=45, ha='right')
-            fig.tight_layout()
-
-            if SHOW_PLOTS:
-                plt.show()
-            else:
-                plt.close(fig)
+        # if RUN_PLOTS:
+        # fig, ax = plt.subplots(figsize=(10, 6))
+        #
+        # # Extract loss components from node (spanwise average)
+        # loss_components = {
+        #     'Skin Friction': np.mean(n1.oth.delta_hmass_skin),
+        #     'Incidence': np.mean(n1.oth.delta_hmass_incidence),
+        #     'Clearance': np.mean(n1.oth.delta_hmass_clearance),
+        #     'Mixing': np.mean(n1.oth.delta_hmass_mixing),
+        #     'Loading': np.mean(n1.oth.delta_hmass_loading),
+        #     'Leakage': np.mean(n1.oth.delta_hmass_leakage),
+        #     'Recirculation': np.mean(
+        #         n1.oth.delta_hmass_recirc + n1.oth.delta_hmass_lost
+        #     ),
+        #     'Disk Friction': np.mean(n1.oth.delta_hmass_disk),
+        # }
+        #
+        # # Calculate work
+        # work = np.mean(n1.tot.hmass) - np.mean(n0.tot.hmass)
+        #
+        # # Calculate dht_ext
+        # dht_ext = (
+        #     np.mean(n1.oth.delta_hmass_leakage)
+        #     + np.mean(n1.oth.delta_hmass_recirc)
+        #     + np.mean(n1.oth.delta_hmass_disk)
+        # )
+        #
+        # # Normalize by (work + dht_ext)
+        # denominator = work + dht_ext
+        # normalized_losses = {
+        #     k: v / denominator * 100 for k, v in loss_components.items()
+        # }
+        #
+        # # Create bar plot
+        # names = list(normalized_losses.keys())
+        # values = list(normalized_losses.values())
+        # colormap = plt.get_cmap('viridis')
+        #
+        # colors = colormap(np.linspace(0, 1, len(names)))
+        #
+        # bars = ax.bar(
+        #     names,
+        #     values,
+        #     color=colors,
+        #     # edgecolor='black',
+        #     # linewidth=1.5,
+        # )
+        #
+        # # Add value labels on bars
+        # for bar in bars:
+        #     height = bar.get_height()
+        #     ax.text(
+        #         bar.get_x() + bar.get_width() / 2.0,
+        #         height,
+        #         f'{height:.2f}%',
+        #         ha='center',
+        #         va='bottom',
+        #         fontsize=10,
+        #         fontweight='bold',
+        #     )
+        #
+        # ax.set_ylabel('Loss / (Work + dht_ext) [%]', fontsize=12, fontweight='bold')
+        # # ax.set_title(
+        # #     'Loss Breakdown at Design Point\n'
+        # #     f'Shaft Work: {work:.0f} J/kg, External Losses: {dht_ext:.0f} J/kg',
+        # #     fontsize=12,
+        # #     fontweight='bold',
+        # # )
+        # ax.grid(True, alpha=0.3, axis='y')
+        # plt.xticks(rotation=45, ha='right')
+        # fig.tight_layout()
+        #
+        # if SHOW_PLOTS:
+        #     plt.show()
+        # else:
+        #     plt.close(fig)
 
     if RUN_SPEEDLINES:
         speed_lines = {
@@ -539,6 +548,10 @@ if __name__ == '__main__':
             'oth_delta_hmass_clearance1',
             'oth_delta_hmass_mixing1',
             'oth_delta_hmass_loading1',
+            # Ext
+            'oth_delta_hmass_disk1',
+            'oth_delta_hmass_recirc1',
+            'oth_delta_hmass_leakage1',
         ]
         loss_indices = {}
         loss_scales = {}
@@ -607,10 +620,16 @@ if __name__ == '__main__':
                     # Store converged solution
                     all_converged_solutions.append((mf, pr, sol.copy()))
 
-                    # Extract loss values
+                    # Calculate specific work for normalization from nodes
+                    n0 = ntw_hecc.system.nodes[0]
+                    n1 = ntw_hecc.system.nodes[1]
+                    work = np.mean(n1.tot.hmass) - np.mean(n0.tot.hmass)
+
+                    # Extract loss values normalized by work
                     for loss_name, idx in loss_indices.items():
                         loss_val = sol[idx][0] * loss_scales[loss_name]
-                        losses_dict[loss_name].append(loss_val)
+                        normalized_loss = loss_val / work if work > 0 else np.nan
+                        losses_dict[loss_name].append(normalized_loss)
 
                     converged_count += 1
                 except Exception:
@@ -680,7 +699,7 @@ if __name__ == '__main__':
         axs[1].set_xlabel('Mass flow [lbm/s]', fontsize=11)
         axs[1].set_ylabel('Total-to-total efficiency [−]', fontsize=11)
         axs[1].set_title(
-            'Compressor Performance: η vs PR', fontsize=12, fontweight='bold'
+            'Compressor Performance: $\eta$ vs PR', fontsize=12, fontweight='bold'
         )
         axs[1].legend(loc='best')
         axs[1].grid(True, alpha=0.3)
@@ -692,57 +711,93 @@ if __name__ == '__main__':
             print('Speedline performance plots generated (not shown)')
             plt.close(fig)
 
-        # Create stackplots for losses at each speedline
-        num_speedlines = len(loss_data_by_speed)
-        fig_loss, axs_loss = plt.subplots(
-            num_speedlines, 1, figsize=(10, 4 * num_speedlines)
-        )
+        # Create dedicated plot for 21k speedline (if converged)
+        design_rpm = RPM_DES
+        design_rpm_str = f'{design_rpm:.0f}'
 
-        # Handle single speedline case (axs_loss won't be an array)
-        if num_speedlines == 1:
-            axs_loss = [axs_loss]
+        # Check if design speedline converged
+        if design_rpm_str in computed_speedline_data:
+            design_data = computed_speedline_data[design_rpm_str]
+            # Check if any points converged (at least one non-None eta)
+            if any(eta is not None for eta in design_data['etas']):
+                fig_21k, ax_21k = plt.subplots(figsize=(12, 7))
 
-        for ax_idx, (rpm, data) in enumerate(sorted(loss_data_by_speed.items())):
-            massflows = data['massflows']
-            losses = data['losses']
+                closest_rpm = min(
+                    loss_data_by_speed.keys(), key=lambda x: abs(x - design_rpm)
+                )
+                data_21k = loss_data_by_speed[closest_rpm]
+                massflows_21k = data_21k['massflows']
+                losses_21k = data_21k['losses']
 
-            # Prepare data for stackplot: convert to arrays, handle NaNs
-            loss_values = []
-            loss_labels = []
+                # Prepare data for stackplot
+                loss_values_21k = []
+                loss_labels_21k = []
 
-            for loss_name in loss_indices.keys():
-                loss_array = np.array(losses[loss_name])
-                # Replace NaNs with 0 for stackplot
-                loss_array = np.nan_to_num(loss_array, nan=0.0)
-                loss_values.append(loss_array)
-                # Clean up label name
-                label = loss_name.replace('oth_delta_hmass_', '').replace('1', '')
-                loss_labels.append(label)
+                # Filter out non-converged points (where losses are NaN)
+                first_loss_name = list(loss_indices.keys())[0]
+                first_loss = np.array(losses_21k[first_loss_name])
+                converged_mask = ~np.isnan(first_loss)
+                massflows_21k_filtered = massflows_21k[converged_mask]
 
-            # Create stackplot
-            ax = axs_loss[ax_idx]
-            ax.stackplot(
-                massflows * 2.2,
-                *loss_values,
-                labels=loss_labels,
-                alpha=0.8,
-            )
-            ax.set_xlabel('Mass flow [lbm/s]', fontsize=11)
-            ax.set_ylabel('Enthalpy loss [J/kg]', fontsize=11)
-            ax.set_title(
-                f'Loss Breakdown: {rpm / RPM_DES:.2f} N_des ({rpm:.0f} RPM)',
-                fontsize=12,
-                fontweight='bold',
-            )
-            ax.legend(loc='upper left', fontsize=10)
-            ax.grid(True, alpha=0.3)
+                NAMES = {
+                    'recirc': 'Recirculation',
+                    'incidence': 'Incidence',
+                    'clearance': 'Tip clearance',
+                    'mixing': 'Mixing',
+                    'skin': 'Skin friction',
+                    'loading': 'Blade loading',
+                    'disk': 'Disk friction',
+                    'leakage': 'Leakage',
+                }
+                for loss_name in loss_indices.keys():
+                    loss_array = np.array(losses_21k[loss_name])
+                    loss_array_filtered = loss_array[converged_mask]
+                    loss_array_scaled = loss_array_filtered
+                    loss_values_21k.append(100 * loss_array_filtered)
+                    label = loss_name.replace('oth_delta_hmass_', '').replace('1', '')
+                    label = NAMES[label]
+                    loss_labels_21k.append(label)
 
-        fig_loss.tight_layout()
-        if SHOW_PLOTS:
-            plt.show()
-        else:
-            print('Loss stackplots generated (not shown)')
-            plt.close(fig_loss)
+                # Generate colors from colormap
+                try:
+                    colormap = plt.get_cmap('Dark2')
+                except Exception:
+                    colormap = plt.get_cmap('viridis')
+
+                stackplot_colors = colormap(np.linspace(0, 1, len(loss_labels_21k)))
+
+                # Create stackplot with enhanced styling
+                ax_21k.stackplot(
+                    massflows_21k_filtered,
+                    *loss_values_21k,
+                    labels=loss_labels_21k,
+                    colors=stackplot_colors,
+                    alpha=0.95,
+                )
+                ax_21k.set_xlabel(r'$\dot{m}$ [kg/s]', fontsize=28)
+                ax_21k.set_ylabel(
+                    r'$\Delta h_{t,\mathrm{loss}} / (h_{t,3} - h_{t,1})$ [\%]',
+                    fontsize=28,
+                )
+                # ax_21k.set_title(
+                #     f'Loss Breakdown vs Mass Flow: {design_rpm:.0f} RPM (Design Point)',
+                #     fontsize=14,
+                #     fontweight='bold',
+                # )
+                ax_21k.legend(loc='upper center', fontsize=22, framealpha=0.95)
+                ax_21k.grid(True, alpha=0.3, linestyle='--')
+                ax_21k.tick_params(axis='both', labelsize=22)
+
+                fig_21k.tight_layout()
+                if SHOW_PLOTS:
+                    plt.show()
+                else:
+                    print('Design speedline loss plot generated (not shown)')
+                    plt.close(fig_21k)
+            else:
+                print(
+                    f'Design speedline ({design_rpm:.0f} RPM) did not converge, skipping plot'
+                )
 
         # Save computed speedline data for comparison with experimental data
         import json
@@ -838,17 +893,17 @@ if __name__ == '__main__':
 
         # Increase label and title font sizes
         ax.set_xlabel(
-            r'z [m]',
-            fontsize=20,
+            r'$z$ [m]',
+            fontsize=35,
             # fontweight='bold',
         )
         ax.set_ylabel(
-            r'r [m]',
-            fontsize=20,
+            r'$r$ [m]',
+            fontsize=35,
             # fontweight='bold',
         )
         # ax.set_title('Impeller Geometry', fontsize=14, fontweight='bold')
-        ax.tick_params(axis='both', labelsize=15)
+        ax.tick_params(axis='both', labelsize=30)
 
         # Add inset axis for zoomed region
         axins = inset_axes(
