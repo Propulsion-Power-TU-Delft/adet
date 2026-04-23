@@ -1,8 +1,8 @@
-from adet.equations.var_hinting import NodeHints
+from adet.equations.var_hinting import NodeHints, VarSpec
 import logging
 from abc import ABC, abstractmethod
 from inspect import getfullargspec
-from typing import Any, Callable, ClassVar, Self, cast
+from typing import Any, Callable, ClassVar, Self, cast, get_type_hints
 
 import casadi as cs
 import sympy as sp
@@ -28,6 +28,7 @@ class EquationBase(ABC):
     manual_units: ClassVar[tuple[str, ...]] = ()
     scaling_factor: tuple[float | None, ...] | None = None
     # EoS accessories
+    argument_magic: bool = True
     input_pair: ClassVar[int] = 0
     output_quantities: ClassVar[tuple[str, ...]] = ()
     _eos: None | CasadiEos | cs.Function = None
@@ -41,12 +42,9 @@ class EquationBase(ABC):
         """
 
         # Read arguments from residual signature
-        residual_args = getfullargspec(self.residual).args[1:]
 
         # Apply aliasing: use aliased names if provided, otherwise use original names
-        self._arguments: tuple[str, ...] = self._read_and_validate_arguments(
-            residual_args,
-        )
+        self._arguments: tuple[str, ...] = ()
 
         if custom_scaling_factor:
             self._scaling_factor = custom_scaling_factor
@@ -69,6 +67,14 @@ class EquationBase(ABC):
     @property
     def arguments(self):
         """Arguments, in the format of <node_state>_<var_type><index>"""
+        residual_args = getfullargspec(self.residual).args[1:]
+
+        if not self._arguments:
+            if self.argument_magic:
+                self._arguments = self._read_and_validate_arguments(residual_args)
+            else:
+                self._arguments = self._args_from_hints()
+
         return self._arguments
 
     @property
@@ -81,6 +87,16 @@ class EquationBase(ABC):
     @property
     def num_args(self):
         return len(self._arguments)
+
+    def _args_from_hints(self):
+        args_type_hints = get_type_hints(self.residual, include_extras=True)
+
+        var_types = []
+        for hint in args_type_hints.values():
+            var_spec = cast(VarSpec, hint.__metadata__[0])
+            var_types.append(var_spec.symbol)
+
+        return tuple(var_types)
 
     def _read_and_validate_arguments(self, all_arguments: list[str]):
         # The 1 is removed because it is the self instance
@@ -221,39 +237,23 @@ class MeridAreaBlockage(UniqueEquation): ...
 # fmt: on
 
 
-# class Equation:
-#     def residual(self) -> float:
-#         raise NotImplementedError
-#
-#     @property
-#     def arguments(self):
-#         args_type_hints = get_type_hints(self.residual, include_extras=True)
-#
-#         var_types = []
-#         for hint in args_type_hints.values():
-#             for valid_types in hint.__metadata__:
-#                 if isinstance(valid_types, (ThermoVariables, OtherVariables)):
-#                     var_types.append(valid_types)
-#                 else:
-#                     raise KeyError
-#
-#         return var_types
-#
-#
-#
-# class DummyEq(Equation):
-#     def residual(
-#         self,
-#         s: ThermoHints().Enthalpy,
-#         h: ThermoHints().Enthalpy,
-#     ):
-#         return s + h
-#
+n0 = NodeHints(0)
+n1 = NodeHints(1)
+
+
+class DummyEq(EquationBase):
+    argument_magic = True
+
+    def residual(
+        self,
+        h0: n0.tot.Enthalpy,
+        h1: n1.tot.Enthalpy,
+        v0: n0.V_mag,
+    ):
+        return h0 + h1
+
 
 if __name__ == '__main__':
     pass
-    a = NodeHints(0).tot.Enthalpy
-    print(a)
-    # eq = DummyEq()
-    #
-    # print([arg.value.symbol for arg in eq.arguments])
+    eq = DummyEq()
+    print(eq.arguments)

@@ -2,6 +2,7 @@ from typing import Type
 from pathlib import Path
 import subprocess
 import importlib.util
+import inspect
 
 # Explicitly load the .py implementation, bypassing stub resolution
 var_hinting_path = Path(__file__).parent.parent / 'equations' / 'var_hinting.py'
@@ -32,10 +33,17 @@ lines = [
     'from typing import Annotated, Type',
 ]
 
+# Generate VarSpec class with actual properties
+varspec_lines = ['class VarSpec:']
+varspec_sample = VarSpec('test', 'test desc', 'test unit')
+for field_name in ['symbol', 'description', 'unit']:
+    varspec_lines.append('    @property')
+    varspec_lines.append(f'    def {field_name}(self) -> str: ...')
+lines.extend(varspec_lines)
+
 # Simple classes
 lines.extend(
     [
-        f'class {VarSpec.__name__}: ...',
         f'class {VariableHints.__name__}: ...',
         f'class {OtherVariables.__name__}(Enum): ...',
         f'class {ThermoVariables.__name__}(Enum): ...',
@@ -49,11 +57,21 @@ def generate_hint_class(
 ):
     class_lines = []
     class_lines.append(f'class {hint_class.__name__}({VariableHints.__name__}):')
-    class_lines.append('    def __init__(self, prefix: str): ...')
+
+    # Read actual __init__ signature
+    sig = inspect.signature(hint_class.__init__)
+    init_params = ', '.join(
+        f'{name}: {param.annotation.__name__ if hasattr(param.annotation, "__name__") else param.annotation}'
+        for name, param in sig.parameters.items()
+        if name != 'self'
+    )
+    class_lines.append(f'    def __init__(self, {init_params}): ...')
+
+    # Generate properties from enum members
     for var in enum_class:
         class_lines.append('    @property')
         class_lines.append(
-            f'    def    {var.name}(self) '
+            f'    def {var.name}(self) '
             f'-> Type[Annotated[MX | Quantity, {VarSpec.__name__}]]: ...'
         )
     return class_lines
@@ -61,18 +79,16 @@ def generate_hint_class(
 
 def generate_node_hints():
     class_lines = [
-        f'class {NodeHints.__name__}:',
+        f'class {NodeHints.__name__}({OtherHints.__name__}):',
         '    def __init__(self, index: int): ...',
     ]
 
-    for meth in dir(NodeHints):
-        if meth.startswith('_'):
-            continue
-
+    # Add ThermoHints properties (stc, tot, rlt)
+    for prop_name in ['stc', 'tot', 'rlt']:
         class_lines.extend(
             [
                 '    @property',
-                f'    def {meth}(self) -> {ThermoHints.__name__}: ...',
+                f'    def {prop_name}(self) -> {ThermoHints.__name__}: ...',
             ]
         )
 

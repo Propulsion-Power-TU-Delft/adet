@@ -5,6 +5,10 @@ from typing import Annotated, TypeVar, Generic, Type
 from dataclasses import dataclass
 from enum import Enum
 
+TOTAL_PREFIX = 'tot_'
+RELTOT_PREFIX = 'rlt_'
+STATIC_PREFIX = 'stc_'
+
 
 # *** Specifications for a single variable
 @dataclass(frozen=True)
@@ -56,7 +60,7 @@ class VariableHints(Generic[H]):
         return Annotated[
             cs.MX | Quantity,
             VarSpec(
-                self._prefix + var_spec.symbol,
+                self._prefix + var_spec.symbol + self._postfix,
                 var_spec.description,
                 var_spec.unit,
             ),
@@ -74,19 +78,14 @@ class OtherHints(VariableHints[OtherVariables]):
         super().__init__('', postfix, OtherVariables)
 
 
-TOT_PREFIX = 'tot_'
-RLT_PREFIX = 'rlt_'
-STC_PREFIX = 'stc_'
-
-
 class NodeHints(OtherHints):
     def __init__(self, index: int):
         index_str = str(index)
         super().__init__(index_str)
 
-        self._stc = ThermoHints(STC_PREFIX, index_str)
-        self._tot = ThermoHints(TOT_PREFIX, index_str)
-        self._rlt = ThermoHints(RLT_PREFIX, index_str)
+        self._stc = ThermoHints(STATIC_PREFIX, index_str)
+        self._tot = ThermoHints(TOTAL_PREFIX, index_str)
+        self._rlt = ThermoHints(RELTOT_PREFIX, index_str)
 
     @property
     def tot(self) -> ThermoHints:
