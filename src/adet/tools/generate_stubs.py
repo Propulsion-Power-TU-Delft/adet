@@ -1,4 +1,4 @@
-from typing import Type
+from typing import Type, Any
 from pathlib import Path
 import subprocess
 import importlib.util
@@ -25,30 +25,30 @@ from adet.equations.var_hinting import (
 )
 
 
-# Imports
-lines = [
-    'from enum import Enum',
-    'from casadi import MX',
-    'from pint import Quantity',
-    'from typing import Annotated, Type',
-]
+def generate_init_signature(class_to_read: Type[Any]):
+    sig = inspect.signature(class_to_read.__init__)
+    init_params = []
+    for name, param in sig.parameters.items():
+        if name == 'self':
+            continue
+        params_str = f'{name}: {param.annotation.__name__}'
+        init_params.append(params_str)
 
-# Generate VarSpec class with actual properties
-varspec_lines = ['class VarSpec:']
-varspec_sample = VarSpec('test', 'test desc', 'test unit')
-for field_name in ['symbol', 'description', 'unit']:
-    varspec_lines.append('    @property')
-    varspec_lines.append(f'    def {field_name}(self) -> str: ...')
-lines.extend(varspec_lines)
+    params_str = ', '.join(init_params)
 
-# Simple classes
-lines.extend(
-    [
-        f'class {VariableHints.__name__}: ...',
-        f'class {OtherVariables.__name__}(Enum): ...',
-        f'class {ThermoVariables.__name__}(Enum): ...',
-    ],
-)
+    return f'    def __init__(self, {params_str}): ...'
+
+
+def generate_dataclass_ppties(class_to_read):
+    sig = inspect.signature(class_to_read.__init__)
+    properties = []
+    for name, param in sig.parameters.items():
+        if name == 'self':
+            continue
+        properties.append('    @property')
+        properties.append(f'    def {name}(self) -> {param.annotation.__name__}: ...')
+
+    return properties
 
 
 def generate_hint_class(
@@ -60,19 +60,19 @@ def generate_hint_class(
 
     # Read actual __init__ signature
     sig = inspect.signature(hint_class.__init__)
-    init_params = ', '.join(
-        f'{name}: {param.annotation.__name__ if hasattr(param.annotation, "__name__") else param.annotation}'
-        for name, param in sig.parameters.items()
-        if name != 'self'
-    )
-    class_lines.append(f'    def __init__(self, {init_params}): ...')
+    init_params = []
+    for name, param in sig.parameters.items():
+        if name == 'self':
+            continue
+        params_str = f'{name}: {param.annotation.__name__}'
+        init_params.append(params_str)
+
+    class_lines.append(generate_init_signature(hint_class))
 
     # Generate properties from enum members
     for var in enum_class:
-        class_lines.append('    @property')
         class_lines.append(
-            f'    def {var.name}(self) '
-            f'-> Type[Annotated[MX | Quantity, {VarSpec.__name__}]]: ...'
+            f'    {var.name} = Annotated[MX | Quantity, {VarSpec.__name__}]'
         )
     return class_lines
 
@@ -95,16 +95,39 @@ def generate_node_hints():
     return class_lines
 
 
-lines.extend(generate_hint_class(ThermoHints, ThermoVariables))
-lines.extend(generate_hint_class(OtherHints, OtherVariables))
-lines.extend(generate_node_hints())
+if __name__ == '__main__':
+    # Imports
+    lines = [
+        'from enum import Enum',
+        'from casadi import MX',
+        'from pint import Quantity',
+        'from typing import Annotated',
+    ]
 
-output_path = Path(var_hinting_path).with_suffix('.pyi')
-output_path.write_text('\n'.join(lines))
+    # Generate VarSpec class with actual properties
+    lines.append(f'class {VarSpec.__name__}:')
+    lines.append(generate_init_signature(VarSpec))
+    lines.extend(generate_dataclass_ppties(VarSpec))
 
-# Run formatter
-subprocess.run(
-    ['ruff', 'check', '--select', 'I', '--fix', str(output_path)],
-    check=True,
-)
-subprocess.run(['ruff', 'format', str(output_path)], check=True)
+    # Simple classes
+    lines.extend(
+        [
+            f'class {VariableHints.__name__}: ...',
+            f'class {OtherVariables.__name__}(Enum): ...',
+            f'class {ThermoVariables.__name__}(Enum): ...',
+        ],
+    )
+
+    lines.extend(generate_hint_class(ThermoHints, ThermoVariables))
+    lines.extend(generate_hint_class(OtherHints, OtherVariables))
+    lines.extend(generate_node_hints())
+
+    output_path = Path(var_hinting_path).with_suffix('.pyi')
+    output_path.write_text('\n'.join(lines))
+
+    # Run formatter
+    subprocess.run(
+        ['ruff', 'check', '--select', 'I', '--fix', str(output_path)],
+        check=True,
+    )
+    subprocess.run(['ruff', 'format', str(output_path)], check=True)
