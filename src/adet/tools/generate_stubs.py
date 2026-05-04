@@ -19,10 +19,21 @@ from adet.equations.var_hinting import (
     ThermoHints,
     VarSpec,
     VariableHints,
-    OtherVariables,
+    GenericVariables,
     OtherHints,
     NodeHints,
+    NodeStates,
+    CustomHints,
 )
+
+
+def get_annotation_string(param: inspect.Parameter):
+    if hasattr(param.annotation, '__name__'):
+        return param.annotation.__name__
+    else:
+        return '|'.join(
+            [a.__name__.replace('Type', '') for a in param.annotation.__args__]
+        )
 
 
 def generate_init_signature(class_to_read: Type[Any]):
@@ -31,7 +42,8 @@ def generate_init_signature(class_to_read: Type[Any]):
     for name, param in sig.parameters.items():
         if name == 'self':
             continue
-        params_str = f'{name}: {param.annotation.__name__}'
+        annotation_str = get_annotation_string(param)
+        params_str = f'{name}: {annotation_str}'
         init_params.append(params_str)
 
     params_str = ', '.join(init_params)
@@ -45,15 +57,17 @@ def generate_dataclass_ppties(class_to_read):
     for name, param in sig.parameters.items():
         if name == 'self':
             continue
+        annotation_str = get_annotation_string(param)
+
         properties.append('    @property')
-        properties.append(f'    def {name}(self) -> {param.annotation.__name__}: ...')
+        properties.append(f'    def {name}(self) -> {annotation_str}: ...')
 
     return properties
 
 
 def generate_hint_class(
     hint_class: Type[VariableHints],
-    enum_class: Type[ThermoVariables | OtherVariables],
+    enum_class: Type[ThermoVariables | GenericVariables],
 ):
     class_lines = []
     class_lines.append(f'class {hint_class.__name__}({VariableHints.__name__}):')
@@ -84,13 +98,19 @@ def generate_node_hints():
     ]
 
     # Add ThermoHints properties (stc, tot, rlt)
-    for prop_name in ['stc', 'tot', 'rlt']:
+    for prop_name in NodeStates:
         class_lines.extend(
             [
                 '    @property',
-                f'    def {prop_name}(self) -> {ThermoHints.__name__}: ...',
+                f'    def {prop_name.value}(self) -> {ThermoHints.__name__}: ...',
             ]
         )
+    class_lines.extend(
+        [
+            '    @property',
+            f'    def cust(self) -> {CustomHints.__name__}: ...',
+        ]
+    )
 
     return class_lines
 
@@ -113,13 +133,15 @@ if __name__ == '__main__':
     lines.extend(
         [
             f'class {VariableHints.__name__}: ...',
-            f'class {OtherVariables.__name__}(Enum): ...',
+            f'class {GenericVariables.__name__}(Enum): ...',
             f'class {ThermoVariables.__name__}(Enum): ...',
+            f'class {CustomHints.__name__}(Enum): ...',
+            f'class {NodeStates.__name__}(Enum): ...',
         ],
     )
 
     lines.extend(generate_hint_class(ThermoHints, ThermoVariables))
-    lines.extend(generate_hint_class(OtherHints, OtherVariables))
+    lines.extend(generate_hint_class(OtherHints, GenericVariables))
     lines.extend(generate_node_hints())
 
     output_path = Path(var_hinting_path).with_suffix('.pyi')

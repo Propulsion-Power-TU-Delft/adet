@@ -5,9 +5,11 @@ from typing import Annotated, TypeVar, Generic, Type
 from dataclasses import dataclass
 from enum import Enum
 
-TOTAL_PREFIX = 'tot_'
-RELTOT_PREFIX = 'rlt_'
-STATIC_PREFIX = 'stc_'
+
+class NodeStates(Enum):
+    STATIC = 'stc'
+    TOTAL = 'tot'
+    RELTOT = 'rlt'
 
 
 # *** Specifications for a single variable
@@ -16,23 +18,31 @@ class VarSpec:
     symbol: str
     description: str
     unit: str
+    node: int = 0
+    state: NodeStates | None = None
 
 
 # *** Enums for storing the actual variable specs
 class ThermoVariables(Enum):
     Entropy = VarSpec('smass', 'Specific entropy', 'J / kg / K')
+    Density = VarSpec('rhomass', 'Density', 'kg / m**3')
     Pressure = VarSpec('p', 'Pressure', 'Pa')
     Enthalpy = VarSpec('hmass', 'Specific enthalpy', 'J / kg')
     Temperature = VarSpec('T', 'Temperature', 'K')
+    InternalEnergy = VarSpec('umass', 'Internal Energy', 'J / kg')
+    Cp = VarSpec('cpmass', 'Spefic heat (pressure)', 'J / kg')
+    Cv = VarSpec('cvmass', 'Spefic heat (volume)', 'J / kg')
 
 
-class OtherVariables(Enum):
+class GenericVariables(Enum):
     V_mag = VarSpec('V', 'Absolute velocity', 'm / s')
     V_tan = VarSpec('Vt', 'Absolute velocity (tangential)', 'm / s')
     V_mer = VarSpec('Vm', 'Absolute velocity (meridional)', 'm / s')
     W_mag = VarSpec('W', 'Relative Velocity', 'm / s')
     W_tan = VarSpec('Wt', 'Relative Velocity (tangential)', 'm / s')
     W_mer = VarSpec('Wm', 'Relative Velocity (meridional)', 'm / s')
+    RelAngle = VarSpec('beta', 'Relative flow angle', 'rad')
+    AbsAngle = VarSpec('alpha', 'Absolute flow angle', 'rad')
 
 
 # Hint typevar
@@ -41,7 +51,7 @@ H = TypeVar('H', bound=Enum)
 
 # Template class for type hint storage
 class VariableHints(Generic[H]):
-    def __init__(self, prefix: str, postfix: str, var_enum: Type[H]):
+    def __init__(self, node: int, state: NodeStates | None, var_enum: Type[H]):
         """
         Parameters
         ----------
@@ -50,8 +60,8 @@ class VariableHints(Generic[H]):
         var_enum: Type[H]
             Enum class from which to draw the variable specs
         """
-        self._prefix = prefix
-        self._postfix = postfix
+        self._state = state
+        self._node = node
         self._var_enum = var_enum
 
     def __getattr__(self, name: str):
@@ -60,32 +70,41 @@ class VariableHints(Generic[H]):
         return Annotated[
             cs.MX | Quantity,
             VarSpec(
-                self._prefix + var_spec.symbol + self._postfix,
+                var_spec.symbol,
                 var_spec.description,
                 var_spec.unit,
+                self._node,
+                self._state,
             ),
         ]
 
 
 class ThermoHints(VariableHints[ThermoVariables]):
-    def __init__(self, prefix: str, postfix: str):
-        super().__init__(prefix, postfix, ThermoVariables)
+    def __init__(self, state: NodeStates, node: int):
+        super().__init__(node, state, ThermoVariables)
 
 
-class OtherHints(VariableHints[OtherVariables]):
-    def __init__(self, postfix: str):
-        # NO PREFIX
-        super().__init__('', postfix, OtherVariables)
+class OtherHints(VariableHints[GenericVariables]):
+    def __init__(self, node: int):
+        super().__init__(node, None, GenericVariables)
+
+
+class CustomVar:
+    def __init__(self, symbol: str, node: int, unit: str):
+        self._var_spec = VarSpec(symbol, 'Custom symbol', unit, node)
+
+    @property
+    def Type(self) -> type[Annotated[cs.MX | Quantity, VarSpec]]:
+        return Annotated[cs.MX | Quantity, self._var_spec]
 
 
 class NodeHints(OtherHints):
     def __init__(self, index: int):
-        index_str = str(index)
-        super().__init__(index_str)
+        super().__init__(index)
 
-        self._stc = ThermoHints(STATIC_PREFIX, index_str)
-        self._tot = ThermoHints(TOTAL_PREFIX, index_str)
-        self._rlt = ThermoHints(RELTOT_PREFIX, index_str)
+        self._stc = ThermoHints(NodeStates.STATIC, index)
+        self._tot = ThermoHints(NodeStates.TOTAL, index)
+        self._rlt = ThermoHints(NodeStates.RELTOT, index)
 
     @property
     def tot(self) -> ThermoHints:
@@ -97,4 +116,8 @@ class NodeHints(OtherHints):
 
     @property
     def rlt(self) -> ThermoHints:
+        return self._rlt
+
+    @property
+    def cust(self) -> ThermoHints:
         return self._rlt

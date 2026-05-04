@@ -1,43 +1,67 @@
+import casadi as cs
+from dataclasses import dataclass
 from enum import Enum
-from typing import Annotated
+from pint.registry import Quantity
+from typing import Annotated, Generic, TypeVar
 
-from casadi import MX
-from pint import Quantity
+class NodeStates(Enum):
+    STATIC = 'stc'
+    TOTAL = 'tot'
+    RELTOT = 'rlt'
 
+@dataclass(frozen=True)
 class VarSpec:
-    def __init__(self, symbol: str, description: str, unit: str): ...
-    @property
-    def symbol(self) -> str: ...
-    @property
-    def description(self) -> str: ...
-    @property
-    def unit(self) -> str: ...
+    symbol: str
+    description: str
+    unit: str
+    node: int = ...
+    state: NodeStates | None = ...
 
-class VariableHints: ...
-class OtherVariables(Enum): ...
-class ThermoVariables(Enum): ...
+class ThermoVariables(Enum):
+    Entropy = Annotated[cs.MX | Quantity, VarSpec]
+    Density = Annotated[cs.MX | Quantity, VarSpec]
+    Pressure = Annotated[cs.MX | Quantity, VarSpec]
+    Enthalpy = Annotated[cs.MX | Quantity, VarSpec]
+    Temperature = Annotated[cs.MX | Quantity, VarSpec]
+    InternalEnergy = Annotated[cs.MX | Quantity, VarSpec]
+    Cp = Annotated[cs.MX | Quantity, VarSpec]
+    Cv = Annotated[cs.MX | Quantity, VarSpec]
 
-class ThermoHints(VariableHints):
-    def __init__(self, prefix: str, postfix: str): ...
-    Entropy = Annotated[MX | Quantity, VarSpec]
-    Pressure = Annotated[MX | Quantity, VarSpec]
-    Enthalpy = Annotated[MX | Quantity, VarSpec]
-    Temperature = Annotated[MX | Quantity, VarSpec]
+class GenericVariables(Enum):
+    V_mag = Annotated[cs.MX | Quantity, VarSpec]
+    V_tan = Annotated[cs.MX | Quantity, VarSpec]
+    V_mer = Annotated[cs.MX | Quantity, VarSpec]
+    W_mag = Annotated[cs.MX | Quantity, VarSpec]
+    W_tan = Annotated[cs.MX | Quantity, VarSpec]
+    W_mer = Annotated[cs.MX | Quantity, VarSpec]
+    RelAngle = Annotated[cs.MX | Quantity, VarSpec]
+    AbsAngle = Annotated[cs.MX | Quantity, VarSpec]
 
-class OtherHints(VariableHints):
-    def __init__(self, postfix: str): ...
-    V_mag = Annotated[MX | Quantity, VarSpec]
-    V_tan = Annotated[MX | Quantity, VarSpec]
-    V_mer = Annotated[MX | Quantity, VarSpec]
-    W_mag = Annotated[MX | Quantity, VarSpec]
-    W_tan = Annotated[MX | Quantity, VarSpec]
-    W_mer = Annotated[MX | Quantity, VarSpec]
+H = TypeVar('H', bound=Enum)
+
+class VariableHints(Generic[H]):
+    def __init__(
+        self, node: int, state: NodeStates | None, var_enum: type[H]
+    ) -> None: ...
+    def __getattr__(self, name: str): ...
+
+class ThermoHints(VariableHints[ThermoVariables]):
+    def __init__(self, state: NodeStates, node: int) -> None: ...
+
+class OtherHints(VariableHints[GenericVariables]):
+    def __init__(self, node: int) -> None: ...
+
+class CustomVar:
+    def __init__(self, symbol: str, node: int, unit: str) -> None: ...
+    Type = Annotated[cs.MX | Quantity, VarSpec]
 
 class NodeHints(OtherHints):
-    def __init__(self, index: int): ...
-    @property
-    def stc(self) -> ThermoHints: ...
+    def __init__(self, index: int) -> None: ...
     @property
     def tot(self) -> ThermoHints: ...
     @property
+    def stc(self) -> ThermoHints: ...
+    @property
     def rlt(self) -> ThermoHints: ...
+    @property
+    def cust(self) -> ThermoHints: ...

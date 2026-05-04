@@ -1,4 +1,5 @@
-from adet.equations.var_hinting import NodeHints, VarSpec
+from adet.tools.loggers import setup_logger
+from adet.equations.var_hinting import NodeHints, VarSpec, CustomVar
 import logging
 from abc import ABC, abstractmethod
 from inspect import getfullargspec
@@ -94,7 +95,13 @@ class EquationBase(ABC):
         var_types = []
         for hint in args_type_hints.values():
             var_spec = cast(VarSpec, hint.__metadata__[0])
-            var_types.append(var_spec.symbol)
+            logger.debug(f'Variable is {var_spec}')
+            if var_spec.state is not None:
+                state = str(var_spec.state.value) + '_'
+            else:
+                state = ''
+
+            var_types.append(state + var_spec.symbol + str(var_spec.node))
 
         return tuple(var_types)
 
@@ -237,23 +244,26 @@ class MeridAreaBlockage(UniqueEquation): ...
 # fmt: on
 
 
-n0 = NodeHints(0)
-n1 = NodeHints(1)
-
-
-class DummyEq(EquationBase):
-    argument_magic = True
-
-    def residual(
-        self,
-        h0: n0.tot.Enthalpy,
-        h1: n1.tot.Enthalpy,
-        v0: n0.V_mag,
-    ):
-        return h0 + h1
-
-
 if __name__ == '__main__':
-    pass
+    setup_logger(logger, logging.DEBUG, logging.INFO)
+    n0 = NodeHints(0)
+    n1 = NodeHints(1)
+
+    dht_test0 = CustomVar('delta_hmass_test', 0, 'J / kg')
+    dht_test1 = CustomVar('delta_hmass_test', 1, 'J / kg')
+
+    class DummyEq(EquationBase):
+        argument_magic = False
+
+        def residual(
+            self,
+            h0: n0.tot.Enthalpy,
+            h1: n1.tot.Enthalpy,
+            v0: n0.V_mag,
+            dht0: dht_test0.Type,
+            dht1: dht_test1.Type,
+        ):
+            return h0 + h1 + v0 + dht0 + dht1
+
     eq = DummyEq()
     print(eq.arguments)
