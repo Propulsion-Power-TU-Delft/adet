@@ -23,7 +23,7 @@ def get_midspan_idx(var):
     return midspan
 
 
-def safe_abs(x) -> Quantity | cs.MX:
+def safe_abs(x: Quantity | cs.MX) -> Quantity | cs.MX:
     if isinstance(x, cs.MX):
         return cs.fabs(x)
     else:

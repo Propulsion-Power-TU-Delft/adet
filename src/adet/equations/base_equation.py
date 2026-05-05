@@ -1,5 +1,6 @@
 from adet.tools.loggers import setup_logger
-from adet.equations.var_hinting import NodeHints, VarSpec, CustomVar
+
+from adet.equations.variables import NodeVariables, VarSpec
 import logging
 from abc import ABC, abstractmethod
 from inspect import getfullargspec
@@ -15,8 +16,6 @@ from adet.tools.strings import get_index, validate_arg_format
 logger = logging.getLogger(__name__)
 
 
-# TODO: A lot of argument validation could be done at the class level
-# instead of instance
 class EquationBase(ABC):
     """
     Base Class for defining equations, including argument validation and organization,
@@ -70,20 +69,23 @@ class EquationBase(ABC):
         """Arguments, in the format of <node_state>_<var_type><index>"""
         residual_args = getfullargspec(self.residual).args[1:]
 
+        # If not already present, parse the arguments
         if not self._arguments:
             if self.argument_magic:
                 self._arguments = self._read_and_validate_arguments(residual_args)
             else:
-                self._arguments = self._args_from_hints()
+                arguments = []
+                var_specs = self._args_from_hints()
+                for var_spec in var_specs:
+                    if var_spec.state is not None:
+                        state = str(var_spec.state.value) + '_'
+                    else:
+                        state = ''
+
+                    arguments.append(state + var_spec.symbol + str(var_spec.node))
+                self._arguments = tuple(arguments)
 
         return self._arguments
-
-    @property
-    def num_equations(self):
-        raise NotImplementedError(
-            'This method has been deprecated, the number of equations '
-            'is free to change depending on the structure of the arguments'
-        )
 
     @property
     def num_args(self):
@@ -92,19 +94,18 @@ class EquationBase(ABC):
     def _args_from_hints(self):
         args_type_hints = get_type_hints(self.residual, include_extras=True)
 
-        var_types = []
+        variables_specs = []
         for hint in args_type_hints.values():
+            # NOTE: Only use the first annotation by convention
             var_spec = cast(VarSpec, hint.__metadata__[0])
             logger.debug(f'Variable is {var_spec}')
-            if var_spec.state is not None:
-                state = str(var_spec.state.value) + '_'
-            else:
-                state = ''
 
-            var_types.append(state + var_spec.symbol + str(var_spec.node))
+            variables_specs.append(var_spec)
 
-        return tuple(var_types)
+        return variables_specs
 
+    # WARN: Old method involving string manipulation
+    # TODO: Import the relevant checks
     def _read_and_validate_arguments(self, all_arguments: list[str]):
         # The 1 is removed because it is the self instance
         # Careful if residual is changed to a static method
@@ -246,22 +247,23 @@ class MeridAreaBlockage(UniqueEquation): ...
 
 if __name__ == '__main__':
     setup_logger(logger, logging.DEBUG, logging.INFO)
-    n0 = NodeHints(0)
-    n1 = NodeHints(1)
+    n0 = NodeVariables(0)
+    n1 = NodeVariables(1)
 
-    dht_test0 = CustomVar('delta_hmass_test', 0, 'J / kg')
-    dht_test1 = CustomVar('delta_hmass_test', 1, 'J / kg')
+    dht_test0 = VarSpec('delta_hmass_test', '', 'J / kg', 0)
+    dht_test1 = VarSpec('delta_hmass_test', '', 'J / kg', 1)
 
     class DummyEq(EquationBase):
         argument_magic = False
 
         def residual(
             self,
-            h0: n0.tot.Enthalpy,
-            h1: n1.tot.Enthalpy,
-            v0: n0.V_mag,
-            dht0: dht_test0.Type,
-            dht1: dht_test1.Type,
+            v0: n0.V_mag.Hint,
+            vt0: n0.V_mag.Hint,
+            h0: n0.tot.Enthalpy.Hint,
+            h1: n1.tot.Enthalpy.Hint,
+            dht0: dht_test0.Hint,
+            dht1: dht_test1.Hint,
         ):
             return h0 + h1 + v0 + dht0 + dht1
 
