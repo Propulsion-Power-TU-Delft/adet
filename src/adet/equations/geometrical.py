@@ -4,15 +4,11 @@ import numpy as np
 from adet.equations.base_equation import CamberLineGeom, EquationBase, MeridionalGeom
 from adet.equations.utils import (
     get_midspan_idx,
+    safe_abs,
+    safe_max,
     safe_min_clip,
     safe_sum,
-    safe_if_else,
-    safe_abs,
-    safe_min,
-    minmax_bound,
-    safe_max,
 )
-
 
 # NOTE:
 # Meridional Geometry

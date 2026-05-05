@@ -1,3 +1,5 @@
+from pint import Unit, Quantity
+import numpy as np
 from adet.tools.loggers import setup_logger
 
 from adet.equations.variables import NodeVariables, VarSpec
@@ -75,7 +77,7 @@ class EquationBase(ABC):
                 self._arguments = self._read_and_validate_arguments(residual_args)
             else:
                 arguments = []
-                var_specs = self._args_from_hints()
+                var_specs = self._get_args_specs()
                 for var_spec in var_specs:
                     if var_spec.state is not None:
                         state = str(var_spec.state.value) + '_'
@@ -88,24 +90,40 @@ class EquationBase(ABC):
         return self._arguments
 
     @property
+    def units(self):
+        vars_specs = self._get_args_specs()
+        return [Unit(s.unit) for s in vars_specs]
+
+    @property
     def num_args(self):
         return len(self._arguments)
 
-    def _args_from_hints(self):
+    def _get_args_specs(self) -> list[VarSpec]:
         args_type_hints = get_type_hints(self.residual, include_extras=True)
 
-        variables_specs = []
+        vars_specs = []
         for hint in args_type_hints.values():
             # NOTE: Only use the first annotation by convention
-            var_spec = cast(VarSpec, hint.__metadata__[0])
-            logger.debug(f'Variable is {var_spec}')
+            spec = cast(VarSpec, hint.__metadata__[0])
+            logger.debug(f'Variable is {spec}')
 
-            variables_specs.append(var_spec)
+            vars_specs.append(spec)
 
-        return variables_specs
+        self._check_duplicates(vars_specs)
+
+        return vars_specs
+
+    def _check_duplicates(self, variables_specs):
+        # Check for duplicate arguments
+        seen = set()
+        duplicates = {x for x in variables_specs if x in seen or seen.add(x)}
+
+        if len(seen) != len(variables_specs):
+            raise ValueError(
+                f'Duplicate argument(s) in {self.__class__.__name__}, {duplicates}'
+            )
 
     # WARN: Old method involving string manipulation
-    # TODO: Import the relevant checks
     def _read_and_validate_arguments(self, all_arguments: list[str]):
         # The 1 is removed because it is the self instance
         # Careful if residual is changed to a static method
@@ -151,50 +169,6 @@ class EquationBase(ABC):
 
         return full_argument, int(arg_index)
 
-    def to_symbolic(self) -> sp.Expr | str:
-        """
-        Return a symbolic rendering of the equation
-
-        - Temporarily convert numpy functions to sympy
-        - Return class attributes as symbols
-        """
-
-        # Add a shape to the symbol class for
-        # symbolic representation
-        class ShapedSymbol(sp.Symbol):
-            shape = (1,)
-
-        class SymbolMaker:
-            """
-            This overwrites the self class to return the symbols
-            self.ratio -> sp.Symbol('ratio')
-            """
-
-            def __getattr__(self, name):
-                return ShapedSymbol(name)
-
-        # This is so that any attribute that appears
-        # in the equation is translated to a symbol
-        # in theory this is not used anymore (for jax compatibility)
-        dummy_self = SymbolMaker()
-        # Recast it as an instance of Self
-        dummy_self = cast(Self, dummy_self)
-
-        res_func = self.residual
-
-        # Build the residual function arguments as symbols
-        symbolic_args = []
-        for arg in self.arguments:
-            symbolic_args.append(ShapedSymbol(arg))
-
-        # Substitute numpy with sympy
-        symbolic_res = override_operators(res_func, 'numpy', sp)
-
-        try:
-            return symbolic_res(*symbolic_args)
-        except Exception:
-            raise
-
     def __init_subclass__(cls) -> None:
         if bool(cls.output_quantities) != bool(cls.input_pair):
             raise ValueError(
@@ -212,7 +186,10 @@ class EquationBase(ABC):
         if cls._eos is None:
             raise AttributeError(f'Missing equation of state for {cls}')
 
-        return cast(Callable[[Any, Any], tuple[Any, ...]], cls._eos)
+        return cast(
+            Callable[[Any, Any], tuple[Any, ...]],
+            cls._eos,
+        )
 
     # TODO: Fix typing here for analytical/symbolic EoS
     @eos.setter
@@ -258,8 +235,7 @@ if __name__ == '__main__':
 
         def residual(
             self,
-            v0: n0.V_mag.Hint,
-            vt0: n0.V_mag.Hint,
+            v0: n0.kin.V_mag.Hint,
             h0: n0.tot.Enthalpy.Hint,
             h1: n1.tot.Enthalpy.Hint,
             dht0: dht_test0.Hint,
