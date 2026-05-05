@@ -7,8 +7,8 @@ secondary or composed properties
 from typing import Callable, Protocol, runtime_checkable, cast
 from numpy.typing import NDArray
 
-from adet.variables import KinematicContainer, VariableContainer
-from adet.variables import ThermostateContainer
+from adet.containers import KinematicContainer, VariableContainer
+from adet.containers import ThermostateContainer
 
 
 @runtime_checkable
