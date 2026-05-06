@@ -1,3 +1,6 @@
+from adet.constants import COOLPROP_NAMES_MAP
+from adet.equations.variables import ThermoVariables
+from adet.equations.varspec import VarSpec
 from dataclasses import dataclass
 import logging
 from typing import Generic, TypeVar
@@ -73,8 +76,18 @@ class ExternalFluidModel(FluidModel, Generic[E]):
 @dataclass
 class FluidSettings:
     model: FluidModel
-    update_variables: tuple[str, ...] = ()
+    update_variables: tuple[VarSpec, ...] = ()
     update_length: int = 2
+
+    def __post_init__(self):
+        # Sort variables in the correct order
+        sorted_upd = tuple(
+            sorted(
+                self.update_variables,
+                key=lambda x: COOLPROP_NAMES_MAP[x.symbol],
+            )
+        )
+        self.update_variables = tuple(sp.Plain for sp in sorted_upd)
 
 
 if __name__ == '__main__':
@@ -83,9 +96,13 @@ if __name__ == '__main__':
 
     eos = cp.AbstractState('HEOS', 'R134a')
 
+    th_vars = ThermoVariables()
     sett = FluidSettings(
         ExternalFluidModel(eos),
-        ('p', 'T'),
+        (
+            th_vars.Pressure,
+            th_vars.Temperature,
+        ),
         2,
     )
 

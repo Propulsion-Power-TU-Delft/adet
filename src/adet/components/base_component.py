@@ -399,12 +399,12 @@ class BaseComponent(ABC):
 
             for ntw in self._attached_networks:
                 abs_idx = self.network_maps[ntw][rel_idx]
-                ntw.system.boundary_conditions[abs_idx][arg_state][arg_type] = value
+                ntw.system.boun_cond[abs_idx][arg_state][arg_type] = value
         else:
             self._boundary_conditions[rel_idx][arg_state].pop(arg_type)
             for ntw in self._attached_networks:
                 abs_idx = self.network_maps[ntw][rel_idx]
-                ntw.system.boundary_conditions[abs_idx][arg_state].pop(arg_type)
+                ntw.system.boun_cond[abs_idx][arg_state].pop(arg_type)
 
     def _equalities_helper(
         self, mode: Literal['const', 'prev', 'next'], *arguments: str

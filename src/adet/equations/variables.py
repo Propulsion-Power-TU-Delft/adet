@@ -1,4 +1,4 @@
-from adet.equations.varspec import NodeStates, VarSpec, DUMMY_NODE_IDX
+from adet.equations.varspec import NodeStates, VarSpec, DEF_NODE
 
 
 class BaseEnum:
@@ -24,7 +24,11 @@ class VariableEnum(BaseEnum):
 
 
 class ThermoVariables(BaseEnum):
-    def __init__(self, node: int, state: NodeStates | None = None):
+    def __init__(
+        self,
+        node: int = DEF_NODE,
+        state: NodeStates | None = None,
+    ):
         super().__init__(node, state)
 
     Entropy = VarSpec('smass', 'J / kg / K', 1e4)
@@ -38,7 +42,6 @@ class ThermoVariables(BaseEnum):
     SpeedSound = VarSpec('speed_sound', 'm / s')
     CriticalTemp = VarSpec('T_critical', 'K')
     Viscosity = VarSpec('viscosity', 'Pa * s')
-    GammaPV = VarSpec('gamma_pv', '', 1.4)
 
 
 class KinematicVariables(VariableEnum):
@@ -134,6 +137,7 @@ class OtherVariables(VariableEnum):
     ChMassflow = VarSpec('ch_massflow', 'kg / s', 1.0, (1e-4, 5e4))
     ChokeMassflow = VarSpec('massflow_choke', 'kg / s', None, (1e-4, 5e4), 0, True)
     PBase = VarSpec('p_base', 'Pa', 3e5)
+    GammaPV = VarSpec('gamma_pv', '', 1.4)
     Enthalpy_totIs = VarSpec('tot_hmass_is', 'J / kg', 6e5)
     Tis_tot = VarSpec('tot_T_is', 'K', 300.0)
     Enthalpy_Is = VarSpec('stc_hmass_is', 'J / kg', 6e5)
@@ -149,7 +153,7 @@ class OtherVariables(VariableEnum):
 
 
 class NodeVariables:
-    def __init__(self, node: int = DUMMY_NODE_IDX):
+    def __init__(self, node: int = DEF_NODE):
         self._node = node
 
     @property

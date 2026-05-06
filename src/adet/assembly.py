@@ -9,27 +9,27 @@ Sometimes the CasADi api is slightly cryptic, sorry.
 import logging
 import sys
 from abc import ABC, abstractmethod
-from collections import defaultdict
 from copy import deepcopy
 from itertools import accumulate
-from typing import Any, Callable, Iterable, Literal, Mapping, Self, Sequence, Type
+from typing import Any, Callable, Iterable, Literal, Self, Sequence, Type, cast
 
 import casadi as cs
 import jax as jax
 import jax.numpy as jnp
 import numpy as np
 from numpy.typing import NDArray
-from pint import Quantity, Unit, DimensionalityError
+from pint import Quantity, Unit
 from pint.facets.plain import PlainQuantity
 
 from adet.constants import INVERSE_CP_NAMES_MAP, AdetArray
 from adet.equations.base_equation import EquationBase
-from adet.equations.varspec import VarSpec
+from adet.equations.fundamental import EulerEquation
+from adet.equations.variables import ThermoVariables, NodeVariables
+from adet.equations.varspec import NodeStates, VarSpec
 from adet.errors import ExistingEquationError
 from adet.fluid.casadi_eos import CasadiEos
 from adet.fluid.eos_factory import EosFactory
-from adet.fluid.settings import EmptyFluidModel, FluidSettings
-from adet.node import FlowNode
+from adet.fluid.settings import EmptyFluidModel, ExternalFluidModel, FluidSettings
 from adet.registries import (
     GuessRegistry,
     ScalarsRegistry,
@@ -37,10 +37,10 @@ from adet.registries import (
     VariableBoundsRegistry,
 )
 from adet.tools.context import override_operators
-from adet.tools.coolprop_utils import pair_based_sorting, pair_id_from_tuple
+from adet.tools.coolprop_utils import DebugAbstractState, pair_id_from_tuple
 from adet.tools.interpolation import resample_linear
 from adet.tools.iter import ensure_tuple
-from adet.tools.strings import get_arg_state, get_arg_type, get_index, rm_index
+from adet.tools.strings import get_index, rm_index
 
 logger = logging.getLogger(__name__)
 
@@ -86,15 +86,14 @@ class SystemSharedData:
         # Arguments
         self.decl_args: tuple[VarSpec, ...] = ()
         self.free_args: tuple[VarSpec, ...] = ()
-        self.constraints: dict[VarSpec, AdetArray] = {}
+        self.boun_cond: dict[VarSpec, AdetArray | PlainQuantity] = {}
 
         # Boundary conditions and constraints
-        self.boundary_conditions: dict[VarSpec, AdetArray | PlainQuantity] = {}
         self.equalities: list[set[VarSpec]] = []
         self.spanwise_constants: set[VarSpec] = set()
 
         # Units and scaling
-        self.equations_units: list[list[str]] = []
+        self.equations_units: dict[EquationBase, tuple[str, ...]] = {}
         self.scaled: bool = False
 
         # Settings
@@ -198,10 +197,7 @@ class EquationRegistry:
 
     def _build_argument_maps(
         self,
-    ) -> dict[
-        EquationBase,
-        dict[int, int],
-    ]:
+    ) -> dict[EquationBase, dict[int, int]]:
 
         arg_maps = {}
         logger.debug('Reading all the equation arguments...')
@@ -232,7 +228,7 @@ class ConstraintManager:
 
     def add_boundary_conditions(self, bnd_cond: dict[VarSpec, AdetArray]):
         """Add boundary conditions for a specific node"""
-        self.data.boundary_conditions.update(bnd_cond)
+        self.data.boun_cond.update(bnd_cond)
 
     def add_equalities(self, *equalities: tuple[VarSpec, ...]):
         """
@@ -249,21 +245,21 @@ class ConstraintManager:
         for arg in arguments:
             self.data.spanwise_constants.add(arg)
 
-    def _validate_units(self):
+    def _validate_units(self) -> None:
         """Write the stored boundary conditions to the nodes"""
         logger.debug('Checking boundary conditions...')
-        for spec, value in self.data.boundary_conditions.items():
+        for spec, value in self.data.boun_cond.items():
             if isinstance(value, PlainQuantity):
                 def_unit = Unit(spec.unit)
                 if not value.units.is_compatible_with(def_unit):
                     raise ValueError(
-                        f'{def_unit} is not compatible wit {value.units}'
+                        f'{def_unit} is not compatible with {value.units}'
                         f' prescribed in the boundary conditions for {spec.symbol}'
                     )
 
-                self.data.boundary_conditions[spec] = value.to_base_units()
+                self.data.boun_cond[spec] = value.to_base_units()
 
-    def check_constraints_effectiveness(self):
+    def check_constraints_effectiveness(self) -> None:
         """
         Check if the arguments used in equalities and spanwise_constants
         appear as declared arguments
@@ -287,19 +283,15 @@ class ArgumentResolver:
     def __init__(self, data: SystemSharedData):
         self.data = data
 
-    def identify_free_arguments(self) -> tuple[str, ...]:
+    def identify_free_arguments(self) -> tuple[VarSpec, ...]:
         """
         Get the real thermodynamic and kinematic arguments needed to complete
         the different states of the node.
         """
         if isinstance(self.data.fluid_settings.model, EmptyFluidModel):
-            return tuple(set(self.data.decl_args) - set(self.data.constraints))
+            return tuple(set(self.data.decl_args) - set(self.data.boun_cond))
         else:
-            return tuple(
-                sorted(
-                    self._get_effective_arguments(),
-                ),
-            )
+            return tuple(self._get_effective_arguments())
 
     def _get_effective_arguments(self):
         """
@@ -309,28 +301,23 @@ class ArgumentResolver:
         while the other two are followers
         """
         # Non thermodynamic arguments
-        nonthermo_args = [
-            arg for arg in self.data.decl_args if not arg.startswith(THERMO_PREFIXES)
-        ]
+        nonthermo_args = [arg for arg in self.data.decl_args if not arg.state]
 
         # Get what variables will be used for state updates
         self.data.thermo_updt_args = []
-        for node_idx, node in enumerate(self.data.nodes):
-            logger.debug(f'Getting update variables for node {node_idx}')
-            updt_vars = node.get_update_variables()
+        prescr_upd_vars = self.data.fluid_settings.update_variables
+        max_node = max(arg.node for arg in self.data.decl_args)
 
-            for state, updt_pair in updt_vars.items():
-                self.data.thermo_updt_args += [
-                    f'{state}_{var}{node_idx}' for var in updt_pair
-                ]
+        for node in range(max_node + 1):
+            for st in NodeStates:
+                upd_args = [v._at_node(node)._with_state(st) for v in prescr_upd_vars]
+                self.data.thermo_updt_args.extend(upd_args)
 
         return set(self.data.thermo_updt_args + nonthermo_args).difference(
-            self.data.constraints
+            self.data.boun_cond
         )
 
-    def get_discarded_thermo_args(
-        self,
-    ) -> defaultdict[int, defaultdict[str, list[str]]]:
+    def get_discarded_thermo_args(self) -> list[VarSpec]:
         """
         Retrieve the discarded thermo arguments a.k.a. the ones
         that were declared in the equations but have become extractions
@@ -342,18 +329,11 @@ class ArgumentResolver:
             - set(self.data.free_args)
         )
 
-        discarded = defaultdict(lambda: defaultdict(list))
-
-        for arg in all_discarded:
-            arg_state = get_arg_state(arg)
-            arg_idx = get_index(arg)
-            arg_type = get_arg_type(arg)
-
-            if arg.startswith(THERMO_PREFIXES):
-                discarded[arg_idx][arg_state].append(arg_type)
+        discarded = [arg for arg in all_discarded if arg.state]
 
         return discarded
 
+    # TODO: Restore introspection
     def make_arg_structure(self, arguments: Sequence[str]):
         """Detect the argument structure of a sequence of arguments"""
         arguments_struct = []
@@ -392,65 +372,34 @@ class UnitScalingManager:
     def __init__(self, data: SystemSharedData):
         self.data = data
 
-    def extract_args_units(self):
-        self.data.arguments_units = {}
-
-        for idx, node in enumerate(self.data.nodes):
-            node_arguments = {
-                f'{arg}{idx}': var for arg, var in node.get_all_quantities().items()
-            }
-
-            self.data.arguments_units.update(
-                {arg: get_units_string(var) for arg, var in node_arguments.items()}
-            )
-
     def check_equations_units(self):
-        self.data.equations_units = []
+        self.data.equations_units = {}
 
         """Check units for all equations"""
         for eq in self.data.equations:
-            int_map = self.data._arg_maps[eq]
-            self.data.equations_units.append(self._get_eq_units(eq, int_map))
+            self.data.equations_units[eq] = self._test_eq_units(eq)
 
         logger.debug('Units for the residual equations successfully verified')
 
-    def _test_equation_units(
-        self,
-        equation: EquationBase,
-        int_map: dict[int, int],
-    ):
-        args = []
-        for rel_arg in equation.arg_symbols:
-            abs_arg = get_absolute_arg(int_map, rel_arg)
-            units = self.data.arguments_units[abs_arg]
-            if abs_arg in self.data.scalar_arguments:
-                dummy_value = Quantity(np.nan, units)
+    def _test_eq_units(self, equation: EquationBase) -> tuple[str, ...]:
+        probe_args = []
+        for spec in equation.arg_specs:
+            if spec.scalar:
+                dummy_arg = Quantity(np.nan, spec.unit)
             else:
-                dummy_value = Quantity(self.data.num_span * [np.nan], units)
+                dummy_arg = Quantity(self.data.num_span * [np.nan], spec.unit)
 
-            args.append(dummy_value)
+            probe_args.append(dummy_arg)
 
-        return equation.residual(*args)
+        residuals = cast(
+            Quantity | tuple[Quantity, ...],
+            equation.residual(*probe_args),
+        )
 
-    def _get_eq_units(
-        self, equation: EquationBase, int_map: dict[int, int]
-    ) -> list[str]:
-        """Get units for a single equation"""
-        if equation.manual_units:
-            return list(equation.manual_units)
+        if not isinstance(residuals, tuple):
+            residuals = (residuals,)
 
-        res = self._test_equation_units(equation, int_map)
-
-        if not isinstance(res, (list, tuple)):
-            res = (res,)
-
-        return [get_units_string(r) for r in res]
-
-    def _assign_scaling_factor(self, units: str):
-        """Assign scaling factor based on units"""
-        if not self.data.scaled:
-            return 1.0
-        return _scale_reg[units]
+        return tuple(res.to_base_units().units.__str__() for res in residuals)
 
     def get_free_args_scaling(self):
         """Build multi-span scaling factors for free arguments"""
@@ -458,25 +407,36 @@ class UnitScalingManager:
 
     def get_constraints_scaling(self):
         """Build multi-span scaling factors for constraints"""
-        return self._argument_scaling_helper(self.data.constraints)
+        bc_specs = list(self.data.boun_cond.keys())
+        return self._argument_scaling_helper(bc_specs)
+
+    def _argument_scaling_helper(self, arguments: Sequence[VarSpec]) -> list[float]:
+        """Returns the arguments scales for a sequence of system arguments"""
+        if not self.data.scaled:
+            scales = len(arguments) * [1.0]
+        else:
+            scales = [_scale_reg.get(spec.unit) for spec in arguments]
+
+        return scales
 
     def get_arguments_bounds(
-        self, custom_bounds: dict[str, tuple[float, float]]
+        self, custom_bounds: dict[VarSpec, tuple[float, float]]
     ) -> list[tuple[float, float]]:
         """The custom bounds are to be provided dimensionally"""
         bounds = []
-        for arg, scaling in zip(self.data.free_args, self.get_free_args_scaling()):
-            if arg in custom_bounds:
-                lower_bound, upper_bound = custom_bounds[arg]
+        for spec in self.data.free_args:
+            if spec in custom_bounds:
+                lower_bound, upper_bound = custom_bounds[spec]
+            elif spec.Plain in custom_bounds:
+                lower_bound, upper_bound = custom_bounds[spec]
             else:
-                arg_type = get_arg_type(arg)
-
-                if arg_type not in _bounds_reg:
+                if not spec.bounds:
                     lower_bound = -1e20
                     upper_bound = 1e20
                 else:
-                    lower_bound, upper_bound = _bounds_reg.get(arg_type)
+                    lower_bound, upper_bound = spec.bounds
 
+            scaling = _scale_reg.get(spec.unit)
             bounds.append(
                 (
                     lower_bound / scaling,
@@ -486,116 +446,32 @@ class UnitScalingManager:
 
         return bounds
 
-    def _argument_scaling_helper(self, arguments: Sequence[str]) -> list[float]:
-        """Returns the arguments scales for a sequence of system arguments"""
-        if not self.data.scaled:
-            scales = len(arguments) * [1.0]
-        else:
-            all_args_scales: dict[str, float] = jax.tree.map(
-                self._assign_scaling_factor,
-                self.data.arguments_units,
-            )
-            scales = [all_args_scales[arg] for arg in arguments]
-
-        return scales
-
     def get_equations_scaling(self):
         """Build multi-span scaling factors for equations"""
-        eq_scales = []
+        eq_scales: list[float] = []
 
         num_equations = jax.tree.leaves(self.data.equations_units).__len__()
         if not self.data.scaled:
             scales = np.ones(num_equations)
         else:
-            for eq, units in zip(self.data.equations, self.data.equations_units):
+            for eq, units in self.data.equations_units.items():
                 if eq._scaling_factor:
                     logger.debug(
-                        f'Custom scaling factor found for {eq.__class__.__name__}, '
+                        f'Custom scaling factor found for '
+                        f'{eq.__class__.__name__}, '
                         f'{eq._scaling_factor}'
                     )
                     for scl, u in zip(eq._scaling_factor, units):
                         if scl is None:
-                            eq_scales.append(self._assign_scaling_factor(u))
+                            eq_scales.append(_scale_reg.get(u))
                         else:
                             eq_scales.append(scl)
                 else:
-                    eq_scales += [self._assign_scaling_factor(u) for u in units]
+                    eq_scales += [_scale_reg.get(u) for u in units]
 
             scales = np.array(eq_scales)
 
         return scales
-
-
-class SolutionDispatcher:
-    """Handles solution formatting and node updates"""
-
-    def __init__(self, data: SystemSharedData):
-        self.data = data
-
-    def unflatten_solution(self, solution_values: NDArray) -> list[NDArray]:
-        """Unflatten the solution based on a PyTree definition"""
-        arg_resolver = ArgumentResolver(self.data)
-        free_args_struct = arg_resolver.make_arg_structure(self.data.free_args)
-        solution_values_inflated = jax.tree.unflatten(
-            jax.tree.structure(free_args_struct),
-            solution_values.flatten().tolist(),
-        )
-
-        return list(map(np.array, solution_values_inflated))
-
-    def solution_to_dict(
-        self, solution_values: list[NDArray] | NDArray, scaling: list[float]
-    ) -> dict[str, NDArray]:
-        """
-        Map argument values to a dict pointing to which argument they belong,
-        useful for passing information between systems for initialization
-        """
-        if isinstance(solution_values, np.ndarray):
-            solution_values = self.unflatten_solution(solution_values)
-
-        if self.data.scaled:
-            solution_values = jax.tree.map(
-                lambda x, y: x * y,
-                solution_values,
-                scaling,
-            )
-
-        # Arguments in absolute indices
-        return {
-            arg: solution_values[idx] for idx, arg in enumerate(self.data.free_args)
-        }
-
-    def split_arguments_by_node(self, arguments: Sequence[str]):
-        """
-        Split the arguments, in the form of <state>_<var_type><abs_node_idx>
-        in their respective FlowNode, making them easier to read/write
-        """
-        node_by_args: dict[FlowNode, list[str]] = {node: [] for node in self.data.nodes}
-
-        for arg in set(arguments):
-            node = self.data.nodes[get_index(arg)]
-            node_by_args[node].append(rm_index(arg))
-
-        return node_by_args
-
-    def write_solution_to_nodes(self, solution_values: NDArray, scaling: list[float]):
-        """Dispatch the provided values to the correct node"""
-        split_arg_dictionaries = self.split_arguments_by_node(self.data.free_args)
-        solution_dict = self.solution_to_dict(solution_values, scaling)
-
-        arg_print = ', '.join(solution_dict)
-        logger.debug(f'Writing arguments to node: {arg_print}')
-
-        for node, args_to_write in split_arg_dictionaries.items():
-            node_writer = {}
-            node_idx = str(self.data.nodes.index(node))
-            for arg in args_to_write:
-                node_writer[arg] = solution_dict[arg + node_idx]
-
-            logger.debug(f'Writing {node_writer} to node {node_idx}')
-            node.write_to_node(node_writer, fixed=False)
-
-        return solution_dict
 
 
 class SystemAssembler(ABC):
@@ -618,7 +494,6 @@ class SystemAssembler(ABC):
         self._equation_registry = EquationRegistry(self.data)
         self._argument_resolver = ArgumentResolver(self.data)
         self._constraint_manager = ConstraintManager(self.data)
-        self._solution_dispatcher = SolutionDispatcher(self.data)
 
     @property
     def num_span(self):
@@ -645,46 +520,30 @@ class SystemAssembler(ABC):
     def num_equations(self):
         return jax.tree.leaves(self.data.equations_units).__len__()
 
+    @property
+    def num_nodes(self) -> int:
+        return max(arg.node for arg in self.data.decl_args)
+
     # Expose context properties for backward compatibility
     @property
     def equations(self):
         return self.data.equations
 
     @property
-    def nodes(self):
-        return self.data.nodes
-
-    @property
     def free_args(self):
         return self.data.free_args
 
     @property
-    def constraints(self):
-        return self.data.constraints
-
-    @property
-    def constraints_values(self):
-        return self.data.constraints_values
-
-    @property
-    def boundary_conditions(self):
-        return self.data.boundary_conditions
+    def boun_cond(self):
+        return self.data.boun_cond
 
     @property
     def _declared_arguments(self):
         return self.data.decl_args
 
     @property
-    def _scalar_arguments(self):
-        return self.data.scalar_arguments
-
-    @property
     def _arg_maps(self):
         return self.data._arg_maps
-
-    @property
-    def _arguments_units(self):
-        return self.data.arguments_units
 
     @property
     def _equations_units(self):
@@ -697,10 +556,6 @@ class SystemAssembler(ABC):
     @property
     def _scaled(self):
         return self.data.scaled
-
-    @property
-    def _global_constraints(self):
-        return self.data.global_constraints
 
     @property
     def _equalities(self):
@@ -732,12 +587,7 @@ class SystemAssembler(ABC):
 
         out_dict = {}
         for field in FIELDS_TO_SAVE:
-            try:
-                attr = getattr(self.data, field)
-            except AttributeError as e:
-                raise AttributeError(
-                    f'{e} encountered while trying to deepcopy attribute {field}'
-                )
+            attr = getattr(self.data, field)
 
             out_dict[field] = deepcopy(attr)
 
@@ -748,13 +598,9 @@ class SystemAssembler(ABC):
         for attr, value in data_dict.items():
             setattr(self.data, attr, value)
 
-    def add_boundary_conditions(self, bnd_cond: dict, node_idx: int):
+    def add_boundary_conditions(self, bnd_cond: dict):
         """Delegate to constraint manager"""
-        self._constraint_manager.add_boundary_conditions(bnd_cond, node_idx)
-
-    def add_global_constraints(self, bnd_cond: dict):
-        """Delegate to constraint manager"""
-        self._constraint_manager.add_global_constraints(bnd_cond)
+        self._constraint_manager.add_boundary_conditions(bnd_cond)
 
     def add_equation(
         self,
@@ -791,7 +637,7 @@ class SystemAssembler(ABC):
         """
         self._equation_registry.remove_equation(equation_class, nodal_position)
 
-    def add_equalities(self, *equalities: tuple[str, ...]):
+    def add_equalities(self, *equalities: tuple[VarSpec, ...]):
         """
         Each tuple in the list represent a set of variables that are treated
         as equal by the system. This is achieved by adding trivial residual
@@ -803,7 +649,7 @@ class SystemAssembler(ABC):
         """
         self._constraint_manager.add_equalities(*equalities)
 
-    def add_spanwise_constants(self, *arguments: str):
+    def add_spanwise_constants(self, *arguments: VarSpec):
         """
         Add arguments that are constant along the span
         """
@@ -830,9 +676,6 @@ class SystemAssembler(ABC):
         self.data._arg_maps = self._equation_registry._build_argument_maps()
         self.data.decl_args = self._equation_registry._read_decl_args()
 
-        # TODO: This write-extraction step seems a bit fickle, could be reworked
-        # Nodes deal with of unit management and state dispatch
-
         self._constraint_manager._validate_units()
         self._constraint_manager.check_constraints_effectiveness()
 
@@ -840,7 +683,6 @@ class SystemAssembler(ABC):
         self.data.free_args = self._argument_resolver.identify_free_arguments()
 
         # Validity checks and scaling
-        self._scaling_manager.extract_args_units()
         self._scaling_manager.check_equations_units()
 
         self.data.built = True
@@ -887,29 +729,6 @@ class SystemAssembler(ABC):
         """Build multi-span scaling factors for equations"""
         return self._scaling_manager.get_equations_scaling()
 
-    def solution_to_dict(
-        self, solution_values: list[NDArray] | NDArray
-    ) -> dict[str, NDArray]:
-        """
-        Simple utility method for mapping some argument values to a dict pointing
-        to which argument they belong, useful for passing information between
-        systems for initialization
-        """
-        return self._solution_dispatcher.solution_to_dict(
-            solution_values, self.free_args_scaling
-        )
-
-    def write_solution_to_nodes(self, solution_values: NDArray):
-        """
-        Dispatch the provided values to the correct node and return
-        the arguments in absolute indices
-        """
-        self._check_built()
-
-        return self._solution_dispatcher.write_solution_to_nodes(
-            solution_values, self.free_args_scaling
-        )
-
     @abstractmethod
     def make_residual_function(self):
         self._check_built()
@@ -920,56 +739,53 @@ class SystemAssembler(ABC):
     def get_scaled_constraints(self) -> list[NDArray]:
         return jax.tree.map(
             lambda x, y: x / y,
-            self.constraints_values,
+            list(self.data.boun_cond.values()),
             self.constraints_scaling,
         )
 
     def get_scaled_guess(
-        self, manual_values: Mapping[str, AdetArray] = {}
+        self,
+        manual_values: dict[VarSpec, AdetArray] = {},
+        fallback: float | None = None,
     ) -> list[NDArray]:
         """Generate initial guesses for free arguments"""
         guesses = []
-        scaling = self.free_args_scaling
 
-        for idx, arg in enumerate(self.data.free_args):
-            arg_type = get_arg_type(arg)
-            arg_state = get_arg_state(arg)
-
+        for spec in self.data.free_args:
             # If there is a manual value, overwrite the guess registry
-            if arg in manual_values:
-                guess_value = manual_values[arg]
-                logger.debug(f'Using manual value {guess_value} for {arg}')
 
+            if spec in manual_values:
+                guess_value = manual_values[spec]
+                logger.debug(f'Using manual value {guess_value} for {spec}')
+            elif spec.Plain in manual_values:
+                guess_value = manual_values[spec.Plain]
+                logger.debug(f'Using manual value {guess_value} for {spec}')
             # If a guess is available in the registry
-            elif arg_type in _guess_reg:
-                guess_value = _guess_reg[arg_type]
+            elif spec.guess:
+                guess_value = spec.guess
 
                 # Vary the total and static values, avoid singularities
-                if arg_state == 'stc':
+                if spec.state == NodeStates.STATIC:
                     guess_value *= 0.95
-                elif arg_state in ('rlt', 'tot'):
+                elif spec.state in (NodeStates.TOTAL, NodeStates.RELTOT):
                     guess_value *= 1.05
-                else:
-                    pass
 
             # If there is no guess and no manual value
             else:
-                # If the registry has defined a fallback, use that
-                if _guess_reg._fallback_value is not None:
-                    guess_value = _guess_reg.get(arg_type)
+                # If the user has defined a fallback, use that
+                if fallback:
+                    guess_value = fallback
                 # Otherwise ask for user input
                 else:
-                    input_msg = f'INPUT >>> DIMENSIONAL guess for {arg} [1.0] = '
+                    input_msg = f'INPUT >>> DIMENSIONAL guess for {spec} [1.0] = '
                     guess_value = float(input(input_msg) or 1.0)
-
-                    # Add the input value to the registry
-                    _guess_reg[arg_type] = guess_value
+                    manual_values[spec.Plain] = guess_value
 
             guess_value = np.atleast_1d(guess_value)
 
             if max(guess_value.shape) != self.data.num_span:
                 logger.debug(
-                    f'Length mismatch in guess for {arg}, using linear resampling'
+                    f'Length mismatch in guess for {spec}, using linear resampling'
                 )
                 # This simply repeats the single value when 1 -> N
                 guess_value = resample_linear(
@@ -977,11 +793,11 @@ class SystemAssembler(ABC):
                     self.data.num_span,
                 )
 
-                if arg in self.data.scalar_arguments:
+                if spec.scalar:
                     guess_value = np.array([guess_value[0]])
 
             # Scale
-            scaling_factor = scaling[idx]
+            scaling_factor = _scale_reg.get(spec.unit)
             guess_value_scaled = guess_value / scaling_factor
             guesses.append(guess_value_scaled)
 
@@ -989,17 +805,17 @@ class SystemAssembler(ABC):
 
 
 class CasadiSystem(SystemAssembler):
-    def __init__(self, num_span: int = 1, *, scale_suffix: str = '__SCALER') -> None:
+    def __init__(self, num_span: int = 1, *, scale_suffix: str = '__SCL') -> None:
         super().__init__(num_span)
         self.scale_suffix = scale_suffix
 
     def _reset_symbols(self):
         logger.debug('Resetting all CasADi symbolics...')
-        self.const_sym: list[cs.MX] = []
-        self.free_args_sym: list[cs.MX] = []
+        self.const_sym: dict[VarSpec, cs.MX] = {}
+        self.free_args_sym: dict[VarSpec, cs.MX] = {}
 
-        self.scales_const_sym: list[cs.MX] = []
-        self.scales_free_args_sym: list[cs.MX] = []
+        self.scales_const_sym: dict[VarSpec, cs.MX] = {}
+        self.scales_free_args_sym: dict[VarSpec, cs.MX] = {}
 
         self._eq_scales_sym: list[cs.MX] = []
         self.residual_expr: list[cs.MX]
@@ -1009,21 +825,24 @@ class CasadiSystem(SystemAssembler):
         logger.info('Building CasADi backend...')
         self._reset_symbols()
         self._build_base_symbols()
-        self._build_composed_symbols()
+        self._build_products()
         self._build_residual_expressions()
 
     def _create_symbols(
-        self, arg_names: Sequence[str], num_span: int, scale_suffix: str
-    ) -> tuple[list[cs.MX], list[cs.MX]]:
+        self, arg_specs: Sequence[VarSpec], num_span: int, scale_suffix: str
+    ) -> tuple[
+        dict[VarSpec, cs.MX],
+        dict[VarSpec, cs.MX],
+    ]:
         """Helper to create symbols and their scaled versions."""
-        symbols = []
-        scales = []
+        symbols = {}
+        scales = {}
 
-        for arg in arg_names:
-            symbol_length = 1 if arg in self._scalar_arguments else num_span
-            symbols.append(cs.MX.sym(arg, symbol_length))  # pyright:ignore
-            # -> Choice: Scales are all single dimensional
-            scales.append(cs.MX.sym(arg + scale_suffix, 1))  # pyright:ignore
+        for spec in arg_specs:
+            symbol_name = spec.full_symbol(index=True)
+            symbol_length = 1 if spec.scalar else num_span
+            symbols[spec] = cs.MX.sym(symbol_name, symbol_length)
+            scales[spec] = cs.MX.sym(symbol_name + scale_suffix, 1)
 
         return symbols, scales
 
@@ -1040,29 +859,55 @@ class CasadiSystem(SystemAssembler):
             self.num_span,
             self.scale_suffix,
         )
+        bc_specs = list(self.data.boun_cond)
         self.const_sym, self.scales_const_sym = self._create_symbols(
-            self.constraints,
+            bc_specs,
             self.num_span,
             self.scale_suffix,
         )
 
+    def _build_products(self):
+        """
+        Loop through the system's equations giving as arguments symbolic
+        MX representation of each argument, mapped from the relative equation
+        indices to the absolute system indices.
+        """
+        # === Build the product of each symbolic variable for their scaling value
+        # 1. For free arguments
+        free_args_products = {
+            spec: self.free_args_sym[spec] * self.scales_free_args_sym[spec]
+            for spec in self.data.free_args
+        }
+
+        constraints_products = {
+            spec: self.const_sym[spec] * self.scales_const_sym[spec]
+            for spec in self.data.boun_cond
+        }
+
+        all_args_products = {**free_args_products, **constraints_products}
+
+        # 3. Build equation of state symbols
+        casadi_eos_symbols = self._build_equations_of_state(all_args_products)
+
+        self._all_symbols = {**all_args_products, **casadi_eos_symbols}
+
     def _build_equations_of_state(
-        self, all_args_products: dict[str, cs.MX]
-    ) -> dict[str, cs.MX]:
+        self, all_args_products: dict[VarSpec, cs.MX]
+    ) -> dict[VarSpec, cs.MX]:
         fl_model = self.fluid_settings.model
 
         # TODO: Fix typing here for analytical eos
-        self._eos_callbacks: dict[int, dict[str, cs.Function | CasadiEos | Any]] = {
-            n_idx: {} for n_idx, _ in enumerate(self.nodes)
+        self._eos_callbacks: dict[
+            int, dict[NodeStates, cs.Function | CasadiEos | Any]
+        ] = {
+            n_idx: dict.fromkeys(
+                NodeStates,
+                None,
+            )
+            for n_idx in range(self.num_nodes + 1)
         }
 
-        # if not isinstance(fl_model, ExternalFluidModel):
-        #     raise NotImplementedError('Ideal gas model support not implemented yet')
-
         self._eos_factory = EosFactory(fl_model)
-
-        # Get discarded thermo args => They become eos outputs
-        discarded_thermo = self._argument_resolver.get_discarded_thermo_args()
 
         # Add inter-node eos
         for eq in self.equations:
@@ -1074,72 +919,60 @@ class CasadiSystem(SystemAssembler):
                     f'multi_{eq.__class__.__name__}',
                 )
 
-        # TODO: Refactor this, looks like shit
-        out_syms = {}
-        for node_idx, discarded_vars in discarded_thermo.items():
-            node_inp_pairs = self.nodes[node_idx].get_update_variables()
+        # TODO: Refactor this, messy
+        discarded_vars = self._argument_resolver.get_discarded_thermo_args()
+        pair_tuple = tuple(s.symbol for s in self.data.fluid_settings.update_variables)
+        out_syms: dict[VarSpec, cs.MX] = {}
 
-            for state_name, out_props in discarded_vars.items():
-                pair_tuple = node_inp_pairs[state_name]
+        sorted_discarded: dict[
+            int,
+            dict[NodeStates, list[VarSpec]],
+        ] = {}
+        # build output properties
+        for spec in discarded_vars:
+            if spec.node not in sorted_discarded:
+                sorted_discarded[spec.node] = dict.fromkeys(NodeStates, [])
+            if spec.state:
+                sorted_discarded[spec.node][spec.state].append(spec)
+
+        for node_idx in range(self.num_nodes + 1):
+            for state, out_specs in sorted_discarded[node_idx].items():
                 pair_id = pair_id_from_tuple(pair_tuple)
-                sorted_pair_tuple = pair_based_sorting(*pair_tuple)
+                out_props = [s.symbol for s in out_specs]
 
                 eos_caller = self._eos_factory.make_eos(
                     pair_id,
                     out_props,
                     self.num_span,
-                    f'nodeCb_{state_name}_N{node_idx}',
+                    f'nodeCb_{state.value}N{node_idx}',
                 )
 
                 # This is to keep references alive
-                self._eos_callbacks[node_idx][state_name] = eos_caller
+                self._eos_callbacks[node_idx][state] = eos_caller
+
+                upd_specs = [
+                    spec._with_state(state)._at_node(node_idx)
+                    for spec in self.data.fluid_settings.update_variables
+                ]
 
                 # Symbolic representation of the input pair properties
-                symbolic_pair = [
-                    all_args_products[f'{state_name}_{var}{node_idx}']
-                    for var in sorted_pair_tuple
-                ]
+                symbolic_pair = [all_args_products[spec] for spec in upd_specs]
 
                 # Symbolic representation of the output properties
                 out_props_syms = eos_caller(*symbolic_pair)
 
                 if not isinstance(out_props_syms, tuple):
-                    out_props_syms = [out_props_syms]
+                    out_props_syms = (out_props_syms,)
 
                 # Make a dictionary of symbols that are ouputs from the eos callbacks
-                for pr_name, pr_sym in zip(out_props, out_props_syms):
-                    arg_name = f'{state_name}_{pr_name}{node_idx}'
-                    if arg_name in self.data.constraints:
-                        arg_name += THERMO_CONST_SUFFIX
-                    out_syms[arg_name] = pr_sym
+                for pr_spec, pr_sym in zip(out_specs, out_props_syms):
+                    if pr_spec in self.data.boun_cond:
+                        pr_spec = pr_spec._with_symbol(
+                            pr_spec.symbol + THERMO_CONST_SUFFIX
+                        )
+                    out_syms[pr_spec] = pr_sym
 
         return out_syms
-
-    def _build_composed_symbols(self):
-        """
-        Loop through the system's equations giving as arguments symbolic
-        MX representation of each argument, mapped from the relative equation
-        indices to the absolute system indices.
-        """
-        # === Build the product of each symbolic variable for their scaling value
-        # 1. For free arguments
-        free_args_products: dict[str, cs.MX] = {
-            sym.name(): sym * scale
-            for sym, scale in zip(self.free_args_sym, self.scales_free_args_sym)
-        }
-
-        # 2. For constrained arguments
-        constraints_products: dict[str, cs.MX] = {
-            sym.name(): sym * scale
-            for sym, scale in zip(self.const_sym, self.scales_const_sym)
-        }
-
-        all_args_products = {**free_args_products, **constraints_products}
-
-        # 3. Build equation of state symbols
-        casadi_eos_symbols = self._build_equations_of_state(all_args_products)
-
-        self._all_symbols = {**all_args_products, **casadi_eos_symbols}
 
     def _build_equalities_expr(self) -> list[cs.MX]:
         """
@@ -1192,14 +1025,14 @@ class CasadiSystem(SystemAssembler):
         variables
         """
         constraints_eqs = []
-        for arg in self.data.constraints:
-            if not arg.startswith(THERMO_PREFIXES):
+        for spec in self.data.boun_cond:
+            if not spec.state:
                 continue
 
-            if arg not in self.data.thermo_updt_args:
+            if spec not in self.data.thermo_updt_args:
                 constraints_eqs.append(
-                    self._all_symbols[arg]
-                    - self._all_symbols[arg + THERMO_CONST_SUFFIX]
+                    self._all_symbols[spec]
+                    - self._all_symbols[spec + THERMO_CONST_SUFFIX]
                 )
 
         return constraints_eqs
@@ -1207,7 +1040,7 @@ class CasadiSystem(SystemAssembler):
     def _build_residual_expressions(self):
         # Build scaling symbols for all equations
         self._eq_scales_sym = [
-            cs.MX.sym(f'eq{idx}{self.scale_suffix}', 1)  # pyright:ignore
+            cs.MX.sym(f'eq{idx}{self.scale_suffix}', 1)
             for idx in range(self.num_equations)
         ]
 
@@ -1215,12 +1048,13 @@ class CasadiSystem(SystemAssembler):
         logger.info('Building residual equation symbolics (this may take a while)...')
 
         residuals = []
-        for eq in self.equations:
+        for eq in self.data.equations:
             int_map = self.data._arg_maps[eq]  # Convert to abs args
 
             args = []
-            for rel_arg in eq.arguments:
-                abs_arg = get_absolute_arg(int_map, rel_arg)
+            for spec in eq.arg_specs:
+                arg_map = self.data._arg_maps[eq]
+                abs_arg = spec._at_node(arg_map[spec.node])
                 args.append(self._all_symbols[abs_arg])
 
             # NOTE: No need to override the operators for now,
@@ -1247,7 +1081,7 @@ class CasadiSystem(SystemAssembler):
         self.residual_expr += self._build_spanwise_constants()
         self.residual_expr += self._build_thermo_constraints()
 
-        num_vars = max(cs.vertcat(*self.free_args_sym).shape)
+        num_vars = len(self.free_args_sym)
         num_residuals = max(cs.vertcat(*self.residual_expr).shape)
         logger.info(
             f'System info: {num_residuals} total equations, {num_vars} total variables'
@@ -1307,10 +1141,10 @@ class CasadiSystem(SystemAssembler):
         super().make_residual_function()  # This only checks if built for now
 
         FULL_ARGUMENTS = [
-            self.free_args_sym,
-            self.scales_free_args_sym,
-            self.const_sym,
-            self.scales_const_sym,
+            list(self.free_args_sym.values()),
+            list(self.scales_free_args_sym.values()),
+            list(self.const_sym.values()),
+            list(self.scales_const_sym.values()),
             self._eq_scales_sym,
         ]
 
@@ -1357,8 +1191,11 @@ class CasadiSystem(SystemAssembler):
         """
         res_func = self.make_residual_function()
 
-        free_args_symbols = cs.vertcat(*self.free_args_sym)
-        constraints_symbols = cs.vertcat(*self.const_sym)
+        args_sym = list(self.free_args_sym.values())
+        cons_sym = list(self.const_sym.values())
+
+        free_args_symbols = cs.vertcat(*args_sym)
+        constraints_symbols = cs.vertcat(*cons_sym)
 
         res_expr_partial = res_func(
             free_args_symbols,
@@ -1678,3 +1515,40 @@ def {func_name}(equations, {', '.join(self._declared_arguments)}):
         cas_sys = CasadiSystem()
         cas_sys.from_dict(self.to_dict())
         return cas_sys
+
+
+if __name__ == '__main__':
+    nls = CasadiSystem(1)
+
+    # +++ Fluid settings
+    fluid_model_real = ExternalFluidModel(
+        DebugAbstractState('HEOS', 'Air'),  # This just counts the number of updates
+    )
+
+    t_vars = ThermoVariables()
+
+    fluid_settings = FluidSettings(
+        model=fluid_model_real,
+        update_variables=(
+            t_vars.Pressure,
+            t_vars.Temperature,
+        ),
+    )
+    nls.fluid_settings = fluid_settings
+
+    n0 = NodeVariables(0)
+    n1 = NodeVariables(1)
+
+    nls.add_equation(EulerEquation(), (0, 1))
+    nls.add_boundary_conditions(
+        {
+            n0.kin.V_tan: 10,
+            n1.kin.BladeSpeed: 10,
+        },
+    )
+
+    nls.build()
+    res_func = nls.make_residual_function()
+    nls.get_scaled_constraints()
+    nls.get_scaled_guess()
+    nls.make_rootfinder('ipopt')

@@ -418,7 +418,7 @@ if __name__ == '__main__':
         for eq, pos in EQS_WITH_LOSSES.items():
             impeller.add_equation(eq, pos)
 
-        ntw_hecc.system.boundary_conditions[1]['oth'].pop('wake_frac')
+        ntw_hecc.system.boun_cond[1]['oth'].pop('wake_frac')
         ntw_hecc.system.add_equation(LossPicker(), (0, 1, 2, 3))
         ntw_hecc.build()
 

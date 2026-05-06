@@ -367,7 +367,7 @@ class ScalingRegistry(BaseRegistry[PlainUnit, float]):
         units = self._base_units_from_key(key)
         return super().set(units, value)
 
-    def get(self, key: str):
+    def get(self, key: str) -> float:
         units = self._base_units_from_key(key)
         return super().get(units)
 

@@ -5,7 +5,8 @@ from dataclasses import dataclass, replace
 from enum import Enum
 
 
-DUMMY_NODE_IDX = -1
+DEF_NODE = -1
+DEF_STATE = None
 
 
 class NodeStates(Enum):
@@ -21,7 +22,7 @@ class VarSpec:
     unit: str
     guess: float | None = None
     bounds: tuple[float, float] | None = None
-    node: int = DUMMY_NODE_IDX
+    node: int = DEF_NODE
     scalar: bool = False
     state: NodeStates | None = None
 
@@ -48,6 +49,18 @@ class VarSpec:
 
     def _with_guess(self, guess: float | None):
         return replace(self, guess=guess)
+
+    def _with_symbol(self, symbol: str | None):
+        return replace(self, symbol=symbol)
+
+    def full_symbol(self, index: bool = False) -> str:
+        prefix = self.state.value if self.state else ''
+        postfix = str(self.node) if index else ''
+        return prefix + self.symbol + postfix
+
+    @property
+    def Plain(self):
+        return replace(self, state=DEF_STATE, node=DEF_NODE)
 
     @property
     def Hint(self):

@@ -160,27 +160,27 @@ if __name__ == '__main__':
         ('kin_omega0', 'kin_omega1'),
     )
 
-    sys.boundary_conditions[0]['tot'] = {'p': 3e5, 'T': 400}
+    sys.boun_cond[0]['tot'] = {'p': 3e5, 'T': 400}
 
-    sys.boundary_conditions[0]['geo'] = {
+    sys.boun_cond[0]['geo'] = {
         'rr': 0.1,
         'pitch': 1.0,
         'bld_thick': 0.01,
     }
-    sys.boundary_conditions[0]['oth'] = {
-        'mom_thick': sys.boundary_conditions[0]['geo']['bld_thick'] * 0.075,  # pyright: ignore
-        'disp_thick': sys.boundary_conditions[0]['geo']['bld_thick'] * 0.15,  # pyright: ignore
+    sys.boun_cond[0]['oth'] = {
+        'mom_thick': sys.boun_cond[0]['geo']['bld_thick'] * 0.075,  # pyright: ignore
+        'disp_thick': sys.boun_cond[0]['geo']['bld_thick'] * 0.15,  # pyright: ignore
         'p_base': 1.3e5,
     }
 
-    sys.boundary_conditions[0]['kin'] = {
+    sys.boun_cond[0]['kin'] = {
         'omega': 0.0,
         'beta': Quantity(60, 'deg'),
         'mach': 1.0,
     }
 
     # sys.boundary_conditions[1]['kin'] = {'mach': 1.4}
-    sys.boundary_conditions[1]['oth'] = {'pRatio': 0.3}
+    sys.boun_cond[1]['oth'] = {'pRatio': 0.3}
 
     sys.build()
     VariableBoundsRegistry().from_dict(
@@ -268,7 +268,7 @@ if __name__ == '__main__':
                 )
                 loss_coeffs_dnt[beta].append(Y_dent)
 
-            throat_mach = sys.boundary_conditions[0]['kin']['mach']
+            throat_mach = sys.boun_cond[0]['kin']['mach']
 
             dev_analytical = dev_osnaghi(
                 pratios,

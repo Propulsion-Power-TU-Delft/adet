@@ -1,5 +1,7 @@
 """Module that gathers fundamental equations for internal flows"""
 
+from adet.equations.variables import NodeVariables
+
 import numpy as np
 
 from adet.equations import EquationBase
@@ -11,9 +13,21 @@ from adet.equations.utils import (
 from adet.equations.base_equation import MeridAreaBlockage
 
 
+n0 = NodeVariables(0)
+n1 = NodeVariables(1)
+
+
 class EulerEquation(EquationBase):
-    def residual(self, tot_hmass0, kin_U0, kin_Vt0, tot_hmass1, kin_U1, kin_Vt1):
-        return (tot_hmass1 - tot_hmass0) - (kin_U1 * kin_Vt1 - kin_U0 * kin_Vt0)
+    def residual(
+        self,
+        ht0: n0.tot.Enthalpy.Hint,
+        ht1: n1.tot.Enthalpy.Hint,
+        u0: n0.kin.BladeSpeed.Hint,
+        u1: n1.kin.BladeSpeed.Hint,
+        vt0: n0.kin.V_tan.Hint,
+        vt1: n1.kin.V_tan.Hint,
+    ):
+        return (ht1 - ht0) - (u1 * vt1 - u0 * vt0)
 
 
 class ConstantAngMomentum(EquationBase):

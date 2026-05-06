@@ -40,11 +40,11 @@ uv run src/adet/examples/air_supply_compressor_design.py
 ### Code Quality Tools
 
 - **[Ruff](https://docs.astral.sh/ruff)**: Linting and formatting
-- **[Basedpyright](https://github.com/DetachHead/basedpyright)** / **[Pyright](https://github.com/microsoft/pyright)**: Static type checking
+- **[ty](https://github.com/bnemetis/ty)**: Static type checking
 
 These tools can be used via CLI or integrated directly into your IDE:
-- **VS Code**: Install the [Ruff](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff) and [Pylance](https://marketplace.visualstudio.com/items?itemName=ms-python.vscode-pylance) (includes Pyright) extensions
-- **PyCharm**: Configure Ruff as an external tool and enable Pyright via plugin
+- **VS Code**: Install the [Ruff](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff) extension
+- **PyCharm**: Configure Ruff as an external tool
 - **Other IDEs**: Most modern Python IDEs support these tools via plugins or external tool configuration
 
 ### Development Commands
@@ -55,7 +55,7 @@ ruff check src/            # Check for linting issues
 ruff format src/           # Auto-format code
 
 # Type checking (CLI)
-pyright                    # Run type checker
+ty                         # Run type checker
 ```
 
 ### Code Style
@@ -67,4 +67,4 @@ pyright                    # Run type checker
 
 ### Contributing
 
-Ensure your IDE is configured to use Ruff and Basedpyright for the best development experience. Type hints are recommended for new code, but optional for functions with intentional polymorphism (e.g., equation residuals).
+Ensure your IDE is configured to use Ruff and ty for the best development experience. Type hints are recommended for new code, but optional for functions with intentional polymorphism (e.g., equation residuals).
