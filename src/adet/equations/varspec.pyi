@@ -1,23 +1,28 @@
 from pint import Quantity
-from casadi import MX
 from typing import Annotated
+from casadi import MX
 from dataclasses import dataclass
 from enum import Enum
 
+DUMMY_NODE_IDX: int
+
 class NodeStates(Enum):
-    STATIC = 'stc'
-    TOTAL = 'tot'
-    RELTOT = 'rlt'
+    STATIC = 'stc_'
+    TOTAL = 'tot_'
+    RELTOT = 'rlt_'
 
 @dataclass(frozen=True)
 class VarSpec:
     symbol: str
-    description: str
     unit: str
+    guess: float | None = ...
+    bounds: tuple[float, float] | None = ...
     node: int = ...
-    state: None | NodeStates = ...
     scalar: bool = ...
+    state: None | NodeStates = ...
 
     def _with_state(self, state: NodeStates | None) -> 'VarSpec': ...
     def _at_node(self, node: int) -> 'VarSpec': ...
+    def _with_bounds(self, bounds: tuple[float, float] | None) -> 'VarSpec': ...
+    def _with_guess(self, guess: float | None) -> 'VarSpec': ...
     Hint = Annotated[MX | Quantity, 'VarSpec']

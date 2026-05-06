@@ -227,8 +227,8 @@ if __name__ == '__main__':
     n0 = NodeVariables(0)
     n1 = NodeVariables(1)
 
-    dht_test0 = VarSpec('delta_hmass_test', '', 'J / kg', 0)
-    dht_test1 = VarSpec('delta_hmass_test', '', 'J / kg', 1)
+    dht_test0 = VarSpec('delta_hmass_test', 'J / kg', node=0)
+    dht_test1 = VarSpec('delta_hmass_test', 'J / kg', node=1)
 
     class DummyEq(EquationBase):
         argument_magic = False

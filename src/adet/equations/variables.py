@@ -1,4 +1,4 @@
-from adet.equations.varspec import NodeStates, VarSpec
+from adet.equations.varspec import NodeStates, VarSpec, DUMMY_NODE_IDX
 
 
 class BaseEnum:
@@ -27,186 +27,129 @@ class ThermoVariables(BaseEnum):
     def __init__(self, node: int, state: NodeStates | None = None):
         super().__init__(node, state)
 
-    Entropy = VarSpec('smass', 'Specific entropy', 'J / kg / K')
-    Density = VarSpec('rhomass', 'Density', 'kg / m**3')
-    Pressure = VarSpec('p', 'Pressure', 'Pa')
-    Enthalpy = VarSpec('hmass', 'Specific enthalpy', 'J / kg')
-    Temperature = VarSpec('T', 'Temperature', 'K')
-    InternalEnergy = VarSpec('umass', 'Internal Energy', 'J / kg')
-    Cp = VarSpec('cpmass', 'Spefic heat (pressure)', 'J / kg / K')
-    Cv = VarSpec('cvmass', 'Spefic heat (volume)', 'J / kg / K')
-    SpeedSound = VarSpec('speed_sound', 'Speed of sound', 'm / s')
-    CriticalTemp = VarSpec('T_critical', 'Critical temperature', 'K')
-    Viscosity = VarSpec('viscosity', 'Dynamic viscosity', 'Pa * s')
-    GammaPV = VarSpec('gamma_pv', 'Isentropic exponent', 'dimensionless')
+    Entropy = VarSpec('smass', 'J / kg / K', 1e4)
+    Density = VarSpec('rhomass', 'kg / m**3', 2.0, (1e-3, 800.0))
+    Pressure = VarSpec('p', 'Pa', 5e5, (1e4, 150e5))
+    Enthalpy = VarSpec('hmass', 'J / kg', 6e5)
+    Temperature = VarSpec('T', 'K', 800.0, (80.0, 1800.0))
+    InternalEnergy = VarSpec('umass', 'J / kg', 5e5)
+    Cp = VarSpec('cpmass', 'J / kg / K')
+    Cv = VarSpec('cvmass', 'J / kg / K')
+    SpeedSound = VarSpec('speed_sound', 'm / s')
+    CriticalTemp = VarSpec('T_critical', 'K')
+    Viscosity = VarSpec('viscosity', 'Pa * s')
+    GammaPV = VarSpec('gamma_pv', '', 1.4)
 
 
 class KinematicVariables(VariableEnum):
-    # Absolute velocity components
-    V_mag = VarSpec('V', 'Absolute velocity', 'm / s')
-    V_tan = VarSpec('Vt', 'Absolute velocity (tangential)', 'm / s')
-    V_mer = VarSpec('Vm', 'Absolute velocity (meridional)', 'm / s')
-    # Relative velocity components
-    W_mag = VarSpec('W', 'Relative Velocity', 'm / s')
-    W_tan = VarSpec('Wt', 'Relative Velocity (tangential)', 'm / s')
-    W_mer = VarSpec('Wm', 'Relative Velocity (meridional)', 'm / s')
-    # Blade speed and rotation
-    BladeSpeed = VarSpec('U', 'Blade speed', 'm / s')
-    Omega = VarSpec('omega', 'Rotational speed', 'rad / s', scalar=True)
-    # Flow angles
-    FlowAngleRel = VarSpec('beta', 'Relative flow angle', 'rad')
-    FlowAngleAbs = VarSpec('alpha', 'Absolute flow angle', 'rad')
-    Deflection = VarSpec('deflection', 'Flow deflection', 'rad')
-    IncAngle = VarSpec('inc_angle', 'Incidence angle', 'rad')
-    DevAngle = VarSpec('dev_angle', 'Deviation angle', 'rad')
-    BetaOpt = VarSpec('beta_opt', 'Optimal relative flow angle', 'rad')
-    # Mach numbers
-    Mach = VarSpec('mach', 'Absolute Mach number', 'dimensionless')
-    RelMach = VarSpec('rel_mach', 'Relative Mach number', 'dimensionless')
-    MerMach = VarSpec('mermach', 'Meridional Mach number', 'dimensionless')
-    # Ratios
-    VmRatio = VarSpec('VmRatio', 'Meridional velocity ratio', 'dimensionless')
-    # Endwall scalars
-    W_choke = VarSpec('W_choke', 'Relative velocity at choke', 'm / s', scalar=True)
-    W_hub = VarSpec('W_hub', 'Relative velocity at hub', 'm / s', scalar=True)
-    W_tip = VarSpec('W_tip', 'Relative velocity at tip', 'm / s', scalar=True)
-    Beta_hub = VarSpec('beta_hub', 'Relative flow angle at hub', 'rad', scalar=True)
-    Beta_tip = VarSpec('beta_tip', 'Relative flow angle at tip', 'rad', scalar=True)
-    RelMach_hub = VarSpec(
-        'relmach_hub', 'Relative Mach at hub', 'dimensionless', scalar=True
-    )
-    RelMach_tip = VarSpec(
-        'relmach_tip', 'Relative Mach at tip', 'dimensionless', scalar=True
-    )
+    V_mag = VarSpec('V', 'm / s', 1e-2, (0.1, 600.0))
+    V_tan = VarSpec('Vt', 'm / s', 1e-2, (-600.0, 600.0))
+    V_mer = VarSpec('Vm', 'm / s', 1e-2, (0.1, 600.0))
+    W_mag = VarSpec('W', 'm / s', 1e-2, (0.1, 600.0))
+    W_tan = VarSpec('Wt', 'm / s', 1e-2, (-600.0, 600.0))
+    W_mer = VarSpec('Wm', 'm / s', 1e-2, (0.1, 600.0))
+    BladeSpeed = VarSpec('U', 'm / s', 1e-2, (-600.0, 600.0))
+    Omega = VarSpec('omega', 'rad / s', 1e-2, (-15000.0, 15000.0), 0, True)
+    FlowAngleRel = VarSpec('beta', 'rad', 1e-2, (-1.45, 1.45))
+    FlowAngleAbs = VarSpec('alpha', 'rad', 1e-2, (-1.45, 1.45))
+    Deflection = VarSpec('deflection', 'rad', 1.0)
+    IncAngle = VarSpec('inc_angle', 'rad')
+    DevAngle = VarSpec('dev_angle', 'rad', 0.01)
+    BetaOpt = VarSpec('beta_opt', 'rad')
+    Mach = VarSpec('mach', '', 0.3)
+    RelMach = VarSpec('rel_mach', '', 0.3)
+    MerMach = VarSpec('mermach', '', 0.3)
+    VmRatio = VarSpec('VmRatio', '', 1.0)
+    W_choke = VarSpec('W_choke', 'm / s', None, None, 0, True)
+    W_hub = VarSpec('W_hub', 'm / s', None, None, 0, True)
+    W_tip = VarSpec('W_tip', 'm / s', None, None, 0, True)
+    Beta_hub = VarSpec('beta_hub', 'rad', None, None, 0, True)
+    Beta_tip = VarSpec('beta_tip', 'rad', None, None, 0, True)
+    RelMach_hub = VarSpec('relmach_hub', '', 0.3, None, 0, True)
+    RelMach_tip = VarSpec('relmach_tip', '', 0.3, None, 0, True)
 
 
 class GeometricVariables(VariableEnum):
-    # Annulus spanwise distributions
-    HDistr = VarSpec('hh', 'Height distribution', 'm')
-    RDistr = VarSpec('rr', 'Radius distribution', 'm')
-    Area = VarSpec('area', 'Annulus area (geometric)', 'm**2')
-    EffArea = VarSpec('area_eff', 'Annulus area (w/ blockage)', 'm**2')
-    CumArea = VarSpec('cum_area', 'Cumulative area', 'm**2', scalar=True)
-    # Meridional channel specs (scalars)
-    Rmid = VarSpec('Rmid', 'Mid radius', 'm', scalar=True)
-    Rhub = VarSpec('Rhub', 'Hub radius', 'm', scalar=True)
-    Rtip = VarSpec('Rtip', 'Tip radius', 'm', scalar=True)
-    Height = VarSpec('height', 'Channel height', 'm', scalar=True)
-    MeridionalAngle = VarSpec('mer_angle', 'Meridional angle', 'rad', scalar=True)
-    # Geometrical ratios (scalars)
-    FlareAngle = VarSpec('fl_angle', 'Endwall flare angle', 'rad', scalar=True)
-    RadiusRatio = VarSpec('radRatio', 'Radius ratio', 'dimensionless', scalar=True)
-    HubTipRatio = VarSpec('ht_ratio', 'Hub-to-tip ratio', 'dimensionless', scalar=True)
-    HeightRatio = VarSpec('heightRatio', 'Height ratio', 'dimensionless', scalar=True)
-    AspectRatio = VarSpec('aspRatio', 'Blade a. ratio', 'dimensionless', scalar=True)
-    # Blade specs
-    NumBlades = VarSpec('n_blades', 'Number of blades', 'dimensionless', scalar=True)
-    NumBladesEff = VarSpec(
-        'n_bl_eff', 'Effective number of blades', 'dimensionless', scalar=True
-    )
-    NumSplitters = VarSpec(
-        'num_splitters', 'Number of splitters', 'dimensionless', scalar=True
-    )
-    Chord = VarSpec('chord', 'Chord', 'm')
-    ChordAx = VarSpec('chord_ax', 'Axial chord', 'm')
-    CamberLength = VarSpec('camb_len', 'Camber length', 'm')
-    Pitch = VarSpec('pitch', 'Blade pitch', 'm')
-    Throat = VarSpec('throat', 'Throat width', 'm')
-    Solidity = VarSpec('solidity', 'Blade solidity', 'dimensionless')
-    SolidityMidspan = VarSpec(
-        'solidity_mid', 'Midspan solidity', 'dimensionless', scalar=True
-    )
-    TipClearance = VarSpec('tip_cl', 'Tip clearance', 'm')
-    BackClearance = VarSpec('back_clearance', 'Back clearance', 'm')
-    ClearanceByHeight = VarSpec(
-        'clearance_by_height', 'Clearance to height ratio', 'dimensionless'
-    )
-    AbsRoughness = VarSpec('abs_roughness', 'Absolute roughness', 'm')
-    BladeAngle = VarSpec('beta_bl', 'Blade angle', 'rad')
-    MetalAngle = VarSpec('metal_angle', 'Metal (blade) angle', 'rad')
-    BldThick = VarSpec('bld_thick', 'Blade thickness', 'm')
-    ThickByPitch = VarSpec(
-        'thick_by_pitch', 'Thickness to pitch ratio', 'dimensionless'
-    )
-    Stagger = VarSpec('stag_angle', 'Stagger angle', 'rad')
-    ZweifelCoeff = VarSpec(
-        'zweifelCoeff', 'Zweifel loading coefficient', 'dimensionless'
-    )
+    HDistr = VarSpec('hh', 'm', 0.1, (1e-8, 1.0))
+    RDistr = VarSpec('rr', 'm', 0.1, (1e-4, 3.0))
+    Area = VarSpec('area', 'm**2', 0.1, (0.0, 2.0))
+    EffArea = VarSpec('area_eff', 'm**2', 0.1, (0.0, 2.0))
+    CumArea = VarSpec('cum_area', 'm**2', 0.3, None, 0, True)
+    Rmid = VarSpec('Rmid', 'm', None, None, 0, True)
+    Rhub = VarSpec('Rhub', 'm', None, None, 0, True)
+    Rtip = VarSpec('Rtip', 'm', None, None, 0, True)
+    Height = VarSpec('height', 'm', 0.1, (1e-5, 3.0), 0, True)
+    MeridionalAngle = VarSpec('mer_angle', 'rad', 0.1, None, 0, True)
+    FlareAngle = VarSpec('fl_angle', 'rad', 0.1, (-1.5, 1.5), 0, True)
+    RadiusRatio = VarSpec('radRatio', '', 1.0, None, 0, True)
+    HubTipRatio = VarSpec('ht_ratio', '', None, None, 0, True)
+    HeightRatio = VarSpec('heightRatio', '', 1.0, None, 0, True)
+    AspectRatio = VarSpec('aspRatio', '', 2.0, None, 0, True)
+    NumBlades = VarSpec('n_blades', '', 20.0, None, 0, True)
+    NumBladesEff = VarSpec('n_bl_eff', '', 20.0, None, 0, True)
+    NumSplitters = VarSpec('num_splitters', '', 20.0, None, 0, True)
+    Chord = VarSpec('chord', 'm', 0.1)
+    ChordAx = VarSpec('chord_ax', 'm', 0.1)
+    CamberLength = VarSpec('camb_len', 'm', 0.1)
+    Pitch = VarSpec('pitch', 'm', 0.1)
+    Throat = VarSpec('throat', 'm', 0.1)
+    Solidity = VarSpec('solidity', '', 1.0, (0.05, 10.0))
+    SolidityMidspan = VarSpec('solidity_mid', '', 1.0, (0.05, 10.0), 0, True)
+    TipClearance = VarSpec('tip_cl', 'm', 0.001)
+    BackClearance = VarSpec('back_clearance', 'm')
+    ClearanceByHeight = VarSpec('clearance_by_height', '')
+    AbsRoughness = VarSpec('abs_roughness', 'm')
+    BladeAngle = VarSpec('beta_bl', 'rad')
+    MetalAngle = VarSpec('metal_angle', 'rad', -0.3, (-1.45, 1.45))
+    BldThick = VarSpec('bld_thick', 'm', 0.005)
+    ThickByPitch = VarSpec('thick_by_pitch', '', 0.01)
+    Stagger = VarSpec('stag_angle', 'rad', 0.1)
+    ZweifelCoeff = VarSpec('zweifelCoeff', '')
 
 
 class Nondimensional(VariableEnum):
-    WorkCoeff = VarSpec('work_coeff', 'Work coefficient', 'dimensionless')
-    FlowCoeff = VarSpec('flow_coeff', 'Flow coefficient', 'dimensionless')
-    # Degree of reaction
-    DegreeOfReaction = VarSpec(
-        'reactDegree', 'Degree of reaction', 'dimensionless', scalar=True
-    )
-    DegreeOfReactionTS = VarSpec(
-        'reactDegree_ts',
-        'Total-to-static degree of reaction',
-        'dimensionless',
-        scalar=True,
-    )
-    # Efficiencies
-    EtaTT = VarSpec('eta_tt', 'Total-to-total efficiency', 'dimensionless')
-    # Pressure and density ratios
-    PRatioTT = VarSpec('pRatio_tt', 'Total-to-total pressure ratio', 'dimensionless')
-    PRatioTS = VarSpec('pRatio_ts', 'Total-to-static pressure ratio', 'dimensionless')
-    PRatio = VarSpec('pRatio', 'Pressure ratio', 'dimensionless')
-    RhoRatio = VarSpec('rhoRatio', 'Density ratio', 'dimensionless')
-    VolflowRatio = VarSpec(
-        'volflowRatio', 'Volume flow ratio', 'dimensionless', scalar=True
-    )
-    # Loading and performance
-    TSLoadCoeff = VarSpec(
-        'ts_loadCoeff',
-        'Total-to-static loading coefficient',
-        'dimensionless',
-        scalar=True,
-    )
-    HdropCoeff = VarSpec('hdropCoeff', 'Head drop coefficient', 'dimensionless')
-    SwallowingCap = VarSpec('swllCap', 'Swallowing capacity', 'dimensionless')
-    SpecificSpeed = VarSpec('specificSpeed', 'Specific speed', 'dimensionless')
-    SizeParameter = VarSpec('sizeParameter', 'Size parameter', 'dimensionless')
-    # Blade camber/geometry ratios
-    CamberCoeff = VarSpec('camberCoeff', 'Camber coefficient', 'dimensionless')
-    ChAxOutRadRatio = VarSpec(
-        'chAx_outRad_Ratio', 'Axial chord to outer radius ratio', 'dimensionless'
-    )
-    VmRatio = VarSpec('VmRatio', 'Meridional velocity ratio', 'dimensionless')
+    WorkCoeff = VarSpec('work_coeff', '')
+    FlowCoeff = VarSpec('flow_coeff', '', 0.8)
+    DegreeOfReaction = VarSpec('reactDegree', '', None, None, 0, True)
+    DegreeOfReactionTS = VarSpec('reactDegree_ts', '', None, None, 0, True)
+    EtaTT = VarSpec('eta_tt', '', 0.9)
+    PRatioTT = VarSpec('pRatio_tt', '')
+    PRatioTS = VarSpec('pRatio_ts', '')
+    PRatio = VarSpec('pRatio', '')
+    RhoRatio = VarSpec('rhoRatio', '')
+    VolflowRatio = VarSpec('volflowRatio', '', None, None, 0, True)
+    TSLoadCoeff = VarSpec('ts_loadCoeff', '', None, None, 0, True)
+    HdropCoeff = VarSpec('hdropCoeff', '')
+    SwallowingCap = VarSpec('swllCap', '')
+    SpecificSpeed = VarSpec('specificSpeed', '')
+    SizeParameter = VarSpec('sizeParameter', '')
+    CamberCoeff = VarSpec('camberCoeff', '')
+    ChAxOutRadRatio = VarSpec('chAx_outRad_Ratio', '')
+    VmRatio = VarSpec('VmRatio', '', 1.0)
 
 
 class OtherVariables(VariableEnum):
-    # Mass flows
-    MassFlow = VarSpec('mf', 'Annulus massflow', 'kg / s')
-    CumMassFlow = VarSpec('cum_mf', 'Annulus massflow', 'kg / s', scalar=True)
-    ChMassflow = VarSpec('ch_massflow', 'Channel mass flow', 'kg / s')
-    ChokeMassflow = VarSpec('massflow_choke', 'Choke mass flow', 'kg / s', scalar=True)
-    # Thermodynamic derived
-    PBase = VarSpec('p_base', 'Base pressure', 'Pa')
-    Enthalpy_totIs = VarSpec('tot_hmass_is', 'Isentropic total enthalpy', 'J / kg')
-    Tis_tot = VarSpec('tot_T_is', 'Isentropic total temperature', 'K')
-    Enthalpy_Is = VarSpec('stc_hmass_is', 'Isentropic static enthalpy', 'J / kg')
-    Tis_stc = VarSpec('stc_T_is', 'Isentropic static temperature', 'K')
-    TotPRed = VarSpec('tot_p_red', 'Reduced total pressure', 'dimensionless')
-    TotTRed = VarSpec('tot_T_red', 'Reduced total temperature', 'dimensionless')
-    # Boundary layer quantities
-    MomThick = VarSpec('mom_thick', 'Momentum thickness', 'm')
-    DispThick = VarSpec('disp_thick', 'Displacement thickness', 'm')
-    DispThickEW = VarSpec(
-        'disp_thick_ew', 'Endwall displacement thickness', 'm', scalar=True
-    )
-    DispByMom = VarSpec(
-        'disp_by_mom', 'Displacement to momentum thickness ratio', 'dimensionless'
-    )
-    MomByBld = VarSpec(
-        'mom_by_bld', 'Momentum to blade thickness ratio', 'dimensionless'
-    )
-    DispByHgt = VarSpec('disp_by_hgt', 'Displacement to height ratio', 'dimensionless')
+    MassFlow = VarSpec('mf', 'kg / s', 20.0, (1e-4, 5e4))
+    CumMassFlow = VarSpec('cum_mf', 'kg / s', 20.0, (1e-4, 5e4), 0, True)
+    ChMassflow = VarSpec('ch_massflow', 'kg / s', 1.0, (1e-4, 5e4))
+    ChokeMassflow = VarSpec('massflow_choke', 'kg / s', None, (1e-4, 5e4), 0, True)
+    PBase = VarSpec('p_base', 'Pa', 3e5)
+    Enthalpy_totIs = VarSpec('tot_hmass_is', 'J / kg', 6e5)
+    Tis_tot = VarSpec('tot_T_is', 'K', 300.0)
+    Enthalpy_Is = VarSpec('stc_hmass_is', 'J / kg', 6e5)
+    Tis_stc = VarSpec('stc_T_is', 'K', 300.0)
+    TotPRed = VarSpec('tot_p_red', '', 1.5)
+    TotTRed = VarSpec('tot_T_red', '', 1.5)
+    MomThick = VarSpec('mom_thick', 'm', 1e-5)
+    DispThick = VarSpec('disp_thick', 'm', 2e-5)
+    DispThickEW = VarSpec('disp_thick_ew', 'm', 2e-5, None, 0, True)
+    DispByMom = VarSpec('disp_by_mom', '')
+    MomByBld = VarSpec('mom_by_bld', '')
+    DispByHgt = VarSpec('disp_by_hgt', '')
 
 
 class NodeVariables:
-    def __init__(self, node: int):
+    def __init__(self, node: int = DUMMY_NODE_IDX):
         self._node = node
 
     @property

@@ -1,8 +1,11 @@
 from pint import Quantity
 from typing import Annotated
 from casadi import MX
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
+
+
+DUMMY_NODE_IDX = -1
 
 
 class NodeStates(Enum):
@@ -15,21 +18,24 @@ class NodeStates(Enum):
 @dataclass(frozen=True)
 class VarSpec:
     symbol: str
-    description: str
     unit: str
-    node: int = 0
-    state: None | NodeStates = None
+    guess: float | None = None
+    bounds: tuple[float, float] | None = None
+    node: int = DUMMY_NODE_IDX
     scalar: bool = False
+    state: NodeStates | None = None
 
-    def _with_state(self, state: NodeStates):
-        return VarSpec(
-            self.symbol, self.description, self.unit, self.node, state, self.scalar
-        )
+    def _with_state(self, state: NodeStates | None):
+        return replace(self, state=state)
 
     def _at_node(self, node: int):
-        return VarSpec(
-            self.symbol, self.description, self.unit, node, self.state, self.scalar
-        )
+        return replace(self, node=node)
+
+    def _with_bounds(self, bounds: tuple[float, float] | None):
+        return replace(self, bounds=bounds)
+
+    def _with_guess(self, guess: float | None):
+        return replace(self, guess=guess)
 
     @property
     def Hint(self):
