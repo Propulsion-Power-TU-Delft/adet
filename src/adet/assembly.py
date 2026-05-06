@@ -6,24 +6,25 @@ data.
 Sometimes the CasADi api is slightly cryptic, sorry.
 """
 
+import logging
+import sys
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from copy import deepcopy
 from itertools import accumulate
-import logging
-import sys
-from typing import Any, Callable, Literal, Mapping, Self, Sequence, Type
+from typing import Any, Callable, Iterable, Literal, Mapping, Self, Sequence, Type
 
 import casadi as cs
 import jax as jax
 import jax.numpy as jnp
 import numpy as np
 from numpy.typing import NDArray
-from pint import Quantity
+from pint import Quantity, Unit, DimensionalityError
 from pint.facets.plain import PlainQuantity
 
-from adet.constants import AdetArray, INVERSE_CP_NAMES_MAP, NodeStatesNames
+from adet.constants import INVERSE_CP_NAMES_MAP, AdetArray
 from adet.equations.base_equation import EquationBase
+from adet.equations.varspec import VarSpec
 from adet.errors import ExistingEquationError
 from adet.fluid.casadi_eos import CasadiEos
 from adet.fluid.eos_factory import EosFactory
@@ -40,7 +41,6 @@ from adet.tools.coolprop_utils import pair_based_sorting, pair_id_from_tuple
 from adet.tools.interpolation import resample_linear
 from adet.tools.iter import ensure_tuple
 from adet.tools.strings import get_arg_state, get_arg_type, get_index, rm_index
-
 
 logger = logging.getLogger(__name__)
 
@@ -81,32 +81,19 @@ class SystemSharedData:
     def __init__(self):
         # Core structures
         self.equations: dict[EquationBase, tuple[int, ...]] = {}
-        self.nodes: tuple[FlowNode, ...] = ()
         self._arg_maps: dict[EquationBase, dict[int, int]] = {}
 
         # Arguments
-        self.declared_arguments: tuple[str, ...] = ()
-        self.free_args: tuple[str, ...] = ()
-        self.constraints: tuple[str, ...] = ()
-        self.constraints_values: list[NDArray] = []
-        self.scalar_arguments: set[str] = set()
+        self.decl_args: tuple[VarSpec, ...] = ()
+        self.free_args: tuple[VarSpec, ...] = ()
+        self.constraints: dict[VarSpec, AdetArray] = {}
 
         # Boundary conditions and constraints
-        self.boundary_conditions: defaultdict[
-            int,
-            defaultdict[
-                NodeStatesNames,
-                dict[str, AdetArray | PlainQuantity],
-            ],
-        ] = defaultdict(lambda: defaultdict(dict))
-        self.global_constraints: defaultdict[
-            NodeStatesNames, dict[str, AdetArray | PlainQuantity]
-        ] = defaultdict(dict)
-        self.equalities: list[set[str]] = []
-        self.spanwise_constants: set[str] = set()
+        self.boundary_conditions: dict[VarSpec, AdetArray | PlainQuantity] = {}
+        self.equalities: list[set[VarSpec]] = []
+        self.spanwise_constants: set[VarSpec] = set()
 
         # Units and scaling
-        self.arguments_units: dict[str, str] = {}
         self.equations_units: list[list[str]] = []
         self.scaled: bool = False
 
@@ -115,7 +102,7 @@ class SystemSharedData:
         self.num_span: int = 1
 
         # Thermo update arguments
-        self.thermo_updt_args: list[str] = []
+        self.thermo_updt_args: list[VarSpec] = []
 
         # Build status
         self.built: bool = False
@@ -130,17 +117,16 @@ class EquationRegistry:
     def add_equation(
         self,
         equation: EquationBase,
-        abs_position: int | list[int] | tuple[int, ...],
+        abs_position: int | Iterable[int],
     ):
         """Add an equation to the system in the specified position"""
         abs_position = ensure_tuple(abs_position)
 
         # Check that the provided position has the same length as equation arguments
-        local_indices = {get_index(arg) for arg in equation.arguments}
-        if len(local_indices) != len(abs_position):
+        if len(equation.arg_nodes) != len(abs_position):
             raise ValueError(
                 f'Detected indices in the definition of '
-                f'`{equation.__class__.__name__}` {tuple(local_indices)} '
+                f'`{equation.__class__.__name__}` {equation.arg_nodes} '
                 f'is not equal to the length of the prescribed '
                 f'nodal position {abs_position}'
             )
@@ -200,77 +186,36 @@ class EquationRegistry:
         else:
             self.data.equations.pop(to_remove)
 
-    def create_nodes(self):
-        """Create nodes based on the nodal positions of the equations"""
-        logger.debug('Creating nodes for the equation system')
+    def _read_decl_args(self) -> tuple[VarSpec, ...]:
+        decl_args: list[VarSpec] = []
+        for eq in self.data.equations:
+            for arg in eq.arg_specs:
+                abs_node = self.data._arg_maps[eq][arg.node]
+                abs_arg = arg._at_node(abs_node)
+                decl_args.append(abs_arg)
 
-        node_indices = set()
-        for nodal_pos in self.data.equations.values():
-            node_indices.update(nodal_pos)
+        return tuple(decl_args)
 
-        if not node_indices:
-            raise RuntimeError(
-                'Cannot build an empty system! Please add some equations'
-            )
+    def _build_argument_maps(
+        self,
+    ) -> dict[
+        EquationBase,
+        dict[int, int],
+    ]:
 
-        if min(node_indices) > 0:
-            logger.warning(
-                'Minimum node index for equation system is '
-                'greater than 0, consider shifting your nodal positions. '
-                'This may produce unexpected behaviours.'
-            )
-
-        self.data.nodes = tuple(
-            FlowNode(self.data.fluid_settings, self.data.num_span)
-            for _ in range(0, 1 + max(node_indices))
-        )
-
-        logger.debug(f'Successfully created {len(self.data.nodes)} nodes')
-
-    def build_argument_maps(self) -> tuple[str, ...]:
-        """
-        1. Get all the available arguments and assign them the correct absolute index.
-        2. Creates the keyword argument map for each equation, which maps the relative
-           argument of that equation to the absolute system arguments.
-        """
-        system_arguments = []
-        scalar_arguments = []
-        self.data._arg_maps = {}
-
+        arg_maps = {}
         logger.debug('Reading all the equation arguments...')
 
         for eq, eq_position in self.data.equations.items():
-            local_indices: set[int] = {get_index(arg) for arg in eq.arguments}
+            arg_maps[eq] = dict(
+                zip(
+                    eq.arg_nodes,
+                    eq_position,
+                    strict=True,
+                ),
+            )
 
-            index_map = {
-                rel_pos: abs_pos
-                for abs_pos, rel_pos in zip(eq_position, sorted(local_indices))
-            }
-            self.data._arg_maps[eq] = {}
-
-            for rel_arg in eq.arguments:
-                arg_rel_idx = get_index(rel_arg)
-                arg_abs_idx = index_map[arg_rel_idx]
-
-                arg_type = get_arg_type(rel_arg)
-                arg_no_digit = rm_index(rel_arg)
-
-                system_arg = arg_no_digit + str(eq_position[arg_rel_idx])
-                system_arguments.append(system_arg)
-
-                if arg_type in _scalars_reg:
-                    scalar_arguments.append(system_arg)
-
-                # Create the variable in the node
-                self.data.nodes[arg_abs_idx].create_vars(arg_no_digit)
-                self.data._arg_maps[eq][arg_rel_idx] = arg_abs_idx
-
-        system_arguments = sorted(set(system_arguments))
-        self.data.scalar_arguments = set(scalar_arguments)
-
-        logger.debug(f'Arguments detected are: {", ".join(system_arguments)}')
-
-        return tuple(system_arguments)
+        return arg_maps
 
 
 class ConstraintManager:
@@ -280,21 +225,16 @@ class ConstraintManager:
         self.data = data
 
     def _check_arg_declaration(self, arg: str):
-        if arg not in self.data.declared_arguments:
+        if arg not in self.data.decl_args:
             logger.warning(
-                f'Imposing a condition on {arg}, but it is not declared in any equation'
+                f'Imposing a condition on {arg}, but it is not declared anywhere'
             )
 
-    def add_boundary_conditions(self, bnd_cond: dict, node_idx: int):
+    def add_boundary_conditions(self, bnd_cond: dict[VarSpec, AdetArray]):
         """Add boundary conditions for a specific node"""
-        for state_id, state_bnd_cond in bnd_cond.items():
-            self.data.boundary_conditions[node_idx][state_id].update(state_bnd_cond)
+        self.data.boundary_conditions.update(bnd_cond)
 
-    def add_global_constraints(self, bnd_cond: dict):
-        """Add global constraints that apply to all nodes"""
-        self.data.global_constraints.update(bnd_cond)
-
-    def add_equalities(self, *equalities: tuple[str, ...]):
+    def add_equalities(self, *equalities: tuple[VarSpec, ...]):
         """
         Each tuple represents a set of variables treated as equal by the system.
         Adding ('a', 'b', 'c') adds the equations: a-b=0, a-c=0
@@ -305,58 +245,23 @@ class ConstraintManager:
             if set(args) not in self.data.equalities:
                 self.data.equalities.append(set(args))
 
-    def add_spanwise_constants(self, *arguments: str):
+    def add_spanwise_constants(self, *arguments: VarSpec):
         for arg in arguments:
             self.data.spanwise_constants.add(arg)
 
-    def write_to_nodes(self):
+    def _validate_units(self):
         """Write the stored boundary conditions to the nodes"""
-        logger.debug('Writing boundary conditions to nodes...')
+        logger.debug('Checking boundary conditions...')
+        for spec, value in self.data.boundary_conditions.items():
+            if isinstance(value, PlainQuantity):
+                def_unit = Unit(spec.unit)
+                if not value.units.is_compatible_with(def_unit):
+                    raise ValueError(
+                        f'{def_unit} is not compatible wit {value.units}'
+                        f' prescribed in the boundary conditions for {spec.symbol}'
+                    )
 
-        def to_base_units(var) -> NDArray:
-            if isinstance(var, PlainQuantity):
-                mag = var.to_base_units().magnitude
-            else:
-                mag = var
-            return np.atleast_1d(mag)
-
-        for node_idx, node in enumerate(self.data.nodes):
-            # Write global constraints
-            self.add_boundary_conditions(self.data.global_constraints, node_idx)
-
-            # Convert to base units arrays
-            bc_arrays = jax.tree.map(
-                to_base_units,
-                self.data.boundary_conditions[node_idx],
-                is_leaf=lambda x: isinstance(x, (list, tuple)),
-            )
-
-            for state_id, constraints in bc_arrays.items():
-                state_obj = node.fetch_state(state_id)
-                # Add them to the node
-                for var, val in constraints.items():
-                    state_obj.set_value(var, val)
-                    state_obj.change_status(var, fixed=True)
-
-    def extract_constraints(self) -> tuple[tuple[str, ...], list[NDArray]]:
-        """Get all the constraints defined by the nodes taking part in the system"""
-        constraint_names = []
-        constraint_values = []
-
-        for node_idx, node in enumerate(self.data.nodes):
-            for arg_no_idx, value in node.get_constraints().items():
-                arg = arg_no_idx + str(node_idx)
-                self._check_arg_declaration(arg)
-
-                constraint_names.append(arg)
-                constr_value = value.to_base_units().magnitude
-
-                if arg in self.data.scalar_arguments:
-                    constr_value = np.atleast_1d(constr_value[0])
-
-                constraint_values.append(constr_value)
-
-        return tuple(constraint_names), constraint_values
+                self.data.boundary_conditions[spec] = value.to_base_units()
 
     def check_constraints_effectiveness(self):
         """
@@ -388,7 +293,7 @@ class ArgumentResolver:
         the different states of the node.
         """
         if isinstance(self.data.fluid_settings.model, EmptyFluidModel):
-            return tuple(set(self.data.declared_arguments) - set(self.data.constraints))
+            return tuple(set(self.data.decl_args) - set(self.data.constraints))
         else:
             return tuple(
                 sorted(
@@ -405,9 +310,7 @@ class ArgumentResolver:
         """
         # Non thermodynamic arguments
         nonthermo_args = [
-            arg
-            for arg in self.data.declared_arguments
-            if not arg.startswith(THERMO_PREFIXES)
+            arg for arg in self.data.decl_args if not arg.startswith(THERMO_PREFIXES)
         ]
 
         # Get what variables will be used for state updates
@@ -434,7 +337,7 @@ class ArgumentResolver:
         from the equations of state
         """
         all_discarded = (
-            set(self.data.declared_arguments)
+            set(self.data.decl_args)
             - set(self.data.thermo_updt_args)
             - set(self.data.free_args)
         )
@@ -517,7 +420,7 @@ class UnitScalingManager:
         int_map: dict[int, int],
     ):
         args = []
-        for rel_arg in equation.arguments:
+        for rel_arg in equation.arg_symbols:
             abs_arg = get_absolute_arg(int_map, rel_arg)
             units = self.data.arguments_units[abs_arg]
             if abs_arg in self.data.scalar_arguments:
@@ -769,7 +672,7 @@ class SystemAssembler(ABC):
 
     @property
     def _declared_arguments(self):
-        return self.data.declared_arguments
+        return self.data.decl_args
 
     @property
     def _scalar_arguments(self):
@@ -924,17 +827,13 @@ class SystemAssembler(ABC):
             self.data.scaled = True
 
         # Delegate to managers
-        self._equation_registry.create_nodes()
-        self.data.declared_arguments = self._equation_registry.build_argument_maps()
+        self.data._arg_maps = self._equation_registry._build_argument_maps()
+        self.data.decl_args = self._equation_registry._read_decl_args()
 
         # TODO: This write-extraction step seems a bit fickle, could be reworked
         # Nodes deal with of unit management and state dispatch
-        self._constraint_manager.write_to_nodes()
-        # Re-extract the validated data
-        (
-            self.data.constraints,
-            self.data.constraints_values,
-        ) = self._constraint_manager.extract_constraints()
+
+        self._constraint_manager._validate_units()
         self._constraint_manager.check_constraints_effectiveness()
 
         # Arguments manipulation

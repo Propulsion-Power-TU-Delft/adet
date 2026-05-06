@@ -170,12 +170,12 @@ class NodeVariables:
 
     @property
     def tot(self) -> ThermoVariables:
-        return ThermoVariables(self._node)
+        return ThermoVariables(self._node, NodeStates.TOTAL)
 
     @property
     def stc(self) -> ThermoVariables:
-        return ThermoVariables(self._node)
+        return ThermoVariables(self._node, NodeStates.STATIC)
 
     @property
     def rlt(self) -> ThermoVariables:
-        return ThermoVariables(self._node)
+        return ThermoVariables(self._node, NodeStates.RELTOT)

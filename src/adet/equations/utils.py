@@ -183,7 +183,7 @@ def residual_debugger(
     module = sys.modules[equation.__module__]
 
     out = {'self': equation, **vars(module)}
-    for arg in equation.arguments:
+    for arg in equation.arg_symbols:
         arg_state = get_arg_state(arg)
         arg_type = get_arg_type(arg)
         arg_index = get_index(arg)

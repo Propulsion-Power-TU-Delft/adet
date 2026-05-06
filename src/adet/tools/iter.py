@@ -80,9 +80,9 @@ def grouper(
             raise ValueError('Expected fill, strict, or ignore')
 
 
-def ensure_tuple(x: int | Iterable[int]):
+def ensure_tuple(x: int | Iterable[int]) -> tuple[int, ...]:
     if isinstance(x, Iterable):
-        return tuple(x)
+        return tuple(x)  # ty:ignore
     else:
         return (x,)
 

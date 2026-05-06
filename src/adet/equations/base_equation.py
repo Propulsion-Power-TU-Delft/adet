@@ -1,19 +1,13 @@
-from pint import Unit, Quantity
-import numpy as np
-from adet.tools.loggers import setup_logger
-
-from adet.equations.variables import NodeVariables, VarSpec
 import logging
 from abc import ABC, abstractmethod
-from inspect import getfullargspec
-from typing import Any, Callable, ClassVar, Self, cast, get_type_hints
+from typing import Any, Callable, ClassVar, cast, get_type_hints
 
 import casadi as cs
-import sympy as sp
+from pint import Unit
 
+from adet.equations.variables import NodeVariables, VarSpec
 from adet.fluid.casadi_eos import CasadiEos
-from adet.tools.context import override_operators
-from adet.tools.strings import get_index, validate_arg_format
+from adet.tools.loggers import setup_logger
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +37,6 @@ class EquationBase(ABC):
             Custom scaling factors for equations
         """
 
-        # Read arguments from residual signature
-
-        # Apply aliasing: use aliased names if provided, otherwise use original names
         self._arguments: tuple[str, ...] = ()
 
         if custom_scaling_factor:
@@ -58,45 +49,41 @@ class EquationBase(ABC):
 
     @abstractmethod
     def residual(self, *args) -> Any | tuple[Any, ...]:
-        """
-        Expected format for argument is <node_state>_<var_type><index>
-        where the index corresponds to the FlowNode in the order
-        specified during the class definition. The indices are
-        expected to be only one digit.
-        """
         raise NotImplementedError
 
     @property
-    def arguments(self):
-        """Arguments, in the format of <node_state>_<var_type><index>"""
-        residual_args = getfullargspec(self.residual).args[1:]
-
-        # If not already present, parse the arguments
+    def arg_symbols(self):
         if not self._arguments:
-            if self.argument_magic:
-                self._arguments = self._read_and_validate_arguments(residual_args)
-            else:
-                arguments = []
-                var_specs = self._get_args_specs()
-                for var_spec in var_specs:
-                    if var_spec.state is not None:
-                        state = str(var_spec.state.value) + '_'
-                    else:
-                        state = ''
+            arguments = []
+            var_specs = self._get_args_specs()
+            for var_spec in var_specs:
+                if var_spec.state is not None:
+                    state = str(var_spec.state.value)
+                else:
+                    state = ''
 
-                    arguments.append(state + var_spec.symbol + str(var_spec.node))
-                self._arguments = tuple(arguments)
+                arguments.append(state + var_spec.symbol + str(var_spec.node))
+            self._arguments = tuple(arguments)
 
         return self._arguments
 
     @property
-    def units(self):
+    def arg_units(self):
         vars_specs = self._get_args_specs()
         return [Unit(s.unit) for s in vars_specs]
 
     @property
     def num_args(self):
         return len(self._arguments)
+
+    @property
+    def arg_specs(self) -> list[VarSpec]:
+        return self._get_args_specs()
+
+    @property
+    def arg_nodes(self) -> list[int]:
+        vars_specs = self._get_args_specs()
+        return sorted({s.node for s in vars_specs})
 
     def _get_args_specs(self) -> list[VarSpec]:
         args_type_hints = get_type_hints(self.residual, include_extras=True)
@@ -113,61 +100,20 @@ class EquationBase(ABC):
 
         return vars_specs
 
-    def _check_duplicates(self, variables_specs):
+    def _check_duplicates(self, variables_specs: list[VarSpec]):
         # Check for duplicate arguments
         seen = set()
-        duplicates = {x for x in variables_specs if x in seen or seen.add(x)}
+        duplicates = set()
+        for sp in variables_specs:
+            if sp in seen:
+                duplicates.add(sp)
+            else:
+                seen.add(sp)
 
-        if len(seen) != len(variables_specs):
+        if duplicates:
             raise ValueError(
                 f'Duplicate argument(s) in {self.__class__.__name__}, {duplicates}'
             )
-
-    # WARN: Old method involving string manipulation
-    def _read_and_validate_arguments(self, all_arguments: list[str]):
-        # The 1 is removed because it is the self instance
-        # Careful if residual is changed to a static method
-        validated_arguments = []
-        seen_indices = []
-
-        for residual_arg in all_arguments:
-            # Validate the SYSTEM variable name (the aliased one)
-            validated_system_var, arg_index = self._validate_argument(residual_arg)
-            seen_indices.append(arg_index)
-            validated_arguments.append(validated_system_var)
-
-        if min(seen_indices) > 0:
-            raise ValueError(
-                f'Minimum relative argument in `{self.__class__.__name__}` '
-                f'is greater than 0, bad equation formatting'
-            )
-
-        expected_sequence = range(max(seen_indices) + 1)
-        if set(seen_indices) != set(expected_sequence):
-            raise ValueError(
-                f'Non sequential nodes found {set(seen_indices)} '
-                f'in {self.__class__.__name__}'
-            )
-
-        return tuple(validated_arguments)
-
-    def _validate_argument(self, full_argument: str):
-        try:
-            arg_index = get_index(full_argument)
-        except AttributeError:
-            logger.info(f'No index found, assigning relative node 0 to {full_argument}')
-            arg_index = 0
-            full_argument += '0'
-
-        if not validate_arg_format(full_argument, include_digits=True):
-            logger.warning(
-                f'Argument {full_argument[:-1]} in equation `{self.__class__.__name__}`'
-                f' does not declare a state or has an unrecognized format, '
-                f'assigning to `oth` state'
-            )
-            full_argument = 'oth_' + full_argument
-
-        return full_argument, int(arg_index)
 
     def __init_subclass__(cls) -> None:
         if bool(cls.output_quantities) != bool(cls.input_pair):
@@ -223,7 +169,7 @@ class MeridAreaBlockage(UniqueEquation): ...
 
 
 if __name__ == '__main__':
-    setup_logger(logger, logging.DEBUG, logging.INFO)
+    setup_logger(logger, logging.INFO, logging.INFO)
     n0 = NodeVariables(0)
     n1 = NodeVariables(1)
 
@@ -244,4 +190,4 @@ if __name__ == '__main__':
             return h0 + h1 + v0 + dht0 + dht1
 
     eq = DummyEq()
-    print(eq.arguments)
+    print(eq.arg_symbols)
