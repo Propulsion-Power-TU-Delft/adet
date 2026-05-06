@@ -6,6 +6,8 @@ data.
 Sometimes the CasADi api is slightly cryptic, sorry.
 """
 
+from jax.core import Value
+
 import logging
 import sys
 from abc import ABC, abstractmethod
@@ -226,9 +228,26 @@ class ConstraintManager:
                 f'Imposing a condition on {arg}, but it is not declared anywhere'
             )
 
-    def add_boundary_conditions(self, bnd_cond: dict[VarSpec, AdetArray]):
+    def add_boundary_conditions(
+        self, bnd_cond: dict[VarSpec, AdetArray | PlainQuantity]
+    ):
         """Add boundary conditions for a specific node"""
-        self.data.boun_cond.update(bnd_cond)
+        validated_bcond: dict[VarSpec, AdetArray] = {}
+        for spec, val in bnd_cond.items():
+            if isinstance(val, PlainQuantity):
+                mag = val.to_base_units().magnitude
+            else:
+                mag = val
+
+            mag = np.atleast_1d(mag)
+
+            if len(mag) != self.data.num_span:
+                if len(mag) == 1:
+                    mag_valid = mag * np.ones(self.data.num_span)
+                else:
+                    raise ValueError(f'Length mismatch {spec}')
+
+            self.data.boun_cond[spec] = mag_valid
 
     def add_equalities(self, *equalities: tuple[VarSpec, ...]):
         """
@@ -1081,7 +1100,7 @@ class CasadiSystem(SystemAssembler):
         self.residual_expr += self._build_spanwise_constants()
         self.residual_expr += self._build_thermo_constraints()
 
-        num_vars = len(self.free_args_sym)
+        num_vars = max(cs.vertcat(*self.free_args_sym.values()).shape)
         num_residuals = max(cs.vertcat(*self.residual_expr).shape)
         logger.info(
             f'System info: {num_residuals} total equations, {num_vars} total variables'
@@ -1518,7 +1537,7 @@ def {func_name}(equations, {', '.join(self._declared_arguments)}):
 
 
 if __name__ == '__main__':
-    nls = CasadiSystem(1)
+    nls = CasadiSystem(5)
 
     # +++ Fluid settings
     fluid_model_real = ExternalFluidModel(
@@ -1542,7 +1561,7 @@ if __name__ == '__main__':
     nls.add_equation(EulerEquation(), (0, 1))
     nls.add_boundary_conditions(
         {
-            n0.kin.V_tan: 10,
+            n0.kin.V_tan: [10, 20],
             n1.kin.BladeSpeed: 10,
         },
     )
