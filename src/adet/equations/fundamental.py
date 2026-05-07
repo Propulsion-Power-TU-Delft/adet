@@ -1,18 +1,15 @@
 """Module that gathers fundamental equations for internal flows"""
 
-from adet.equations.variables import NodeVariables
-
 import numpy as np
 
 from adet.equations import EquationBase
-from adet.equations.base_equation import EquationConfig
+from adet.equations.base_equation import EquationConfig, MeridAreaBlockage
 from adet.equations.utils import (
     get_midspan_idx,
     safe_sum,
     span_fin_diff,
 )
-from adet.equations.base_equation import MeridAreaBlockage
-
+from adet.equations.variables import NodeVariables
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)
@@ -21,12 +18,12 @@ n1 = NodeVariables(1)
 class EulerEquation(EquationBase):
     def residual(
         self,
+        vt0: n0.kin.V_tan.Hint,
+        vt1: n1.kin.V_tan.Hint,
         ht0: n0.tot.Enthalpy.Hint,
         ht1: n1.tot.Enthalpy.Hint,
         u0: n0.kin.BladeSpeed.Hint,
         u1: n1.kin.BladeSpeed.Hint,
-        vt0: n0.kin.V_tan.Hint,
-        vt1: n1.kin.V_tan.Hint,
     ):
         return (ht1 - ht0) - (u1 * vt1 - u0 * vt0)
 
@@ -90,8 +87,8 @@ class ZeroBlockage(MeridAreaBlockage):
 class BladeBlockage(MeridAreaBlockage):
     def residual(
         self,
-        h0: n0.geo.HDistr.Hint,
-        a0: n0.geo.Area.Hint,
+        hh0: n0.geo.HDistr.Hint,
+        area0: n0.geo.Area.Hint,
         a_eff0: n0.geo.EffArea.Hint,
         n_blades0: n0.geo.NumBlades.Hint,
         bld_thick0: n0.geo.BldThick.Hint,
@@ -99,7 +96,7 @@ class BladeBlockage(MeridAreaBlockage):
         disp_thick0: n0.oth.DispThick.Hint,
     ):
         return a_eff0 - (
-            a0 - h0 * n_blades0 * (bld_thick0 + disp_thick0) / np.cos(metal_angle0)
+            area0 - hh0 * n_blades0 * (bld_thick0 + disp_thick0) / np.cos(metal_angle0)
         )
 
 
@@ -241,6 +238,7 @@ class ForcedVortexDistribution(EquationBase):
 
 
 class GeneralWhirl(EquationBase):
+    # TODO : Implement/translate this
     def residual(self, geo_rr0, kin_Vt0, gen_whirl_a, gen_whirl_b, gen_whirl_n):
         free_vortex_term = kin_Vt0 * geo_rr0
         frcd_vortex_term = kin_Vt0 / geo_rr0

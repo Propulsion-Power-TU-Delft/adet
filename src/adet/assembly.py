@@ -6,6 +6,8 @@ data.
 Sometimes the CasADi api is slightly cryptic, sorry.
 """
 
+from adet.tools.loggers import setup_logger
+
 import logging
 import sys
 from abc import ABC, abstractmethod
@@ -197,7 +199,6 @@ class EquationRegistry:
     def _build_argument_maps(
         self,
     ) -> dict[EquationBase, dict[int, int]]:
-
         arg_maps = {}
         logger.debug('Reading all the equation arguments...')
 
@@ -219,10 +220,16 @@ class ConstraintManager:
     def __init__(self, data: SystemSharedData):
         self.data = data
 
-    def _check_arg_declaration(self, arg: str):
-        if arg not in self.data.decl_args:
+    def _check_arg_declaration(
+        self,
+        spec: VarSpec,
+        caller_msg: str = '',
+    ):
+        caller = f'from {caller_msg}' if caller_msg else ''
+        if spec not in self.data.decl_args:
             logger.warning(
-                f'Imposing a condition on {arg}, but it is not declared anywhere'
+                f'Imposing a condition {caller} on `{spec.full_symbol(True)}`'
+                f', but it does not appear in any equation'
             )
 
     def add_boundary_conditions(
@@ -243,6 +250,7 @@ class ConstraintManager:
                 else:
                     raise ValueError(f'Length mismatch {spec}')
 
+            self._check_arg_declaration(spec, 'boundary conditions')
             self.data.boun_cond[spec] = mag_valid
 
     def add_equalities(self, *equalities: tuple[VarSpec, ...]):
@@ -280,7 +288,7 @@ class ConstraintManager:
         appear as declared arguments
         """
         # TODO: Could even check if they are free
-        args_to_check = set()
+        args_to_check: set[VarSpec] = set()
 
         for equality in self.data.equalities:
             args_to_check.update(equality)
@@ -289,7 +297,7 @@ class ConstraintManager:
             args_to_check.add(arg)
 
         for arg in args_to_check:
-            self._check_arg_declaration(arg)
+            self._check_arg_declaration(arg, 'equalities/spanwise constants')
 
 
 class ArgumentResolver:
@@ -965,8 +973,8 @@ class CasadiSystem(SystemAssembler):
         """
         equalities_expressions = []
         for equal_args in self.data.equalities:
-            equal_args = sorted(equal_args)
-            arg_couples = [(equal_args[0], arg) for arg in equal_args[1:]]
+            eq_args_ls = list(equal_args)
+            arg_couples = [(eq_args_ls[0], arg) for arg in eq_args_ls[1:]]
             for arg_tuple in arg_couples:
                 # If both argument do not appear in the equations, skip to next couple
                 # if one of them is unused by other eqns. it is useless to add it
@@ -1509,6 +1517,7 @@ def {func_name}(equations, {', '.join(self.data.decl_args)}):
 if __name__ == '__main__':
     nls = CasadiSystem(5)
 
+    setup_logger(logger)
     n0 = NodeVariables(0)
     n1 = NodeVariables(1)
 
@@ -1520,7 +1529,7 @@ if __name__ == '__main__':
         config = EquationConfig(
             manual_units=('J / kg', 'J / kg / K'),
             input_pair=cp.PT_INPUTS,
-            out_properties=(thrm.Entropy,),
+            out_properties=(thrm.Entropy, thrm.SpeedSound, thrm.Viscosity),
         )
 
         def residual(
@@ -1532,7 +1541,7 @@ if __name__ == '__main__':
             s: n1.stc.Entropy.Hint,
         ):
             r1 = h0 - h1
-            r2 = s - self.eos(p, t)
+            r2 = s - self.eos(p, t)[0]
 
             return r1, r2
 
@@ -1573,6 +1582,9 @@ if __name__ == '__main__':
         },
     )
 
+    nls.add_spanwise_constants(
+        NodeVariables(3).tot.Enthalpy,
+    )
     nls.build()
     res_func = nls.make_residual_function()
     nls.get_scaled_constraints()

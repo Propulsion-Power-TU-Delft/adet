@@ -15,6 +15,7 @@ n0 = NodeVariables(0)
 n1 = NodeVariables(1)
 n2 = NodeVariables(2)
 n3 = NodeVariables(3)
+thrm = ThermoVariables()
 
 
 class TotalTotalPressureRatio(EquationBase):
@@ -67,7 +68,7 @@ class VolumetricFlowRatio(EquationBase):
 class TotalTotalExpansionEfficiency(EquationBase):
     config = EquationConfig(
         input_pair=cp.PSmass_INPUTS,
-        out_properties=(ThermoVariables().Enthalpy,),
+        out_properties=(thrm.Enthalpy,),
         manual_units=('dimensionless',),
     )
 
@@ -86,7 +87,7 @@ class TotalTotalExpansionEfficiency(EquationBase):
 class TotalTotalCompressionEfficiency(EquationBase):
     config = EquationConfig(
         input_pair=cp.PSmass_INPUTS,
-        out_properties=(ThermoVariables().Enthalpy,),
+        out_properties=(thrm.Enthalpy,),
         manual_units=('J / kg',),
     )
 
@@ -105,7 +106,7 @@ class TotalTotalCompressionEfficiency(EquationBase):
 class TotalStaticLoadingCoefficient(EquationBase):
     config = EquationConfig(
         input_pair=cp.PSmass_INPUTS,
-        out_properties=(ThermoVariables().Enthalpy,),
+        out_properties=(thrm.Enthalpy,),
         manual_units=('J / kg',),
     )
 
@@ -158,10 +159,7 @@ class StaticTotalDegreeOfReaction(EquationBase):
         delta_h_rotor = h3 - h2
         delta_h_tot_stage = h3_tot - h0_tot
 
-        return (
-            delta_h_tot_stage[midspan] * react_ts3
-            - delta_h_rotor[midspan]
-        )
+        return delta_h_tot_stage[midspan] * react_ts3 - delta_h_rotor[midspan]
 
 
 class StaticDegreeOfReaction(EquationBase):
@@ -183,21 +181,6 @@ class StaticDegreeOfReaction(EquationBase):
         delta_h_stage = h3 - h0
 
         return delta_h_stage * react3 - delta_h_rotor
-
-
-class DensityRatio(EquationBase):
-    """
-    .. math::
-        \\mathrm{FR} = \\frac{\\rho_{t1}}{p_{t,0}}
-    """
-
-    def residual(
-        self,
-        p0_tot: n0.tot.Pressure.Hint,
-        p1: n1.stc.Pressure.Hint,
-        rho_ratio1: n1.ndim.RhoRatio.Hint,
-    ):
-        return rho_ratio1 - p1 / p0_tot
 
 
 class FlowCoefficient(EquationBase):
@@ -236,9 +219,7 @@ class WorkCoefficient(EquationBase):
     ):
         midspan = get_midspan_idx(h0_tot)
 
-        return u1[midspan] ** 2 * work_coeff1 - (
-            h1_tot[midspan] - h0_tot[midspan]
-        )
+        return u1[midspan] ** 2 * work_coeff1 - (h1_tot[midspan] - h0_tot[midspan])
 
 
 class EnthalpyDropCoefficient(EquationBase):
@@ -269,9 +250,7 @@ class SwallowingCapacity(EquationBase):
         swll_cap0: n0.ndim.SwallowingCap.Hint,
         mf0: n0.oth.MassFlow.Hint,
     ):
-        return swll_cap0 - mf0 / (
-            rho0_tot * u1 * (2 * rr1) ** 2
-        )
+        return swll_cap0 - mf0 / (rho0_tot * u1 * (2 * rr1) ** 2)
 
 
 class SpecificSpeed(EquationBase):
@@ -284,9 +263,7 @@ class SpecificSpeed(EquationBase):
         h0_tot: n0.tot.Enthalpy.Hint,
         h1: n1.stc.Enthalpy.Hint,
     ):
-        return spec_speed1 * (
-            (h0_tot - h1) ** (3 / 4)
-        ) - omega1 * np.sqrt(mf1 / rho1)
+        return spec_speed1 * ((h0_tot - h1) ** (3 / 4)) - omega1 * np.sqrt(mf1 / rho1)
 
 
 class SizeParameter(EquationBase):
@@ -298,10 +275,7 @@ class SizeParameter(EquationBase):
         h0_tot: n0.tot.Enthalpy.Hint,
         h1: n1.stc.Enthalpy.Hint,
     ):
-        return (
-            size_param1 * ((h0_tot - h1) ** (1 / 4))
-            - (mf1 / rho1) ** 0.5
-        )
+        return size_param1 * ((h0_tot - h1) ** (1 / 4)) - (mf1 / rho1) ** 0.5
 
 
 class AbsoluteMachNumber(EquationBase):
@@ -336,7 +310,7 @@ class GammaPV(EquationBase):
     # beware
     config = EquationConfig(
         input_pair=cp.DmassSmass_INPUTS,
-        out_properties=(ThermoVariables().Pressure,),
+        out_properties=(thrm.Pressure,),
         manual_units=('dimensionless',),
     )
 

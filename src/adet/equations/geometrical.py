@@ -1,7 +1,12 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from adet.equations.base_equation import CamberLineGeom, EquationBase, MeridionalGeom, EquationConfig
+from adet.equations.base_equation import (
+    CamberLineGeom,
+    EquationBase,
+    MeridionalGeom,
+    EquationConfig,
+)
 from adet.equations.utils import (
     get_midspan_idx,
     safe_abs,
@@ -41,11 +46,7 @@ class MeridionalGeometry(MeridionalGeom):
         _min_radius = rr_mid0 - (h0 - hh0[0]) / 2 * np.cos(mer_angle0)
 
         if max(rr0.shape) > 1:
-            r1 = (
-                rr0[:-1]
-                + (hh0[:-1] + hh0[1:]) / 2 * np.cos(mer_angle0)
-                - rr0[1:]
-            )
+            r1 = rr0[:-1] + (hh0[:-1] + hh0[1:]) / 2 * np.cos(mer_angle0) - rr0[1:]
             residuals.append(r1)
             r2 = rr0[0] - _min_radius
         else:
@@ -59,15 +60,17 @@ class MeridionalGeometry(MeridionalGeom):
 
 
 class AnnulusAreas(EquationBase):
-    def residual(self, a0: n0.geo.Area.Hint, rr0: n0.geo.RDistr.Hint, hh0: n0.geo.HDistr.Hint):
+    def residual(
+        self, a0: n0.geo.Area.Hint, rr0: n0.geo.RDistr.Hint, hh0: n0.geo.HDistr.Hint
+    ):
         return a0 - 2 * np.pi * rr0 * hh0
 
 
 class MeridionalRatios(EquationBase):
     def residual(
         self,
-        h0: n0.geo.Height.Hint,
-        h1: n1.geo.Height.Hint,
+        hgt0: n0.geo.Height.Hint,
+        hgt1: n1.geo.Height.Hint,
         h_ratio1: n1.geo.HeightRatio.Hint,
         fl_angle1: n1.geo.FlareAngle.Hint,
         chord_ax1: n1.geo.ChordAx.Hint,
@@ -78,10 +81,10 @@ class MeridionalRatios(EquationBase):
     ):
         midspan = get_midspan_idx(chord_ax1)
 
-        r1 = h_ratio1 - h1 / h0
-        r2 = np.tan(fl_angle1) * 2 * chord_ax1[midspan] - (h1 - h0)
+        r1 = h_ratio1 - hgt1 / hgt0
+        r2 = np.tan(fl_angle1) * 2 * chord_ax1[midspan] - (hgt1 - hgt0)
         r3 = rad_ratio1 * rr_mid0 - rr_mid1
-        r4 = asp_ratio1 * chord_ax1[midspan] - (h0 + h1) / 2
+        r4 = asp_ratio1 * chord_ax1[midspan] - (hgt0 + hgt1) / 2
 
         return r1, r2, r3, r4
 
@@ -299,10 +302,7 @@ class ModifiedZweifel(EquationBase):
         midspan = get_midspan_idx(wm0)
         delta_Vt = safe_abs(wt1 - wt0)
         solidity_ax = (
-            0.5
-            * (rho0 * wm0 + rho1 * wm1)
-            * delta_Vt
-            / (zweif_coeff1 * (p_rlt0 - p1))
+            0.5 * (rho0 * wm0 + rho1 * wm1) * delta_Vt / (zweif_coeff1 * (p_rlt0 - p1))
         )
 
         optimal_pitch = chord_ax1[midspan] / solidity_ax[midspan]

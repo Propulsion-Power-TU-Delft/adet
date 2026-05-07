@@ -59,7 +59,6 @@ class OptimalIncidence(EquationBase):
         wm0: n0.kin.W_mer.Hint,
         beta_opt0: n0.kin.BetaOpt.Hint,
     ):
-
         return beta_opt0 - np.atan2(wt1, wm0)
 
 

@@ -121,7 +121,6 @@ class BladeLoadingCoppage(LossModel):
         oth_bl_loadingCoeff1,  # 0.75
         oth_delta_hmass_loading1,
     ):
-
         W_ratio = kin_W1 / kin_W_tip0
         work = tot_hmass1 - tot_hmass0
         r0_by_r1 = geo_rr_tip0 / geo_rr_midspan1
@@ -386,7 +385,6 @@ class IncidenceGalvas(LossModel):
         oth_incCoeff0,
         oth_delta_hmass_incidence1,
     ):
-
         lost_angle = safe_abs(kin_beta_opt0 - kin_beta0)
         lost_Wt = kin_W0 * np.sin(lost_angle)
 
@@ -548,7 +546,6 @@ class LeakageLostWork(LossModel):
         geo_height1,
         oth_delta_hmass_lost1,
     ):
-
         work = tot_hmass1 - tot_hmass0
         clearance = (geo_tip_clearance0 + geo_tip_clearance1) / 2
 
