@@ -6,8 +6,6 @@ data.
 Sometimes the CasADi api is slightly cryptic, sorry.
 """
 
-from jax.core import Value
-
 import logging
 import sys
 from abc import ABC, abstractmethod
@@ -24,9 +22,8 @@ from pint import Quantity, Unit
 from pint.facets.plain import PlainQuantity
 
 from adet.constants import INVERSE_CP_NAMES_MAP, AdetArray
-from adet.equations.base_equation import EquationBase
-from adet.equations.fundamental import EulerEquation
-from adet.equations.variables import ThermoVariables, NodeVariables
+from adet.equations.base_equation import EquationBase, EquationConfig
+from adet.equations.variables import NodeVariables, ThermoVariables
 from adet.equations.varspec import NodeStates, VarSpec
 from adet.errors import ExistingEquationError
 from adet.fluid.casadi_eos import CasadiEos
@@ -1539,6 +1536,27 @@ def {func_name}(equations, {', '.join(self._declared_arguments)}):
 if __name__ == '__main__':
     nls = CasadiSystem(5)
 
+    n0 = NodeVariables(0)
+    n1 = NodeVariables(1)
+
+    import CoolProp as cp
+
+    class TestEquation(EquationBase):
+        config = EquationConfig()
+
+        def residual(
+            self,
+            h0: n0.tot.Enthalpy.Hint,
+            h1: n1.tot.Enthalpy.Hint,
+            p: n0.tot.Pressure.Hint,
+            t: n1.tot.Temperature.Hint,
+            s: n1.stc.Entropy.Hint,
+        ):
+            r1 = h0 - h1
+            r2 = s - self.eos(p, t)
+
+            return r1, r2
+
     # +++ Fluid settings
     fluid_model_real = ExternalFluidModel(
         DebugAbstractState('HEOS', 'Air'),  # This just counts the number of updates
@@ -1558,10 +1576,10 @@ if __name__ == '__main__':
     n0 = NodeVariables(0)
     n1 = NodeVariables(1)
 
-    nls.add_equation(EulerEquation(), (0, 1))
+    nls.add_equation(TestEquation(), (0, 1))
     nls.add_boundary_conditions(
         {
-            n0.kin.V_tan: [10, 20],
+            n0.kin.V_tan: 10,
             n1.kin.BladeSpeed: 10,
         },
     )

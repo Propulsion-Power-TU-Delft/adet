@@ -123,7 +123,7 @@ class BaseComponent(ABC):
         self._post_init()
 
     def _post_init(self):
-        pass
+        raise NotImplementedError
 
     def _write_equalities(self, copy_from_prev: list[str], comp_const: list[str]):
         for arg in copy_from_prev:

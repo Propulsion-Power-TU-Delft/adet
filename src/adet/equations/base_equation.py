@@ -1,5 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any, Callable, ClassVar, cast, get_type_hints
 
 import casadi as cs
@@ -12,6 +13,16 @@ from adet.tools.loggers import setup_logger
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class EquationConfig:
+    """Configuration for equation class properties"""
+
+    manual_units: tuple[str, ...] = ()
+    scaling_factor: tuple[float | None, ...] | None = None
+    input_pair: int = 0
+    output_quantities: tuple[str, ...] = ()
+
+
 class EquationBase(ABC):
     """
     Base Class for defining equations, including argument validation and organization,
@@ -21,19 +32,14 @@ class EquationBase(ABC):
     different names than the system-level variable names.
     """
 
-    manual_units: ClassVar[tuple[str, ...]] = ()
-    scaling_factor: tuple[float | None, ...] | None = None
-    # EoS accessories
-    argument_magic: bool = True
-    input_pair: ClassVar[int] = 0
-    output_quantities: ClassVar[tuple[str, ...]] = ()
-    _eos: None | CasadiEos | cs.Function = None
+    config: ClassVar[EquationConfig] = EquationConfig()
+    _eos: ClassVar[None | CasadiEos | cs.Function] = None
 
     def __init__(self, custom_scaling_factor: list[float] | None = None):
         """
         Parameters
         ----------
-        scaling_factor : list[float] | None
+        custom_scaling_factor : list[float] | None
             Custom scaling factors for equations
         """
 
@@ -42,14 +48,10 @@ class EquationBase(ABC):
         if custom_scaling_factor:
             self._scaling_factor = custom_scaling_factor
         else:
-            self._scaling_factor = self.__class__.scaling_factor
-
-    def __call__(self, *args):
-        return self.residual(*args)
+            self._scaling_factor = self.config.scaling_factor
 
     @abstractmethod
-    def residual(self, *args) -> Any | tuple[Any, ...]:
-        raise NotImplementedError
+    def residual(self, *args) -> None: ...
 
     @property
     def arg_symbols(self):
@@ -116,12 +118,16 @@ class EquationBase(ABC):
             )
 
     def __init_subclass__(cls) -> None:
-        if bool(cls.output_quantities) != bool(cls.input_pair):
+        if not hasattr(cls, 'config'):
+            cls.config = EquationConfig()
+
+        config = cls.config
+        if bool(config.output_quantities) != bool(config.input_pair):
             raise ValueError(
                 f'Please specify both input_pair and output_quantities in {cls}'
             )
 
-        if cls.input_pair and not cls.manual_units:
+        if config.input_pair and not config.manual_units:
             raise ValueError('Multi state equations requires manual unit inputs')
 
         return super().__init_subclass__()
@@ -177,8 +183,6 @@ if __name__ == '__main__':
     dht_test1 = VarSpec('delta_hmass_test', 'J / kg', node=1)
 
     class DummyEq(EquationBase):
-        argument_magic = False
-
         def residual(
             self,
             v0: n0.kin.V_mag.Hint,

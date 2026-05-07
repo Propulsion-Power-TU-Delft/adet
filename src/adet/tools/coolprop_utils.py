@@ -7,7 +7,7 @@ import logging
 import re
 from math import ceil
 from typing import Sequence
-import CoolProp.CoolProp as cp
+import CoolProp as cp
 import numpy as np
 
 from numpy.typing import NDArray

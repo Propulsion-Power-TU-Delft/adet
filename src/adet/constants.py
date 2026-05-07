@@ -1,9 +1,24 @@
+from fontTools.voltLib.ast import Enum
 from typing import Literal, Union
 from numpy.typing import NDArray
 
 import CoolProp as cp
 
 NodeStatesNames = Literal['stc', 'tot', 'rlt', 'kin', 'geo', 'oth']
+
+
+class ThermoNamesCoolProp(Enum):
+    Pressure = 'p'
+    Temperature = 'T'
+    Hmass = 'hmass'
+    Umass = 'umass'
+    Smass = 'smass'
+    Dmass = 'rhomass'
+    Cpmass = 'cpmass'
+    Cvmass = 'cvmass'
+    Pcrit = 'p_critical'
+    Quality = 'Q'
+
 
 COOLPROP_NAMES_MAP = {
     'p': 'P',
