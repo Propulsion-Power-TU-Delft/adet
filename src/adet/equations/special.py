@@ -9,27 +9,29 @@ do not even appear in the system, leading to an exception
 """
 
 from adet.equations import EquationBase
+from adet.equations.variables import NodeVariables
+
+n0 = NodeVariables(0)
 
 
 class ThermoVarsAdder(EquationBase):
     def residual(
         self,
-        rlt_p0,
-        tot_p0,
-        stc_p0,
-        rlt_T0,
-        tot_T0,
-        stc_T0,
-        rlt_rhomass0,
-        tot_rhomass0,
-        stc_rhomass0,
-        # Cp and Cv
-        rlt_cpmass0,
-        tot_cpmass0,
-        stc_cpmass0,
-        rlt_cvmass0,
-        tot_cvmass0,
-        stc_cvmass0,
+        p_rlt0: n0.rlt.Pressure.Hint,
+        p_tot0: n0.tot.Pressure.Hint,
+        p0: n0.stc.Pressure.Hint,
+        T_rlt0: n0.rlt.Temperature.Hint,
+        T_tot0: n0.tot.Temperature.Hint,
+        T0: n0.stc.Temperature.Hint,
+        rho_rlt0: n0.rlt.Density.Hint,
+        rho_tot0: n0.tot.Density.Hint,
+        rho0: n0.stc.Density.Hint,
+        cp_rlt0: n0.rlt.Cp.Hint,
+        cp_tot0: n0.tot.Cp.Hint,
+        cp0: n0.stc.Cp.Hint,
+        cv_rlt0: n0.rlt.Cv.Hint,
+        cv_tot0: n0.tot.Cv.Hint,
+        cv0: n0.stc.Cv.Hint,
     ):
         return ()
 
@@ -37,8 +39,8 @@ class ThermoVarsAdder(EquationBase):
 class GeometricalAdder(EquationBase):
     def residual(
         self,
-        geo_height0,
-        geo_rr_midspan0,
-        geo_meridional_angle0,
+        h0: n0.geo.Height.Hint,
+        rr_mid0: n0.geo.Rmid.Hint,
+        mer_angle0: n0.geo.MeridionalAngle.Hint,
     ):
         return ()

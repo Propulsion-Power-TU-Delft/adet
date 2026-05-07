@@ -6,28 +6,45 @@ the single quantities
 import CoolProp as cp
 import numpy as np
 
-from adet.equations.base_equation import EquationBase
+from adet.equations.base_equation import EquationBase, EquationConfig
+from adet.equations.variables import NodeVariables, ThermoVariables
+
+n0 = NodeVariables(0)
+n1 = NodeVariables(1)
+n2 = NodeVariables(2)
+n3 = NodeVariables(3)
+thrm = ThermoVariables()
 
 
 class AngleDeflection(EquationBase):
-    def residual(self, kin_beta0, kin_beta1, kin_deflection1):
-        return kin_deflection1 - (kin_beta1 - kin_beta0)
+    def residual(
+        self,
+        beta0: n0.kin.FlowAngleRel.Hint,
+        beta1: n1.kin.FlowAngleRel.Hint,
+        defl1: n1.kin.Deflection.Hint,
+    ):
+        return defl1 - (beta1 - beta0)
 
 
 class IncidenceAngle(EquationBase):
-    def residual(self, kin_beta0, kin_inc_angle0, geo_metal_angle0):
-        return kin_inc_angle0 - (kin_beta0 - geo_metal_angle0)
+    def residual(
+        self,
+        beta0: n0.kin.FlowAngleRel.Hint,
+        inc_angle0: n0.kin.IncAngle.Hint,
+        metal_angle0: n0.geo.MetalAngle.Hint,
+    ):
+        return inc_angle0 - (beta0 - metal_angle0)
 
 
 class DeviationAngle(EquationBase):
     def residual(
         self,
-        kin_beta0,
-        kin_beta1,
-        kin_dev_angle1,
-        geo_metal_angle0,
+        beta0: n0.kin.FlowAngleRel.Hint,
+        beta1: n1.kin.FlowAngleRel.Hint,
+        dev_angle1: n1.kin.DevAngle.Hint,
+        metal_angle0: n0.geo.MetalAngle.Hint,
     ):
-        return kin_dev_angle1 + np.sign(geo_metal_angle0) * (kin_beta1 - kin_beta0)
+        return dev_angle1 + np.sign(metal_angle0) * (beta1 - beta0)
 
 
 class OptimalIncidence(EquationBase):
@@ -38,12 +55,12 @@ class OptimalIncidence(EquationBase):
 
     def residual(
         self,
-        kin_Wt1,
-        kin_Wm0,
-        kin_beta_opt0,
+        wt1: n1.kin.W_tan.Hint,
+        wm0: n0.kin.W_mer.Hint,
+        beta_opt0: n0.kin.BetaOpt.Hint,
     ):
 
-        return kin_beta_opt0 - np.atan2(kin_Wt1, kin_Wm0)
+        return beta_opt0 - np.atan2(wt1, wm0)
 
 
 class RepeatedStage(EquationBase):
@@ -51,23 +68,28 @@ class RepeatedStage(EquationBase):
 
     def residual(
         self,
-        kin_alpha0,
-        kin_alpha3,
-        kin_Vm0,
-        kin_Vm1,
-        kin_Vm2,
-        kin_Vm3,
+        alpha0: n0.kin.FlowAngleAbs.Hint,
+        alpha3: n3.kin.FlowAngleAbs.Hint,
+        vm0: n0.kin.V_mer.Hint,
+        vm1: n1.kin.V_mer.Hint,
+        vm2: n2.kin.V_mer.Hint,
+        vm3: n3.kin.V_mer.Hint,
     ):
-        r1 = kin_alpha0 - kin_alpha3
-        r2 = kin_Vm3 - kin_Vm2
-        r3 = kin_Vm1 - kin_Vm0
+        r1 = alpha0 - alpha3
+        r2 = vm3 - vm2
+        r3 = vm1 - vm0
 
         return r1, r2, r3
 
 
 class MeridionalVelocityRatio(EquationBase):
-    def residual(self, kin_Vm0, kin_Vm1, kin_VmRatio1):
-        return kin_Vm0 * kin_VmRatio1 - kin_Vm1
+    def residual(
+        self,
+        vm0: n0.kin.V_mer.Hint,
+        vm1: n1.kin.V_mer.Hint,
+        vm_ratio1: n1.kin.VmRatio.Hint,
+    ):
+        return vm0 * vm_ratio1 - vm1
 
 
 class MidspanVelocities(EquationBase):
@@ -94,55 +116,65 @@ class MidspanVelocities(EquationBase):
 
 
 class EffectiveBladeNumber(EquationBase):
-    def residual(self, geo_num_blades0, geo_num_splitters0, geo_num_blades_eff0):
-        return geo_num_blades_eff0 - (geo_num_blades0 + 0.75 * geo_num_splitters0)
+    def residual(
+        self,
+        n_blades0: n0.geo.NumBlades.Hint,
+        n_splitters0: n0.geo.NumSplitters.Hint,
+        n_blades_eff0: n0.geo.NumBladesEff.Hint,
+    ):
+        return n_blades_eff0 - (n_blades0 + 0.75 * n_splitters0)
 
 
 class IsentropicProperties(EquationBase):
-    input_pair = cp.PSmass_INPUTS
-    output_quantities = ('hmass', 'T')
-    manual_units = ('J / kg', 'K', 'J / kg', 'K')
+    config = EquationConfig(
+        input_pair=cp.PSmass_INPUTS,
+        out_properties=(thrm.Enthalpy, thrm.Temperature),
+        manual_units=('J / kg', 'K', 'J / kg', 'K'),
+    )
 
     def residual(
         self,
-        # Actual properties
-        stc_smass0,
-        tot_p1,
-        stc_p1,
-        # Isentropic properties
-        oth_tot_hmass_is1,
-        oth_tot_T_is1,
-        oth_stc_hmass_is1,
-        oth_stc_T_is1,
+        s0: n0.stc.Entropy.Hint,
+        p1_tot: n1.tot.Pressure.Hint,
+        p1_stc: n1.stc.Pressure.Hint,
+        h_is_tot1: n1.oth.Enthalpy_totIs.Hint,
+        T_is_tot1: n1.oth.Tis_tot.Hint,
+        h_is1: n1.oth.Enthalpy_Is.Hint,
+        T_is1: n1.oth.Tis_stc.Hint,
     ):
-        hmass_tot_is, temp_tot_is = self.eos(tot_p1, stc_smass0)
-        hmass_is, temp_stat_is = self.eos(stc_p1, stc_smass0)
+        h_tot_is, T_tot_is = self.eos(p1_tot, s0)
+        h_stc_is, T_stc_is = self.eos(p1_stc, s0)
 
-        r1 = oth_tot_hmass_is1 - hmass_tot_is
-        r2 = oth_tot_T_is1 - temp_tot_is
-        r3 = oth_stc_hmass_is1 - hmass_is
-        r4 = oth_stc_T_is1 - temp_stat_is
+        r1 = h_is_tot1 - h_tot_is
+        r2 = T_is_tot1 - T_tot_is
+        r3 = h_is1 - h_stc_is
+        r4 = T_is1 - T_stc_is
 
         return r1, r2, r3, r4
 
 
 class ClearanceByHeight(EquationBase):
-    def residual(self, geo_clearance_by_height0, geo_height0, geo_tip_clearance0):
-        return geo_clearance_by_height0 * geo_height0 - geo_tip_clearance0
+    def residual(
+        self,
+        clr_by_h0: n0.geo.ClearanceByHeight.Hint,
+        h0: n0.geo.Height.Hint,
+        tip_clr0: n0.geo.TipClearance.Hint,
+    ):
+        return clr_by_h0 * h0 - tip_clr0
 
 
 class ReducedThermoQuantities(EquationBase):
     def residual(
         self,
-        tot_T0,
-        tot_p0,
-        oth_tot_T_red0,
-        oth_tot_p_red0,
-        stc_p_critical0,
-        stc_T_critical0,
+        T_tot0: n0.tot.Temperature.Hint,
+        p_tot0: n0.tot.Pressure.Hint,
+        T_red_tot0: n0.oth.TotTRed.Hint,
+        p_red_tot0: n0.oth.TotPRed.Hint,
+        p_crit0: n0.stc.CriticalTemp.Hint,
+        T_crit0: n0.stc.CriticalTemperature.Hint,
     ):
-        r1 = tot_p0 - oth_tot_p_red0 * stc_p_critical0
-        r2 = tot_T0 - oth_tot_T_red0 * stc_T_critical0
+        r1 = p_tot0 - p_red_tot0 * p_crit0
+        r2 = T_tot0 - T_red_tot0 * T_crit0
 
         return r1, r2
 
@@ -153,20 +185,17 @@ class BoundaryLayerRatios(EquationBase):
 
     def residual(
         self,
-        # Geometry
-        geo_height0,
-        geo_bld_thick0,
-        # Boundary layer
-        oth_mom_thick0,  # Momentum thickness
-        oth_disp_thick0,  # Blade disp. thickness
-        oth_disp_thick_ew0,  # Endwall disp. thickness
-        # Ratios
-        oth_disp_by_mom0,  # disp / mom
-        oth_mom_by_bld0,  # mom / blade thick
-        oth_disp_by_hgt0,  # ew disp / height
+        h0: n0.geo.Height.Hint,
+        bld_thick0: n0.geo.BldThick.Hint,
+        mom_thick0: n0.oth.MomThick.Hint,
+        disp_thick0: n0.oth.DispThick.Hint,
+        disp_thick_ew0: n0.oth.DispThickEW.Hint,
+        disp_by_mom0: n0.oth.DispByMom.Hint,
+        mom_by_bld0: n0.oth.MomByBld.Hint,
+        disp_by_hgt0: n0.oth.DispByHgt.Hint,
     ):
-        r1 = oth_disp_thick0 - oth_disp_by_mom0 * oth_mom_thick0
-        r2 = oth_mom_thick0 - oth_mom_by_bld0 * geo_bld_thick0
-        r3 = oth_disp_thick_ew0 - oth_disp_by_hgt0 * geo_height0
+        r1 = disp_thick0 - disp_by_mom0 * mom_thick0
+        r2 = mom_thick0 - mom_by_bld0 * bld_thick0
+        r3 = disp_thick_ew0 - disp_by_hgt0 * h0
 
         return r1, r2, r3

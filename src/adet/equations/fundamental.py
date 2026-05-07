@@ -5,6 +5,7 @@ from adet.equations.variables import NodeVariables
 import numpy as np
 
 from adet.equations import EquationBase
+from adet.equations.base_equation import EquationConfig
 from adet.equations.utils import (
     get_midspan_idx,
     safe_sum,
@@ -31,30 +32,36 @@ class EulerEquation(EquationBase):
 
 
 class ConstantAngMomentum(EquationBase):
-    def residual(self, geo_rr0, geo_rr1, kin_Vt0, kin_Vt1):
-        return geo_rr0 * kin_Vt0 - geo_rr1 * kin_Vt1
+    def residual(
+        self,
+        rr0: n0.geo.RDistr.Hint,
+        rr1: n1.geo.RDistr.Hint,
+        vt0: n0.kin.V_tan.Hint,
+        vt1: n1.kin.V_tan.Hint,
+    ):
+        return rr0 * vt0 - rr1 * vt1
 
 
 class ConstRelEnthalpy(EquationBase):
-    def residual(self, rlt_hmass0, rlt_hmass1):
-        return rlt_hmass0 - rlt_hmass1
+    def residual(self, h0: n0.rlt.Enthalpy.Hint, h1: n1.rlt.Enthalpy.Hint):
+        return h0 - h1
 
 
 class MassConservation(EquationBase):
-    def residual(self, oth_massflow0, oth_massflow1):
-        return oth_massflow0 - oth_massflow1
+    def residual(self, mf0: n0.oth.MassFlow.Hint, mf1: n1.oth.MassFlow.Hint):
+        return mf0 - mf1
 
 
 class TotalMassFlow(EquationBase):
     """Cumulative massflow"""
 
-    def residual(self, oth_cum_massflow0, oth_massflow0):
-        return oth_cum_massflow0 - safe_sum(oth_massflow0)
+    def residual(self, cum_mf0: n0.oth.CumMassFlow.Hint, mf0: n0.oth.MassFlow.Hint):
+        return cum_mf0 - safe_sum(mf0)
 
 
 class TotalArea(EquationBase):
-    def residual(self, geo_cum_area0, geo_area0):
-        return geo_cum_area0 - safe_sum(geo_area0)
+    def residual(self, cum_area0: n0.geo.CumArea.Hint, a0: n0.geo.Area.Hint):
+        return cum_area0 - safe_sum(a0)
 
 
 class MassAreaRelation(EquationBase):
@@ -63,71 +70,64 @@ class MassAreaRelation(EquationBase):
         \\dot_{m} = \\rho_0 V_{m0} A_0
     """
 
-    def residual(self, kin_Vm0, geo_eff_area0, stc_rhomass0, oth_massflow0):
-        return oth_massflow0 - stc_rhomass0 * kin_Vm0 * geo_eff_area0
+    def residual(
+        self,
+        vm0: n0.kin.V_mer.Hint,
+        a_eff0: n0.geo.EffArea.Hint,
+        rho0: n0.stc.Density.Hint,
+        mf0: n0.oth.MassFlow.Hint,
+    ):
+        return mf0 - rho0 * vm0 * a_eff0
 
 
 class ZeroBlockage(MeridAreaBlockage):
     """Use the annuli's area as the passage area"""
 
-    def residual(self, geo_area0, geo_eff_area0):
-        return geo_eff_area0 - geo_area0
+    def residual(self, a0: n0.geo.Area.Hint, a_eff0: n0.geo.EffArea.Hint):
+        return a_eff0 - a0
 
 
 class BladeBlockage(MeridAreaBlockage):
     def residual(
         self,
-        geo_hh0,
-        geo_area0,  # Full annulus area
-        geo_eff_area0,  # Blocked area
-        geo_num_blades0,
-        geo_bld_thick0,  # Blade thickness
-        geo_metal_angle0,
-        oth_disp_thick0,  # COMBINED diplacement thickness
+        h0: n0.geo.HDistr.Hint,
+        a0: n0.geo.Area.Hint,
+        a_eff0: n0.geo.EffArea.Hint,
+        n_blades0: n0.geo.NumBlades.Hint,
+        bld_thick0: n0.geo.BldThick.Hint,
+        metal_angle0: n0.geo.MetalAngle.Hint,
+        disp_thick0: n0.oth.DispThick.Hint,
     ):
-        return geo_eff_area0 - (
-            geo_area0
-            - geo_hh0
-            * geo_num_blades0
-            * (geo_bld_thick0 + oth_disp_thick0)
-            / np.cos(geo_metal_angle0)
+        return a_eff0 - (
+            a0 - h0 * n_blades0 * (bld_thick0 + disp_thick0) / np.cos(metal_angle0)
         )
 
 
 class Kinematics(EquationBase):
     def residual(
         self,
-        kin_V0,
-        kin_Vm0,
-        kin_Vt0,
-        kin_W0,
-        kin_Wt0,
-        kin_Wm0,
-        kin_U0,
-        kin_alpha0,
-        kin_beta0,
-        kin_omega0,
-        geo_rr0,
+        v0: n0.kin.V_mag.Hint,
+        vm0: n0.kin.V_mer.Hint,
+        vt0: n0.kin.V_tan.Hint,
+        w0: n0.kin.W_mag.Hint,
+        wt0: n0.kin.W_tan.Hint,
+        wm0: n0.kin.W_mer.Hint,
+        u0: n0.kin.BladeSpeed.Hint,
+        alpha0: n0.kin.FlowAngleAbs.Hint,
+        beta0: n0.kin.FlowAngleRel.Hint,
+        omega0: n0.kin.Omega.Hint,
+        rr0: n0.geo.RDistr.Hint,
     ):
-        # Only if Vm and Vt are zero the denominator
-        # nullifies, but Vm > 0 always, thus the
-        # square root should pose no problems
-        r1 = kin_V0 - (kin_Vm0**2 + kin_Vt0**2) ** 0.5
-        r2 = kin_W0 - (kin_Wm0**2 + kin_Wt0**2) ** 0.5
+        r1 = v0 - (vm0**2 + vt0**2) ** 0.5
+        r2 = w0 - (wm0**2 + wt0**2) ** 0.5
 
-        r3 = kin_Vm0 - kin_Wm0
-        r4 = kin_Vt0 - (kin_Wt0 + kin_U0)
+        r3 = vm0 - wm0
+        r4 = vt0 - (wt0 + u0)
 
-        # *** atan2 ensures that the angles are between - pi / 2 and pi / 2
-        r5 = kin_alpha0 - np.atan2(kin_Vt0, kin_Vm0)
-        r6 = kin_beta0 - np.atan2(kin_Wt0, kin_Wm0)
+        r5 = alpha0 - np.atan2(vt0, vm0)
+        r6 = beta0 - np.atan2(wt0, wm0)
 
-        # *** OLD Alternative formulation - Can be used in
-        # combination with bounds
-        # r5 = kin_Wm0 - kin_W0 * np.cos(kin_beta0)
-        # r6 = kin_Vm0 - kin_V0 * np.cos(kin_alpha0)
-
-        r7 = kin_omega0 * geo_rr0 - kin_U0
+        r7 = omega0 * rr0 - u0
 
         return r1, r2, r3, r4, r5, r6, r7
 
@@ -160,19 +160,19 @@ class TotalStaticMatching(EquationBase):
 
     def residual(
         self,
-        tot_hmass0,
-        stc_hmass0,
-        rlt_hmass0,
-        tot_smass0,
-        stc_smass0,
-        rlt_smass0,
-        kin_V0,
-        kin_W0,
+        ht0: n0.tot.Enthalpy.Hint,
+        h0: n0.stc.Enthalpy.Hint,
+        hr0: n0.rlt.Enthalpy.Hint,
+        st0: n0.tot.Entropy.Hint,
+        s0: n0.stc.Entropy.Hint,
+        sr0: n0.rlt.Entropy.Hint,
+        v0: n0.kin.V_mag.Hint,
+        w0: n0.kin.W_mag.Hint,
     ):
-        r1 = tot_hmass0 - (stc_hmass0 + kin_V0**2 / 2)
-        r2 = rlt_hmass0 - (stc_hmass0 + kin_W0**2 / 2)
-        r3 = tot_smass0 - stc_smass0
-        r4 = rlt_smass0 - stc_smass0
+        r1 = ht0 - (h0 + v0**2 / 2)
+        r2 = hr0 - (h0 + w0**2 / 2)
+        r3 = st0 - s0
+        r4 = sr0 - s0
 
         return r1, r2, r3, r4
 
@@ -183,46 +183,60 @@ class SimpleRadialEquilibrium(EquationBase):
     zero streamline curvature is assumed
     """
 
-    manual_units = ('J / kg / m',)
+    config = EquationConfig(manual_units=('J / kg / m',))
 
-    def residual(self, geo_rr0, stc_p0, kin_Vt0, stc_rhomass0):
-        dp_dr = span_fin_diff(stc_p0, geo_rr0)
-        return dp_dr / stc_rhomass0 - kin_Vt0**2 / geo_rr0
+    def residual(
+        self,
+        rr0: n0.geo.RDistr.Hint,
+        p0: n0.stc.Pressure.Hint,
+        vt0: n0.kin.V_tan.Hint,
+        rho0: n0.stc.Density.Hint,
+    ):
+        dp_dr = span_fin_diff(p0, rr0)
+        return dp_dr / rho0 - vt0**2 / rr0
 
 
 class NisRe(EquationBase):
     """Non-ISentropic Radial Equilibrium"""
 
-    manual_units = ('J / kg / m',)
+    config = EquationConfig(manual_units=('J / kg / m',))
 
-    def residual(self, geo_rr0, kin_Vt0, kin_Vm0, tot_hmass0, stc_T0, stc_smass0):
-        dVt_dr = span_fin_diff(kin_Vt0, geo_rr0)
-        dVm_dr = span_fin_diff(kin_Vm0, geo_rr0)
-        dht_dr = span_fin_diff(tot_hmass0, geo_rr0)
-        ds_dr = span_fin_diff(stc_smass0, geo_rr0)
+    def residual(
+        self,
+        rr0: n0.geo.RDistr.Hint,
+        vt0: n0.kin.V_tan.Hint,
+        vm0: n0.kin.V_mer.Hint,
+        ht0: n0.tot.Enthalpy.Hint,
+        T0: n0.stc.Temperature.Hint,
+        s0: n0.stc.Entropy.Hint,
+    ):
+        dVt_dr = span_fin_diff(vt0, rr0)
+        dVm_dr = span_fin_diff(vm0, rr0)
+        dht_dr = span_fin_diff(ht0, rr0)
+        ds_dr = span_fin_diff(s0, rr0)
 
-        lhs = kin_Vm0 * dVm_dr + kin_Vt0 * dVt_dr + kin_Vt0**2 / geo_rr0
-        rhs = dht_dr - stc_T0 * ds_dr
+        lhs = vm0 * dVm_dr + vt0 * dVt_dr + vt0**2 / rr0
+        rhs = dht_dr - T0 * ds_dr
         return lhs - rhs
 
 
 class FreeVortexDistribution(EquationBase):
-    def residual(self, geo_rr0, kin_Vt0):
-        midspan = get_midspan_idx(geo_rr0)
-        rVt_mid = geo_rr0[midspan] * kin_Vt0[midspan]
+    def residual(self, rr0: n0.geo.RDistr.Hint, vt0: n0.kin.V_tan.Hint):
+        midspan = get_midspan_idx(rr0)
+        rVt_mid = rr0[midspan] * vt0[midspan]
 
-        r1 = geo_rr0[:midspan] * kin_Vt0[:midspan] - rVt_mid
-        r2 = geo_rr0[midspan + 1 :] * kin_Vt0[midspan + 1 :] - rVt_mid
+        r1 = rr0[:midspan] * vt0[:midspan] - rVt_mid
+        r2 = rr0[midspan + 1 :] * vt0[midspan + 1 :] - rVt_mid
         return r1, r2
 
 
 class ForcedVortexDistribution(EquationBase):
-    def residual(self, geo_rr0, kin_Vt0):
-        midspan = get_midspan_idx(geo_rr0)
-        Vt_by_r_mid = kin_Vt0[midspan] / geo_rr0[midspan]
+    def residual(self, rr0: n0.geo.RDistr.Hint, vt0: n0.kin.V_tan.Hint):
+        midspan = get_midspan_idx(rr0)
+        Vt_by_r_mid = vt0[midspan] / rr0[midspan]
 
-        r1 = kin_Vt0[:midspan] / geo_rr0[:midspan] - Vt_by_r_mid
-        r2 = kin_Vt0[midspan + 1 :] / geo_rr0[midspan + 1 :] - Vt_by_r_mid
+        r1 = vt0[:midspan] / rr0[:midspan] - Vt_by_r_mid
+        r2 = vt0[midspan + 1 :] / rr0[midspan + 1 :] - Vt_by_r_mid
         return r1, r2
 
 
