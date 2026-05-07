@@ -1,12 +1,13 @@
+from adet.equations.varspec import VarSpec
 import logging
-from typing import ClassVar, Generic, TypeVar
+from typing import ClassVar, Generic, TypeVar, Sequence
 
 import casadi as cs
 
 from adet.fluid.casadi_eos import CasadiEos
 from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidModel
 from adet.fluid.symbolic_eos import SymbolicAbstractState
-from adet.tools.coolprop_utils import inames_from_id, pair_tuple_from_id
+from adet.tools.coolprop_utils import inames_from_id
 
 
 logger = logging.getLogger(__name__)
@@ -23,22 +24,24 @@ class EosFactory(Generic[M]):
     def make_eos(
         self,
         input_pair: int,
-        output_quantities: tuple[str, ...] | list[str],
+        out_properties: Sequence[VarSpec],
         length: int,
         name: str = '',
     ):
         eos_obj = self.fluid_model.get_eos_object()
+
+        out_props_names = [s.symbol for s in out_properties]
 
         if not name:
             name += f'generic_eos_pair{input_pair}'
 
         if isinstance(self.fluid_model, ExternalFluidModel):
             return self.make_external_eos(
-                eos_obj, input_pair, output_quantities, length, name
+                eos_obj, input_pair, out_props_names, length, name
             )
         elif isinstance(self.fluid_model, AnalyticalFluidModel):
             return self.make_analytical_eos(
-                eos_obj, input_pair, output_quantities, length, name
+                eos_obj, input_pair, out_props_names, length, name
             )
         else:
             raise TypeError('Unknown fluid model type')

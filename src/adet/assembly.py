@@ -21,7 +21,7 @@ from numpy.typing import NDArray
 from pint import Quantity, Unit
 from pint.facets.plain import PlainQuantity
 
-from adet.constants import INVERSE_CP_NAMES_MAP, AdetArray
+from adet.constants import AdetArray
 from adet.equations.base_equation import EquationBase, EquationConfig
 from adet.equations.variables import NodeVariables, ThermoVariables
 from adet.equations.varspec import NodeStates, VarSpec
@@ -36,7 +36,7 @@ from adet.registries import (
     VariableBoundsRegistry,
 )
 from adet.tools.context import override_operators
-from adet.tools.coolprop_utils import DebugAbstractState, pair_id_from_tuple
+from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.interpolation import resample_linear
 from adet.tools.iter import ensure_tuple
 from adet.tools.strings import get_index, rm_index
@@ -229,7 +229,6 @@ class ConstraintManager:
         self, bnd_cond: dict[VarSpec, AdetArray | PlainQuantity]
     ):
         """Add boundary conditions for a specific node"""
-        validated_bcond: dict[VarSpec, AdetArray] = {}
         for spec, val in bnd_cond.items():
             if isinstance(val, PlainQuantity):
                 mag = val.to_base_units().magnitude
@@ -322,9 +321,11 @@ class ArgumentResolver:
         # Get what variables will be used for state updates
         self.data.thermo_updt_args = []
         prescr_upd_vars = self.data.fluid_settings.update_variables
+
+        first_node = min(arg.node for arg in self.data.decl_args)
         max_node = max(arg.node for arg in self.data.decl_args)
 
-        for node in range(max_node + 1):
+        for node in range(first_node, max_node + 1):
             for st in NodeStates:
                 upd_args = [v._at_node(node)._with_state(st) for v in prescr_upd_vars]
                 self.data.thermo_updt_args.extend(upd_args)
@@ -349,7 +350,7 @@ class ArgumentResolver:
 
         return discarded
 
-    # TODO: Restore introspection
+    # ********************  TODO: Restore introspection START
     def make_arg_structure(self, arguments: Sequence[str]):
         """Detect the argument structure of a sequence of arguments"""
         arguments_struct = []
@@ -381,6 +382,8 @@ class ArgumentResolver:
 
         return (start_index, end_index)
 
+    # ********************  TODO: Restore introspection END
+
 
 class UnitScalingManager:
     """Handles unit checking and scaling factors"""
@@ -399,6 +402,9 @@ class UnitScalingManager:
 
     def _test_eq_units(self, equation: EquationBase) -> tuple[str, ...]:
         probe_args = []
+        if equation.config.manual_units:
+            return equation.config.manual_units
+
         for spec in equation.arg_specs:
             if spec.scalar:
                 dummy_arg = Quantity(np.nan, spec.unit)
@@ -537,49 +543,12 @@ class SystemAssembler(ABC):
         return jax.tree.leaves(self.data.equations_units).__len__()
 
     @property
-    def num_nodes(self) -> int:
+    def first_node(self) -> int:
+        return min(arg.node for arg in self.data.decl_args)
+
+    @property
+    def last_node(self) -> int:
         return max(arg.node for arg in self.data.decl_args)
-
-    # Expose context properties for backward compatibility
-    @property
-    def equations(self):
-        return self.data.equations
-
-    @property
-    def free_args(self):
-        return self.data.free_args
-
-    @property
-    def boun_cond(self):
-        return self.data.boun_cond
-
-    @property
-    def _declared_arguments(self):
-        return self.data.decl_args
-
-    @property
-    def _arg_maps(self):
-        return self.data._arg_maps
-
-    @property
-    def _equations_units(self):
-        return self.data.equations_units
-
-    @property
-    def _built(self):
-        return self.data.built
-
-    @property
-    def _scaled(self):
-        return self.data.scaled
-
-    @property
-    def _equalities(self):
-        return self.data.equalities
-
-    @property
-    def _spanwise_constants(self):
-        return self.data.spanwise_constants
 
     def reset(self) -> None:
         old_settings = self.data.fluid_settings
@@ -871,7 +840,7 @@ class CasadiSystem(SystemAssembler):
 
         # Create symbols
         self.free_args_sym, self.scales_free_args_sym = self._create_symbols(
-            self.free_args,
+            self.data.free_args,
             self.num_span,
             self.scale_suffix,
         )
@@ -920,24 +889,24 @@ class CasadiSystem(SystemAssembler):
                 NodeStates,
                 None,
             )
-            for n_idx in range(self.num_nodes + 1)
+            for n_idx in range(self.first_node, self.last_node + 1)
         }
 
         self._eos_factory = EosFactory(fl_model)
 
         # Add inter-node eos
-        for eq in self.equations:
-            if eq.input_pair:
+        for eq in self.data.equations:
+            eq_conf = eq.config
+            if eq_conf.input_pair:
                 eq.eos = self._eos_factory.make_eos(
-                    eq.input_pair,
-                    eq.output_quantities,
+                    eq_conf.input_pair,
+                    eq_conf.out_properties,
                     self.num_span,
                     f'multi_{eq.__class__.__name__}',
                 )
 
         # TODO: Refactor this, messy
         discarded_vars = self._argument_resolver.get_discarded_thermo_args()
-        pair_tuple = tuple(s.symbol for s in self.data.fluid_settings.update_variables)
         out_syms: dict[VarSpec, cs.MX] = {}
 
         sorted_discarded: dict[
@@ -951,14 +920,13 @@ class CasadiSystem(SystemAssembler):
             if spec.state:
                 sorted_discarded[spec.node][spec.state].append(spec)
 
-        for node_idx in range(self.num_nodes + 1):
+        for node_idx in range(self.first_node, self.last_node + 1):
             for state, out_specs in sorted_discarded[node_idx].items():
-                pair_id = pair_id_from_tuple(pair_tuple)
-                out_props = [s.symbol for s in out_specs]
+                pair_id = self.data.fluid_settings.input_pair
 
                 eos_caller = self._eos_factory.make_eos(
                     pair_id,
-                    out_props,
+                    out_specs,
                     self.num_span,
                     f'nodeCb_{state.value}N{node_idx}',
                 )
@@ -996,7 +964,7 @@ class CasadiSystem(SystemAssembler):
         that can be part of a single or multiple components
         """
         equalities_expressions = []
-        for equal_args in self._equalities:
+        for equal_args in self.data.equalities:
             equal_args = sorted(equal_args)
             arg_couples = [(equal_args[0], arg) for arg in equal_args[1:]]
             for arg_tuple in arg_couples:
@@ -1020,7 +988,7 @@ class CasadiSystem(SystemAssembler):
         along the span of a certain station
         """
         spanwise_expressions = []
-        for arg in self._spanwise_constants:
+        for arg in self.data.spanwise_constants:
             if arg not in self._all_symbols:
                 continue
 
@@ -1048,7 +1016,9 @@ class CasadiSystem(SystemAssembler):
             if spec not in self.data.thermo_updt_args:
                 constraints_eqs.append(
                     self._all_symbols[spec]
-                    - self._all_symbols[spec + THERMO_CONST_SUFFIX]
+                    - self._all_symbols[
+                        spec._with_symbol(spec.symbol + THERMO_CONST_SUFFIX)
+                    ]
                 )
 
         return constraints_eqs
@@ -1063,10 +1033,8 @@ class CasadiSystem(SystemAssembler):
         # Build and concatenate residual equations
         logger.info('Building residual equation symbolics (this may take a while)...')
 
-        residuals = []
+        residuals: list[Any | tuple[Any, ...]] = []
         for eq in self.data.equations:
-            int_map = self.data._arg_maps[eq]  # Convert to abs args
-
             args = []
             for spec in eq.arg_specs:
                 arg_map = self.data._arg_maps[eq]
@@ -1074,12 +1042,12 @@ class CasadiSystem(SystemAssembler):
                 args.append(self._all_symbols[abs_arg])
 
             # NOTE: No need to override the operators for now,
-            # just use numpy operations  compatible with casadi
+            # just use numpy operations compatible with casadi
 
             # overridden_eq = override_operators(eq.residual, 'numpy', cs)
             overridden_eq = eq.residual
             res_syms = overridden_eq(*args)
-            if eq.manual_units:
+            if eq.config.manual_units:
                 self._manual_units_check(eq, res_syms)
 
             residuals.append(res_syms)
@@ -1140,11 +1108,12 @@ class CasadiSystem(SystemAssembler):
         if not isinstance(residual_symbols, (tuple, list)):
             residual_symbols = (residual_symbols,)
         eq_name = equation.__class__.__name__
-        if len(equation.manual_units) != len(residual_symbols):
+        eq_conf = equation.config
+        if len(eq_conf.manual_units) != len(residual_symbols):
             raise ValueError(
-                f'Mismatch in equation `{eq_name}` between manual '
-                f'units length ({len(equation.manual_units)}) '
-                f'{equation.manual_units} and number of equations '
+                f'Mismatch in eq_conf `{eq_name}` between manual '
+                f'units length ({len(eq_conf.manual_units)}) '
+                f'{eq_conf.manual_units} and number of eq_confs '
                 f'({len(residual_symbols)})'
             )
 
@@ -1286,52 +1255,55 @@ class CasadiSystem(SystemAssembler):
             )
         return rootfinder
 
-    def get_arguments_bounds(self, custom_bounds: dict[str, tuple[float, float]] = {}):
+    def get_arguments_bounds(
+        self,
+        custom_bounds: dict[VarSpec, tuple[float, float]] = {},
+    ):
         bounds_by_arg = self._scaling_manager.get_arguments_bounds(custom_bounds)
         lbx = []
         ubx = []
 
-        for arg, scales in zip(self.free_args, bounds_by_arg):
+        for arg, scales in zip(self.data.free_args, bounds_by_arg):
             arg_size = max(self._all_symbols[arg].shape)
             lbx += arg_size * [scales[0]]
             ubx += arg_size * [scales[1]]
 
         return cs.vertcat(*lbx), cs.vertcat(*ubx)
 
-    def write_solution_to_nodes(self, solution_values: NDArray):
-        solution_dict = super().write_solution_to_nodes(solution_values)
-
-        for node_idx, cb_specs in self._eos_callbacks.items():
-            for state_id, eos_cb in cb_specs.items():
-                eos_name: str = eos_cb.name()
-                if not eos_name.startswith('nodeCb'):
-                    continue
-
-                # Full CoolProp
-                input_args = [INVERSE_CP_NAMES_MAP[arg] for arg in eos_cb.name_in()]
-                out_props = eos_cb.name_out()
-
-                state_obj = self.nodes[node_idx].fetch_state(state_id)
-
-                inputs = [
-                    state_obj.get(arg).to_base_units().magnitude for arg in input_args
-                ]
-                output_values = eos_cb(*inputs)
-
-                if not output_values:
-                    raise ValueError(f'{eos_cb} returned no output values')
-
-                thermo_dict = {}
-                for prop, val in zip(out_props, output_values):
-                    thermo_dict[f'{state_id}_{prop}{node_idx}'] = (
-                        val.toarray().flatten()
-                    )
-
-                self.nodes[node_idx].write_to_node(thermo_dict, False)
-
-                solution_dict.update(thermo_dict)
-
-        return solution_dict
+    # def write_solution_to_nodes(self, solution_values: NDArray):
+    #     solution_dict = super().write_solution_to_nodes(solution_values)
+    #
+    #     for node_idx, cb_specs in self._eos_callbacks.items():
+    #         for state_id, eos_cb in cb_specs.items():
+    #             eos_name: str = eos_cb.name()
+    #             if not eos_name.startswith('nodeCb'):
+    #                 continue
+    #
+    #             # Full CoolProp
+    #             input_args = [INVERSE_CP_NAMES_MAP[arg] for arg in eos_cb.name_in()]
+    #             out_props = eos_cb.name_out()
+    #
+    #             state_obj = self.nodes[node_idx].fetch_state(state_id)
+    #
+    #             inputs = [
+    #                 state_obj.get(arg).to_base_units().magnitude for arg in input_args
+    #             ]
+    #             output_values = eos_cb(*inputs)
+    #
+    #             if not output_values:
+    #                 raise ValueError(f'{eos_cb} returned no output values')
+    #
+    #             thermo_dict = {}
+    #             for prop, val in zip(out_props, output_values):
+    #                 thermo_dict[f'{state_id}_{prop}{node_idx}'] = (
+    #                     val.toarray().flatten()
+    #                 )
+    #
+    #             self.nodes[node_idx].write_to_node(thermo_dict, False)
+    #
+    #             solution_dict.update(thermo_dict)
+    #
+    #     return solution_dict
 
     def to_jax(self):
         """
@@ -1362,10 +1334,10 @@ class JaxSystem(SystemAssembler):
         The full stack is then fed to a residual function.
         """
 
-        all_args = self._declared_arguments
+        all_args = self.data.decl_args
 
-        free_args = self.free_args
-        declared_constraints = self.constraints
+        free_args = self.data.free_args
+        declared_constraints = self.data.boun_cond
 
         num_free = len(free_args)
         num_const = len(declared_constraints)
@@ -1405,7 +1377,7 @@ class JaxSystem(SystemAssembler):
             make_return_array(
                 override_operators(eq.residual, 'numpy', jnp),
             )
-            for eq in self.equations
+            for eq in self.data.equations
         ]
 
     def _get_residual_positions(self):
@@ -1415,7 +1387,7 @@ class JaxSystem(SystemAssembler):
         """
         curr_index = 0
         residual_indices = []
-        for eq in self.equations:
+        for eq in self.data.equations:
             num_eqs = eq.num_equations
             residual_indices.append(tuple(curr_index + j for j in range(num_eqs)))
             curr_index += num_eqs
@@ -1429,8 +1401,8 @@ class JaxSystem(SystemAssembler):
         """
         residual_indices = self._get_residual_positions()
         eq_lines = []
-        for idx, eq in enumerate(self.equations):
-            int_map = self._arg_maps[eq]
+        for idx, eq in enumerate(self.data.equations):
+            int_map = self.data._arg_maps[eq]
 
             mapped_args = [get_absolute_arg(int_map, arg) for arg in eq.arguments]
 
@@ -1453,13 +1425,14 @@ class JaxSystem(SystemAssembler):
         """
         DIVIDER = ', '
         eq_name_unpacker = (
-            DIVIDER.join(f'eq{idx}' for idx, _ in enumerate(self.equations)) + DIVIDER
+            DIVIDER.join(f'eq{idx}' for idx, _ in enumerate(self.data.equations))
+            + DIVIDER
         )
         eq_lines = self._get_equation_lines(residuals_name)
         eq_stack = '\n    '.join(eq_lines)
 
         codegen = f"""
-def {func_name}(equations, {', '.join(self._declared_arguments)}):
+def {func_name}(equations, {', '.join(self.data.decl_args)}):
     {residuals_name} = jnp.zeros({(self.num_equations, self.num_span)})
 
     {eq_name_unpacker} = equations
@@ -1502,8 +1475,8 @@ def {func_name}(equations, {', '.join(self._declared_arguments)}):
         """
 
         super().make_residual_function()
-        num_args = len(self.free_args)
-        num_const = len(self.constraints)
+        num_args = len(self.data.free_args)
+        num_const = len(self.data.boun_cond)
 
         argument_scaler = self.free_args_scaling
         constraint_scaler = self.constraints_scaling
@@ -1541,8 +1514,14 @@ if __name__ == '__main__':
 
     import CoolProp as cp
 
+    thrm = ThermoVariables()
+
     class TestEquation(EquationBase):
-        config = EquationConfig()
+        config = EquationConfig(
+            manual_units=('J / kg', 'J / kg / K'),
+            input_pair=cp.PT_INPUTS,
+            out_properties=(thrm.Entropy,),
+        )
 
         def residual(
             self,
@@ -1557,18 +1536,28 @@ if __name__ == '__main__':
 
             return r1, r2
 
+    class EulerEquation(EquationBase):
+        def residual(
+            self,
+            ht0: n0.tot.Enthalpy.Hint,
+            ht1: n1.tot.Enthalpy.Hint,
+            u0: n0.kin.BladeSpeed.Hint,
+            u1: n1.kin.BladeSpeed.Hint,
+            vt0: n0.kin.V_tan.Hint,
+            vt1: n1.kin.V_tan.Hint,
+        ):
+            return (ht1 - ht0) - (u1 * vt1 - u0 * vt0)
+
     # +++ Fluid settings
     fluid_model_real = ExternalFluidModel(
         DebugAbstractState('HEOS', 'Air'),  # This just counts the number of updates
     )
 
-    t_vars = ThermoVariables()
-
     fluid_settings = FluidSettings(
         model=fluid_model_real,
         update_variables=(
-            t_vars.Pressure,
-            t_vars.Temperature,
+            thrm.Pressure,
+            thrm.Temperature,
         ),
     )
     nls.fluid_settings = fluid_settings
@@ -1576,7 +1565,7 @@ if __name__ == '__main__':
     n0 = NodeVariables(0)
     n1 = NodeVariables(1)
 
-    nls.add_equation(TestEquation(), (0, 1))
+    nls.add_equation(TestEquation(), (3, 4))
     nls.add_boundary_conditions(
         {
             n0.kin.V_tan: 10,

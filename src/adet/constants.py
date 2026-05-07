@@ -1,4 +1,4 @@
-from fontTools.voltLib.ast import Enum
+from enum import Enum
 from typing import Literal, Union
 from numpy.typing import NDArray
 
@@ -7,9 +7,9 @@ import CoolProp as cp
 NodeStatesNames = Literal['stc', 'tot', 'rlt', 'kin', 'geo', 'oth']
 
 
-class ThermoNamesCoolProp(Enum):
-    Pressure = 'p'
-    Temperature = 'T'
+class CoolProperties(Enum):
+    Press = 'p'
+    Temp = 'T'
     Hmass = 'hmass'
     Umass = 'umass'
     Smass = 'smass'
@@ -18,19 +18,21 @@ class ThermoNamesCoolProp(Enum):
     Cvmass = 'cvmass'
     Pcrit = 'p_critical'
     Quality = 'Q'
+    SpeedSound = 'speed_sound'
+    Viscosity = 'viscosity'
 
 
 COOLPROP_NAMES_MAP = {
-    'p': 'P',
-    'T': 'T',
-    'Q': 'Q',
-    'hmass': 'Hmass',
-    'umass': 'Umass',
-    'smass': 'Smass',
-    'rhomass': 'Dmass',
-    'cpmass': 'Cpmass',
-    'cvmass': 'Cvmass',
-    'p_critical': 'P_critical',
+    CoolProperties.Press.value: 'P',
+    CoolProperties.Temp.value: 'T',
+    CoolProperties.Quality.value: 'Q',
+    CoolProperties.Hmass.value: 'Hmass',
+    CoolProperties.Umass.value: 'Umass',
+    CoolProperties.Smass.value: 'Smass',
+    CoolProperties.Dmass.value: 'Dmass',
+    CoolProperties.Cpmass.value: 'Cpmass',
+    CoolProperties.Cvmass.value: 'Cvmass',
+    CoolProperties.Pcrit.value: 'P_critical',
 }
 
 INVERSE_CP_NAMES_MAP = {v: k for k, v in COOLPROP_NAMES_MAP.items()}

@@ -20,7 +20,7 @@ class EquationConfig:
     manual_units: tuple[str, ...] = ()
     scaling_factor: tuple[float | None, ...] | None = None
     input_pair: int = 0
-    output_quantities: tuple[str, ...] = ()
+    out_properties: tuple[VarSpec, ...] = ()
 
 
 class EquationBase(ABC):
@@ -51,7 +51,7 @@ class EquationBase(ABC):
             self._scaling_factor = self.config.scaling_factor
 
     @abstractmethod
-    def residual(self, *args) -> None: ...
+    def residual(self, *args) -> Any | tuple[Any, ...]: ...
 
     @property
     def arg_symbols(self):
@@ -122,9 +122,9 @@ class EquationBase(ABC):
             cls.config = EquationConfig()
 
         config = cls.config
-        if bool(config.output_quantities) != bool(config.input_pair):
+        if bool(config.out_properties) != bool(config.input_pair):
             raise ValueError(
-                f'Please specify both input_pair and output_quantities in {cls}'
+                f'Please specify both input_pair and out_properties in {cls}'
             )
 
         if config.input_pair and not config.manual_units:

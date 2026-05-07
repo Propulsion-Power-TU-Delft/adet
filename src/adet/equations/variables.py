@@ -1,3 +1,4 @@
+from adet.constants import CoolProperties
 from adet.equations.varspec import NodeStates, VarSpec, DEF_NODE
 
 
@@ -31,17 +32,17 @@ class ThermoVariables(BaseEnum):
     ):
         super().__init__(node, state)
 
-    Entropy = VarSpec('smass', 'J / kg / K', 1e4)
-    Density = VarSpec('rhomass', 'kg / m**3', 2.0, (1e-3, 800.0))
-    Pressure = VarSpec('p', 'Pa', 5e5, (1e4, 150e5))
-    Enthalpy = VarSpec('hmass', 'J / kg', 6e5)
-    Temperature = VarSpec('T', 'K', 800.0, (80.0, 1800.0))
-    InternalEnergy = VarSpec('umass', 'J / kg', 5e5)
-    Cp = VarSpec('cpmass', 'J / kg / K')
-    Cv = VarSpec('cvmass', 'J / kg / K')
-    SpeedSound = VarSpec('speed_sound', 'm / s')
-    CriticalTemp = VarSpec('T_critical', 'K')
-    Viscosity = VarSpec('viscosity', 'Pa * s')
+    Entropy = VarSpec(CoolProperties.Smass.value, 'J / kg / K', 1e4)
+    Density = VarSpec(CoolProperties.Dmass.value, 'kg / m**3', 2.0, (1e-3, 800.0))
+    Pressure = VarSpec(CoolProperties.Press.value, 'Pa', 5e5, (1e4, 150e5))
+    Enthalpy = VarSpec(CoolProperties.Hmass.value, 'J / kg', 6e5)
+    Temperature = VarSpec(CoolProperties.Temp.value, 'K', 800.0, (80.0, 1800.0))
+    IntEnergy = VarSpec(CoolProperties.Umass.value, 'J / kg', 5e5)
+    Cp = VarSpec(CoolProperties.Cpmass.value, 'J / kg / K')
+    Cv = VarSpec(CoolProperties.Cvmass.value, 'J / kg / K')
+    SpeedSound = VarSpec(CoolProperties.SpeedSound.value, 'm / s')
+    CriticalTemp = VarSpec(CoolProperties.Pcrit.value, 'K')
+    Viscosity = VarSpec(CoolProperties.Viscosity.value, 'Pa * s')
 
 
 class KinematicVariables(VariableEnum):

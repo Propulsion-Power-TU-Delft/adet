@@ -1,4 +1,5 @@
-from adet.constants import COOLPROP_NAMES_MAP
+from adet.tools.coolprop_utils import pair_id_from_tuple
+from adet.constants import COOLPROP_NAMES_MAP, CoolProperties
 from adet.equations.variables import ThermoVariables
 from adet.equations.varspec import VarSpec
 from dataclasses import dataclass
@@ -89,6 +90,11 @@ class FluidSettings:
         )
         self.update_variables = tuple(sp.Plain for sp in sorted_upd)
 
+    @property
+    def input_pair(self) -> int:
+        upd_pties = tuple(x.symbol for x in self.update_variables)
+        return pair_id_from_tuple(upd_pties)
+
 
 if __name__ == '__main__':
     import CoolProp as cp
@@ -96,12 +102,11 @@ if __name__ == '__main__':
 
     eos = cp.AbstractState('HEOS', 'R134a')
 
-    th_vars = ThermoVariables()
     sett = FluidSettings(
         ExternalFluidModel(eos),
         (
-            th_vars.Pressure,
-            th_vars.Temperature,
+            ThermoVariables.Pressure,
+            ThermoVariables.Temperature,
         ),
         2,
     )
