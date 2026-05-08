@@ -249,6 +249,8 @@ class ConstraintManager:
                     mag_valid = mag * np.ones(self.data.num_span)
                 else:
                     raise ValueError(f'Length mismatch {spec}')
+            else:
+                mag_valid = mag
 
             self._check_arg_declaration(spec, 'boundary conditions')
             self.data.boun_cond[spec] = mag_valid

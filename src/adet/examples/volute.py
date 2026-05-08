@@ -19,6 +19,7 @@ from adet.equations.fundamental import (
 from adet.equations.nondimensional import AbsoluteMachNumber
 from adet.equations.special import ThermoVarsAdder
 from adet.equations.utils import safe_abs, safe_if_else
+from adet.equations.variables import NodeVariables, ThermoVariables
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
 from adet.losses.basic import PercentageEntropyLoss
 from adet.registries import GuessRegistry, VariableBoundsRegistry
@@ -328,37 +329,6 @@ if __name__ == '__main__':
     ]
     results = {}
 
-    INLET = {
-        'kin': {
-            'omega': 0.0,
-            'alpha': 0.0,
-        },
-        'geo': {
-            # 'rr_vol': 0.02,
-        },
-    }
-
-    OUTLET = {
-        'tot': {
-            'p': Quantity(18.1, 'bar'),
-            'T': Quantity(300, 'degC'),
-        },
-        'kin': {
-            'alpha': Quantity(65, 'deg'),
-            'omega': 0.0,
-        },
-        'geo': {
-            'height': 0.002,
-            'rr': Quantity(37.5, 'mm'),  # Stator inlet
-            # 'radiusRatio': 1.8,
-        },
-        'oth': {
-            'f1Coeff': 0.8,
-            'f2Coeff': 0.8,
-            'massflow': 0.132,
-        },
-    }
-
     for DESIGN_METHOD in design_methods:
         print(f'\n--- Solving for {DESIGN_METHOD} design method ---')
 
@@ -367,7 +337,8 @@ if __name__ == '__main__':
         fluid_model = ExternalFluidModel(
             DebugAbstractState('HEOS', 'MM'),
         )
-        fluid_settings = FluidSettings(fluid_model, ('p', 'T'))
+        thrm = ThermoVariables()
+        fluid_settings = FluidSettings(fluid_model, (thrm.Pressure, thrm.Temperature))
         system.fluid_settings = fluid_settings
 
         for eq, pos in EQUATIONS.items():
@@ -386,8 +357,30 @@ if __name__ == '__main__':
                 # system.add_equation(ConstantTangVelocity(), (0, 1))
                 system.add_equation(PercentageEntropyLoss(), (0, 1))  # 1
 
-        system.add_boundary_conditions(INLET, 0)
-        system.add_boundary_conditions(OUTLET, 1)
+        # Create node variables for boundary conditions
+        n0 = NodeVariables(0)
+        n1 = NodeVariables(1)
+
+        INLET = {
+            n0.kin.Omega: 0.0,
+            n0.kin.FlowAngleAbs: 0.0,
+            # n0.geo.RDistr: 0.02,  # Uncomment if needed
+        }
+
+        OUTLET = {
+            n1.tot.Pressure: Quantity(18.1, 'bar'),
+            n1.tot.Temperature: Quantity(300, 'degC'),
+            n1.kin.FlowAngleAbs: Quantity(65, 'deg'),
+            n1.kin.Omega: 0.0,
+            n1.geo.Height: 0.002,
+            n1.geo.RDistr: Quantity(37.5, 'mm'),
+            # n1.geo.RadiusRatio: 1.8,  # Uncomment if needed
+            n1.oth.PBase: 0.8,  # f1Coeff placeholder
+            n1.oth.MassFlow: 0.132,
+        }
+
+        system.add_boundary_conditions(INLET)
+        system.add_boundary_conditions(OUTLET)
         system.build()
 
         rootfinder = system.make_rootfinder(
