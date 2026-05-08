@@ -1,5 +1,9 @@
+from adet.equations.variables import NodeVariables
 from adet.equations.base_equation import DeviationModel, LossApplier
 from adet.equations.utils import get_midspan_idx
+
+n0 = NodeVariables(0)
+n1 = NodeVariables(1)
 
 
 class PercTotalPressureLoss(LossApplier):
@@ -67,8 +71,12 @@ class PercentageEntropyLoss(LossApplier):
         super().__init__(scaling_factor)
         self.entropy_gen = entropy_generation
 
-    def residual(self, stc_smass0, stc_smass1):
-        return stc_smass1 - stc_smass0 * (1 + self.entropy_gen)
+    def residual(
+        self,
+        s0: n0.stc.Entropy.Hint,
+        s1: n1.stc.Entropy.Hint,
+    ):
+        return s1 - s0 * (1 + self.entropy_gen)
 
 
 class FixedEnthalpyLoss(LossApplier):

@@ -1,9 +1,8 @@
+from adet.equations.varspec import VarSpec
 import logging
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 from pint import Quantity
 
 from adet.solution import solve_root_problem
@@ -29,64 +28,69 @@ from adet.tools.loggers import setup_logger
 logger = logging.getLogger(__name__)
 setup_logger(logger)
 
+# Commons
+n0 = NodeVariables(0)
+n1 = NodeVariables(1)
+R_volute = VarSpec('r_vol', 'm', node=0, guess=1.0)
+F1Coeff = VarSpec('f1_coeff', '', node=1, guess=0.8)
+F2Coeff = VarSpec('f2_coeff', '', node=1, guess=0.8)
+
 
 class VoluteDesignFister(EquationBase):
     def residual(
         self,
-        geo_rr1,
-        kin_Vt1,
-        oth_massflow1,
-        stc_rhomass1,
-        geo_rr_vol0,
-        # geo_height1,
+        rr1: n1.geo.RDistr.Hint,
+        vt1: n1.kin.V_tan.Hint,
+        mf1: n1.oth.MassFlow.Hint,
+        rho1: n1.stc.Density.Hint,
+        rr_vol0: n0.geo.RDistr.Hint,
     ):
-        volume_flow_rate = oth_massflow1 / stc_rhomass1
-        fister_constant_K = (
-            4 * np.pi**2 * geo_rr1 * kin_Vt1 / volume_flow_rate
-        )  # Constant
+        volume_flow_rate = mf1 / rho1
+        fister_constant_K = 4 * np.pi**2 * rr1 * vt1 / volume_flow_rate
 
-        # Calculate radius_fister at volute inlet
         radius_fister = 2 * np.pi / fister_constant_K + np.sqrt(
-            2 * geo_rr1 * 2 * np.pi / fister_constant_K
+            2 * rr1 * 2 * np.pi / fister_constant_K
         )
 
-        # # Corrected radius
-        # area_volute = np.pi * radius_fister**2
-        # radius_fister_corr = -geo_height1 * radius_fister / (4 * np.pi) + np.sqrt(
-        #     (geo_height1 * radius_fister / (4 * np.pi)) ** 2 + area_volute / np.pi
-        # )
-
-        return geo_rr_vol0 - radius_fister
+        return rr_vol0 - radius_fister
 
 
-class VoluteDesingStepanoff(EquationBase):
-    def residual(self, oth_massflow1, stc_rhomass1, kin_Vt1, geo_rr_vol0):
-        volume_flow_rate = oth_massflow1 / stc_rhomass1
-        # Stepanoff approach
-        area_stepanoff = volume_flow_rate / (kin_Vt1)
-        return geo_rr_vol0 - np.sqrt(area_stepanoff / np.pi)
+class VoluteDesignStepanoff(EquationBase):
+    def residual(
+        self,
+        mf1: n1.oth.MassFlow.Hint,
+        rho1: n1.stc.Density.Hint,
+        vt1: n1.kin.V_tan.Hint,
+        rr_vol0: n0.geo.RDistr.Hint,
+    ):
+        volume_flow_rate = mf1 / rho1
+        area_stepanoff = volume_flow_rate / vt1
+        return rr_vol0 - np.sqrt(area_stepanoff / np.pi)
 
 
 class ConstantTangVelocity(EquationBase):
-    def residual(self, kin_V0, kin_Vt1):
-        return kin_V0 - kin_Vt1
+    def residual(
+        self,
+        v0: n0.kin.V_mag.Hint,
+        vt1: n1.kin.V_tan.Hint,
+    ):
+        return v0 - vt1
 
 
 class VoluteAreas(EquationBase):
     def residual(
         self,
-        geo_eff_area0,
-        geo_eff_area1,
-        geo_rr0,
-        geo_rr1,
-        geo_rr_vol0,
-        geo_height1,
-        geo_radiusRatio1,
+        a_eff0: n0.geo.EffArea.Hint,
+        a_eff1: n1.geo.EffArea.Hint,
+        rr0: n0.geo.RDistr.Hint,
+        rr1: n1.geo.RDistr.Hint,
+        rr_vol0: R_volute.Hint,
+        h1: n1.geo.HDistr.Hint,
     ):
-        r1 = geo_eff_area0 - np.pi * geo_rr_vol0**2
-        r2 = geo_eff_area1 - 2 * np.pi * geo_rr1 * geo_height1
-        r3 = geo_radiusRatio1 - geo_rr0 / geo_rr1
-        r4 = geo_rr0 - (geo_rr1 + geo_rr_vol0)
+        r1 = a_eff0 - np.pi * rr_vol0**2
+        r2 = a_eff1 - 2 * np.pi * rr1 * h1
+        r3 = rr0 / rr1 - (rr1 + rr_vol0) / rr1
+        r4 = rr0 - (rr1 + rr_vol0)
 
         return r1, r2, r3, r4
 
@@ -94,46 +98,39 @@ class VoluteAreas(EquationBase):
 class VoluteLoss(EquationBase):
     def residual(
         self,
-        oth_f1Coeff1,
-        oth_f2Coeff1,
-        geo_eff_area0,
-        geo_eff_area1,
-        kin_Vt1,
-        kin_Vm1,
-        geo_rr0,
-        geo_rr1,
-        tot_p0,
-        tot_p1,
-        stc_p1,
+        f1: F1Coeff.Hint,
+        f2: F2Coeff.Hint,
+        a_eff0: n0.geo.EffArea.Hint,
+        a_eff1: n1.geo.EffArea.Hint,
+        vt1: n1.kin.V_tan.Hint,
+        vm1: n1.kin.V_mer.Hint,
+        rr0: n0.geo.RDistr.Hint,
+        rr1: n1.geo.RDistr.Hint,
+        pt0: n0.tot.Pressure.Hint,
+        pt1: n1.tot.Pressure.Hint,
+        p1: n1.stc.Pressure.Hint,
     ):
-        area_ratio = geo_eff_area0 / geo_eff_area1
-        swirl = kin_Vt1 / kin_Vm1
+        area_ratio = a_eff0 / a_eff1
+        swirl = vt1 / vm1
 
         product = area_ratio * swirl
 
-        k_m = oth_f1Coeff1 / (1 + swirl**2)
-        k_theta = (
-            oth_f2Coeff1
-            * (geo_rr1 / geo_rr0) ** 2
-            * (swirl - 1 / area_ratio) ** 2
-            / (1 + swirl**2)
-        )
+        k_m = f1 / (1 + swirl**2)
+        k_theta = f2 * (rr1 / rr0) ** 2 * (swirl - 1 / area_ratio) ** 2 / (1 + swirl**2)
 
         k_theta = safe_if_else(product > 1, k_theta, 0.0)
 
-        deltaPt = (tot_p1 - stc_p1) * (k_m + k_theta)
+        deltaPt = (pt1 - p1) * (k_m + k_theta)
 
-        return tot_p1 - (tot_p0 - deltaPt)
+        return pt1 - (pt0 - deltaPt)
 
 
-def plot_volute(designs_dict, num_points=1000, opt_radii=None):
+def plot_volute(designs_dict, num_points=1000):
     """Plot all volute designs in a single figure.
 
     Args:
         designs_dict: Dictionary with design names as keys and (n0, n1) tuples as values
         num_points: Number of points for radius distribution
-        opt_radii: Optional array of 8 cross-section radii (m) from the optimisation,
-            placed at theta = k * 2*pi/8 for k = 1..8.
     """
     fig = plt.figure(figsize=(13, 13), dpi=150)
     ax = fig.add_subplot(111, projection='polar')
@@ -174,21 +171,6 @@ def plot_volute(designs_dict, num_points=1000, opt_radii=None):
         linewidth=3.5,
     )
 
-    if opt_radii is not None:
-        # 8 stations at theta = k*2pi/8 for k=1..8; include tongue at (0, 0)
-        opt_theta = np.concatenate([[0.0], np.linspace(2 * np.pi / 8, 2 * np.pi, 8)])
-        opt_r = np.concatenate([[0.0], opt_radii])
-        opt_outer = stator_radius + 2 * opt_r
-        ax.plot(
-            opt_theta,
-            opt_outer,
-            marker='o',
-            markersize=8,
-            linewidth=2.5,
-            linestyle='--',
-            label='Optimum (max power)',
-        )
-
     ax.set_xlabel(r'$\theta$ [rad]', fontsize=30)
     ax.set_ylabel(r'$r$ [m]', fontsize=30)
     ax.tick_params(labelsize=15)
@@ -208,14 +190,12 @@ def plot_volute(designs_dict, num_points=1000, opt_radii=None):
     fig.show()
 
 
-def plot_volute_area_trend(designs_dict, num_points=1000, opt_radii=None):
+def plot_volute_area_trend(designs_dict, num_points=1000):
     """Plot area trend for all volute designs in a linear graph.
 
     Args:
         designs_dict: Dictionary with design names as keys and (n0, n1) tuples as values
         num_points: Number of points for area distribution
-        opt_radii: Optional array of 8 cross-section radii (m) from the optimisation,
-            placed at theta = k * 2*pi/8 for k = 1..8.
     """
     fig, ax = plt.subplots(figsize=(12, 8), dpi=150)
 
@@ -254,20 +234,6 @@ def plot_volute_area_trend(designs_dict, num_points=1000, opt_radii=None):
         label='Current design',
     )
 
-    if opt_radii is not None:
-        # 8 stations at theta = k*2pi/8 for k=1..8; include tongue at (0, 0)
-        opt_theta = np.concatenate([[0.0], np.linspace(2 * np.pi / 8, 2 * np.pi, 8)])
-        opt_areas = np.concatenate([[0.0], np.pi * opt_radii**2])
-        ax.plot(
-            opt_theta,
-            opt_areas * 1e4,  # Convert to cm²
-            marker='o',
-            markersize=8,
-            linewidth=2.5,
-            linestyle='--',
-            label='Optimum (max power)',
-        )
-
     ax.set_xlabel(r'$\theta$ [rad]', fontsize=24)
     ax.set_ylabel(r'Area [cm$^2$]', fontsize=24)
     ax.tick_params(labelsize=17)
@@ -282,20 +248,15 @@ def plot_volute_area_trend(designs_dict, num_points=1000, opt_radii=None):
     fig.show()
 
 
-def load_optimal_power_individual(xlsx_path: Path) -> np.ndarray:
-    """Return the R1-R8 cross-section radii (in metres) of the max-power individual."""
-    df = pd.read_excel(xlsx_path)
-    best = df.loc[df['Power'].idxmax()]
-    radii_mm = best[['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8']].to_numpy(
-        dtype=float
-    )
-    return radii_mm / 1000.0  # mm → m
-
-
 class ConstantAngMomentum(EquationBase):
-    def residual(self, kin_V0, geo_rr0, kin_Vt1, geo_rr1):
-        # Use the completely tangential inlet velocity
-        return geo_rr0 * kin_V0 - safe_abs(geo_rr1 * kin_Vt1)
+    def residual(
+        self,
+        v0: n0.kin.V_mag.Hint,
+        rr0: n0.geo.RDistr.Hint,
+        vt1: n1.kin.V_tan.Hint,
+        rr1: n1.geo.RDistr.Hint,
+    ):
+        return rr0 * v0 - safe_abs(rr1 * vt1)
 
 
 # Basic equations
@@ -353,13 +314,8 @@ if __name__ == '__main__':
                 # system.add_equation(ConstantAngMomentum(), (0, 1))  # 1
                 system.add_equation(PercentageEntropyLoss(), (0, 1))  # 1
             case 'stepanoff':
-                system.add_equation(VoluteDesingStepanoff(), (0, 1))  # 1
-                # system.add_equation(ConstantTangVelocity(), (0, 1))
-                system.add_equation(PercentageEntropyLoss(), (0, 1))  # 1
-
-        # Create node variables for boundary conditions
-        n0 = NodeVariables(0)
-        n1 = NodeVariables(1)
+                system.add_equation(VoluteDesignStepanoff(), (0, 1))
+                system.add_equation(PercentageEntropyLoss(), (0, 1))
 
         INLET = {
             n0.kin.Omega: 0.0,
@@ -375,7 +331,8 @@ if __name__ == '__main__':
             n1.geo.Height: 0.002,
             n1.geo.RDistr: Quantity(37.5, 'mm'),
             # n1.geo.RadiusRatio: 1.8,  # Uncomment if needed
-            n1.oth.PBase: 0.8,  # f1Coeff placeholder
+            F1Coeff: 0.8,
+            F2Coeff: 0.8,
             n1.oth.MassFlow: 0.132,
         }
 
@@ -394,7 +351,7 @@ if __name__ == '__main__':
         kn = system.get_scaled_constraints()
         bnd = system.get_arguments_bounds()
 
-        solution = solve_root_problem(
+        sol = solve_root_problem(
             rootfinder,
             x0,
             kn,
@@ -402,27 +359,25 @@ if __name__ == '__main__':
             suppress_output=False,
         )
 
-        system.write_solution_to_nodes(solution)
+        sol_dict = {
+            a.full_symbol(True): v
+            for a, v in zip(
+                system.data.free_args, sol.flatten() * system.free_args_scaling
+            )
+        }
 
-        n0 = system.nodes[0]
-        n1 = system.nodes[1]
-
-        results[DESIGN_METHOD] = (n0, n1)
-
-        print(f'Volute inlet section radius is {n0.geo.rr_vol[0] * 1000:.3f} mm')
-        print(
-            f'Volute inlet area is '
-            f'{n0.geo.get("eff_area").to("cm**2").magnitude[0]:.3f} cm**2'
-        )
-        print(f'Volute inlet velocity is {n0.kin.V[0]:.3f} m/s')
-        print(f'Volute inlet centroid radius is {n0.geo.rr[0]:.3f} m')
-        print(f'Volute outlet velocity is {n1.kin.V[0]:.3f} m/s')
-        print(f'Radius ratio is {n1.geo.radiusRatio}')
-
-    # Load optimal power individual from optimisation results
-    data_path = Path(__file__).parents[3] / 'data' / 'optimization_results.xlsx'
-    opt_radii = load_optimal_power_individual(data_path)
-
-    # Plot all three designs
-    plot_volute(results, opt_radii=opt_radii)
-    plot_volute_area_trend(results, opt_radii=opt_radii)
+    #     results[DESIGN_METHOD] = (n0, n1)
+    #
+    #     print(f'Volute inlet section radius is {n0.geo.rr_vol[0] * 1000:.3f} mm')
+    #     print(
+    #         f'Volute inlet area is '
+    #         f'{n0.geo.get("eff_area").to("cm**2").magnitude[0]:.3f} cm**2'
+    #     )
+    #     print(f'Volute inlet velocity is {n0.kin.V[0]:.3f} m/s')
+    #     print(f'Volute inlet centroid radius is {n0.geo.rr[0]:.3f} m')
+    #     print(f'Volute outlet velocity is {n1.kin.V[0]:.3f} m/s')
+    #     print(f'Radius ratio is {n1.geo.radiusRatio}')
+    #
+    # # Plot all designs
+    # plot_volute(results)
+    # plot_volute_area_trend(results)

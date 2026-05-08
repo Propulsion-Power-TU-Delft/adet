@@ -1,3 +1,4 @@
+from adet.equations.nondimensional import AbsoluteMachNumber
 from adet.tools.loggers import setup_logger
 import logging
 from pint import Quantity
@@ -23,6 +24,7 @@ EQUATIONS = {
     TotalStaticMatching(): 0,
     AnnulusAreas(): 0,
     MassAreaRelation(): 0,
+    AbsoluteMachNumber(): 0,
     ZeroBlockage(): 0,  # Area = Eff area
     Kinematics(): 0,
     ThermoVarsAdder(): 0,
@@ -42,8 +44,8 @@ BC = {
     n0.kin.Omega: 0.0,
     n0.kin.FlowAngleAbs: Quantity(0, 'deg'),
     n0.oth.MassFlow: 0.132,
-    n0.geo.RDistr: 0.02,
-    n0.geo.HDistr: 0.02 / 2,
+    n0.geo.RDistr: 0.038,
+    n0.geo.HDistr: 0.002,
     n0.tot.Pressure: 18.1e5,
     n0.tot.Temperature: 573.15,
 }
@@ -57,3 +59,8 @@ x0 = system.get_scaled_guess()
 kn = system.get_scaled_constraints()
 
 sol = solve_root_problem(rtfn, x0, kn)
+
+sol_dict = {
+    a.full_symbol(True): v
+    for a, v in zip(system.data.free_args, sol.flatten() * system.free_args_scaling)
+}
