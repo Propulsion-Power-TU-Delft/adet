@@ -40,7 +40,7 @@ from adet.registries import (
 from adet.tools.context import override_operators
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.interpolation import resample_linear
-from adet.tools.iter import ensure_tuple
+from adet.tools.iter import ensure_tuple, leaves
 from adet.tools.strings import get_index, rm_index
 
 logger = logging.getLogger(__name__)
@@ -226,11 +226,15 @@ class ConstraintManager:
         caller_msg: str = '',
     ):
         caller = f'from {caller_msg}' if caller_msg else ''
-        if spec not in self.data.decl_args:
+        flag_unused = spec not in self.data.decl_args
+
+        if flag_unused:
             logger.warning(
                 f'Imposing a condition {caller} on `{spec.full_symbol(True)}`'
                 f', but it does not appear in any equation'
             )
+
+        return flag_unused
 
     def add_boundary_conditions(
         self, bnd_cond: dict[VarSpec, AdetArray | PlainQuantity]
@@ -252,7 +256,6 @@ class ConstraintManager:
             else:
                 mag_valid = mag
 
-            self._check_arg_declaration(spec, 'boundary conditions')
             self.data.boun_cond[spec] = mag_valid
 
     def add_equalities(self, *equalities: tuple[VarSpec, ...]):
@@ -290,16 +293,15 @@ class ConstraintManager:
         appear as declared arguments
         """
         # TODO: Could even check if they are free
-        args_to_check: set[VarSpec] = set()
-
         for equality in self.data.equalities:
-            args_to_check.update(equality)
+            for arg in equality:
+                self._check_arg_declaration(arg, 'equalities')
 
         for arg in self.data.spanwise_constants:
-            args_to_check.add(arg)
+            self._check_arg_declaration(arg, 'spanwise constants')
 
-        for arg in args_to_check:
-            self._check_arg_declaration(arg, 'equalities/spanwise constants')
+        for arg in self.data.boun_cond:
+            self._check_arg_declaration(arg, 'boundary conditions')
 
 
 class ArgumentResolver:
@@ -356,9 +358,7 @@ class ArgumentResolver:
             - set(self.data.free_args)
         )
 
-        discarded = [arg for arg in all_discarded if arg.state]
-
-        return discarded
+        return [arg for arg in all_discarded if arg.state]
 
     # ********************  TODO: Restore introspection START
     def make_arg_structure(self, arguments: Sequence[str]):
@@ -482,7 +482,7 @@ class UnitScalingManager:
         """Build multi-span scaling factors for equations"""
         eq_scales: list[float] = []
 
-        num_equations = jax.tree.leaves(self.data.equations_units).__len__()
+        num_equations = leaves(self.data.equations_units.values()).__len__()
         if not self.data.scaled:
             scales = np.ones(num_equations)
         else:
@@ -549,8 +549,8 @@ class SystemAssembler(ABC):
         self.data.fluid_settings = settings
 
     @property
-    def num_equations(self):
-        return jax.tree.leaves(self.data.equations_units).__len__()
+    def num_equations(self) -> int:
+        return leaves(self.data.equations_units.values()).__len__()
 
     @property
     def first_node(self) -> int:
@@ -926,7 +926,7 @@ class CasadiSystem(SystemAssembler):
         # build output properties
         for spec in discarded_vars:
             if spec.node not in sorted_discarded:
-                sorted_discarded[spec.node] = dict.fromkeys(NodeStates, [])
+                sorted_discarded[spec.node] = {state: [] for state in NodeStates}
             if spec.state:
                 sorted_discarded[spec.node][spec.state].append(spec)
 
@@ -1051,12 +1051,7 @@ class CasadiSystem(SystemAssembler):
                 abs_arg = spec._at_node(arg_map[spec.node])
                 args.append(self._all_symbols[abs_arg])
 
-            # NOTE: No need to override the operators for now,
-            # just use numpy operations compatible with casadi
-
-            # overridden_eq = override_operators(eq.residual, 'numpy', cs)
-            overridden_eq = eq.residual
-            res_syms = overridden_eq(*args)
+            res_syms = eq.residual(*args)
             if eq.config.manual_units:
                 self._manual_units_check(eq, res_syms)
 
@@ -1066,7 +1061,7 @@ class CasadiSystem(SystemAssembler):
         self.residual_expr = list(
             map(
                 lambda X, Y: X / Y,
-                jax.tree.leaves(residuals),
+                leaves(residuals),
                 self._eq_scales_sym,
             )
         )

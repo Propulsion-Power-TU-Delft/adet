@@ -1,4 +1,7 @@
+from adet.tools.loggers import setup_logger
+import logging
 from pint import Quantity
+
 from adet.assembly import CasadiSystem
 from adet.equations.fundamental import (
     Kinematics,
@@ -9,10 +12,12 @@ from adet.equations.fundamental import (
 from adet.equations.geometrical import AnnulusAreas
 from adet.equations.special import ThermoVarsAdder
 from adet.equations.variables import NodeVariables, ThermoVariables
-from adet.fluid.settings import ExternalFluidModel, FluidModel, FluidSettings
+from adet.fluid.settings import ExternalFluidModel, FluidSettings
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 
+logger = logging.getLogger(__name__)
+setup_logger(logger)
 
 EQUATIONS = {
     TotalStaticMatching(): 0,
@@ -46,13 +51,9 @@ BC = {
 system.add_boundary_conditions(BC)
 system.build()
 
-rtfn = system.make_rootfinder('ipopt')
+rtfn = system.make_rootfinder('kinsol')
 
 x0 = system.get_scaled_guess()
 kn = system.get_scaled_constraints()
 
 sol = solve_root_problem(rtfn, x0, kn)
-
-system.write_solution_to_nodes(sol)
-
-n0 = system.nodes[0]

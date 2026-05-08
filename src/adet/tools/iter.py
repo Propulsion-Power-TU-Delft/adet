@@ -7,6 +7,18 @@ T = TypeVar('T')  # Iterable type
 F = TypeVar('F')  # Fillvalue type
 
 
+def leaves(iter: Iterable[T | Iterable[T]]) -> tuple[T, ...]:
+    return tuple(chain_mixed(*iter))
+
+
+def chain_mixed(*args: T | Iterable[T]) -> Iterable[T]:
+    for item in args:
+        try:
+            yield from item
+        except Exception:
+            yield item
+
+
 # fill mode — fillvalue is required
 @overload
 def grouper(
