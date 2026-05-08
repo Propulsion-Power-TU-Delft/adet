@@ -1,21 +1,15 @@
-from abc import ABC
-from collections import defaultdict
 import inspect
 import logging
-from typing import Any, ClassVar, Literal, TYPE_CHECKING, Type, TypeAlias, Mapping
+from abc import ABC
+from typing import TYPE_CHECKING, ClassVar, Literal, Mapping, Type, TypeAlias
 
 from pint.facets.plain import PlainQuantity
 
 from adet.constants import AdetArray
 from adet.equations import EquationBase, UniqueEquation
 from adet.equations.base_equation import LossApplier
+from adet.equations.varspec import VarSpec
 from adet.tools.iter import ensure_tuple
-from adet.tools.strings import (
-    get_arg_specs,
-    get_arg_state,
-    get_arg_type,
-    validate_arg_format,
-)
 
 if TYPE_CHECKING:
     from adet.assembly import CasadiSystem
@@ -34,31 +28,24 @@ logger = logging.getLogger(__name__)
 class BaseComponent(ABC):
     # I use a tuple because EquationBase
     # is not hashable
-    base_equations: ClassVar[
-        list[
-            tuple[
-                Type[EquationBase],
-                int | tuple[int, ...],
-            ]
-        ]
-    ]
+    base_equations: ClassVar[BaseEquationsFormat]
     """
     Base equations that link the inlet and outlet nodes
     of a component
     """
 
-    from_previous_node: ClassVar[list[str]] = []
+    from_previous_node: ClassVar[list[VarSpec]] = []
     """
     Variables that are inherited from the previous node
     """
 
-    constant_variables: ClassVar[list[str]] = []
+    constant_variables: ClassVar[list[VarSpec]] = []
     """
     Variables that are treated as invariant between inlet
     and outlet
     """
 
-    from_next_node: ClassVar[list[str]] = []
+    from_next_node: ClassVar[list[VarSpec]] = []
     """
     Variables that are inherited from the next node
     """
@@ -66,21 +53,14 @@ class BaseComponent(ABC):
     def __init__(
         self,
         name: str,
-        inlet_bc: dict[
-            str,
-            dict[str, Any],
-        ] = {},
-        outlet_bc: dict[
-            str,
-            dict[str, Any],
-        ] = {},
+        bound_cond: dict[VarSpec, PlainQuantity | AdetArray] = {},
         extra_equations: dict[
             EquationBase,
             int | tuple[int, ...],
         ] = {},
-        from_previous_node: list[str] = [],
-        constant_variables: list[str] = [],
-        from_next_node: list[str] = [],
+        from_previous_node: list[VarSpec] = [],
+        constant_variables: list[VarSpec] = [],
+        from_next_node: list[VarSpec] = [],
     ):
         self.name = name
 
@@ -89,25 +69,23 @@ class BaseComponent(ABC):
         self._network_maps: dict['ComponentNetwork', dict[int, int]] = {}
 
         # === Store
-        self._spanwise_constants: set[str] = set()
+        self._spanwise_constants: set[VarSpec] = set()
 
         # === Get all the variables to copy from previous node
-        self._from_prev_node: set[str] = set(
+        self._from_prev_node: set[VarSpec] = set(
             self.__class__.from_previous_node + from_previous_node
         )
         # === Get all the variables to copy from previous node
-        self._from_next_node: set[str] = set(
+        self._from_next_node: set[VarSpec] = set(
             self.__class__.from_next_node + from_next_node
         )
         # === Write the constant variables
-        self._const_variables: set[str] = set(
+        self._const_variables: set[VarSpec] = set(
             self.__class__.constant_variables + constant_variables
         )
 
         # === Boundary conditions dictionaries
-        self._boundary_conditions = {0: defaultdict(dict), 1: defaultdict(dict)}
-        self.inlet_bc.update(inlet_bc)
-        self.outlet_bc.update(outlet_bc)
+        self._boundary_conditions = bound_cond
 
         # === Equation management
         base_eqs_instances = {eq(): pos for eq, pos in self.base_equations}
@@ -125,34 +103,20 @@ class BaseComponent(ABC):
     def _post_init(self):
         raise NotImplementedError
 
-    def _write_equalities(self, copy_from_prev: list[str], comp_const: list[str]):
-        for arg in copy_from_prev:
-            self.copy_from_previous(arg)
-        for arg in comp_const:
-            self.set_component_constants(arg)
-
     def attach_network(self, network: 'ComponentNetwork'):
         logger.debug(f'Attached network {network} to {self}')
         self._attached_networks.add(network)
 
     @property
     def inlet_bc(self):
-        return self._boundary_conditions[0]
+        return [spec for spec in self._boundary_conditions if spec.node == 0]
 
     @property
     def outlet_bc(self):
-        return self._boundary_conditions[1]
-
-    def get_inlet_node(self, network: 'ComponentNetwork'):
-        ntw_map = self.network_maps[network]
-        return network.system.nodes[ntw_map[0]]
-
-    def get_outlet_node(self, network: 'ComponentNetwork'):
-        ntw_map = self.network_maps[network]
-        return network.system.nodes[ntw_map[1]]
+        return [spec for spec in self._boundary_conditions if spec.node == 1]
 
     @property
-    def network_maps(self):
+    def network_maps(self) -> dict['ComponentNetwork', dict[int, int]]:
         """{0: ABS_IN, 1: ABS_OUT}"""
         if not self._attached_networks.issubset(self._network_maps):
             self._build_network_maps()
@@ -165,19 +129,36 @@ class BaseComponent(ABC):
                 raise AttributeError(message)
             logger.warning(message)
 
+    def get_absolute_eq_position(
+        self, equation: EquationBase, network: 'ComponentNetwork'
+    ):
+        rel_position = self._equations[equation]
+        rel_position = ensure_tuple(rel_position)
+
+        inl_idx, out_idx = network._get_comp_indices(self)
+        index_map = {0: inl_idx, 1: out_idx}
+        return tuple(index_map[idx] for idx in rel_position)
+
     def _build_network_maps(self):
         for ntw in self._attached_networks:
+            seen_positions: set[tuple[int, ...]] = set()
             for eq in self._equations:
                 abs_pos = self.get_absolute_eq_position(eq, ntw)
                 # Find a two node equation and use it for mapping
                 if len(abs_pos) == 2:
                     rel_pos = ensure_tuple(self._equations[eq])
-                    break
+                    seen_positions.add(rel_pos)
             else:
                 raise RuntimeError(
                     f'No two-node equation found in {self} '
                     f'to build network map for {ntw}'
                 )
+
+            if len(seen_positions) != 1:
+                raise RuntimeError(
+                    f'Multiple incompatible equation positions for {ntw} in {self}'
+                )
+
             self._network_maps[ntw] = dict(zip(rel_pos, abs_pos))
 
     def _equation_checks(self):
@@ -220,8 +201,8 @@ class BaseComponent(ABC):
                     # > AND they are in the same position
                     if user_eq_parent == base_eq_parent and user_pos == base_pos:
                         logger.warning(
-                            f'Overwriting {base_eq.__class__} with {user_eq.__class__} '
-                            f'in position {user_pos}'
+                            f'Overwriting {base_eq.__class__} with '
+                            f'{user_eq.__class__} in position {user_pos}'
                         )
                         # > Remove the equation instance from the base
                         base_eqs.pop(base_eq)
@@ -299,16 +280,6 @@ class BaseComponent(ABC):
             )
 
     # ================== Interaction with the system ==================
-    def get_absolute_eq_position(
-        self, equation: EquationBase, network: 'ComponentNetwork'
-    ):
-        rel_position = self._equations[equation]
-        rel_position = ensure_tuple(rel_position)
-
-        inl_idx, out_idx = network._get_abs_indices(self)
-        index_map = {0: inl_idx, 1: out_idx}
-        return tuple(index_map[idx] for idx in rel_position)
-
     def add_equation(
         self,
         equation: EquationBase,
@@ -365,89 +336,81 @@ class BaseComponent(ABC):
             )
             pass
 
-    def set_boundary_cond(self, argument: str, value: AdetArray | PlainQuantity):
+    def set_boundary_cond(self, argument: VarSpec, value: AdetArray | PlainQuantity):
         self._bound_cond_helper('add', argument, value)
 
-    def rm_boundary_cond(self, argument: str):
+    def rm_boundary_cond(self, argument: VarSpec):
         self._bound_cond_helper('rm', argument)
 
-    def copy_from_previous(self, *arguments: str):
+    def copy_from_previous(self, *arguments: VarSpec):
         self._equalities_helper('prev', *arguments)
 
-    def copy_from_next(self, *arguments: str):
+    def copy_from_next(self, *arguments: VarSpec):
         self._equalities_helper('next', *arguments)
 
-    def set_component_constants(self, *arguments: str):
+    def set_component_constants(self, *arguments: VarSpec):
         self._equalities_helper('const', *arguments)
 
-    def bc_from_dict(self, bound_conds: Mapping[str, AdetArray]):
-        for arg, value in bound_conds.items():
-            self.set_boundary_cond(arg, value)
+    def bc_from_dict(self, bound_conds: Mapping[VarSpec, AdetArray]):
+        for spec, value in bound_conds.items():
+            self.set_boundary_cond(spec, value)
 
     def _bound_cond_helper(
         self,
         mode: Literal['add', 'rm'],
-        argument: str,
+        spec: VarSpec,
         value: AdetArray | PlainQuantity | None = None,
     ):
-        validate_arg_format(argument, include_digits=True)
-        arg_state, arg_type, rel_idx = get_arg_specs(argument)
         if mode == 'add':
-            self._boundary_conditions[rel_idx][arg_state][arg_type] = value
             if value is None:
-                raise ValueError(f'Missing value to set {argument}')
+                raise ValueError(f'Missing value to set {spec}')
+            self._boundary_conditions[spec] = value
 
             for ntw in self._attached_networks:
-                abs_idx = self.network_maps[ntw][rel_idx]
-                ntw.system.boun_cond[abs_idx][arg_state][arg_type] = value
+                abs_idx = self.network_maps[ntw][spec.node]
+                ntw.system.data.boun_cond[spec._at_node(abs_idx)] = value
         else:
-            self._boundary_conditions[rel_idx][arg_state].pop(arg_type)
+            self._boundary_conditions.pop(spec)
             for ntw in self._attached_networks:
-                abs_idx = self.network_maps[ntw][rel_idx]
-                ntw.system.boun_cond[abs_idx][arg_state].pop(arg_type)
+                abs_idx = self.network_maps[ntw][spec.node]
+                ntw.system.data.boun_cond.pop(spec._at_node(abs_idx))
 
     def _equalities_helper(
-        self, mode: Literal['const', 'prev', 'next'], *arguments: str
+        self, mode: Literal['const', 'prev', 'next'], *arguments: VarSpec
     ):
-        for arg in arguments:
-            validate_arg_format(arg, include_digits=False)
-            arg_state, arg_type = (get_arg_state(arg), get_arg_type(arg))
-            arg_no_idx = f'{arg_state}_{arg_type}'
-
+        for spec in arguments:
             # Add to self
             if mode == 'const':
-                self._const_variables.add(arg_no_idx)
+                self._const_variables.add(spec)
             elif mode == 'prev':
-                self._from_prev_node.add(arg_no_idx)
+                self._from_prev_node.add(spec)
             elif mode == 'next':
-                self._from_next_node.add(arg_no_idx)
+                self._from_next_node.add(spec)
 
             # Add to networks
             for ntw in self._attached_networks:
                 if mode == 'const':
-                    equality = (
-                        f'{arg_no_idx}{i}' for i in self.network_maps[ntw].values()
+                    equality = tuple(
+                        spec._at_node(i) for i in self.network_maps[ntw].values()
                     )
-                elif mode in 'prev':
+                elif mode == 'prev':
                     inl_idx = min(self.network_maps[ntw].values())
                     equality = (
-                        f'{arg_state}_{arg_type}{inl_idx - 1}',  # outlet of prev
-                        f'{arg_state}_{arg_type}{inl_idx}',  # inlet of self
+                        spec._at_node(inl_idx - 1),  # outlet of prev
+                        spec._at_node(inl_idx),  # inlet of self
                     )
-                elif mode in 'next':
+                elif mode == 'next':
                     out_idx = max(self.network_maps[ntw].values())
                     equality = (
-                        f'{arg_state}_{arg_type}{out_idx}',  # outlet of self
-                        f'{arg_state}_{arg_type}{out_idx + 1}',  # inlet of next
+                        spec._at_node(out_idx),  # outlet of self
+                        spec._at_node(out_idx + 1),  # inlet of next
                     )
 
-                ntw.system.add_equalities(tuple(equality))
+                ntw.system.add_equalities(equality)
 
-    def set_spanwise_constant(self, *arguments: str):
-        for arg in arguments:
-            validate_arg_format(arg, include_digits=True)
-            arg_state, arg_type, rel_idx = get_arg_specs(arg)
-            self._spanwise_constants.add(f'{arg_state}_{arg_type}{rel_idx}')
+    def set_spanwise_constant(self, *arguments: VarSpec):
+        for spec in arguments:
+            self._spanwise_constants.add(spec)
             for ntw in self._attached_networks:
-                abs_idx = self.network_maps[ntw][rel_idx]
-                ntw.system.add_spanwise_constants(f'{arg_state}_{arg_type}{abs_idx}')
+                abs_spec = spec._at_node(self.network_maps[ntw][spec.node])
+                ntw.system.add_spanwise_constants(abs_spec)

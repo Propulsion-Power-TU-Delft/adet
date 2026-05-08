@@ -28,6 +28,13 @@ from adet.equations.geometrical import (
     RadialGeometry,
 )
 from adet.equations.special import GeometricalAdder
+from adet.equations.variables import (
+    KinematicVariables,
+    GeometricVariables,
+    ThermoVariables,
+    OtherVariables,
+)
+from adet.equations.varspec import DEF_NODE, NodeStates, VarSpec
 from adet.geometry import BezierCurve, StraightLine
 from adet.losses.basic import IsentropicLink, ZeroDeviation
 from adet.losses.compressors import AmiranteDiffuserMomentum
@@ -44,13 +51,20 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Initialize variable enums with DEF_NODE to get base VarSpec objects
+_kin = KinematicVariables(node=DEF_NODE)
+_geo = GeometricVariables(node=DEF_NODE)
+_thermo_tot = ThermoVariables(node=DEF_NODE, state=NodeStates.TOTAL)
+_thermo_stc = ThermoVariables(node=DEF_NODE, state=NodeStates.STATIC)
+_oth = OtherVariables(node=DEF_NODE)
+
 ABSOLUTE_LINK = [
     # Absolute triangle
-    'kin_Vt',
-    'kin_Vm',
+    _kin.V_tan,
+    _kin.V_mer,
     # No work & no entropy
-    'tot_hmass',
-    'stc_smass',
+    _thermo_tot.Enthalpy,
+    _thermo_stc.Entropy,
 ]
 """
 This preserves the absolute triangles,
@@ -61,9 +75,9 @@ rotating frame (omega)
 
 # Geometry
 GEOM_LINK = [
-    'geo_height',
-    'geo_rr_midspan',
-    'geo_meridional_angle',
+    _geo.Height,
+    _geo.RadiusRatio,
+    _geo.MeridionalAngle,
 ]
 
 
@@ -97,9 +111,9 @@ class BladeRow(BaseComponent):
 
     # Stored on both nodes
     constant_variables = [
-        'kin_omega',
-        'geo_chord',
-        'geo_num_blades',
+        _kin.Omega,
+        _geo.Chord,
+        _geo.NumBlades,
     ]
 
     def __init__(
@@ -119,8 +133,8 @@ class BladeRow(BaseComponent):
             EquationBase,
             int | tuple[int, ...],
         ] = {},
-        from_previous_node: list[str] = [],
-        constant_variables: list[str] = [],
+        from_previous_node: list[VarSpec] = [],
+        constant_variables: list[VarSpec] = [],
     ):
         """
         Class that represents a blade row, compressor/turbine,
@@ -176,18 +190,19 @@ class VanelessDiffuser(BaseComponent):
         (RadialGeometry, (0, 1)),
     ]
 
+    _oth = OtherVariables(node=DEF_NODE)
     constant_variables = [
-        'kin_omega',
-        'geo_meridional_angle',
+        _kin.Omega,
+        _geo.MeridionalAngle,
     ]
 
     from_previous_node = (
         ABSOLUTE_LINK
         + GEOM_LINK
         + [
-            'geo_hh',
-            'geo_rr',
-            'oth_wake_frac',
+            _geo.HDistr,
+            _geo.RDistr,
+            _oth.PBase,
         ]
     )
 
@@ -215,19 +230,19 @@ class IncidenceVolume(BaseComponent):
     # TODO: Restore for blade rows
     from_next_node = [
         # Copy the relevant geometry
-        'geo_bld_thick',
-        'oth_disp_thick',
-        'geo_num_blades',
-        'geo_metal_angle',
+        _geo.BldThick,
+        _oth.DispThick,
+        _geo.NumBlades,
+        _geo.MetalAngle,
         # Stay in the same MRF as blade row
-        'kin_omega',
-        'geo_hh',
-        'geo_rr',
+        _kin.Omega,
+        _geo.HDistr,
+        _geo.RDistr,
     ]
 
     constant_variables = GEOM_LINK + [
         # Keep reference frame alive
-        'kin_omega',
+        _kin.Omega,
     ]
 
 
@@ -254,27 +269,27 @@ class DownstreamMixer(BaseComponent):
         + GEOM_LINK
         + [
             # Copy the relevant geometry
-            'geo_hh',
-            'geo_rr',
-            'geo_num_blades',
-            'geo_metal_angle',
-            'kin_W_choke',  # Get row choking
-            'oth_p_base',  # Base pressure
+            _geo.HDistr,
+            _geo.RDistr,
+            _geo.NumBlades,
+            _geo.MetalAngle,
+            _kin.W_choke,  # Get row choking
+            _oth.PBase,  # Base pressure
             # Stay in the same MRF as blade row
-            'kin_omega',
+            _kin.Omega,
             # Boundary layer and blade thicknesses
-            'geo_bld_thick',
-            'oth_disp_thick',
-            'oth_mom_thick',
+            _geo.BldThick,
+            _oth.DispThick,
+            _oth.MomThick,
         ]
     )
 
     constant_variables = GEOM_LINK + [
         # Keep reference frame alive
-        'kin_omega',
+        _kin.Omega,
         # Keep the span geometry constant
-        'geo_hh',
-        'geo_rr',
+        _geo.HDistr,
+        _geo.RDistr,
     ]
 
     def attach_network(self, network: 'ComponentNetwork[CasadiSystem]'):

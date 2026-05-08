@@ -1,5 +1,7 @@
 from collections import defaultdict
-from typing import Generic, Literal, Mapping, Sequence, TypeVar
+from typing import Any, Generic, Literal, Sequence, TypeVar
+
+from numpy.typing import NDArray
 
 from adet.assembly import SystemAssembler
 from adet.components import BaseComponent
@@ -17,9 +19,10 @@ from adet.equations.fundamental import (
 from adet.equations.geometrical import AnnulusAreas
 from adet.equations.nondimensional import AbsoluteMachNumber, RelativeMachNumber
 from adet.equations.special import ThermoVarsAdder
+from adet.equations.variables import KinematicVariables
+from adet.equations.varspec import DEF_NODE, VarSpec
 from adet.fluid.settings import FluidSettings
 from adet.tools.iter import ensure_tuple
-from adet.tools.strings import get_index, rm_index
 
 T = TypeVar('T', bound=SystemAssembler)
 
@@ -79,35 +82,30 @@ class ComponentNetwork(Generic[T]):
         components: Sequence[BaseComponent],
     ):
         # Add inlet boundary conditions
-        self.system.add_boundary_conditions(inlet.boundary_conditions, 0)
+        self.system.add_boundary_conditions(inlet.boundary_conditions)
         # Read components
         self._dispatch_components(components)
         self._link_components()
         self._link_shafts()
-        self._frozen_equations = self.system.equations.copy()
+        self._frozen_equations = self.system.data.equations.copy()
 
     def _dispatch_components(self, components: Sequence[BaseComponent]):
         for comp in components:
             comp.attach_network(self)
             inl_idx, out_idx = self._get_abs_indices(comp)
 
-            # Add boundary conditions
-            self.system.add_boundary_conditions(comp.inlet_bc, inl_idx)
-            self.system.add_boundary_conditions(comp.outlet_bc, out_idx)
-
             # Write equalities (constant variables)
-            for arg in comp._const_variables:
+            for spec in comp._const_variables:
                 equality = (
-                    f'{arg}{inl_idx}',
-                    f'{arg}{out_idx}',
+                    spec._at_node(inl_idx),
+                    spec._at_node(out_idx),
                 )
                 self.system.add_equalities(equality)
 
-            for arg in comp._spanwise_constants:
-                rel_idx = get_index(arg)
-                abs_idx = inl_idx if rel_idx == 0 else out_idx
-                abs_arg = f'{rm_index(arg) + str(abs_idx)}'
-                self.system.add_spanwise_constants(abs_arg)
+            for spec in comp._spanwise_constants:
+                abs_idx = inl_idx if spec.node == 0 else out_idx
+                abs_spec = spec._at_node(abs_idx)
+                self.system.add_spanwise_constants(abs_spec)
 
             for equation, node_pos in comp._equations.items():
                 node_pos = ensure_tuple(node_pos)
@@ -155,8 +153,10 @@ class ComponentNetwork(Generic[T]):
                     out_idx,
                     out_idx + 1,
                 )
-            for var in variables:
-                self.system.add_equalities((f'{var}{left_idx}', f'{var}{right_idx}'))
+            for spec in variables:
+                self.system.add_equalities(
+                    (spec._at_node(left_idx), spec._at_node(right_idx))
+                )
 
     def _get_abs_indices(self, component: BaseComponent):
         comp_idx = self.components.index(component)
@@ -186,26 +186,28 @@ class ComponentNetwork(Generic[T]):
                     shafts_outnodes[comp.shaft].append(out_idx)
 
         for nodes in shafts_outnodes.values():
-            linked_omegas = tuple(f'kin_omega{n}' for n in nodes)
+            omega_genspec = KinematicVariables(DEF_NODE).Omega
+            linked_omegas = tuple(omega_genspec._at_node(n) for n in nodes)
             if len(linked_omegas) > 1:
                 self.system.add_equalities(linked_omegas)
 
     def build(self, scaled: bool = True):
         self.system.build(scaled)
 
-    def get_scaled_guess(self, manual_values: Mapping[str, AdetArray] = {}):
+    def get_scaled_guess(
+        self, manual_values: dict[VarSpec, AdetArray] | None = None
+    ) -> list[NDArray]:
         """Simple passthrough"""
-        return self.system.get_scaled_guess(manual_values)
+        return self.system.get_scaled_guess(manual_values or {})
 
-    def get_scaled_constraints(self):
+    def get_scaled_constraints(self) -> list[NDArray]:
         """Simple passthrough"""
         return self.system.get_scaled_constraints()
 
-    def get_arguments_bounds(self, custom_bounds: dict[str, tuple[float, float]] = {}):
-        # TODO: Add physical bounds detection
-        physical_bounds = {}
-        custom_bounds = {**physical_bounds, **custom_bounds}
-        return self.system.get_arguments_bounds(custom_bounds)
+    def get_arguments_bounds(
+        self, custom_bounds: dict[VarSpec, tuple[float, float]] | None = None
+    ) -> tuple[Any, Any]:
+        return self.system.get_arguments_bounds(custom_bounds or {})
 
     def print_structure(self):
         component_repr = '@ = node\n\nInlet == @0'
