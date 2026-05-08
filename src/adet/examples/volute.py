@@ -43,7 +43,7 @@ class VoluteDesignFister(EquationBase):
         vt1: n1.kin.V_tan.Hint,
         mf1: n1.oth.MassFlow.Hint,
         rho1: n1.stc.Density.Hint,
-        rr_vol0: n0.geo.RDistr.Hint,
+        rr_vol0: R_volute.Hint,
     ):
         volume_flow_rate = mf1 / rho1
         fister_constant_K = 4 * np.pi**2 * rr1 * vt1 / volume_flow_rate
@@ -61,7 +61,7 @@ class VoluteDesignStepanoff(EquationBase):
         mf1: n1.oth.MassFlow.Hint,
         rho1: n1.stc.Density.Hint,
         vt1: n1.kin.V_tan.Hint,
-        rr_vol0: n0.geo.RDistr.Hint,
+        rr_vol0: R_volute.Hint,
     ):
         volume_flow_rate = mf1 / rho1
         area_stepanoff = volume_flow_rate / vt1
@@ -129,15 +129,16 @@ def plot_volute(designs_dict, num_points=1000):
     """Plot all volute designs in a single figure.
 
     Args:
-        designs_dict: Dictionary with design names as keys and (n0, n1) tuples as values
+        designs_dict: Dictionary with design names as keys and (sol_dict, rr1) tuples
         num_points: Number of points for radius distribution
     """
     fig = plt.figure(figsize=(13, 13), dpi=150)
     ax = fig.add_subplot(111, projection='polar')
 
-    for design_name, (n0, n1) in designs_dict.items():
-        inlet_radius = n0.geo.rr_vol
-        stator_radius = n1.geo.rr[0]
+    stator_radius = None
+    for design_name, (sol_dict, rr1) in designs_dict.items():
+        inlet_radius = sol_dict[R_volute.full_symbol(True)]
+        stator_radius = rr1
 
         theta_distribution = np.linspace(0, 2 * np.pi, num_points)
         inlet_area = np.pi * inlet_radius**2
@@ -194,13 +195,13 @@ def plot_volute_area_trend(designs_dict, num_points=1000):
     """Plot area trend for all volute designs in a linear graph.
 
     Args:
-        designs_dict: Dictionary with design names as keys and (n0, n1) tuples as values
+        designs_dict: Dictionary with design names as keys and (sol_dict, rr1) tuples
         num_points: Number of points for area distribution
     """
     fig, ax = plt.subplots(figsize=(12, 8), dpi=150)
 
-    for design_name, (n0, n1) in designs_dict.items():
-        inlet_radius = n0.geo.rr_vol
+    for design_name, (sol_dict, rr1) in designs_dict.items():
+        inlet_radius = sol_dict[R_volute.full_symbol(True)]
         theta_distribution = np.linspace(0, 2 * np.pi, num_points)
         inlet_area = np.pi * inlet_radius**2
         area_distribution = np.linspace(0, inlet_area, num_points)
@@ -245,7 +246,7 @@ def plot_volute_area_trend(designs_dict, num_points=1000):
     # )
     plt.tight_layout()
 
-    fig.show()
+    # fig.show()
 
 
 class ConstantAngMomentum(EquationBase):
@@ -307,12 +308,11 @@ if __name__ == '__main__':
 
         match DESIGN_METHOD:
             case 'whitfield':
-                system.add_equation(VoluteLoss(), (0, 1))  # 1
-                system.add_equation(ConstantAngMomentum(), (0, 1))  # 1
+                system.add_equation(VoluteLoss(), (0, 1))
+                system.add_equation(ConstantAngMomentum(), (0, 1))
             case 'fister':
-                system.add_equation(VoluteDesignFister(), (0, 1))  # 1
-                # system.add_equation(ConstantAngMomentum(), (0, 1))  # 1
-                system.add_equation(PercentageEntropyLoss(), (0, 1))  # 1
+                system.add_equation(VoluteDesignFister(), (0, 1))
+                system.add_equation(PercentageEntropyLoss(), (0, 1))
             case 'stepanoff':
                 system.add_equation(VoluteDesignStepanoff(), (0, 1))
                 system.add_equation(PercentageEntropyLoss(), (0, 1))
@@ -366,18 +366,19 @@ if __name__ == '__main__':
             )
         }
 
-    #     results[DESIGN_METHOD] = (n0, n1)
-    #
-    #     print(f'Volute inlet section radius is {n0.geo.rr_vol[0] * 1000:.3f} mm')
-    #     print(
-    #         f'Volute inlet area is '
-    #         f'{n0.geo.get("eff_area").to("cm**2").magnitude[0]:.3f} cm**2'
-    #     )
-    #     print(f'Volute inlet velocity is {n0.kin.V[0]:.3f} m/s')
-    #     print(f'Volute inlet centroid radius is {n0.geo.rr[0]:.3f} m')
-    #     print(f'Volute outlet velocity is {n1.kin.V[0]:.3f} m/s')
-    #     print(f'Radius ratio is {n1.geo.radiusRatio}')
-    #
-    # # Plot all designs
-    # plot_volute(results)
-    # plot_volute_area_trend(results)
+        rr1 = float(system.data.boun_cond[n1.geo.RDistr])
+        results[DESIGN_METHOD] = (sol_dict, rr1)
+
+        print(
+            f'Volute inlet section radius is '
+            f'{sol_dict[R_volute.full_symbol(True)] * 1000:.3f} mm'
+        )
+        print(f'Volute outlet radius is {rr1 * 1000:.3f} mm')
+        print(
+            f'Volute outlet velocity is '
+            f'{sol_dict[n1.kin.V_mag.full_symbol(True)]:.3f} m/s'
+        )
+
+    # Plot all designs
+    plot_volute(results)
+    plot_volute_area_trend(results)
