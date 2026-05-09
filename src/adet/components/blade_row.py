@@ -12,7 +12,6 @@ from adet.equations.control_volumes import ChokingCriterion
 from adet.equations.definitions import MeridionalVelocityRatio, OptimalIncidence
 from adet.equations.fundamental import (
     BladeBlockage,
-    ConstantAngMomentum,
     ConstRelEnthalpy,
     EulerEquation,
     MassConservation,
@@ -121,14 +120,7 @@ class BladeRow(BaseComponent):
         name: str,
         shaft: Shaft,
         row_type: Literal['stator', 'rotor'],
-        in_constraints: dict[
-            str,
-            dict[str, Any],
-        ] = {},
-        out_constraints: dict[
-            str,
-            dict[str, Any],
-        ] = {},
+        bound_cond: dict[VarSpec, Any] = {},
         extra_equations: dict[
             EquationBase,
             int | tuple[int, ...],
@@ -145,8 +137,7 @@ class BladeRow(BaseComponent):
         """
         super().__init__(
             name,
-            in_constraints,
-            out_constraints,
+            bound_cond,
             extra_equations,
             from_previous_node,
             constant_variables,
@@ -156,6 +147,9 @@ class BladeRow(BaseComponent):
         self.shaft = shaft
         self.row_type: Literal['stator', 'rotor'] = row_type
 
+    def _post_init(self):
+        pass
+
     @property
     def shaft(self) -> Shaft | None:
         return self._shaft
@@ -163,14 +157,16 @@ class BladeRow(BaseComponent):
     @shaft.setter
     def shaft(self, shaft: Shaft):
         self._shaft = shaft
+        from adet.equations.variables import NodeVariables
+
+        n1 = NodeVariables(1)
         if shaft.is_constrained:
             # Fix omega at the outlet node
-            self.outlet_bc['kin']['omega'] = shaft.omega
+            self._boundary_conditions[n1.kin.Omega] = shaft.omega
         else:
             # When switching from a fixed to nonfixed shaft
-            # remove omega from both bc dictionaries
-            self.inlet_bc['kin'].pop('omega', None)
-            self.outlet_bc['kin'].pop('omega', None)
+            # remove omega from the boundary conditions
+            self._boundary_conditions.pop(n1.kin.Omega, None)
 
 
 class VanelessDiffuser(BaseComponent):
@@ -207,9 +203,12 @@ class VanelessDiffuser(BaseComponent):
     )
 
     def _post_init(self):
-        self.outlet_bc['kin']['omega'] = 0
+        from adet.equations.variables import NodeVariables
+
+        n1 = NodeVariables(1)
+        self._boundary_conditions[n1.kin.Omega] = 0
         # NOTE: Null axial chord => exactly radial diffuser
-        self.outlet_bc['geo']['chord_ax'] = 0
+        self._boundary_conditions[n1.geo.ChordAx] = 0
 
 
 class IncidenceVolume(BaseComponent):
@@ -244,6 +243,9 @@ class IncidenceVolume(BaseComponent):
         # Keep reference frame alive
         _kin.Omega,
     ]
+
+    def _post_init(self):
+        pass
 
 
 class DownstreamMixer(BaseComponent):
@@ -292,6 +294,9 @@ class DownstreamMixer(BaseComponent):
         _geo.RDistr,
     ]
 
+    def _post_init(self):
+        pass
+
     def attach_network(self, network: 'ComponentNetwork[CasadiSystem]'):
         super().attach_network(network)
 
@@ -335,6 +340,9 @@ class SimpleMixer(DownstreamMixer):
         (GeometricalAdder, 1),
         (ZeroDeviation, 1),  # Creates a dummy metal angle (for plots)
     ]
+
+    def _post_init(self):
+        pass
 
 
 @dataclass
@@ -450,7 +458,7 @@ class RowGeometry:
             self._tip_curve = StraightLine(**tip_params.to_dict())
             self._hub_curve = StraightLine(**hub_params.to_dict())
         except TypeError as e:
-            raise TypeError(f'Impossible to create meridional curves: {e}')
+            raise TypeError(f'Impossible to create meridional curves: {e}') from e
 
         if self.force_straight:
             self._tip_curve = StraightLine(**tip_params.to_dict())

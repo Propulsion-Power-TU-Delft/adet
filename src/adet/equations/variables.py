@@ -43,6 +43,7 @@ class ThermoVariables(BaseEnum):
     SpeedSound = VarSpec(CoolProperties.SpeedSound.value, 'm / s')
     Temperature = VarSpec(CoolProperties.Temp.value, 'K', 800.0, (80.0, 1800.0))
     CriticalTemp = VarSpec(CoolProperties.Tcrit.value, 'K')
+    CriticalPressure = VarSpec(CoolProperties.Pcrit.value, 'Pa')
 
 
 class KinematicVariables(VariableEnum):
@@ -109,6 +110,9 @@ class GeometricVariables(VariableEnum):
     SolidityMidspan = VarSpec('solidity_mid', '', 1.0, (0.05, 10.0), 0, True)
     MeridionalAngle = VarSpec('mer_angle', 'rad', 0.1, None, 0, True)
     ClearanceByHeight = VarSpec('clearance_by_height', '')
+    ShapeCoeff = VarSpec('shape_k', '')
+    HydLen = VarSpec('hyd_len', 'm')
+    HydDiam = VarSpec('hyd_diam', 'm')
 
 
 class Nondimensional(VariableEnum):
@@ -132,6 +136,26 @@ class Nondimensional(VariableEnum):
     DegreeOfReactionTS = VarSpec('reactDegree_ts', '', None, None, 0, True)
 
 
+class Losses(VariableEnum):
+    # Enthalpy based
+    Dht_loading = VarSpec('dht_loading', 'J / kg')
+    Dht_clearance = VarSpec('dht_clearance', 'J / kg')
+    Dht_skin = VarSpec('dht_skin', 'J / kg')
+    Dht_incidence = VarSpec('dht_incidence', 'J / kg')
+    Dht_mixing = VarSpec('dht_mixing', 'J / kg')
+    Dht_disk = VarSpec('dht_disk', 'J / kg')
+    Dht_recirculation = VarSpec('dht_recirculation', 'J / kg')
+    Dht_leakage = VarSpec('dht_leakage', 'J / kg')
+    Dht_lost = VarSpec('dht_lost', 'J / kg')
+    Dht_total = VarSpec('dtot_hmass', 'J / kg')
+    # Entropy based
+    Ds_leakage = VarSpec('ds_leakage', 'J / kg / K')
+    Ds_mixing = VarSpec('ds_mixing', 'J / kg / K')
+    Ds_profile = VarSpec('ds_profile', 'J / kg / K')
+    Ds_secondary = VarSpec('ds_secondary', 'J / kg / K')
+    Ds_total = VarSpec('ds_total', 'J / kg / K')
+
+
 class OtherVariables(VariableEnum):
     PBase = VarSpec('p_base', 'Pa', 3e5)
     GammaPV = VarSpec('gamma_pv', '', 1.4)
@@ -151,6 +175,16 @@ class OtherVariables(VariableEnum):
     Enthalpy_Is = VarSpec('stc_hmass_is', 'J / kg', 6e5)
     ChokeMassflow = VarSpec('massflow_choke', 'kg / s', None, (1e-4, 5e4), 0, True)
     Enthalpy_totIs = VarSpec('tot_hmass_is', 'J / kg', 6e5)
+    BlLoadingCoeff = VarSpec('bl_loadingCoeff', '')
+    SlipFactor = VarSpec('slip_factor', '')
+    SlipFactCoeff = VarSpec('slip_factCoeff', '')
+    Cf_smooth = VarSpec('Cf_smooth', '')
+    Cf_rough = VarSpec('Cf_rough', '')
+    WakeFrac = VarSpec('wake_frac', '')
+    MinWakeFrac = VarSpec('minWake_frac', '')
+    MaxWakeFrac = VarSpec('maxWake_frac', '')
+    IncCoeff = VarSpec('incCoeff', '')
+    WorkLossCoeff = VarSpec('worklossCoeff', '')
 
 
 class NodeVariables:
@@ -184,3 +218,7 @@ class NodeVariables:
     @property
     def rlt(self) -> ThermoVariables:
         return ThermoVariables(self._node, NodeStates.RELTOT)
+
+    @property
+    def loss(self) -> Losses:
+        return Losses(self._node)

@@ -169,8 +169,8 @@ class ReducedThermoQuantities(EquationBase):
         p_tot0: n0.tot.Pressure.Hint,
         T_red_tot0: n0.oth.TotTRed.Hint,
         p_red_tot0: n0.oth.TotPRed.Hint,
-        p_crit0: n0.stc.CriticalTemp.Hint,
-        T_crit0: n0.stc.CriticalTemperature.Hint,
+        p_crit0: n0.stc.CriticalPressure.Hint,
+        T_crit0: n0.stc.CriticalTemp.Hint,
     ):
         r1 = p_tot0 - p_red_tot0 * p_crit0
         r2 = T_tot0 - T_red_tot0 * T_crit0

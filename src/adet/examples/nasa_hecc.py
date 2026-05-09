@@ -1,3 +1,4 @@
+from adet.equations.variables import ThermoVariables, NodeVariables
 import logging
 
 import CoolProp as cp
@@ -50,6 +51,11 @@ from adet.tools.loggers import setup_logger
 logger = logging.Logger(__name__)
 setup_logger(logger)
 
+n0 = NodeVariables(0)
+n1 = NodeVariables(1)
+n2 = NodeVariables(2)
+n3 = NodeVariables(3)
+
 # This makes the missing guesses default to 1
 _bounds_reg = VariableBoundsRegistry()
 _bounds_reg.reset()
@@ -87,7 +93,7 @@ plt.rcParams.update(
 
 NUM_SPAN = 5
 ENABLE_LOSSES = True
-RUN_MULTI = True
+RUN_MULTI = False
 RUN_SPEEDLINES = False
 SPDL_PTS = 50  # Number of speedline points
 RPM_DES = 21000  #
@@ -113,10 +119,13 @@ fluid_model_real = ExternalFluidModel(
 fluid_model_ideal = AnalyticalFluidModel(
     IdealGasState(1.4, 287, 2e-5),
 )
-
+thrm = ThermoVariables()
 fluid_settings = FluidSettings(
     model=fluid_model_ideal,
-    update_variables=('p', 'T'),  # Thermodynamic iteration variables
+    update_variables=(
+        thrm.Pressure,
+        thrm.Temperature,
+    ),  # Thermodynamic iteration variables
     update_length=2,  # Single phase => Two update vars
 )
 
@@ -128,69 +137,58 @@ class LossPicker(LossApplier):
 
     def residual(
         self,
-        stc_smass0,
-        stc_smass1,
-        tot_hmass0,
-        tot_hmass1,
-        oth_delta_hmass_skin1,
-        oth_delta_hmass_loading1,
-        oth_delta_hmass_clearance1,
-        oth_delta_hmass_mixing1,
-        oth_delta_hmass_incidence1,
-        oth_delta_hmass_leakage1,
-        oth_delta_hmass_recirc1,
-        oth_delta_hmass_disk1,
-        oth_delta_hmass_lost1,
-        oth_tot_T_is1,
-        oth_eta_tt3,
-        tot_p2,
-        tot_p3,
+        s0: n0.stc.Entropy.Hint,
+        s1: n1.stc.Entropy.Hint,
+        ht0: n0.tot.Enthalpy.Hint,
+        ht1: n1.tot.Enthalpy.Hint,
+        dht_skin1: n1.loss.Dht_skin.Hint,
+        dht_loading1: n1.loss.Dht_loading.Hint,
+        dht_clearance1: n1.loss.Dht_clearance.Hint,
+        dht_mixing1: n1.loss.Dht_mixing.Hint,
+        dht_incidence1: n1.loss.Dht_incidence.Hint,
+        dht_leakage1: n1.loss.Dht_leakage.Hint,
+        dht_recirc1: n1.loss.Dht_recirculation.Hint,
+        dht_disk1: n1.loss.Dht_disk.Hint,
+        dht_lost1: n1.loss.Dht_lost.Hint,
+        T_is1: n1.oth.Tis_tot.Hint,
+        eta_tt3: n3.ndim.EtaTT.Hint,
+        p2: n2.tot.Pressure.Hint,
+        p3: n3.tot.Pressure.Hint,
     ):
         # Channel losses
         dht_int = (
             0.0
-            + oth_delta_hmass_skin1
-            + oth_delta_hmass_incidence1
-            + oth_delta_hmass_clearance1
-            + oth_delta_hmass_mixing1
-            + oth_delta_hmass_leakage1
-            + oth_delta_hmass_loading1
-            + oth_delta_hmass_lost1
+            + dht_skin1
+            + dht_incidence1
+            + dht_clearance1
+            + dht_mixing1
+            + dht_leakage1
+            + dht_loading1
+            + dht_lost1
         )
-        dht_ext = (
-            0.0
-            + oth_delta_hmass_leakage1
-            + oth_delta_hmass_recirc1
-            + oth_delta_hmass_disk1
-        )
+        dht_ext = 0.0 + dht_leakage1 + dht_recirc1 + dht_disk1
 
-        tot_hmass_is3 = self.eos(tot_p3, stc_smass0)
+        tot_hmass_is3 = self.eos(p3, s0)
 
-        delta_s = dht_int / oth_tot_T_is1
+        delta_s = dht_int / T_is1
 
-        work = tot_hmass1 - tot_hmass0
+        work = ht1 - ht0
 
         # Residuals
-        r1 = stc_smass1 - (stc_smass0 + delta_s)
-        r2 = (work + dht_ext) * oth_eta_tt3 - (tot_hmass_is3 - tot_hmass0)
+        r1 = s1 - (s0 + delta_s)
+        r2 = (work + dht_ext) * eta_tt3 - (tot_hmass_is3 - ht0)
 
         return r1, r2
 
 
 # +++ Boundary conditions
 inlet = Inlet(
-    {
-        'tot': {
-            'p': 101352.9,
-            'T': 288.16,
-        },
-        'kin': {
-            'alpha': 0.0,
-        },
-        'oth': {
-            'cum_massflow': 4.98,
-        },
-    },
+    boundary_conditions={
+        n0.tot.Pressure: 101352.9,
+        n0.tot.Temperature: 288.16,
+        n0.kin.FlowAngleAbs: Quantity(0.0, 'rad'),
+        n0.oth.CumMassFlow: 4.98,
+    }
 )
 
 
@@ -252,50 +250,37 @@ impeller = BladeRow(
     name='rotor',
     shaft=shaft,
     row_type='rotor',
-    in_constraints={
-        'geo': {
-            # *** Meridional geometry
-            'meridional_angle': Quantity(0, 'deg'),
-            'rr_midspan': R_MID,
-            'height': HEIGHT,
-            # *** Blades specs
-            'metal_angle': Quantity(-44, 'deg'),
-            'metal_angle_hub': Quantity(-30, 'deg'),
-            'metal_angle_tip': Quantity(-53, 'deg'),
-            'bld_thick': 0.002,
-            'tip_clearance': Quantity(0.235, 'mm'),
-        },
-        'oth': {
-            'incCoeff': 0.5,
-        },
-    },
-    out_constraints={
-        'geo': {
-            # *** Meridional geometry
-            'meridional_angle': Quantity(90, 'deg'),
-            'rr_midspan': Quantity(0.2159, 'm'),
-            'height': Quantity(0.01524, 'm'),
-            # *** Blades specs
-            'metal_angle': Quantity(-30, 'deg'),
-            'thick_by_pitch': 0.02,  # Thickness by pitch ratio
-            'back_clearance': 0.001,  # Back face clearance
-            'tip_clearance': Quantity(0.304, 'mm'),
-            'chord_ax': Quantity(0.133879895, 'm'),
-            'num_blades': 15,
-            'num_splitters': 15,
-        },
-        'oth': {
-            # For losses
-            'slip_factCoeff': 2.5,
-            'worklossCoeff': 0.3,
-            'abs_roughness': Quantity(1.524, 'micron'),
-            'bl_loadingCoeff': 0.75,
-            # Mixing
-            'minWake_frac': 0.3,
-            'maxWake_frac': 0.65,
-            'wake_frac': 0.3,  # Starter to remove
-            'massflow_choke': MASS_CHOKES[0],
-        },
+    bound_cond={
+        # *** Node 0
+        # > Geometry
+        n0.geo.MeridionalAngle: Quantity(0, 'deg'),
+        n0.geo.Rmid: R_MID,
+        n0.geo.Height: HEIGHT,
+        n0.geo.MetalAngle: Quantity(-44, 'deg'),
+        n0.geo.BldThick: 0.002,
+        n0.geo.TipClearance: Quantity(0.235, 'mm'),
+        n0.oth.IncCoeff: 0.5,
+        # *** Node 1
+        # > Geometry
+        n1.geo.MeridionalAngle: Quantity(90, 'deg'),
+        n1.geo.Rmid: Quantity(0.2159, 'm'),
+        n1.geo.Height: Quantity(0.01524, 'm'),
+        n1.geo.MetalAngle: Quantity(-30, 'deg'),
+        n1.geo.ThickByPitch: 0.02,
+        n1.geo.BackClearance: 0.001,
+        n1.geo.TipClearance: Quantity(0.304, 'mm'),
+        n1.geo.ChordAx: Quantity(0.133879895, 'm'),
+        n1.geo.NumBlades: 15,
+        n1.geo.NumSplitters: 15,
+        n1.geo.AbsRoughness: Quantity(1.524, 'micron'),
+        # > Others
+        n1.oth.SlipFactCoeff: 2.5,
+        n1.oth.WorkLossCoeff: 0.3,
+        n1.oth.BlLoadingCoeff: 0.75,
+        n1.oth.MinWakeFrac: 0.3,
+        n1.oth.MaxWakeFrac: 0.65,
+        n1.oth.WakeFrac: 0.3,
+        n1.oth.ChokeMassflow: MASS_CHOKES[0],
     },
     extra_equations={
         # ZeroDeviation(): 1,
@@ -313,11 +298,8 @@ impeller = BladeRow(
 
 vaneless_diff = VanelessDiffuser(
     'diffuser',
-    outlet_bc={
-        'geo': {
-            'rr_midspan': Quantity(0.3055659, 'm'),
-            'heightRatio': 1.0,
-        },
+    bound_cond={
+        n1.geo.Rmid: Quantity(0.3055659, 'm'),
     },
     extra_equations={
         # PercTotalPressureLoss(0.03): (0, 1),  # 5% loss

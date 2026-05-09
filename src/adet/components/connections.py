@@ -1,3 +1,4 @@
+from adet.equations.varspec import VarSpec
 from dataclasses import dataclass
 from typing import Any
 from pint.facets.plain import PlainQuantity
@@ -5,7 +6,7 @@ from pint.facets.plain import PlainQuantity
 
 @dataclass
 class Inlet:
-    boundary_conditions: dict[str, dict[str, Any]]
+    boundary_conditions: dict[VarSpec, Any]
 
 
 class Shaft:

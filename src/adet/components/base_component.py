@@ -135,7 +135,7 @@ class BaseComponent(ABC):
         rel_position = self._equations[equation]
         rel_position = ensure_tuple(rel_position)
 
-        inl_idx, out_idx = network._get_comp_indices(self)
+        inl_idx, out_idx = network._get_abs_indices(self)
         index_map = {0: inl_idx, 1: out_idx}
         return tuple(index_map[idx] for idx in rel_position)
 
