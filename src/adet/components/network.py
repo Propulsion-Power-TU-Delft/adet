@@ -94,6 +94,13 @@ class ComponentNetwork(Generic[T]):
             comp.attach_network(self)
             inl_idx, out_idx = self._get_abs_indices(comp)
 
+            # Mape
+            mapped_bcond = {}
+            for spec, val in comp._boundary_conditions.items():
+                abs_node = comp.network_maps[self][spec.node]
+                mapped_bcond[spec._at_node(abs_node)] = val
+            self.system.add_boundary_conditions(mapped_bcond)
+
             # Write equalities (constant variables)
             for spec in comp._const_variables:
                 equality = (

@@ -107,6 +107,8 @@ class GeometricVariables(VariableEnum):
     ThickByPitch = VarSpec('thick_by_pitch', '', 0.01)
     ZweifelCoeff = VarSpec('zweifelCoeff', '')
     BackClearance = VarSpec('back_clearance', 'm')
+    MetalAngleHub = VarSpec('metal_angle_hub', 'rad', -0.3, (-1.45, 1.45), True)
+    MetalAngleTip = VarSpec('metal_angle_tip', 'rad', -0.3, (-1.45, 1.45), True)
     SolidityMidspan = VarSpec('solidity_mid', '', 1.0, (0.05, 10.0), 0, True)
     MeridionalAngle = VarSpec('mer_angle', 'rad', 0.1, None, 0, True)
     ClearanceByHeight = VarSpec('clearance_by_height', '')

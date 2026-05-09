@@ -92,8 +92,12 @@ class FixedEnthalpyLoss(LossApplier):
 class ZeroDeviation(DeviationModel):
     """Impose equality between kinematic and geometric angles at a node"""
 
-    def residual(self, geo_metal_angle0, kin_beta0):
-        return kin_beta0 - geo_metal_angle0
+    def residual(
+        self,
+        met_angle0: n0.geo.MetalAngle.Hint,
+        beta0: n0.kin.FlowAngleRel.Hint,
+    ):
+        return beta0 - met_angle0
 
 
 class ZeroMidspanDeviation(DeviationModel):

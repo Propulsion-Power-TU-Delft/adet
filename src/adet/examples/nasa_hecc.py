@@ -319,9 +319,9 @@ ntw_hecc = ComponentNetwork(
 
 # Overall efficiency
 ntw_hecc.system.add_equation(TotalTotalPressureRatio(), (0, 3))
-ntw_hecc.system.add_spanwise_constants('kin_Vm0', 'geo_hh0')
-impeller.set_spanwise_constant('stc_p1')
-vaneless_diff.set_spanwise_constant('stc_p1')
+ntw_hecc.system.add_spanwise_constants(n0.kin.V_mer, n0.geo.HDistr)
+impeller.set_spanwise_constant(n1.stc.Pressure)
+vaneless_diff.set_spanwise_constant(n1.stc.Pressure)
 
 ntw_hecc.build()
 
@@ -681,7 +681,9 @@ if __name__ == '__main__':
         axs[1].set_xlabel('Mass flow [lbm/s]', fontsize=11)
         axs[1].set_ylabel('Total-to-total efficiency [−]', fontsize=11)
         axs[1].set_title(
-            'Compressor Performance: $\eta$ vs PR', fontsize=12, fontweight='bold'
+            'Compressor Performance: $\\eta$ vs PR',
+            fontsize=12,
+            fontweight='bold',
         )
         axs[1].legend(loc='best')
         axs[1].grid(True, alpha=0.3)

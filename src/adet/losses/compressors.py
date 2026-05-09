@@ -1,7 +1,7 @@
 import numpy as np
 import CoolProp as cp
 
-from adet.equations.base_equation import DeviationModel, EquationBase
+from adet.equations.base_equation import DeviationModel, EquationBase, EquationConfig
 from adet.equations.utils import (
     safe_abs,
     safe_if_else,
@@ -10,12 +10,12 @@ from adet.equations.utils import (
     safe_min,
     safe_sign,
 )
-from adet.equations.variables import NodeVariables
+from adet.equations.variables import NodeVariables, ThermoVariables
 from adet.losses.base_loss import LossModel
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)
-
+thrm = ThermoVariables()
 
 # class WorkCoefficientEstimate(EquationBase):
 #     def residual(
@@ -191,8 +191,8 @@ class HydraulicQuantities(EquationBase):
         rhub0: n0.geo.Rhub.Hint,
         hgt1: n1.geo.Height.Hint,
         chord_ax1: n1.geo.ChordAx.Hint,
-        metal_hub0: n0.geo.MetalAngle.Hint,
-        metal_tip0: n0.geo.MetalAngle.Hint,
+        metal_hub0: n0.geo.MetalAngleHub.Hint,
+        metal_tip0: n0.geo.MetalAngleTip.Hint,
         metal_ang1: n1.geo.MetalAngle.Hint,
         n_bl_eff1: n1.geo.NumBladesEff.Hint,
         hyd_diam1: n1.geo.HydDiam.Hint,
@@ -458,9 +458,11 @@ class LeakageLostWork(LossModel):
 
 
 class AmiranteDiffuserMomentum(EquationBase):
-    input_pair = cp.PSmass_INPUTS
-    manual_units = ('m^2 / s', 'K')
-    output_quantities = ('hmass',)
+    config = EquationConfig(
+        input_pair=cp.PSmass_INPUTS,
+        manual_units=('m^2 / s', 'K'),
+        out_properties=(thrm.Enthalpy,),
+    )
 
     def residual(
         self,

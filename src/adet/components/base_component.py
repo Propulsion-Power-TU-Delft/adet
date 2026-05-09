@@ -148,13 +148,14 @@ class BaseComponent(ABC):
                 if len(abs_pos) == 2:
                     rel_pos = ensure_tuple(self._equations[eq])
                     seen_positions.add(rel_pos)
-            else:
+
+            if not seen_positions:
                 raise RuntimeError(
                     f'No two-node equation found in {self} '
                     f'to build network map for {ntw}'
                 )
 
-            if len(seen_positions) != 1:
+            elif len(seen_positions) > 1:
                 raise RuntimeError(
                     f'Multiple incompatible equation positions for {ntw} in {self}'
                 )

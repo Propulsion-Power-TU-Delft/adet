@@ -428,7 +428,7 @@ class UnitScalingManager:
             equation.residual(*probe_args),
         )
 
-        if not isinstance(residuals, tuple):
+        if not isinstance(residuals, (tuple, list)):
             residuals = (residuals,)
 
         return tuple(res.to_base_units().units.__str__() for res in residuals)
