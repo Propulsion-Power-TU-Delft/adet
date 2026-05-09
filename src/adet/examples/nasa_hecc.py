@@ -257,6 +257,8 @@ impeller = BladeRow(
         n0.geo.Rmid: R_MID,
         n0.geo.Height: HEIGHT,
         n0.geo.MetalAngle: Quantity(-44, 'deg'),
+        n0.geo.MetalAngleHub: Quantity(-30, 'deg'),
+        n0.geo.MetalAngleTip: Quantity(-53, 'deg'),
         n0.geo.BldThick: 0.002,
         n0.geo.TipClearance: Quantity(0.235, 'mm'),
         n0.oth.IncCoeff: 0.5,
@@ -273,7 +275,7 @@ impeller = BladeRow(
         n1.geo.NumBlades: 15,
         n1.geo.NumSplitters: 15,
         n1.geo.AbsRoughness: Quantity(1.524, 'micron'),
-        # > Others
+        # > Loss coefficients
         n1.oth.SlipFactCoeff: 2.5,
         n1.oth.WorkLossCoeff: 0.3,
         n1.oth.BlLoadingCoeff: 0.75,
@@ -300,6 +302,7 @@ vaneless_diff = VanelessDiffuser(
     'diffuser',
     bound_cond={
         n1.geo.Rmid: Quantity(0.3055659, 'm'),
+        n1.geo.HeightRatio: 1.0,
     },
     extra_equations={
         # PercTotalPressureLoss(0.03): (0, 1),  # 5% loss

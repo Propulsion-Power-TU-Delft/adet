@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import logging
 from typing import TYPE_CHECKING, Any, Literal
 
+from adet.equations.variables import NodeVariables
 from matplotlib.lines import Line2D
 import numpy as np
 
@@ -56,6 +57,7 @@ _geo = GeometricVariables(node=DEF_NODE)
 _thermo_tot = ThermoVariables(node=DEF_NODE, state=NodeStates.TOTAL)
 _thermo_stc = ThermoVariables(node=DEF_NODE, state=NodeStates.STATIC)
 _oth = OtherVariables(node=DEF_NODE)
+n1 = NodeVariables(1)
 
 ABSOLUTE_LINK = [
     # Absolute triangle
@@ -198,14 +200,11 @@ class VanelessDiffuser(BaseComponent):
         + [
             _geo.HDistr,
             _geo.RDistr,
-            _oth.PBase,
+            _oth.WakeFrac,
         ]
     )
 
     def _post_init(self):
-        from adet.equations.variables import NodeVariables
-
-        n1 = NodeVariables(1)
         self._boundary_conditions[n1.kin.Omega] = 0
         # NOTE: Null axial chord => exactly radial diffuser
         self._boundary_conditions[n1.geo.ChordAx] = 0
