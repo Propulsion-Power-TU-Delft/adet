@@ -12,7 +12,7 @@ from adet.components import BladeRow
 from adet.components.blade_row import VanelessDiffuser, plot_from_nodes
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
-from adet.equations.base_equation import LossApplier
+from adet.equations.base_equation import LossApplier, EquationConfig
 from adet.equations.control_volumes import FullIncidence
 from adet.equations.definitions import (
     EffectiveBladeNumber,
@@ -42,7 +42,6 @@ from adet.losses.compressors import (
     RecirculationOh,
     SkinFrictionJansen,
 )
-from adet.registries import GuessRegistry, VariableBoundsRegistry
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.interpolation import resample_linear
@@ -56,33 +55,6 @@ n1 = NodeVariables(1)
 n2 = NodeVariables(2)
 n3 = NodeVariables(3)
 
-# This makes the missing guesses default to 1
-_bounds_reg = VariableBoundsRegistry()
-_bounds_reg.reset()
-_bounds_reg.from_dict(
-    {
-        'Vm': (10.0, 480.0),
-        'U': (0, 600),
-        'beta': (-1.48, 1.48),
-        'relmach': (0.0, 1.04),
-        'eta_tt': (0.5, 1.0),
-        'pRatio_tt': (2.0, 7.0),
-        # 'delta_hmass_.*': (10.0, 2e4),
-        # 'delta_hmass_recirc': (10.0, 1.4e4),  # This tends to diverge, bound it
-        # 'T': (0.9 * 288.16, 3 * 288.16),
-        # 'p': (0.8e5, 6e5),
-    }
-)
-
-_greg = GuessRegistry()
-_greg.reset()
-_greg.from_dict(
-    {
-        'beta': -0.5,
-        'gamma_pv': 1.4,
-    }
-)
-_greg.set_fallback_value(0.5)  # Missing values defaults to 0.5
 
 plt.rcParams.update(
     {
@@ -93,12 +65,12 @@ plt.rcParams.update(
 
 NUM_SPAN = 5
 ENABLE_LOSSES = True
-RUN_MULTI = False
+RUN_MULTI = True
 RUN_SPEEDLINES = False
 SPDL_PTS = 50  # Number of speedline points
 RPM_DES = 21000  #
 #
-RUN_PLOTS = True  # plotting section
+RUN_PLOTS = False  # plotting section
 SHOW_PLOTS = True  # non-interactive testing
 
 # +++ Shafts
@@ -131,9 +103,11 @@ fluid_settings = FluidSettings(
 
 
 class LossPicker(LossApplier):
-    manual_units = ('Pa', 'J / kg')
-    input_pair = cp.PSmass_INPUTS
-    output_quantities = ('hmass',)
+    config = EquationConfig(
+        manual_units=('Pa', 'J / kg'),
+        input_pair=cp.PSmass_INPUTS,
+        out_properties=(n0.stc.Enthalpy.Glob,),
+    )
 
     def residual(
         self,
@@ -200,18 +174,15 @@ EQS_ISENTROPIC = {
 EQS_WITH_LOSSES = {
     # *** SLIP
     BackstromSlip(): (0, 1),
-    # *** PICKERS
-    # PercentageEntropyLoss(0.0): (0, 1),
+    HydraulicQuantities(): (0, 1),
     # *** LOSS MODELS
     ClearanceBrasz(): (0, 1),
     SkinFrictionJansen(): (0, 1),
     BladeLoadingCoppage(): (0, 1),
     FullIncidence(): 0,
     IncidenceGalvas(): (0, 1),
-    # IncidenceVDB(): (0, 1),
     MixingJohnstonDean(): 1,
     RecirculationOh(): (0, 1),
-    # WARN: The combination of these two leak models is a bit unclear
     LeakageAungier(): (0, 1),
     LeakageLostWork(): (0, 1),
     DiskFricDailyNece(): (0, 1),
@@ -287,7 +258,6 @@ impeller = BladeRow(
     extra_equations={
         # ZeroDeviation(): 1,
         MinimalCamberLine(): (0, 1),
-        HydraulicQuantities(): (0, 1),
         EffectiveBladeNumber(): 1,
         # *** Enthalpy based Losses
         IsentropicProperties(): (0, 1),
@@ -328,9 +298,21 @@ vaneless_diff.set_spanwise_constant(n1.stc.Pressure)
 
 ntw_hecc.build()
 
-x0 = ntw_hecc.system.get_scaled_guess()
+x0 = ntw_hecc.system.get_scaled_guess(
+    manual_values={n0.kin.FlowAngleRel.Glob: -0.5},
+    fallback=0.5,
+)
 kn_hecc_is = ntw_hecc.system.get_scaled_constraints()
-bnd_hecc_is = ntw_hecc.system.get_arguments_bounds()
+bnd_hecc_is = ntw_hecc.system.get_arguments_bounds(
+    custom_bounds={
+        n0.kin.V_mer.Glob: (10.0, 480.0),
+        n0.kin.BladeSpeed.Glob: (0, 600),
+        n0.kin.FlowAngleRel.Glob: (-1.48, 1.48),
+        n0.kin.RelMach.Glob: (0.0, 1.04),
+        n0.ndim.EtaTT.Glob: (0.5, 1.0),
+        n0.ndim.PRatioTT.Glob: (2.0, 7.0),
+    },
+)
 
 # IPOPT is more robust, takes variable limits into account -> For 'bi-stable' solutions
 # KINSOL is faster, sometimes converges on problems where ipopt struggles
@@ -352,14 +334,14 @@ solution_hecc_is = solve_root_problem(
     suppress_output=False,
 )
 solution_hecc_is = solve_root_problem(rtfn_kin, solution_hecc_is, kn_hecc_is)
-sol_is_dict = ntw_hecc.system.write_solution_to_nodes(solution_hecc_is)
+sol_is_dict = ntw_hecc.system.sol_to_dict(solution_hecc_is)
 
 if RUN_MULTI:
     print('*** SOLVING MULTISPAN ISENTROPIC***')
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
     ntw_hecc.system.num_span = NUM_SPAN
-    impeller.set_boundary_cond('geo_metal_angle0', angle_distribution)
-    impeller.set_boundary_cond('geo_bld_thick0', thick_distribution)
+    impeller.set_boundary_cond(n0.geo.MetalAngle, angle_distribution)
+    impeller.set_boundary_cond(n0.geo.BldThick, thick_distribution)
 
     ntw_hecc.build()
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
@@ -390,7 +372,7 @@ if RUN_MULTI:
         suppress_output=False,
     )
 
-    sol_multi_dict = ntw_hecc.system.write_solution_to_nodes(solution_hecc_multi)
+    sol_multi_dict = ntw_hecc.system.sol_to_dict(solution_hecc_multi)
 
 
 if __name__ == '__main__':
@@ -403,7 +385,8 @@ if __name__ == '__main__':
         for eq, pos in EQS_WITH_LOSSES.items():
             impeller.add_equation(eq, pos)
 
-        ntw_hecc.system.boun_cond[1]['oth'].pop('wake_frac')
+        # Remove fixed wake fraction -> Dynamic
+        ntw_hecc.system.data.boun_cond.pop(n1.oth.WakeFrac)
         ntw_hecc.system.add_equation(LossPicker(), (0, 1, 2, 3))
         ntw_hecc.build()
 
@@ -413,7 +396,7 @@ if __name__ == '__main__':
         )
         rtfn_kin = ntw_hecc.system.make_rootfinder('kinsol')
         rtfn_ip = ntw_hecc.system.make_rootfinder('ipopt')
-        x0_loss = ntw_hecc.system.get_scaled_guess(sol_multi_dict)
+        x0_loss = ntw_hecc.system.get_scaled_guess(sol_multi_dict, fallback=0.5)
         kn_loss = ntw_hecc.system.get_scaled_constraints()
         bnd_loss = ntw_hecc.system.get_arguments_bounds()
         solution_loss = solve_root_problem(
@@ -424,11 +407,7 @@ if __name__ == '__main__':
             suppress_output=False,
         )
         solution_loss = solve_root_problem(rtfn_kin, solution_loss, kn_loss)
-        sol_loss_dict = ntw_hecc.system.write_solution_to_nodes(solution_loss)
-        n0 = ntw_hecc.system.nodes[0]
-        n1 = ntw_hecc.system.nodes[1]
-        n2 = ntw_hecc.system.nodes[2]
-        n3 = ntw_hecc.system.nodes[3]
+        sol_loss_dict = ntw_hecc.system.sol_to_dict(solution_loss)
         #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 
         # Loss breakdown bar plot at design point
@@ -767,7 +746,7 @@ if __name__ == '__main__':
                     fontsize=28,
                 )
                 # ax_21k.set_title(
-                #     f'Loss Breakdown vs Mass Flow: {design_rpm:.0f} RPM (Design Point)',
+                #     f'Loss Breakdown vs Mass Flow: {design_rpm:.0f} RPM (Des. Point)',
                 #     fontsize=14,
                 #     fontweight='bold',
                 # )
@@ -783,7 +762,8 @@ if __name__ == '__main__':
                     plt.close(fig_21k)
             else:
                 print(
-                    f'Design speedline ({design_rpm:.0f} RPM) did not converge, skipping plot'
+                    f'Design speedline ({design_rpm:.0f} RPM) did not converge'
+                    f', skipping plot'
                 )
 
         # Save computed speedline data for comparison with experimental data

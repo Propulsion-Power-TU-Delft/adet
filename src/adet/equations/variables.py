@@ -92,6 +92,7 @@ class GeometricVariables(VariableEnum):
     BldThick = VarSpec('bld_thick', 'm', 0.005)
     Solidity = VarSpec('solidity', '', 1.0, (0.05, 10.0))
     NumBlades = VarSpec('n_blades', '', 20.0, None, 0, True)
+    EffSolidity = VarSpec('eff_solidity', '', 1.0, (0.05, 10.0))
     FlareAngle = VarSpec('fl_angle', 'rad', 0.1, (-1.5, 1.5), 0, True)
     BladeAngle = VarSpec('beta_bl', 'rad')
     MetalAngle = VarSpec('metal_angle', 'rad', -0.3, (-1.45, 1.45))

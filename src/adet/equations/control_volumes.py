@@ -1,42 +1,50 @@
+from adet.equations.varspec import VarSpec
+from adet.equations.variables import NodeVariables
 import CoolProp as cp
 import numpy as np
 
-from adet.equations.base_equation import EquationBase
+from adet.equations.base_equation import EquationBase, EquationConfig
 from adet.equations.utils import minmax_bound
+
+n0 = NodeVariables(0)
+n1 = NodeVariables(1)
+
+
+ThroatVelocity = VarSpec('W_throat', 'm / s', node=0, guess=10)
 
 
 class FullIncidence(EquationBase):
-    input_pair = cp.HmassSmass_INPUTS
-    output_quantities = ('rhomass',)
-    manual_units = ('kg / s', 'rad')
+    config = EquationConfig(
+        input_pair=cp.HmassSmass_INPUTS,
+        out_properties=(n0.stc.Density.Glob,),
+        manual_units=('kg / s', 'rad'),
+    )
 
     def residual(
         self,
-        stc_rhomass0,
-        kin_Wm0,
-        geo_bld_thick0,
-        geo_pitch0,
-        geo_metal_angle0,
-        stc_smass0,
-        rlt_hmass0,
-        kin_W_th0,
-        geo_hh0,
-        kin_beta_opt0,
+        rho0: n0.stc.Density.Hint,
+        Wm0: n0.kin.W_mer.Hint,
+        bld_thick: n0.geo.BldThick.Hint,
+        pitch: n0.geo.Pitch.Hint,
+        met_angle0: n0.geo.MetalAngle.Hint,
+        s0: n0.stc.Entropy.Hint,
+        h_tr0: n0.rlt.Enthalpy.Hint,
+        W_th0: ThroatVelocity.Hint,
+        hh0: n0.geo.HDistr.Hint,
+        beta_opt0: n0.kin.BetaOpt.Hint,
     ):
-        hmass_th = rlt_hmass0 - kin_W_th0**2 / 2
-        Wm_th = kin_W_th0 * np.cos(geo_metal_angle0)
-        Wt_th = kin_W_th0 * np.sin(geo_metal_angle0)
+        hmass_th = h_tr0 - W_th0**2 / 2
+        Wm_th = W_th0 * np.cos(met_angle0)
+        Wt_th = W_th0 * np.sin(met_angle0)
 
-        rho_th = self.eos(hmass_th, stc_smass0)  # Isentropic
+        rho_th = self.eos(hmass_th, s0)  # Isentropic
 
-        original_area = geo_hh0 * geo_pitch0
-        restrict_area = geo_hh0 * (
-            geo_pitch0 - geo_bld_thick0 / np.cos(geo_metal_angle0)
-        )
+        original_area = hh0 * pitch
+        restrict_area = hh0 * (pitch - bld_thick / np.cos(met_angle0))
 
         # U = const (same radius) => No Wt change = no Vt change
-        r1 = stc_rhomass0 * kin_Wm0 * original_area - rho_th * Wm_th * restrict_area
-        r2 = kin_beta_opt0 - np.atan2(Wt_th, kin_Wm0)
+        r1 = rho0 * Wm0 * original_area - rho_th * Wm_th * restrict_area
+        r2 = beta_opt0 - np.atan2(Wt_th, Wm0)
 
         return r1, r2
 

@@ -69,7 +69,7 @@ class BackstromSlip(DeviationModel):
         rr1: n1.geo.RDistr.Hint,
         n_bl1: n1.geo.NumBlades.Hint,
         metal_ang1: n1.geo.MetalAngle.Hint,
-        solid1: n1.geo.Solidity.Hint,
+        eff_solid1: n1.geo.EffSolidity.Hint,
         n_split1: n1.geo.NumSplitters.Hint,
         u1: n1.kin.BladeSpeed.Hint,
         wm1: n1.kin.W_mer.Hint,
@@ -78,11 +78,13 @@ class BackstromSlip(DeviationModel):
         tot_blades = n_bl1 + n_split1
 
         radius_ratio = rr0 / rr1
-        r1 = solid1 - (
+        r1 = eff_solid1 - (
             (1 - radius_ratio) * tot_blades / (2 * np.pi * np.cos(metal_ang1))
         )
 
-        r2 = slip1 - (1 - 1 / (1 + slip_coeff1 * solid1 * np.cos(metal_ang1) ** 0.5))
+        r2 = slip1 - (
+            1 - 1 / (1 + slip_coeff1 * eff_solid1 * np.cos(metal_ang1) ** 0.5)
+        )
 
         slip_velocity = u1 * (1 - slip1)
 
