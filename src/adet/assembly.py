@@ -6,14 +6,12 @@ data.
 Sometimes the CasADi api is slightly cryptic, sorry.
 """
 
-from adet.tools.loggers import setup_logger
-
 import logging
 import sys
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from itertools import accumulate
-from typing import Any, Callable, Iterable, Literal, Self, Sequence, Type, cast
+from typing import Any, Callable, Iterable, Literal, Self, Sequence, Type, cast, Mapping
 
 import casadi as cs
 import jax as jax
@@ -31,28 +29,19 @@ from adet.errors import ExistingEquationError
 from adet.fluid.casadi_eos import CasadiEos
 from adet.fluid.eos_factory import EosFactory
 from adet.fluid.settings import EmptyFluidModel, ExternalFluidModel, FluidSettings
-from adet.registries import (
-    GuessRegistry,
-    ScalarsRegistry,
-    ScalingRegistry,
-    VariableBoundsRegistry,
-)
+from adet.registries import ScalingRegistry
 from adet.tools.context import override_operators
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.interpolation import resample_linear
 from adet.tools.iter import ensure_tuple, leaves
+from adet.tools.loggers import setup_logger
 from adet.tools.strings import get_index, rm_index
 
 logger = logging.getLogger(__name__)
 
-THERMO_PREFIXES = ('stc', 'tot', 'rlt')
-THERMO_CONST_SUFFIX = '__THERMOCONSTR'  # I don't like this
-
+THERMO_CONST_SUFFIX = '__thrmCNS'
 
 _scale_reg = ScalingRegistry()
-_scalars_reg = ScalarsRegistry()
-_bounds_reg = VariableBoundsRegistry()
-_guess_reg = GuessRegistry()
 
 
 def get_units_string(var):
@@ -273,9 +262,29 @@ class ConstraintManager:
         for arg in arguments:
             self.data.spanwise_constants.add(arg)
 
-    def _validate_units(self) -> None:
-        """Write the stored boundary conditions to the nodes"""
-        logger.debug('Checking boundary conditions...')
+    def _validate_length(self, spec: VarSpec, val: AdetArray | PlainQuantity):
+        if isinstance(val, PlainQuantity):
+            val = val.to_base_units().magnitude
+
+        val_array = np.atleast_1d(val)
+
+        if len(val_array) == 1:
+            if spec.scalar:
+                val_valid = val_array
+            else:
+                val_valid = np.repeat(val_array, self.data.num_span)
+        elif len(val_array) != self.data.num_span:
+            raise ValueError(
+                f'Length mismatch for boundary condition {spec.full_symbol(True)}'
+            )
+        else:
+            val_valid = val_array
+
+        return val_valid
+
+    def _validate_all_units(self) -> None:
+        """Write the stored boundary conditions"""
+        logger.debug('Checking boundary conditions units...')
         for spec, value in self.data.boun_cond.items():
             if isinstance(value, PlainQuantity):
                 def_unit = Unit(spec.unit)
@@ -285,14 +294,17 @@ class ConstraintManager:
                         f' prescribed in the boundary conditions for {spec.symbol}'
                     )
 
-                self.data.boun_cond[spec] = value.to_base_units()
+                # Do not convert yet
+                self.data.boun_cond[spec] = value
+            else:
+                self.data.boun_cond[spec] = value
 
     def check_constraints_effectiveness(self) -> None:
         """
         Check if the arguments used in equalities and spanwise_constants
         appear as declared arguments
         """
-        # TODO: Could even check if they are free
+        # TODO: Could check if they are free (?)
         for equality in self.data.equalities:
             for arg in equality:
                 self._check_arg_declaration(arg, 'equalities')
@@ -302,6 +314,13 @@ class ConstraintManager:
 
         for arg in self.data.boun_cond:
             self._check_arg_declaration(arg, 'boundary conditions')
+
+    def get_flat_bound_conds(self) -> list[NDArray]:
+        bc_values = []
+        for spec, val in self.data.boun_cond.items():
+            val_valid = self._validate_length(spec, val)
+            bc_values.append(val_valid)
+        return bc_values
 
 
 class ArgumentResolver:
@@ -360,12 +379,12 @@ class ArgumentResolver:
 
         return [arg for arg in all_discarded if arg.state]
 
-    # ********************  TODO: Restore introspection START
-    def make_arg_structure(self, arguments: Sequence[str]):
+    # *** System introspection
+    def make_arg_structure(self, arguments: Sequence[VarSpec]):
         """Detect the argument structure of a sequence of arguments"""
         arguments_struct = []
         for arg in arguments:
-            num_span = 1 if arg in self.data.scalar_arguments else self.data.num_span
+            num_span = 1 if arg.scalar else self.data.num_span
             branch = num_span * [0]
             arguments_struct.append(branch)
 
@@ -377,7 +396,7 @@ class ArgumentResolver:
         acc_lengths = [0] + list(accumulate(arg_lengths[:-1]))
         return arg_lengths, acc_lengths
 
-    def position_from_arg(self, arg_index: int) -> tuple[int, int]:
+    def position_from_idx(self, arg_index: int) -> tuple[int, int]:
         """
         Return the start and end index of an argument, given its index
         in the free_args attribute
@@ -391,8 +410,6 @@ class ArgumentResolver:
             end_index = start_index + arg_lengths[arg_index] - 1
 
         return (start_index, end_index)
-
-    # ********************  TODO: Restore introspection END
 
 
 class UnitScalingManager:
@@ -459,8 +476,8 @@ class UnitScalingManager:
         for spec in self.data.free_args:
             if spec in custom_bounds:
                 lower_bound, upper_bound = custom_bounds[spec]
-            elif spec.Plain in custom_bounds:
-                lower_bound, upper_bound = custom_bounds[spec]
+            elif spec.Glob in custom_bounds:
+                lower_bound, upper_bound = custom_bounds[spec.Glob]
             else:
                 if not spec.bounds:
                     lower_bound = -1e20
@@ -671,7 +688,7 @@ class SystemAssembler(ABC):
         self.data._arg_maps = self._equation_registry._build_argument_maps()
         self.data.decl_args = self._equation_registry._read_decl_args()
 
-        self._constraint_manager._validate_units()
+        self._constraint_manager._validate_all_units()
         self._constraint_manager.check_constraints_effectiveness()
 
         # Arguments manipulation
@@ -691,23 +708,7 @@ class SystemAssembler(ABC):
             )
 
     def get_arg_position(self, arg_index: int):
-        return self._argument_resolver.position_from_arg(arg_index)
-
-    @property
-    def equations_indices(self):
-        """
-        Return a list of each single equations,
-        splitting also multi-residual objects
-        Needed to identify problematic equations
-        """
-        eq_identifiers = []
-        for eq, pos in self.data.equations.items():
-            eq_identifiers += [
-                f'{eq.__class__.__name__} EQ#{idx} @NODES{pos}'
-                for idx in range(eq.num_equations)
-            ]
-
-        return eq_identifiers
+        return self._argument_resolver.position_from_idx(arg_index)
 
     @property
     def free_args_scaling(self):
@@ -728,23 +729,38 @@ class SystemAssembler(ABC):
     def make_residual_function(self):
         self._check_built()
 
+    def sol_to_dict(self, solution: NDArray) -> dict[VarSpec, NDArray]:
+        sol_dict = {}
+        curr_idx = 0
+        scales = self.free_args_scaling
+        solution = solution.flatten()
+        for arg_pos, spec in enumerate(self.data.free_args):
+            arg_length = 1 if spec.scalar else self.num_span
+            scl = scales[arg_pos]
+            sol_dict[spec] = solution[curr_idx : curr_idx + arg_length] * scl
+            curr_idx += arg_length
+
+        return sol_dict
+
     def get_arguments_bounds(self, custom_bounds={}):
         self._scaling_manager.get_arguments_bounds(custom_bounds)
 
     def get_scaled_constraints(self) -> list[NDArray]:
+        dimensional_constr = self._constraint_manager.get_flat_bound_conds()
         return jax.tree.map(
             lambda x, y: x / y,
-            list(self.data.boun_cond.values()),
+            dimensional_constr,
             self.constraints_scaling,
         )
 
     def get_scaled_guess(
         self,
-        manual_values: dict[VarSpec, AdetArray] = {},
+        manual_values: Mapping[VarSpec, NDArray] = {},
         fallback: float | None = None,
     ) -> list[NDArray]:
         """Generate initial guesses for free arguments"""
         guesses = []
+        manual_values = dict(manual_values)
 
         for spec in self.data.free_args:
             # If there is a manual value, overwrite the guess registry
@@ -752,8 +768,8 @@ class SystemAssembler(ABC):
             if spec in manual_values:
                 guess_value = manual_values[spec]
                 logger.debug(f'Using manual value {guess_value} for {spec}')
-            elif spec.Plain in manual_values:
-                guess_value = manual_values[spec.Plain]
+            elif spec.Glob in manual_values:
+                guess_value = manual_values[spec.Glob]
                 logger.debug(f'Using manual value {guess_value} for {spec}')
             # If a guess is available in the registry
             elif spec.guess:
@@ -772,9 +788,11 @@ class SystemAssembler(ABC):
                     guess_value = fallback
                 # Otherwise ask for user input
                 else:
-                    input_msg = f'INPUT >>> DIMENSIONAL guess for {spec} [1.0] = '
+                    input_msg = (
+                        f'INPUT >>> DIMENSIONAL guess for {spec.symbol} [1.0] = '
+                    )
                     guess_value = float(input(input_msg) or 1.0)
-                    manual_values[spec.Plain] = guess_value
+                    manual_values[spec.Glob] = np.atleast_1d(guess_value)
 
             guess_value = np.atleast_1d(guess_value)
 
@@ -782,7 +800,7 @@ class SystemAssembler(ABC):
                 logger.debug(
                     f'Length mismatch in guess for {spec}, using linear resampling'
                 )
-                # This simply repeats the single value when 1 -> N
+                # This simply repeats the single value when num_span=1
                 guess_value = resample_linear(
                     guess_value.flatten(),
                     self.data.num_span,
@@ -1385,40 +1403,9 @@ class JaxSystem(SystemAssembler):
             for eq in self.data.equations
         ]
 
-    def _get_residual_positions(self):
-        """
-        Get where residual equations are placed in the stack
-        of residuals
-        """
-        curr_index = 0
-        residual_indices = []
-        for eq in self.data.equations:
-            num_eqs = eq.num_equations
-            residual_indices.append(tuple(curr_index + j for j in range(num_eqs)))
-            curr_index += num_eqs
+    def _get_residual_positions(self): ...
 
-        return residual_indices
-
-    def _get_equation_lines(self, residuals_name: str):
-        """
-        Make the equation lines, each writing the residuals
-        array at the correct residual indices
-        """
-        residual_indices = self._get_residual_positions()
-        eq_lines = []
-        for idx, eq in enumerate(self.data.equations):
-            int_map = self.data._arg_maps[eq]
-
-            mapped_args = [get_absolute_arg(int_map, arg) for arg in eq.arguments]
-
-            eq_lines.append(
-                f'{residuals_name} = {residuals_name}.at'
-                f'[jnp.array( {residual_indices[idx]} )].'
-                f'set( eq{idx}( {", ".join(mapped_args)} ) )'
-            )
-
-        return eq_lines
-
+    def _get_equation_lines(self, residuals_name: str): ...
     def _generate_residual_code(
         self,
         func_name: str,
@@ -1436,8 +1423,9 @@ class JaxSystem(SystemAssembler):
         eq_lines = self._get_equation_lines(residuals_name)
         eq_stack = '\n    '.join(eq_lines)
 
+        decl_arguments = [a.full_symbol(True) for a in self.data.decl_args]
         codegen = f"""
-def {func_name}(equations, {', '.join(self.data.decl_args)}):
+def {func_name}(equations, {', '.join(decl_arguments)}):
     {residuals_name} = jnp.zeros({(self.num_equations, self.num_span)})
 
     {eq_name_unpacker} = equations

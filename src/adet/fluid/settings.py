@@ -88,7 +88,7 @@ class FluidSettings:
                 key=lambda x: COOLPROP_NAMES_MAP[x.symbol],
             )
         )
-        self.update_variables = tuple(sp.Plain for sp in sorted_upd)
+        self.update_variables = tuple(sp.Glob for sp in sorted_upd)
 
     @property
     def input_pair(self) -> int:

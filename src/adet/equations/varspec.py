@@ -59,7 +59,7 @@ class VarSpec:
         return prefix + self.symbol + postfix
 
     @property
-    def Plain(self):
+    def Glob(self):
         return replace(self, state=DEF_STATE, node=DEF_NODE)
 
     @property

@@ -1,10 +1,9 @@
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
-from adet.equations.variables import NodeVariables
-from matplotlib.lines import Line2D
 import numpy as np
+from matplotlib.lines import Line2D
 
 from adet.assembly import CasadiSystem
 from adet.components import BaseComponent, Shaft
@@ -19,20 +18,21 @@ from adet.equations.fundamental import (
     ZeroBlockage,
 )
 from adet.equations.geometrical import (
+    BladePitch,
     BladeRatios,
     EndwallProperties,
     MeridionalGeometry,
     MeridionalRatios,
-    BladePitch,
     MinimalCamberLine,
     RadialGeometry,
 )
 from adet.equations.special import GeometricalAdder
 from adet.equations.variables import (
-    KinematicVariables,
     GeometricVariables,
-    ThermoVariables,
+    KinematicVariables,
+    NodeVariables,
     OtherVariables,
+    ThermoVariables,
 )
 from adet.equations.varspec import DEF_NODE, NodeStates, VarSpec
 from adet.geometry import BezierCurve, StraightLine
@@ -77,7 +77,7 @@ rotating frame (omega)
 # Geometry
 GEOM_LINK = [
     _geo.Height,
-    _geo.RadiusRatio,
+    _geo.Rmid,
     _geo.MeridionalAngle,
 ]
 
