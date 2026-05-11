@@ -157,6 +157,7 @@ class Losses(VariableEnum):
     Ds_profile = VarSpec('ds_profile', 'J / kg / K')
     Ds_secondary = VarSpec('ds_secondary', 'J / kg / K')
     Ds_total = VarSpec('ds_total', 'J / kg / K')
+    Ds_main = VarSpec('ds_main', 'J / kg / K')
 
 
 class OtherVariables(VariableEnum):
@@ -188,6 +189,11 @@ class OtherVariables(VariableEnum):
     MaxWakeFrac = VarSpec('maxWake_frac', '')
     IncCoeff = VarSpec('incCoeff', '')
     WorkLossCoeff = VarSpec('worklossCoeff', '')
+    XiCambLenA = VarSpec('xi_camb_len_A', '')
+    XiCambLenB = VarSpec('xi_camb_len_B', '')
+    KProf = VarSpec('k_prof', '', 0.3)
+    CdProfile = VarSpec('cd_profile', '')
+    DischCoeff = VarSpec('disch_coeff', '')
 
 
 class NodeVariables:

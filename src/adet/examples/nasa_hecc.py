@@ -222,18 +222,21 @@ impeller = BladeRow(
     shaft=shaft,
     row_type='rotor',
     bound_cond={
-        # *** Node 0
+        # *** Node 0 ***
         # > Geometry
-        n0.geo.MeridionalAngle: Quantity(0, 'deg'),
+        # - Meridional
         n0.geo.Rmid: R_MID,
         n0.geo.Height: HEIGHT,
+        n0.geo.MeridionalAngle: Quantity(0, 'deg'),
+        # - Blade
         n0.geo.MetalAngle: Quantity(-44, 'deg'),
         n0.geo.MetalAngleHub: Quantity(-30, 'deg'),
         n0.geo.MetalAngleTip: Quantity(-53, 'deg'),
         n0.geo.BldThick: 0.002,
         n0.geo.TipClearance: Quantity(0.235, 'mm'),
+        # > Incidence loss coefficient
         n0.oth.IncCoeff: 0.5,
-        # *** Node 1
+        # *** Node 1 ***
         # > Geometry
         n1.geo.MeridionalAngle: Quantity(90, 'deg'),
         n1.geo.Rmid: Quantity(0.2159, 'm'),

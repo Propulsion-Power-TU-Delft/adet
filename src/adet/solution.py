@@ -106,7 +106,7 @@ def solve_root_problem(
         output_manipulator = dummy_context
 
     with output_manipulator():
-        logger.info('Solving the system...')
+        logger.info(f'Solving the system with {rootfinder.name()}...')
 
         if isinstance(guess, list):
             guess_cat = np.concatenate(guess)

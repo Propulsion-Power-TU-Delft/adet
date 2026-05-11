@@ -3,7 +3,11 @@ import CoolProp as cp
 import numpy as np
 
 from adet.equations.utils import safe_abs, trapezoid2
+from adet.equations.variables import NodeVariables
 from adet.losses.base_loss import LossModel
+
+n0 = NodeVariables(0)
+n1 = NodeVariables(1)
 
 
 def trapezoidal_vel_profile(
@@ -149,41 +153,37 @@ class DentonTrapProfile(LossModel):
 
     def residual(
         self,
-        # Thermo
-        rlt_hmass0,
-        stc_smass0,
-        # Kine
-        kin_W0,
-        kin_W1,
-        kin_Vt0,
-        kin_Vt1,
-        # Misc
-        oth_ch_massflow1,
-        oth_xi_by_camb_len_A1,
-        oth_xi_by_camb_len_B1,
-        oth_k_prof1,
-        oth_Cd_profile1,
-        # Geo
-        geo_hh1,
-        geo_camb_len1,
-        geo_stagger1,
-        oth_delta_smass_profile1,
+        h_rlt0: n0.rlt.Enthalpy.Hint,
+        s0: n0.stc.Entropy.Hint,
+        W0: n0.kin.W_mag.Hint,
+        W1: n1.kin.W_mag.Hint,
+        Vt0: n0.kin.V_tan.Hint,
+        Vt1: n1.kin.V_tan.Hint,
+        ch_mf1: n1.oth.ChMassflow.Hint,
+        xi_A1: n1.oth.XiCambLenA.Hint,
+        xi_B1: n1.oth.XiCambLenB.Hint,
+        k_prof1: n1.oth.KProf.Hint,
+        cd_prof1: n1.oth.CdProfile.Hint,
+        h1: n1.geo.HDistr.Hint,
+        camb_len1: n1.geo.CamberLength.Hint,
+        stag1: n1.geo.Stagger.Hint,
+        ds_prof1: n1.loss.Ds_profile.Hint,
     ):
         xi_by_camb_len, W_distr_ss, W_distr_ps = trapezoidal_vel_profile(
-            oth_xi_by_camb_len_A1, oth_xi_by_camb_len_B1, oth_k_prof1, kin_W0, kin_W1
+            xi_A1, xi_B1, k_prof1, W0, W1
         )
 
         # Static enthalpies
-        stc_hmass_ss = rlt_hmass0 - W_distr_ss**2 / 2
-        stc_hmass_ps = rlt_hmass0 - W_distr_ps**2 / 2
+        stc_hmass_ss = h_rlt0 - W_distr_ss**2 / 2
+        stc_hmass_ps = h_rlt0 - W_distr_ps**2 / 2
 
         # NOTE: Idea, make smass1 also an input and distribute
         # entropy (linearly?) between inlet and outlet
-        p_ss, rho_ss, temp_ss = self.eos(stc_hmass_ss, stc_smass0)
-        p_ps, rho_ps, temp_ps = self.eos(stc_hmass_ps, stc_smass0)
+        p_ss, rho_ss, temp_ss = self.eos(stc_hmass_ss, s0)
+        p_ps, rho_ps, temp_ps = self.eos(stc_hmass_ps, s0)
 
         # xi = coordinate along the chord
-        xi_dimensional = xi_by_camb_len * geo_camb_len1
+        xi_dimensional = xi_by_camb_len * camb_len1
 
         # Trapezoidal integration (can't use np.trapezoidal for differentiability)
         # (trapezoidal rule is exact because everything is linear)
@@ -194,11 +194,11 @@ class DentonTrapProfile(LossModel):
         # Entropy generation from 2D viscous dissipation
         # [ kg / m^3 ] * [ m^3 / s^3 ] / [K] * [m]
         # = [ kg * m / s^3 / K ] = [ N / s / K ]
-        entropy_integral_ps = oth_Cd_profile1 * trapezoid2(
+        entropy_integral_ps = cd_prof1 * trapezoid2(
             rho_ps * W_distr_ps**3 / temp_ps,
             xi_dimensional,
         )
-        entropy_integral_ss = oth_Cd_profile1 * trapezoid2(
+        entropy_integral_ss = cd_prof1 * trapezoid2(
             rho_ss * W_distr_ss**3 / temp_ss,
             xi_dimensional,
         )
@@ -211,13 +211,11 @@ class DentonTrapProfile(LossModel):
         #    |> divide my massflow of each channel
 
         # 1. Tangential momentum balance [N]
-        delta_Vt = cs.fabs(kin_Vt1 - kin_Vt0)
-        r1 = oth_ch_massflow1 * delta_Vt - pressure_integral * geo_hh1 * np.cos(
-            geo_stagger1
-        )
+        delta_Vt = cs.fabs(Vt1 - Vt0)
+        r1 = ch_mf1 * delta_Vt - pressure_integral * h1 * np.cos(stag1)
 
         # 2. SPECIFIC entropy generation [J / kg / K]
-        r2 = oth_delta_smass_profile1 - entropy_integral * geo_hh1 / oth_ch_massflow1
+        r2 = ds_prof1 - entropy_integral * h1 / ch_mf1
 
         return r1, r2
 

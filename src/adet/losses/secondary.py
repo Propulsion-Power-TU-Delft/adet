@@ -1,7 +1,11 @@
+from adet.equations.variables import NodeVariables
 from adet.losses.base_loss import LossModel
 import numpy as np
 import casadi as cs
 import CoolProp as cp
+
+n0 = NodeVariables(0)
+n1 = NodeVariables(1)
 
 # - * - * - * - * FROM TURBOSIM - * - * - * - *
 # NOTE:
@@ -46,42 +50,39 @@ class SecondaryBSM(LossModel):
 
     def residual(
         self,
-        geo_height1,
-        geo_chord1,
-        kin_beta0,
-        kin_beta1,
-        geo_stagger1,
-        oth_disp_thick_ew1,
-        # Thermo
-        rlt_p0,
-        stc_p1,
-        stc_smass0,
-        rlt_hmass0,
-        oth_delta_smass_secondary1,
+        h1: n1.geo.Height.Hint,
+        chord1: n1.geo.Chord.Hint,
+        beta0: n0.kin.FlowAngleRel.Hint,
+        beta1: n1.kin.FlowAngleRel.Hint,
+        stag1: n1.geo.Stagger.Hint,
+        disp_ew1: n1.oth.DispThickEW.Hint,
+        p_rlt0: n0.rlt.Pressure.Hint,
+        p1: n1.stc.Pressure.Hint,
+        s0: n0.stc.Entropy.Hint,
+        h_rlt0: n0.rlt.Enthalpy.Hint,
+        ds_sec1: n1.loss.Ds_secondary.Hint,
     ):
-        hgt_by_ch = geo_height1 / geo_chord1
-        cos_ratio = np.cos(kin_beta0) / np.cos(kin_beta1)
-        disp_by_H = oth_disp_thick_ew1 / geo_height1
+        hgt_by_ch = h1 / chord1
+        cos_ratio = np.cos(beta0) / np.cos(beta1)
+        disp_by_H = disp_ew1 / h1
 
         Y_min2 = (0.038 + 0.41 * np.tanh(1.2 * disp_by_H)) / (
-            np.cos(geo_stagger1) ** 0.5
+            np.cos(stag1) ** 0.5
             * cos_ratio
-            * (hgt_by_ch * np.cos(kin_beta1) / np.cos(geo_stagger1)) ** 0.55
+            * (hgt_by_ch * np.cos(beta1) / np.cos(stag1)) ** 0.55
         )
 
         Y_gtr2 = (0.052 + 0.56 * np.tanh(1.2 * disp_by_H)) / (
-            np.cos(geo_stagger1) ** 0.5
+            np.cos(stag1) ** 0.5
             * cos_ratio
             * hgt_by_ch
-            * (np.cos(kin_beta1) / np.cos(geo_stagger1)) ** 0.55
+            * (np.cos(beta1) / np.cos(stag1)) ** 0.55
         )
 
         loss_coeffY = cs.if_else(hgt_by_ch < 2.0, Y_min2, Y_gtr2)
         # Bound the loss coefficient to be >= 0
         loss_coeffY = cs.if_else(loss_coeffY > 0.0, loss_coeffY, 0.0)
 
-        rlt_p_out = (rlt_p0 + loss_coeffY * stc_p1) / (loss_coeffY + 1)
+        rlt_p_out = (p_rlt0 + loss_coeffY * p1) / (loss_coeffY + 1)
 
-        return oth_delta_smass_secondary1 - (
-            self.eos(rlt_hmass0, rlt_p_out) - stc_smass0
-        )
+        return ds_sec1 - (self.eos(h_rlt0, rlt_p_out) - s0)

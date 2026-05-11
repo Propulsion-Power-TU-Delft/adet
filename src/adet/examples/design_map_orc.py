@@ -34,6 +34,7 @@ from adet.equations.nondimensional import (
     VolumetricFlowRatio,
     WorkCoefficient,
 )
+from adet.equations.variables import NodeVariables, ThermoVariables
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.losses.leakage import DentonTrapLeakage
@@ -44,6 +45,11 @@ from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsR
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
+
+n0 = NodeVariables(0)
+n1 = NodeVariables(1)
+n2 = NodeVariables(2)
+n3 = NodeVariables(3)
 
 logger = logging.getLogger(__name__)
 
@@ -88,31 +94,26 @@ class AddAxialLosses(LossApplier):
 
     def residual(
         self,
-        stc_smass0,
-        stc_smass1,
-        oth_delta_smass_mixing1,
-        oth_delta_smass_profile1,
-        oth_delta_smass_secondary1,
-        oth_delta_smass_leakage1,
-        oth_delta_smass_main1,
+        s0: n0.stc.Entropy.Hint,
+        s1: n1.stc.Entropy.Hint,
+        ds_mixing1: n1.loss.Ds_mixing.Hint,
+        ds_profile1: n1.loss.Ds_profile.Hint,
+        ds_secondary1: n1.loss.Ds_secondary.Hint,
+        ds_leakage1: n1.loss.Ds_leakage.Hint,
+        ds_main1: n1.loss.Ds_main.Hint,
     ):
-        main_loss = (
-            0.0
-            + oth_delta_smass_mixing1
-            + oth_delta_smass_profile1
-            + oth_delta_smass_secondary1
-        )
+        main_loss = ds_mixing1 + ds_profile1 + ds_secondary1
 
-        leak_loss = oth_delta_smass_leakage1
+        leak_loss = ds_leakage1
 
-        r1 = oth_delta_smass_main1 - main_loss
+        r1 = ds_main1 - main_loss
 
         if self._has_tip_gap:
-            r3 = stc_smass1 - (stc_smass0 + main_loss + leak_loss)
+            r2 = s1 - (s0 + main_loss + leak_loss)
         else:
-            r3 = stc_smass1 - (stc_smass0 + main_loss)
+            r2 = s1 - (s0 + main_loss)
 
-        return r1, r3
+        return r1, r2
 
 
 def compute_design_map(
@@ -139,8 +140,9 @@ def compute_design_map(
     bnd = ntw.system.get_arguments_bounds()
 
     curr_index = 0
-    phi_idx = ntw.system.constraints.index('oth_flowCoeff3')
-    psi_idx = ntw.system.constraints.index('oth_ts_loadCoeff3')
+    boun_cond_keys = list(ntw.system.data.boun_cond.keys())
+    phi_idx = boun_cond_keys.index(n3.ndim.FlowCoeff)
+    psi_idx = boun_cond_keys.index(n3.ndim.TSLoadCoeff)
     for phi in PHI_SPAN:
         for psi in PSI_SPAN:
             curr_key = np.array([phi, psi])
@@ -188,8 +190,8 @@ def compute_design_map(
 
             # Store the full solution dict
             if not np.isnan(solution).any():
-                sol_dict = ntw.system.write_solution_to_nodes(solution)
-                if sol_dict['oth_eta_tt3'] > 1.0 or sol_dict['oth_eta_tt3'] < 0.5:
+                sol_dict = ntw.system.sol_to_dict(solution)
+                if sol_dict[n3.ndim.EtaTT] > 1.0 or sol_dict[n3.ndim.EtaTT] < 0.5:
                     sol_dict = None
                     logger.warning(f'Failed point at phi={phi:.2f}, psi={psi:.2f}')
             else:
@@ -212,10 +214,10 @@ abs_state.debug_print = False
 
 # Stable solution
 DUTY_COEFFS = {
-    'oth_flowCoeff1': 0.4,
-    'oth_ts_loadCoeff1': 3.0,
-    'oth_volflowRatio1': round(float(VOL_FLOW), 1),
-    'oth_reactDegree_ts1': round(float(REACT_DEGREE), 1),
+    n1.ndim.FlowCoeff: 0.4,
+    n1.ndim.TSLoadCoeff: 3.0,
+    n1.ndim.VolflowRatio: round(float(VOL_FLOW), 1),
+    n1.ndim.DegreeOfReactionTS: round(float(REACT_DEGREE), 1),
 }
 
 PHI_SPAN = np.linspace(0.4, 1.5, MAP_POINTS)
@@ -226,9 +228,10 @@ INLET_PRESSURE = 1.3 * abs_state.p_critical()
 INLET_TEMPERATURE = 1.045 * abs_state.T_critical()
 abs_state.update(cp.PT_INPUTS, INLET_PRESSURE, INLET_TEMPERATURE)
 
+thrm = ThermoVariables()
 fluid_settings = FluidSettings(
     model=real_model,
-    update_variables=('p', 'hmass', 'T'),
+    update_variables=(thrm.Pressure, thrm.Enthalpy),
     update_length=2,
 )
 
@@ -236,9 +239,6 @@ fluid_settings = FluidSettings(
 _defreg = DefaultUnitsRegistry()
 _defreg.from_dict(
     {
-        'xi_by_camb_.*': 'dimensionless',
-        'Cd_prof': 'dimensionless',
-        'k_prof': 'dimensionless',
         'Y_.*': 'dimensionless',
     }
 )
@@ -321,19 +321,13 @@ LOSS_MODELS: dict[
 # ================================================
 # *** Inlet conditions
 inlet = Inlet(
-    {
-        'oth': {
-            # 'cum_massflow': 100,
-        },
-        'geo': {
-            'rr_midspan': 0.1,
-            'meridional_angle': Quantity(0, 'deg'),
-            # 'hubtipRatio': 0.9,
-        },
-        'tot': {
-            'p': abs_state.p(),
-            'hmass': abs_state.hmass(),
-        },
+    boundary_conditions={
+        # n0.oth.CumMassFlow: 100,
+        n0.geo.Rmid: 0.1,
+        n0.geo.MeridionalAngle: Quantity(0, 'deg'),
+        # n0.geo.HubTipRatio: 0.9,
+        n0.tot.Pressure: abs_state.p(),
+        n0.tot.Enthalpy: abs_state.hmass(),
     }
 )
 
@@ -342,35 +336,19 @@ stator = BladeRow(
     name='Stator',
     shaft=casing,
     row_type='stator',
-    in_constraints={
-        'geo': {
-            'thick_by_pitch': 0.04,
-        },
-    },
-    out_constraints={
-        # # This was coded in TurboSim
-        # 'stc': {
-        #     'p': 1.462617e6,
-        # },
-        'geo': {
-            'meridional_angle': Quantity(0, 'deg'),
-            'thick_by_pitch': 0.02,
-            'clearance_by_height': 0.01,
-            # *** Num blades
-            'num_blades': 30,
-        },
-        'oth': {  # NOTE: These are not used on first pass
-            # *** Boundary layer ratios
-            'mom_by_bld': 0.075,
-            'disp_by_mom': 2,
-            'disp_by_hgt': 0.05,  # endwall
-            # *** Profile loss coeff
-            'Cd_profile': 0.002,
-            'xi_by_camb_len_A': 0.375,
-            'xi_by_camb_len_B': 0.675,
-            # *** Tip leakage discharge coeff
-            'dischCoeff': 0.35,
-        },
+    bound_cond={
+        n0.geo.ThickByPitch: 0.04,
+        n1.geo.MeridionalAngle: Quantity(0, 'deg'),
+        n1.geo.ThickByPitch: 0.02,
+        n1.geo.ClearanceByHeight: 0.01,
+        n1.geo.NumBlades: 30,
+        n1.oth.MomByBld: 0.075,
+        n1.oth.DispByMom: 2,
+        n1.oth.DispByHgt: 0.05,
+        n1.oth.CdProfile: 0.002,
+        n1.oth.XiCambLenA: 0.375,
+        n1.oth.XiCambLenB: 0.675,
+        n1.oth.DischCoeff: 0.35,
     },
     extra_equations={
         ZeroDeviation(): 0,  # No incidence (design)
@@ -379,8 +357,8 @@ stator = BladeRow(
         ParabolicCamberline(): (0, 1),
         INITIAL_LOSS: (0, 1),
     },
-    constant_variables=['geo_rr_midspan'],
 )
+stator.set_spanwise_constant(n0.geo.Rmid)
 
 # ============ Modify rotor
 rotor = deepcopy(stator)  # Reuse the stator as template
@@ -389,12 +367,8 @@ rotor.name = 'rotor'
 rotor.row_type = 'rotor'  # Set the type (useless now)
 rotor.add_equation(WorkCoefficient(), (0, 1))
 
-if 'stc' in stator._boundary_conditions:
-    rotor.rm_boundary_cond('stc_p1')
-
-
 # *** Duty coefficients
-rotor.bc_from_dict({'geo_hubtipRatio1': 0.818})
+rotor.set_boundary_cond(n1.geo.HubTipRatio, 0.818)
 rotor.bc_from_dict(DUTY_COEFFS)  # Duty coefficients at node 1
 
 # ================================================
@@ -406,21 +380,21 @@ ntw = ComponentNetwork(
     components=[stator, rotor],
 )
 
-rotor.set_spanwise_constant('geo_chord_ax1')
-stator.set_spanwise_constant('geo_chord_ax1', 'geo_hh0', 'kin_Vm0')
-rotor.copy_from_previous('geo_hh', 'geo_rr')
+rotor.set_spanwise_constant(n1.geo.ChordAx)
+stator.set_spanwise_constant(n1.geo.ChordAx, n0.geo.HDistr, n0.kin.V_mer)
+rotor.copy_from_previous(n0.geo.HDistr, n0.geo.RDistr)
 rotor.remove_equation(MeridionalGeometry, 0)
 
 # *** Flare angle hack ***
 ####
 match CHORD_METHOD:
     case 'aspRatio':
-        stator.set_boundary_cond('geo_aspRatio1', ASP_RATIO)
-        rotor.set_boundary_cond('geo_aspRatio1', ASP_RATIO)
+        stator.set_boundary_cond(n1.geo.AspectRatio, ASP_RATIO)
+        rotor.set_boundary_cond(n1.geo.AspectRatio, ASP_RATIO)
         identifier = f'aspRatio_{ASP_RATIO}'
     case 'flare_angle':
-        stator.set_boundary_cond('geo_flare_angle1', Quantity(FLARE_ANGLE, 'deg'))
-        rotor.set_boundary_cond('geo_flare_angle1', Quantity(FLARE_ANGLE, 'deg'))
+        stator.set_boundary_cond(n1.geo.FlareAngle, Quantity(FLARE_ANGLE, 'deg'))
+        rotor.set_boundary_cond(n1.geo.FlareAngle, Quantity(FLARE_ANGLE, 'deg'))
         identifier = f'flare_angle_{FLARE_ANGLE}'
     case 'dynamic':
         flare_max_rad = FLARE_MAX * np.pi / 180
@@ -449,7 +423,7 @@ ntw.system.add_equation(TotalStaticLoadingCoefficient(), (0, 3))
 ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
 
 # Build
-ntw.system.build(True)
+ntw.build()
 
 # ============ Isentropic Solution ============
 rootfinder_is = ntw.system.make_rootfinder(
@@ -464,7 +438,9 @@ rtfn_kinsol = ntw.system.make_rootfinder('kinsol')
 
 x0_is = ntw.system.get_scaled_guess()
 kn_is = ntw.system.get_scaled_constraints()
-bnd_is = ntw.system.get_arguments_bounds({'kin_alpha0': (-0.7, 0.7)})
+bnd_is = ntw.system.get_arguments_bounds(
+    custom_bounds={n0.kin.FlowAngleAbs.Glob: (-0.7, 0.7)}
+)
 solution = solve_root_problem(
     rootfinder_is,
     x0_is,
@@ -478,13 +454,13 @@ stator_is_equations = stator._equations.copy()
 rotor_is_equations = rotor._equations.copy()
 
 # Write solution to dict for reading for next solution
-sol_dict_is = ntw.system.write_solution_to_nodes(solution)
+sol_dict_is = ntw.system.sol_to_dict(solution)
 
 # ========================== LOSSES
-rotor.rm_boundary_cond('geo_num_blades1')
-rotor.set_boundary_cond('geo_zweifelCoeff1', 0.85)
-stator.rm_boundary_cond('geo_num_blades1')
-stator.set_boundary_cond('geo_zweifelCoeff1', 0.85)
+rotor.rm_boundary_cond(n1.geo.NumBlades)
+rotor.set_boundary_cond(n1.geo.ZweifelCoeff, 0.85)
+stator.rm_boundary_cond(n1.geo.NumBlades)
+stator.set_boundary_cond(n1.geo.ZweifelCoeff, 0.85)
 
 for eq, pos in LOSS_MODELS.items():
     stator.add_equation(eq(), pos)
@@ -519,7 +495,7 @@ except RuntimeError:
 
 sol_loss = solve_root_problem(rtfn_kn, solution, kn_loss)
 
-sol_dict_loss = ntw.system.write_solution_to_nodes(solution)
+sol_dict_loss = ntw.system.sol_to_dict(solution)
 
 keys_loss, solutions_loss, solution_dicts = compute_design_map(
     ntw, sol_loss, MAP_POINTS
@@ -543,8 +519,8 @@ design_map_data = {
     'N_PTS': MAP_POINTS,
 }
 
-vol_flow = DUTY_COEFFS['oth_volflowRatio1']
-react = DUTY_COEFFS['oth_reactDegree_ts1']
+vol_flow = DUTY_COEFFS[n1.ndim.VolflowRatio]
+react = DUTY_COEFFS[n1.ndim.DegreeOfReactionTS]
 
 filename = f'des_map_R{react}_vr{vol_flow}_{identifier}.pkl'
 with open(data_dir / filename, 'wb') as f:

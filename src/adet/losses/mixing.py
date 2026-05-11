@@ -9,8 +9,12 @@ import numpy as np
 
 from adet.equations.base_equation import DeviationModel, EquationBase
 from adet.equations.utils import minmax_bound, safe_abs, safe_if_else, safe_min
+from adet.equations.variables import NodeVariables
 from adet.losses.base_loss import LossModel
 from adet.tools.interpolation import make_casadi_interpolant
+
+n0 = NodeVariables(0)
+n1 = NodeVariables(1)
 
 BLADE_PARAM = 2  # For Sieverding -> tmp, make this an input
 
@@ -25,9 +29,14 @@ class SieverdingBasePressure(EquationBase):
         data = np.load(data_folder / f'sieverding_{blade_type}_zq.npy')
         return make_casadi_interpolant(x, y, data, 'base_pr', 'linear')
 
-    def residual(self, tot_p0, stc_p1, oth_p_base1):
+    def residual(
+        self,
+        pt0: n0.tot.Pressure.Hint,
+        p1: n1.stc.Pressure.Hint,
+        p_base1: n1.oth.PBase.Hint,
+    ):
         # Detect array shapes
-        num_span = max(tot_p0.shape)
+        num_span = max(pt0.shape)
 
         # `map` makes it a multi-dimensional function
         base_p_interpolant = self._get_base_pressure_interpolant('conv').map(num_span)
@@ -36,11 +45,11 @@ class SieverdingBasePressure(EquationBase):
         # Hardcoded blade parameter (=2)-> Check meaning
         # Add support for other blade parameters
 
-        first_param = stc_p1 / tot_p0
-        second_param = BLADE_PARAM * (stc_p1**0)  # it's just an array of 2s
+        first_param = p1 / pt0
+        second_param = BLADE_PARAM * (p1**0)  # it's just an array of 2s
         table_entry = cs.horzcat(first_param, second_param).T
         pb_by__ptin = base_p_interpolant(table_entry).T
-        return oth_p_base1 - pb_by__ptin * tot_p0
+        return p_base1 - pb_by__ptin * pt0
 
 
 class MixingMomentumBalances(EquationBase):
@@ -252,45 +261,40 @@ class DentonMixingLoss(LossModel):
 
     def residual(
         self,
-        # Thermo
-        stc_p0,
-        rlt_p0,
-        stc_rhomass0,
-        # Kinematics
-        kin_W0,
-        # Geometry
-        geo_metal_angle0,
-        geo_pitch0,
-        geo_bld_thick0,
-        # Boundary layer
-        oth_p_base0,
-        oth_mom_thick0,
-        oth_disp_thick0,
-        # Entropy production check
-        rlt_hmass0,
-        stc_smass0,
-        stc_speed_sound0,
-        oth_delta_smass_mixing0,
+        p0: n0.stc.Pressure.Hint,
+        p_rlt0: n0.rlt.Pressure.Hint,
+        rho0: n0.stc.Density.Hint,
+        W0: n0.kin.W_mag.Hint,
+        beta0: n0.geo.MetalAngle.Hint,
+        pitch0: n0.geo.Pitch.Hint,
+        t0: n0.geo.BldThick.Hint,
+        p_base0: n0.oth.PBase.Hint,
+        mom_thick0: n0.oth.MomThick.Hint,
+        disp_thick0: n0.oth.DispThick.Hint,
+        h_rlt0: n0.rlt.Enthalpy.Hint,
+        s0: n0.stc.Entropy.Hint,
+        a0: n0.stc.SpeedSound.Hint,
+        ds_mixing0: n0.loss.Ds_mixing.Hint,
     ):
         # No deviation
-        velocity = safe_min(stc_speed_sound0, kin_W0)
-        dyn_press = 0.5 * stc_rhomass0 * velocity**2  # Dynamic head
+        velocity = safe_min(a0, W0)
+        dyn_press = 0.5 * rho0 * velocity**2  # Dynamic head
         zeta = incomp_mixing_zeta(
             dyn_press,
-            stc_p0,
-            geo_metal_angle0,
-            geo_pitch0,
-            geo_bld_thick0,
-            oth_p_base0,
-            oth_mom_thick0,
-            oth_disp_thick0,
+            p0,
+            beta0,
+            pitch0,
+            t0,
+            p_base0,
+            mom_thick0,
+            disp_thick0,
         )
         # zeta = minmax_bound(zeta, 0.0, 1.0)
 
-        rlt_p1_loss = rlt_p0 - dyn_press * zeta
-        smass1_loss = self.eos(rlt_hmass0, rlt_p1_loss)
+        rlt_p1_loss = p_rlt0 - dyn_press * zeta
+        smass1_loss = self.eos(h_rlt0, rlt_p1_loss)
 
-        return oth_delta_smass_mixing0 - (smass1_loss - stc_smass0)
+        return ds_mixing0 - (smass1_loss - s0)
 
 
 class MinimalChoke(EquationBase):
