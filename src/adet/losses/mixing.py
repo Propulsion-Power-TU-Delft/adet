@@ -7,20 +7,23 @@ import casadi as cs
 import CoolProp as cp
 import numpy as np
 
-from adet.equations.base_equation import DeviationModel, EquationBase
+from adet.equations.base_equation import DeviationModel, EquationBase, EquationConfig
 from adet.equations.utils import minmax_bound, safe_abs, safe_if_else, safe_min
-from adet.equations.variables import NodeVariables
+from adet.equations.variables import NodeVariables, ThermoVariables
 from adet.losses.base_loss import LossModel
 from adet.tools.interpolation import make_casadi_interpolant
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)
+thrm = ThermoVariables()
 
 BLADE_PARAM = 2  # For Sieverding -> tmp, make this an input
 
 
 class SieverdingBasePressure(EquationBase):
-    manual_units = ('Pa',)
+    config = EquationConfig(
+        manual_units=('Pa',),
+    )
 
     def _get_base_pressure_interpolant(self, blade_type: Literal['conv', 'conv-div']):
         data_folder = Path(__file__).parents[3] / 'data'
@@ -122,8 +125,10 @@ class MixingMomentumBalances(EquationBase):
 
 
 class SimplifiedMixingBalances(EquationBase):
-    manual_units = ('dimensionless', 'Pa', 'J / kg / K')
-    scaling_factor = (None, None, 0.01)
+    config = EquationConfig(
+        manual_units=('dimensionless', 'Pa', 'J / kg / K'),
+        scaling_factor=(None, None, 0.01),
+    )
 
     def residual(
         self,
@@ -224,9 +229,11 @@ class AungierDeviationModel(DeviationModel):
 
 
 class AungierSimpleMixLoss(LossModel):
-    input_pair = cp.HmassP_INPUTS
-    output_quantities = ('smass',)
-    manual_units = ('J / kg / K',)
+    config = EquationConfig(
+        input_pair=cp.HmassP_INPUTS,
+        out_properties=(thrm.Entropy,),
+        manual_units=('J / kg / K',),
+    )
 
     def residual(
         self,
@@ -255,9 +262,11 @@ class AungierSimpleMixLoss(LossModel):
 
 
 class DentonMixingLoss(LossModel):
-    input_pair = cp.HmassP_INPUTS
-    output_quantities = ('smass',)
-    manual_units = ('J / kg / K',)
+    config = EquationConfig(
+        input_pair=cp.HmassP_INPUTS,
+        out_properties=(thrm.Entropy,),
+        manual_units=('J / kg / K',),
+    )
 
     def residual(
         self,

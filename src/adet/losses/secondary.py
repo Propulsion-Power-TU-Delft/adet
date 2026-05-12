@@ -1,4 +1,6 @@
-from adet.equations.variables import NodeVariables
+from adet.equations.base_equation import EquationConfig
+from adet.equations.utils import safe_if_else
+from adet.equations.variables import NodeVariables, ThermoVariables
 from adet.losses.base_loss import LossModel
 import numpy as np
 import casadi as cs
@@ -36,6 +38,8 @@ n1 = NodeVariables(1)
 # self.ds_secondary[flag_row, :] = self.flow.fluid.EoS.smass() - s_in
 # - * - * - * - * - * - * - * - * - * - * - * - *
 
+thrm = ThermoVariables()
+
 
 class SecondaryBSM(LossModel):
     """
@@ -44,9 +48,11 @@ class SecondaryBSM(LossModel):
     ary Loss Correlation,” ASME J. Turbomach., 128(2), pp. 281–291.
     """
 
-    manual_units = ('J / kg / K',)
-    input_pair = cp.HmassP_INPUTS
-    output_quantities = ('smass',)
+    config = EquationConfig(
+        manual_units=('J / kg / K',),
+        input_pair=cp.HmassP_INPUTS,
+        out_properties=(thrm.Entropy,),
+    )
 
     def residual(
         self,
@@ -79,9 +85,9 @@ class SecondaryBSM(LossModel):
             * (np.cos(beta1) / np.cos(stag1)) ** 0.55
         )
 
-        loss_coeffY = cs.if_else(hgt_by_ch < 2.0, Y_min2, Y_gtr2)
+        loss_coeffY = safe_if_else(hgt_by_ch < 2.0, Y_min2, Y_gtr2)
         # Bound the loss coefficient to be >= 0
-        loss_coeffY = cs.if_else(loss_coeffY > 0.0, loss_coeffY, 0.0)
+        loss_coeffY = safe_if_else(loss_coeffY > 0.0, loss_coeffY, 0.0)
 
         rlt_p_out = (p_rlt0 + loss_coeffY * p1) / (loss_coeffY + 1)
 

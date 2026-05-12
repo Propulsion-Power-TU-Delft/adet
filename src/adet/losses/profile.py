@@ -1,13 +1,15 @@
+from adet.equations.base_equation import EquationConfig
 import casadi as cs
 import CoolProp as cp
 import numpy as np
 
 from adet.equations.utils import safe_abs, trapezoid2
-from adet.equations.variables import NodeVariables
+from adet.equations.variables import NodeVariables, ThermoVariables
 from adet.losses.base_loss import LossModel
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)
+thrm = ThermoVariables()
 
 
 def trapezoidal_vel_profile(
@@ -147,9 +149,11 @@ class DentonTrapProfile(LossModel):
     so far it has been tested for turbines (check the integral signs mainly)
     """
 
-    manual_units = ('N', 'J / kg / K')
-    input_pair = cp.HmassSmass_INPUTS
-    output_quantities = ('p', 'rhomass', 'T')
+    config = EquationConfig(
+        manual_units=('N', 'J / kg / K'),
+        input_pair=cp.HmassSmass_INPUTS,
+        out_properties=(thrm.Pressure, thrm.Density, thrm.Temperature),
+    )
 
     def residual(
         self,
@@ -223,9 +227,11 @@ class DentonTrapProfile(LossModel):
 class DentonRectProfile(LossModel):
     """Full loss model"""
 
-    manual_units = ('N', 'J / kg / K')
-    input_pair = cp.HmassSmass_INPUTS
-    output_quantities = ('p', 'rhomass', 'T')
+    config = EquationConfig(
+        manual_units=('N', 'J / kg / K'),
+        input_pair=cp.HmassSmass_INPUTS,
+        out_properties=(thrm.Pressure, thrm.Density, thrm.Temperature),
+    )
 
     def residual(
         self,

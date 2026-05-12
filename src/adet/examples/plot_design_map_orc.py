@@ -2,6 +2,8 @@
 Regenerate meridional channel plots from saved design map data
 """
 
+from adet.equations.variables import NodeVariables
+
 import pathlib
 import pickle
 
@@ -38,12 +40,16 @@ plt.rcParams.update(
 # Setup paths
 data_dir = pathlib.Path(__file__).parent.parent.parent.parent / 'outputs'
 
+node = NodeVariables()
+n1 = NodeVariables(1)
+n3 = NodeVariables(3)
+
 
 def get_mean_radius(sol_dict):
     """Extract mean radius from solution dict for nondimensionalization."""
     radii = []
     for node_idx in [0, 1, 2, 3]:
-        rr = sol_dict.get(f'geo_rr{node_idx}')
+        rr = sol_dict.get(node.geo.RDistr._at_node(node_idx))
         if rr is not None:
             val = rr[0] if hasattr(rr, '__len__') else rr
             radii.append(val)
@@ -51,7 +57,7 @@ def get_mean_radius(sol_dict):
 
 
 def plot_contour_quantity(
-    qty: str,
+    qty,
     ax,
     design_map,
     cmap='viridis',
@@ -64,8 +70,8 @@ def plot_contour_quantity(
 
     Parameters
     ----------
-    qty : str
-        Key for quantity to plot in solution dicts
+    qty : VarSpec
+        Variable specification for quantity to plot in solution dicts
     ax : matplotlib.axes.Axes
         Axes to plot on
     design_map : dict
@@ -89,7 +95,7 @@ def plot_contour_quantity(
     qty_values = []
     for dic in solution_dicts:
         if dic is None:
-            if qty == 'oth_eta_tt3':
+            if qty == n3.ndim.EtaTT:
                 qty_values.append(0.7)
             else:
                 qty_values.append(np.nan)
@@ -252,11 +258,11 @@ def plot_profile_at_point(
         colors = ['steelblue', 'coral']
 
         for pair_idx, (node_in, node_out) in enumerate(node_pairs):
-            rr_in = sol_dict.get(f'geo_rr{node_in}', None)
-            height_in = sol_dict.get(f'geo_height{node_in}', None)
-            chord_ax_out = sol_dict.get(f'geo_chord_ax{node_out}', None)
-            rr_out = sol_dict.get(f'geo_rr{node_out}', None)
-            height_out = sol_dict.get(f'geo_height{node_out}', None)
+            rr_in = sol_dict.get(node.geo.RDistr._at_node(node_in), None)
+            height_in = sol_dict.get(node.geo.Height._at_node(node_in), None)
+            chord_ax_out = sol_dict.get(node.geo.ChordAx._at_node(node_out), None)
+            rr_out = sol_dict.get(node.geo.RDistr._at_node(node_out), None)
+            height_out = sol_dict.get(node.geo.Height._at_node(node_out), None)
 
             if (
                 rr_in is None
@@ -345,10 +351,10 @@ def plot_profile_at_point(
         colors_blade = ['steelblue', 'coral']
 
         for pair_idx, (node_in, node_out) in enumerate(node_pairs):
-            metal_angle_in = sol_dict.get(f'geo_metal_angle{node_in}', None)
-            metal_angle_out = sol_dict.get(f'geo_metal_angle{node_out}', None)
-            chord_ax = sol_dict.get(f'geo_chord_ax{node_out}', None)
-            pitch = sol_dict.get(f'geo_pitch{node_out}', None)
+            metal_angle_in = sol_dict.get(node.geo.MetalAngle._at_node(node_in), None)
+            metal_angle_out = sol_dict.get(node.geo.MetalAngle._at_node(node_out), None)
+            chord_ax = sol_dict.get(node.geo.ChordAx._at_node(node_out), None)
+            pitch = sol_dict.get(node.geo.Pitch._at_node(node_out), None)
 
             if (
                 metal_angle_in is None
@@ -499,8 +505,8 @@ for phi_idx, psi_idx, row, col in corner_defs:
     OFFSET_FACTOR = 1.07
     pair_offsets = []
     offset = 0.0
-    for node_in, node_out in node_pairs:
-        chord_ax_out = sol_dict.get(f'geo_chord_ax{node_out}')
+    for _, node_out in node_pairs:
+        chord_ax_out = sol_dict.get(node.geo.ChordAx._at_node(node_out))
         if chord_ax_out is None:
             pair_offsets.append(None)
             continue
@@ -522,11 +528,11 @@ for phi_idx, psi_idx, row, col in corner_defs:
         if pair_offsets[pair_idx] is None:
             continue
         try:
-            rr_in = sol_dict.get(f'geo_rr{node_in}')
-            height_in = sol_dict.get(f'geo_height{node_in}')
-            chord_ax_out = sol_dict.get(f'geo_chord_ax{node_out}')
-            rr_out = sol_dict.get(f'geo_rr{node_out}')
-            height_out = sol_dict.get(f'geo_height{node_out}')
+            rr_in = sol_dict.get(node.geo.RDistr._at_node(node_in))
+            height_in = sol_dict.get(node.geo.Height._at_node(node_in))
+            chord_ax_out = sol_dict.get(node.geo.ChordAx._at_node(node_out))
+            rr_out = sol_dict.get(node.geo.RDistr._at_node(node_out))
+            height_out = sol_dict.get(node.geo.Height._at_node(node_out))
             if any(
                 v is None for v in (rr_in, height_in, chord_ax_out, rr_out, height_out)
             ):
@@ -589,10 +595,10 @@ for phi_idx, psi_idx, row, col in corner_defs:
         if pair_offsets[pair_idx] is None:
             continue
         try:
-            ma_in = sol_dict.get(f'geo_metal_angle{node_in}')
-            ma_out = sol_dict.get(f'geo_metal_angle{node_out}')
-            chord_ax = sol_dict.get(f'geo_chord_ax{node_out}')
-            pitch = sol_dict.get(f'geo_pitch{node_out}')
+            ma_in = sol_dict.get(node.geo.MetalAngle._at_node(node_in))
+            ma_out = sol_dict.get(node.geo.MetalAngle._at_node(node_out))
+            chord_ax = sol_dict.get(node.geo.ChordAx._at_node(node_out))
+            pitch = sol_dict.get(node.geo.Pitch._at_node(node_out))
             if any(v is None for v in (ma_in, ma_out, chord_ax, pitch)):
                 continue
             ma_in_v = ma_in[0] if hasattr(ma_in, '__len__') else ma_in
@@ -626,7 +632,7 @@ print('Plotting design map quantities...')
 # Figure 1: TT Efficiency contour map
 fig, ax = plt.subplots(figsize=(8, 6))
 plot_contour_quantity(
-    'oth_eta_tt3',
+    n3.ndim.EtaTT,
     ax,
     design_map,
     clabel=r'$\eta_{tt}$',
@@ -650,9 +656,9 @@ if PLOT_LOSSES:
     axes_stator = axes_stator.flatten()
 
     loss_keys_stator = [
-        ('oth_delta_smass_profile1', 'Profile Loss'),
-        ('oth_delta_smass_secondary1', 'Secondary Loss'),
-        ('oth_delta_smass_mixing1', 'Mixing Loss'),
+        (n1.loss.Ds_profile, 'Profile Loss'),
+        (n1.loss.Ds_secondary, 'Secondary Loss'),
+        (n1.loss.Ds_mixing, 'Mixing Loss'),
     ]
 
     for idx, (qty_key, label) in enumerate(loss_keys_stator):
@@ -676,10 +682,10 @@ if PLOT_LOSSES:
     axes_rotor = axes_rotor.flatten()
 
     loss_keys_rotor = [
-        ('oth_delta_smass_profile3', 'Profile Loss'),
-        ('oth_delta_smass_secondary3', 'Secondary Loss'),
-        ('oth_delta_smass_mixing3', 'Mixing Loss'),
-        ('oth_delta_smass_leakage3', 'Leakage Loss'),
+        (n3.loss.Ds_profile, 'Profile Loss'),
+        (n3.loss.Ds_secondary, 'Secondary Loss'),
+        (n3.loss.Ds_mixing, 'Mixing Loss'),
+        (n3.loss.Ds_leakage, 'Leakage Loss'),
     ]
 
     for idx, (qty_key, label) in enumerate(loss_keys_rotor):

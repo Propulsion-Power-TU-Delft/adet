@@ -755,7 +755,7 @@ class SystemAssembler(ABC):
 
     def get_scaled_guess(
         self,
-        manual_values: Mapping[VarSpec, NDArray] = {},
+        manual_values: Mapping[VarSpec, AdetArray] = {},
         fallback: float | None = None,
     ) -> list[NDArray]:
         """Generate initial guesses for free arguments"""

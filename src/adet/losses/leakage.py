@@ -1,19 +1,23 @@
+from adet.equations.base_equation import EquationConfig
 import casadi as cs
 import CoolProp as cp
 
 from adet.equations.utils import trapezoid2
-from adet.equations.variables import NodeVariables
+from adet.equations.variables import NodeVariables, ThermoVariables
 from adet.losses.base_loss import LossModel
 from adet.losses.profile import rectangular_vel_profile, trapezoidal_vel_profile
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)
+thrm = ThermoVariables()
 
 
 class DentonTrapLeakage(LossModel):
-    manual_units = ('J / kg / K',)
-    input_pair = cp.HmassSmass_INPUTS
-    output_quantities = ('p', 'rhomass')
+    config = EquationConfig(
+        manual_units=('J / kg / K',),
+        input_pair=cp.HmassSmass_INPUTS,
+        out_properties=(thrm.Pressure, thrm.Density),
+    )
 
     def residual(
         self,
@@ -53,9 +57,11 @@ class DentonTrapLeakage(LossModel):
 
 
 class DentonRectLeakage(LossModel):
-    manual_units = ('J / kg / K',)
-    input_pair = cp.HmassSmass_INPUTS
-    output_quantities = ('p', 'rhomass')
+    config = EquationConfig(
+        manual_units=('J / kg / K',),
+        input_pair=cp.HmassSmass_INPUTS,
+        out_properties=(thrm.Pressure, thrm.Density),
+    )
 
     def residual(
         self,

@@ -41,7 +41,6 @@ from adet.losses.leakage import DentonTrapLeakage
 from adet.losses.mixing import DentonMixingLoss, SieverdingBasePressure
 from adet.losses.profile import DentonTrapProfile
 from adet.losses.secondary import SecondaryBSM
-from adet.registries import DefaultUnitsRegistry, GuessRegistry, VariableBoundsRegistry
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
@@ -78,6 +77,8 @@ FLARE_MAX = 30  # deg - ONLY USED IN DYNAMIC !
 
 # Loss used at first pass (isentropic)
 INITIAL_LOSS = PercentageEntropyLoss(0.0)
+
+# Manual initial guesses for solver
 
 
 # ================================================
@@ -117,7 +118,12 @@ class AddAxialLosses(LossApplier):
 
 
 def compute_design_map(
-    ntw, first_sol, n_points, starter_keys=None, starter_solutions=None
+    ntw,
+    first_sol,
+    n_points,
+    starter_keys=None,
+    starter_solutions=None,
+    custom_bounds=None,
 ):
     rtfn_kin = ntw.system.make_rootfinder('kinsol')
     rtfn_ip = ntw.system.make_rootfinder(
@@ -137,7 +143,7 @@ def compute_design_map(
     solution_dicts = []
 
     kn = ntw.system.get_scaled_constraints()
-    bnd = ntw.system.get_arguments_bounds()
+    bnd = ntw.system.get_arguments_bounds(custom_bounds=custom_bounds)
 
     curr_index = 0
     boun_cond_keys = list(ntw.system.data.boun_cond.keys())
@@ -236,63 +242,53 @@ fluid_settings = FluidSettings(
 )
 
 
-_defreg = DefaultUnitsRegistry()
-_defreg.from_dict(
-    {
-        'Y_.*': 'dimensionless',
-    }
-)
-_guess_reg = GuessRegistry()
-_guess_reg.reset()
-_guess_reg.from_dict(
-    {
-        'hdropCoeff': -0.8,
-        'workCoeff': -0.8,
-        'p_choke': 0.4 * abs_state.p(),
-        'reactDegree_ts': 0.5,
-        'p': abs_state.p(),
-        'T': abs_state.T(),
-        'hmass': abs_state.hmass(),
-        'smass': abs_state.smass(),
-        'rhomass': abs_state.rhomass(),
-        'k_prof': 0.3,  # Profile loading
-        'zweifelCoeff': 0.85,
-        'num_blades': 100.0,
-    }
-)
-
 # ================================================
-# *** Variable BOUNDS
-_bounds_reg = VariableBoundsRegistry()
-_bounds_reg.reset()
-# _bounds_reg.ignore_defaults = True
-_bounds_reg.from_dict(
-    {
-        'U': (-0.1, 300.0),  # Reduce the search area
-        'V': (20.0, 150.0),  # Reduce the search area
-        # 'num_blades': (1.0, 100.0),
-        'delta_smass_.*': (0.0, 50.0),
-        # 'k_prof': (-3.5, 3.5),
-    }
-)
+# *** Bounds and Guesses
+CUSTOM_BOUNDS = {
+    n0.kin.V_mag.Glob: (20.0, 150.0),
+    n0.kin.BladeSpeed.Glob: (-0.1, 300.0),
+    n0.loss.Ds_mixing.Glob: (0.0, 50.0),
+    n0.loss.Ds_profile.Glob: (0.0, 50.0),
+    n0.loss.Ds_secondary.Glob: (0.0, 50.0),
+    n0.loss.Ds_leakage.Glob: (0.0, 50.0),
+    n0.loss.Ds_main.Glob: (0.0, 50.0),
+}
+
 MAX_V = 250
 if fluid_settings.model == real_model:
-    _bounds_reg.from_dict(
+    CUSTOM_BOUNDS.update(
         {
-            'p': (
+            n0.stc.Pressure.Glob: (
                 abs_state.p_critical() * 0.5,
                 1.5 * INLET_PRESSURE,
             ),
-            'T': (
+            n0.stc.Temperature.Glob: (
                 abs_state.T_critical() * 0.5,
                 1.5 * INLET_TEMPERATURE,
             ),
-            'hmass': (
+            n0.stc.Enthalpy.Glob: (
                 abs_state.hmass() - MAX_V**2,
                 abs_state.hmass() + MAX_V**2,
             ),
         }
     )
+
+MANUAL_GUESSES = {
+    # Geometry
+    # Thermodynamic state
+    n0.stc.Entropy.Glob: abs_state.smass(),
+    n0.tot.Pressure.Glob: abs_state.p(),
+    n0.tot.Temperature.Glob: abs_state.T(),
+    n0.tot.Enthalpy.Glob: abs_state.hmass(),
+    # Reaction degree
+    n0.ndim.DegreeOfReactionTS.Glob: 0.5,
+    n0.ndim.HdropCoeff: -0.8,
+    n0.ndim.WorkCoeff: -0.8,
+    n0.oth.KProf: 0.3,
+    n0.geo.ZweifelCoeff.Glob: 0.85,
+    n0.geo.NumBlades: 100,
+}
+
 
 # ================================================
 # *** Shafts
@@ -349,6 +345,7 @@ stator = BladeRow(
         n1.oth.XiCambLenA: 0.375,
         n1.oth.XiCambLenB: 0.675,
         n1.oth.DischCoeff: 0.35,
+        # n1.stc.Pressure: 1.462617e6, # Legacy ?
     },
     extra_equations={
         ZeroDeviation(): 0,  # No incidence (design)
@@ -358,7 +355,7 @@ stator = BladeRow(
         INITIAL_LOSS: (0, 1),
     },
 )
-stator.set_spanwise_constant(n0.geo.Rmid)
+stator.set_component_constants(n0.geo.Rmid.Glob)
 
 # ============ Modify rotor
 rotor = deepcopy(stator)  # Reuse the stator as template
@@ -391,11 +388,11 @@ match CHORD_METHOD:
     case 'aspRatio':
         stator.set_boundary_cond(n1.geo.AspectRatio, ASP_RATIO)
         rotor.set_boundary_cond(n1.geo.AspectRatio, ASP_RATIO)
-        identifier = f'aspRatio_{ASP_RATIO}'
+        file_identifier = f'aspRatio_{ASP_RATIO}'
     case 'flare_angle':
         stator.set_boundary_cond(n1.geo.FlareAngle, Quantity(FLARE_ANGLE, 'deg'))
         rotor.set_boundary_cond(n1.geo.FlareAngle, Quantity(FLARE_ANGLE, 'deg'))
-        identifier = f'flare_angle_{FLARE_ANGLE}'
+        file_identifier = f'flare_angle_{FLARE_ANGLE}'
     case 'dynamic':
         flare_max_rad = FLARE_MAX * np.pi / 180
         stator.remove_equation(MeridionalRatios, (0, 1))
@@ -408,7 +405,7 @@ match CHORD_METHOD:
             FlareAngleLimitedAR(ASP_RATIO, flare_max_rad),
             (0, 1),
         )
-        identifier = f'dyn_fmax{FLARE_MAX}_ar{ASP_RATIO}'
+        file_identifier = f'dyn_fmax{FLARE_MAX}_ar{ASP_RATIO}'
 
 # OPTIONAL: Force constant flare angle
 # ntw.system.add_equalities(('geo_flare_angle1', 'geo_flare_angle3'))
@@ -436,11 +433,14 @@ rootfinder_is = ntw.system.make_rootfinder(
 
 rtfn_kinsol = ntw.system.make_rootfinder('kinsol')
 
-x0_is = ntw.system.get_scaled_guess()
-kn_is = ntw.system.get_scaled_constraints()
-bnd_is = ntw.system.get_arguments_bounds(
-    custom_bounds={n0.kin.FlowAngleAbs.Glob: (-0.7, 0.7)}
+x0_is = ntw.system.get_scaled_guess(
+    manual_values=MANUAL_GUESSES,
+    fallback=0.5,
 )
+kn_is = ntw.system.get_scaled_constraints()
+custom_bounds_is = CUSTOM_BOUNDS.copy()
+custom_bounds_is[n0.kin.FlowAngleAbs] = (-0.7, 0.7)
+bnd_is = ntw.system.get_arguments_bounds(custom_bounds=custom_bounds_is)
 solution = solve_root_problem(
     rootfinder_is,
     x0_is,
@@ -475,9 +475,9 @@ rotor.add_equation(AddAxialLosses(has_tip_gap=True), (0, 1))
 
 ntw.build()
 
-x0_loss = ntw.system.get_scaled_guess(sol_dict_is)
+x0_loss = ntw.system.get_scaled_guess(sol_dict_is, fallback=0.5)
 kn_loss = ntw.system.get_scaled_constraints()
-bnd_loss = ntw.system.get_arguments_bounds()
+bnd_loss = ntw.system.get_arguments_bounds(custom_bounds=CUSTOM_BOUNDS)
 
 rootfinder_loss = ntw.system.make_rootfinder(
     'ipopt',
@@ -498,7 +498,7 @@ sol_loss = solve_root_problem(rtfn_kn, solution, kn_loss)
 sol_dict_loss = ntw.system.sol_to_dict(solution)
 
 keys_loss, solutions_loss, solution_dicts = compute_design_map(
-    ntw, sol_loss, MAP_POINTS
+    ntw, sol_loss, MAP_POINTS, custom_bounds=CUSTOM_BOUNDS
 )
 
 # ========================== SAVE DESIGN MAP DATA
@@ -522,7 +522,7 @@ design_map_data = {
 vol_flow = DUTY_COEFFS[n1.ndim.VolflowRatio]
 react = DUTY_COEFFS[n1.ndim.DegreeOfReactionTS]
 
-filename = f'des_map_R{react}_vr{vol_flow}_{identifier}.pkl'
+filename = f'des_map_R{react}_vr{vol_flow}_{file_identifier}.pkl'
 with open(data_dir / filename, 'wb') as f:
     pickle.dump(design_map_data, f)
 
