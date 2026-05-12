@@ -18,7 +18,6 @@ from adet.equations.fundamental import (
 )
 from adet.equations.geometrical import AnnulusAreas
 from adet.equations.nondimensional import AbsoluteMachNumber, RelativeMachNumber
-from adet.equations.special import ThermoVarsAdder
 from adet.equations.variables import KinematicVariables
 from adet.equations.varspec import DEF_NODE, VarSpec
 from adet.fluid.settings import FluidSettings
@@ -42,7 +41,7 @@ _SINGLE_NODE_EQUATIONS = [
     AbsoluteMachNumber,
     RelativeMachNumber,
     # *** Spezial
-    ThermoVarsAdder,
+    # ThermoVarsAdder,
 ]
 
 

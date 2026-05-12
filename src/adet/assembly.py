@@ -315,12 +315,20 @@ class ConstraintManager:
         for arg in self.data.boun_cond:
             self._check_arg_declaration(arg, 'boundary conditions')
 
-    def get_flat_bound_conds(self) -> list[NDArray]:
+    def get_array_boun_conds(self) -> list[NDArray]:
         bc_values = []
         for spec, val in self.data.boun_cond.items():
             val_valid = self._validate_length(spec, val)
             bc_values.append(val_valid)
         return bc_values
+
+    def get_plain_bc_dict(self) -> dict[VarSpec, NDArray]:
+        values = self.get_array_boun_conds()
+        plain_bcs = {}
+        for spec, val in zip(self.data.boun_cond.keys(), values):
+            plain_bcs[spec] = val
+
+        return plain_bcs
 
 
 class ArgumentResolver:
@@ -746,7 +754,7 @@ class SystemAssembler(ABC):
         self._scaling_manager.get_arguments_bounds(custom_bounds)
 
     def get_scaled_constraints(self) -> list[NDArray]:
-        dimensional_constr = self._constraint_manager.get_flat_bound_conds()
+        dimensional_constr = self._constraint_manager.get_array_boun_conds()
         return jax.tree.map(
             lambda x, y: x / y,
             dimensional_constr,

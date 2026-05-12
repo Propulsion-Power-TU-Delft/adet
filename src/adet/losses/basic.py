@@ -50,8 +50,12 @@ class PlaceHolderLoss(LossApplier):
 
 
 class IsentropicLink(LossApplier):
-    def residual(self, stc_smass0, stc_smass1):
-        return stc_smass1 - stc_smass0
+    def residual(
+        self,
+        s0: n0.stc.Entropy.Hint,
+        s1: n1.stc.Entropy.Hint,
+    ):
+        return s1 - s0
 
 
 class PercentageEntropyLoss(LossApplier):
