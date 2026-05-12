@@ -141,26 +141,27 @@ class BaseComponent(ABC):
 
     def _build_network_maps(self):
         for ntw in self._attached_networks:
-            seen_positions: set[tuple[int, ...]] = set()
+            seen_couples: set[tuple[int, ...]] = set()
             for eq in self._equations:
                 abs_pos = self.get_absolute_eq_position(eq, ntw)
                 # Find a two node equation and use it for mapping
                 if len(abs_pos) == 2:
                     rel_pos = ensure_tuple(self._equations[eq])
-                    seen_positions.add(rel_pos)
+                    seen_couples.add(rel_pos)
+                    ntw_map = dict(zip(rel_pos, abs_pos))
 
-            if not seen_positions:
+            if not seen_couples:
                 raise RuntimeError(
                     f'No two-node equation found in {self} '
                     f'to build network map for {ntw}'
                 )
 
-            elif len(seen_positions) > 1:
+            elif len(seen_couples) > 1:
                 raise RuntimeError(
                     f'Multiple incompatible equation positions for {ntw} in {self}'
                 )
 
-            self._network_maps[ntw] = dict(zip(rel_pos, abs_pos))
+            self._network_maps[ntw] = ntw_map
 
     def _equation_checks(self):
         # 1. This checks that the user has not defined multiple
@@ -174,7 +175,7 @@ class BaseComponent(ABC):
         self,
         base_eqs: dict[EquationBase, int | tuple[int, ...]],
         user_eqs: dict[EquationBase, int | tuple[int, ...]],
-    ):
+    ) -> dict[EquationBase, int | tuple[int, ...]]:
         """
         Intended behaviour: If the user does not specify a unique
         equation, the one in the base is used (e.g. a camberline

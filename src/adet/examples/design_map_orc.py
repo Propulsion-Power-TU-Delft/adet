@@ -254,8 +254,9 @@ CUSTOM_BOUNDS = {
     n0.loss.Ds_main.Glob: (0.0, 50.0),
 }
 
-MAX_V = 250
+# Add Thermodynamic bounds
 if fluid_settings.model == real_model:
+    MAX_V = 250
     CUSTOM_BOUNDS.update(
         {
             n0.stc.Pressure.Glob: (
@@ -276,15 +277,15 @@ if fluid_settings.model == real_model:
 MANUAL_GUESSES = {
     # Geometry
     # Thermodynamic state
-    n0.stc.Entropy.Glob: abs_state.smass(),
     n0.tot.Pressure.Glob: abs_state.p(),
     n0.tot.Temperature.Glob: abs_state.T(),
+    n0.stc.Entropy.Glob: abs_state.smass(),
     n0.tot.Enthalpy.Glob: abs_state.hmass(),
     # Reaction degree
-    n0.ndim.DegreeOfReactionTS.Glob: 0.5,
     n0.ndim.HdropCoeff: -0.8,
     n0.ndim.WorkCoeff: -0.8,
-    n0.oth.KProf: 0.3,
+    n0.ndim.DegreeOfReactionTS.Glob: 0.5,
+    n0.oth.ProfileLoading: 0.3,
     n0.geo.ZweifelCoeff.Glob: 0.85,
     n0.geo.NumBlades: 100,
 }
@@ -489,9 +490,9 @@ rootfinder_loss = ntw.system.make_rootfinder(
 rtfn_kn = ntw.system.make_rootfinder('kinsol')
 
 try:
-    solution = solve_root_problem(rootfinder_loss, x0_loss, kn_loss)
-except RuntimeError:
     solution = solve_root_problem(rootfinder_loss, x0_loss, kn_loss, bnd_loss)
+except RuntimeError:
+    solution = solve_root_problem(rootfinder_loss, x0_loss, kn_loss)
 
 sol_loss = solve_root_problem(rtfn_kn, solution, kn_loss)
 

@@ -30,7 +30,7 @@ class DentonTrapLeakage(LossModel):
         ch_mf1: n1.oth.ChMassflow.Hint,
         xi_A1: n1.oth.XiCambLenA.Hint,
         xi_B1: n1.oth.XiCambLenB.Hint,
-        k_prof1: n1.oth.KProf.Hint,
+        k_prof1: n1.oth.ProfileLoading.Hint,
         disch_coeff1: n1.oth.DischCoeff.Hint,
         tip_clr1: n1.geo.TipClearance.Hint,
         ds_leak1: n1.loss.Ds_leakage.Hint,

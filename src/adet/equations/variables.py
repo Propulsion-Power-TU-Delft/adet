@@ -191,7 +191,7 @@ class OtherVariables(VariableEnum):
     WorkLossCoeff = VarSpec('worklossCoeff', '')
     XiCambLenA = VarSpec('xi_camb_len_A', '')
     XiCambLenB = VarSpec('xi_camb_len_B', '')
-    KProf = VarSpec('k_prof', '', 0.3)
+    ProfileLoading = VarSpec('k_prof', '', 0.3)
     CdProfile = VarSpec('cd_profile', '')
     DischCoeff = VarSpec('disch_coeff', '')
 
