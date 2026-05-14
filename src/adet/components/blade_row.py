@@ -64,8 +64,8 @@ ABSOLUTE_LINK = [
     _kin.V_tan,
     _kin.V_mer,
     # No work & no entropy
-    _thermo_tot.Enthalpy,
     _thermo_stc.Entropy,
+    _thermo_tot.Enthalpy,
 ]
 """
 This preserves the absolute triangles,
@@ -76,8 +76,8 @@ rotating frame (omega)
 
 # Geometry
 GEOM_LINK = [
-    _geo.Height,
     _geo.Rmid,
+    _geo.Height,
     _geo.MeridionalAngle,
 ]
 

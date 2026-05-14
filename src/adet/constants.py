@@ -21,6 +21,8 @@ class CoolProperties(Enum):
     Quality = 'Q'
     SpeedSound = 'speed_sound'
     Viscosity = 'viscosity'
+    GasConstant = 'gas_constant'
+    MolarMass = 'molar_mass'
 
 
 COOLPROP_NAMES_MAP = {

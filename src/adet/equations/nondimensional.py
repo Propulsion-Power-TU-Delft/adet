@@ -3,6 +3,8 @@ Module that gathers equations that represent definitions of nondimensional
 coefficients used in TurboMachinery
 """
 
+from adet.equations.varspec import VarSpec
+
 import numpy as np
 import CoolProp as cp
 
@@ -305,9 +307,6 @@ class RelativeMachNumber(EquationBase):
 
 
 class GammaPV(EquationBase):
-    # WARN: This update pair for ideal gas
-    # Not that using gamma_pv makes sense, but
-    # beware
     config = EquationConfig(
         input_pair=cp.DmassSmass_INPUTS,
         out_properties=(thrm.Pressure,),

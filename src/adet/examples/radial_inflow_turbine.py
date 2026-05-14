@@ -9,7 +9,7 @@ from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.variables import NodeVariables
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
-from adet.losses.basic import IsentropicLink, ZeroDeviation
+from adet.losses.basic import ZeroDeviation, IsentropicLink
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
@@ -19,6 +19,8 @@ setup_logger(logger)
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)
+n2 = NodeVariables(2)
+n3 = NodeVariables(3)
 
 inl = Inlet(
     {

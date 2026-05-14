@@ -114,6 +114,13 @@ def safe_min_clip(x, min_value):
 
 
 def thermo_deriv(eos, arg0, arg1, wrt: Literal[0, 1]):
+    """
+    wrt
+    ---
+        0 -> Derivative wrt to first arg
+        1 -> Derivative wrt to second arg
+    """
+    # This is very cryptic and mysterious
     eos_value = (eos(arg0, arg1),)
     jacobian = eos.jacobian()(arg0, arg1, *eos_value)
     return [cs.diag(jacobian[wrt + 2 * i]) for i in range(eos.n_out())]

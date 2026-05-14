@@ -16,14 +16,14 @@ _JAC_CALLBACK_CACHE = []
 _HES_CALLBACK_CACHE = []
 _VAC_CALLBACK_CACHE = []
 
-CONSTANTS = ['T_critical', 'p_critical']
+# TODO: Get properties from enum
+CONSTANTS = ['T_critical', 'p_critical', 'gas_constant', 'molar_mass']
 # Properties whose first derivative does not exist
 NOT_JACOBIABLE = ['viscosity']
 # Properties whose second derivative does not exist
 NOT_HESSIABLE = ['speed_sound', 'cpmass', 'cvmass']
 # NOTE: Where derivatives are not available, we use 0.0
 # an alternative would be to code finite differences
-# for spe
 
 
 # These two classes are just to correct meaningless

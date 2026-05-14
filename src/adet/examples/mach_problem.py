@@ -1,4 +1,4 @@
-from adet.equations.nondimensional import AbsoluteMachNumber
+from adet.equations.nondimensional import AbsoluteMachNumber, GammaPV
 from adet.tools.loggers import setup_logger
 import logging
 from pint import Quantity
@@ -60,7 +60,4 @@ kn = system.get_scaled_constraints()
 
 sol = solve_root_problem(rtfn, x0, kn)
 
-sol_dict = {
-    a.full_symbol(True): v
-    for a, v in zip(system.data.free_args, sol.flatten() * system.free_args_scaling)
-}
+sol_dict = system.sol_to_dict(sol)

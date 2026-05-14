@@ -38,10 +38,12 @@ class ThermoVariables(BaseEnum):
     Density = VarSpec(CoolProperties.Dmass.value, 'kg / m**3', 2.0, (1e-3, 800.0))
     Pressure = VarSpec(CoolProperties.Press.value, 'Pa', 5e5, (1e4, 150e5))
     Enthalpy = VarSpec(CoolProperties.Hmass.value, 'J / kg', 6e5)
+    MolarMass = VarSpec(CoolProperties.MolarMass.value, 'kg / mol')
     IntEnergy = VarSpec(CoolProperties.Umass.value, 'J / kg', 5e5)
     Viscosity = VarSpec(CoolProperties.Viscosity.value, 'Pa * s')
     SpeedSound = VarSpec(CoolProperties.SpeedSound.value, 'm / s')
     Temperature = VarSpec(CoolProperties.Temp.value, 'K', 800.0, (80.0, 1800.0))
+    GasConstant = VarSpec(CoolProperties.GasConstant.value, 'J / (mol * K)')
     CriticalTemp = VarSpec(CoolProperties.Tcrit.value, 'K')
     CriticalPressure = VarSpec(CoolProperties.Pcrit.value, 'Pa')
 
