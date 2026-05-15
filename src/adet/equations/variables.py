@@ -1,5 +1,5 @@
 from adet.constants import CoolProperties
-from adet.equations.varspec import NodeStates, VarSpec, DEF_NODE
+from adet.varspec import NodeStates, VarSpec, DEF_NODE
 
 
 class BaseEnum:

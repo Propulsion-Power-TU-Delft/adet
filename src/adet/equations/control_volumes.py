@@ -1,4 +1,4 @@
-from adet.equations.varspec import VarSpec
+from adet.varspec import VarSpec
 from adet.equations.variables import NodeVariables
 import CoolProp as cp
 import numpy as np

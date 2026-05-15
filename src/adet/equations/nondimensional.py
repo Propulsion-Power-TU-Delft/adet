@@ -3,10 +3,8 @@ Module that gathers equations that represent definitions of nondimensional
 coefficients used in TurboMachinery
 """
 
-from adet.equations.varspec import VarSpec
-
-import numpy as np
 import CoolProp as cp
+import numpy as np
 
 from adet.equations import EquationBase
 from adet.equations.base_equation import EquationConfig
@@ -322,3 +320,13 @@ class GammaPV(EquationBase):
     ):
         dp_drho = thermo_deriv(self.eos, rho0, s0, 0)[0]
         return gamma_pv0 - rho0 / p0 * dp_drho
+
+
+class GammaIdeal(EquationBase):
+    def residual(
+        self,
+        cp0: n0.stc.Cp.Hint,
+        cv0: n0.stc.Cv.Hint,
+        gamma_pv0: n0.oth.GammaPV.Hint,
+    ):
+        return gamma_pv0 - cp0 / cv0

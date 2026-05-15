@@ -8,7 +8,7 @@ from pint.facets.plain import PlainQuantity
 from adet.constants import AdetArray
 from adet.equations import EquationBase, UniqueEquation
 from adet.equations.base_equation import LossApplier
-from adet.equations.varspec import VarSpec
+from adet.varspec import VarSpec
 from adet.tools.iter import ensure_tuple
 
 if TYPE_CHECKING:

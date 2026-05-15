@@ -1,4 +1,4 @@
-from adet.equations.varspec import VarSpec
+from adet.varspec import VarSpec
 import logging
 
 import matplotlib.pyplot as plt

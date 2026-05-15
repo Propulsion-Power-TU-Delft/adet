@@ -1,4 +1,3 @@
-from adet.equations.variables import ThermoVariables, NodeVariables
 import logging
 
 import CoolProp as cp
@@ -12,7 +11,7 @@ from adet.components import BladeRow
 from adet.components.blade_row import VanelessDiffuser, plot_from_nodes
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
-from adet.equations.base_equation import LossApplier, EquationConfig
+from adet.equations.base_equation import EquationConfig, LossApplier
 from adet.equations.control_volumes import FullIncidence
 from adet.equations.definitions import (
     EffectiveBladeNumber,
@@ -23,6 +22,7 @@ from adet.equations.nondimensional import (
     TotalTotalPressureRatio,
 )
 from adet.equations.utils import residual_debugger
+from adet.equations.variables import NodeVariables, ThermoVariables
 from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
 from adet.losses.basic import (

@@ -1,7 +1,6 @@
 from adet.tools.coolprop_utils import pair_id_from_tuple
-from adet.constants import COOLPROP_NAMES_MAP, CoolProperties
-from adet.equations.variables import ThermoVariables
-from adet.equations.varspec import VarSpec
+from adet.constants import COOLPROP_NAMES_MAP
+from adet.varspec import VarSpec
 from dataclasses import dataclass
 import logging
 from typing import Generic, TypeVar
@@ -99,6 +98,7 @@ class FluidSettings:
 if __name__ == '__main__':
     import CoolProp as cp
     from copy import deepcopy
+    from adet.equations.variables import ThermoVariables
 
     eos = cp.AbstractState('HEOS', 'R134a')
 

@@ -34,7 +34,7 @@ from adet.equations.variables import (
     OtherVariables,
     ThermoVariables,
 )
-from adet.equations.varspec import DEF_NODE, NodeStates, VarSpec
+from adet.varspec import DEF_NODE, NodeStates, VarSpec
 from adet.geometry import BezierCurve, StraightLine
 from adet.losses.basic import IsentropicLink, ZeroDeviation
 from adet.losses.compressors import AmiranteDiffuserMomentum
