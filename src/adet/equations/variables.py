@@ -99,7 +99,7 @@ class GeometricVariables(VariableEnum):
     BladeAngle = VarSpec('beta_bl', 'rad')
     MetalAngle = VarSpec('metal_angle', 'rad', -0.3, (-1.45, 1.45))
     RadiusRatio = VarSpec('radRatio', '', 1.0, None, 0, True)
-    HubTipRatio = VarSpec('ht_ratio', '', None, None, 0, True)
+    HubTipRatio = VarSpec('hubtip_ratio', '', None, None, 0, True)
     HeightRatio = VarSpec('heightRatio', '', 1.0, None, 0, True)
     AspectRatio = VarSpec('aspRatio', '', 2.0, None, 0, True)
     TipClearance = VarSpec('tip_cl', 'm', 0.001)

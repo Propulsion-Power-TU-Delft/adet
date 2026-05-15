@@ -1,13 +1,11 @@
 import logging
 
+import matplotlib.pyplot as plt
+import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
-import numpy as np
-
-import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
-
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +17,14 @@ logger = logging.getLogger(__name__)
 # )
 
 
-def plot_velocity_triangles(Vt, Vm, Wt, U, rr, ax: Axes, fontsize=11):
+def plot_velocity_triangles(Vt, Vm, U, rr, ax: Axes, fontsize=11):
     plot_settings = {'angles': 'xy', 'scale_units': 'xy', 'scale': 1}
     fontdict = {'fontsize': fontsize}
     ticksize = fontsize / 1.5 // 1
+
+    # Preprocess
+    num_span = len(Vt)
+    Wt = Vt - U
 
     ax.set_ylabel(r'Radial coordinate [mm]', fontdict)
     ax.set_xlabel(r'Axial coordinate [mm]', fontdict)
@@ -34,8 +36,6 @@ def plot_velocity_triangles(Vt, Vm, Wt, U, rr, ax: Axes, fontsize=11):
     cmap_v = plt.get_cmap('Reds')
     cmap_w = plt.get_cmap('Blues')
     cmap_u = plt.get_cmap('Purples')
-
-    num_span = len(Vt)
 
     colors_v = [cmap_v((i + 1) / num_span) for i in range(num_span)]
     colors_w = [cmap_w((i + 1) / num_span) for i in range(num_span)]
@@ -83,7 +83,7 @@ def plot_velocity_triangles(Vt, Vm, Wt, U, rr, ax: Axes, fontsize=11):
     )
     cbar_v.set_label('Radius [m]', loc=None, **fontdict)
 
-    # ax.legend(['W', 'U', 'V'], loc='lower right', **fontsett)
+    ax.legend(['W', 'U', 'V'], loc='lower right', **fontdict)
 
     ax.set_xlabel(
         'Meridional Component [m/s]',

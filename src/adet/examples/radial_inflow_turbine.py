@@ -25,11 +25,15 @@ n3 = NodeVariables(3)
 
 inl = Inlet(
     {
-        n0.tot.Pressure: 18.1e5,  # This is before the stator!
-        n0.tot.Temperature: Quantity(300, 'degC'),
+        # EITHER
+        # n0.tot.Pressure: Quantity(18.1, 'bar'),  # This is before the stator!
+        # n0.stc.Pressure: Quantity(0.7, 'bar'),
+        n0.kin.Mach: 2.2,
+        # ---
+        n0.tot.Temperature: Quantity(315, 'degC'),
         n0.oth.CumMassFlow: 0.132,
         n0.kin.FlowAngleAbs: Quantity(60, 'deg'),
-        # Geometrical
+        # --- Geometrical
         n0.geo.Height: Quantity(2, 'mm'),
         n0.geo.Rmid: Quantity(30, 'mm'),
         n0.geo.MeridionalAngle: Quantity(-90, 'deg'),
@@ -41,7 +45,7 @@ casing = Shaft(
     is_constrained=True,
 )
 shaft = Shaft(
-    Quantity(-98100, 'rpm'),
+    Quantity(98100, 'rpm'),
     is_constrained=True,
 )
 
@@ -74,10 +78,10 @@ rotor = BladeRow(
         # *** Inlet
         n0.geo.BldThick: 0.0,
         # *** Outlet
-        n1.geo.Height: Quantity(12, 'mm'),
+        n1.geo.Height: Quantity(10, 'mm'),
         n1.geo.Rmid: Quantity(20, 'mm'),
         n1.geo.MeridionalAngle: Quantity(0, 'deg'),
-        n1.kin.FlowAngleAbs: Quantity(0, 'deg'),
+        n1.geo.MetalAngle: Quantity(-40, 'deg'),
         n1.geo.BldThick: 0.0,
         # *** Blades
         n1.geo.NumBlades: 13,
@@ -116,18 +120,21 @@ ntw.build()
 rtfn = ntw.system.make_rootfinder('ipopt', opts={'error_on_fail': False})
 x0 = ntw.system.get_scaled_guess(fallback=0.1)
 kn = ntw.system.get_scaled_constraints()
-bnd = ntw.system.get_arguments_bounds(
-    # {n1.kin.Mach: (1.1, 10.0)},
-)
+bnd = ntw.system.get_arguments_bounds()
 sol = solve_root_problem(rtfn, x0, kn, suppress_output=False)
 
+# Kinsol pass
+# rtfn = ntw.system.make_rootfinder('kinsol')
+# sol = solve_root_problem(rtfn, sol, kn)
+
+# Merge boundary conditions and solution
 sol_dct = ntw.system.sol_to_dict(sol)
-
 plain_bcs = ntw.system._constraint_manager.get_plain_bc_dict()
-
 all_data = {**plain_bcs, **sol_dct}
 
-fig, ax = plt.subplots()
+# Plotting
+fig, ax_mer = plt.subplots()
+ax_mer.set_aspect('equal')
 
 sta_geom = RowGeometry(
     float(all_data[n0.geo.Rmid][0]),
@@ -149,26 +156,25 @@ sta_geom = RowGeometry(
 #     float(all_data[n3.geo.ChordAx][0]),
 # )
 
-ax.set_aspect('equal')
-sta_geom.plot_meridional_profile(color='k', ax=ax)
+sta_geom.plot_meridional_profile(color='k', ax=ax_mer)
 # rot_geom.plot_meridional_profile(color='k', ax=ax)
 
-fig, ax = plt.subplots(1, 2)
+fig, axs_tri = plt.subplots(1, 2)
+[ax.set_aspect('equal') for ax in axs_tri]
+
 plot_velocity_triangles(
     all_data[n0.kin.V_tan],
-    all_data[n0.kin.W_mer],
-    all_data[n0.kin.W_tan],
+    all_data[n0.kin.V_mer],
     all_data[n0.kin.BladeSpeed],
     all_data[n0.geo.RDistr],
-    ax[0],
+    axs_tri[0],
 )
 plot_velocity_triangles(
     all_data[n1.kin.V_tan],
-    all_data[n1.kin.W_mer],
-    all_data[n1.kin.W_tan],
+    all_data[n1.kin.V_mer],
     all_data[n1.kin.BladeSpeed],
     all_data[n1.geo.RDistr],
-    ax[1],
+    axs_tri[1],
 )
 
 plt.show()
