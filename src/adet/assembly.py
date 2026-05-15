@@ -477,7 +477,9 @@ class UnitScalingManager:
         return scales
 
     def get_arguments_bounds(
-        self, custom_bounds: dict[VarSpec, tuple[float, float]]
+        self,
+        custom_bounds: dict[VarSpec, tuple[float, float]],
+        ignore_defaults: bool = False,
     ) -> list[tuple[float, float]]:
         """The custom bounds are to be provided dimensionally"""
         bounds = []
@@ -487,7 +489,7 @@ class UnitScalingManager:
             elif spec.Glob in custom_bounds:
                 lower_bound, upper_bound = custom_bounds[spec.Glob]
             else:
-                if not spec.bounds:
+                if not spec.bounds or ignore_defaults:
                     lower_bound = -1e20
                     upper_bound = 1e20
                 else:
@@ -1289,8 +1291,11 @@ class CasadiSystem(SystemAssembler):
     def get_arguments_bounds(
         self,
         custom_bounds: dict[VarSpec, tuple[float, float]] = {},
+        ignore_defaults: bool = False,
     ):
-        bounds_by_arg = self._scaling_manager.get_arguments_bounds(custom_bounds)
+        bounds_by_arg = self._scaling_manager.get_arguments_bounds(
+            custom_bounds, ignore_defaults
+        )
         lbx = []
         ubx = []
 
