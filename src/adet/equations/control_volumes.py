@@ -1,3 +1,10 @@
+"""
+Equations that represent intermediate states computed
+using control volume conservation equations, these
+are not related to a node but associated to special
+variables of either the inlet or outlet node
+"""
+
 from adet.varspec import VarSpec
 from adet.equations.variables import NodeVariables
 import CoolProp as cp
@@ -28,16 +35,17 @@ class FullIncidence(EquationBase):
         pitch: n0.geo.Pitch.Hint,
         met_angle0: n0.geo.MetalAngle.Hint,
         s0: n0.stc.Entropy.Hint,
-        h_tr0: n0.rlt.Enthalpy.Hint,
+        h_rlt0: n0.rlt.Enthalpy.Hint,
         W_th0: ThroatVelocity.Hint,
         hh0: n0.geo.HDistr.Hint,
         beta_opt0: n0.kin.BetaOpt.Hint,
     ):
-        hmass_th = h_tr0 - W_th0**2 / 2
+        hmass_th = h_rlt0 - W_th0**2 / 2
         Wm_th = W_th0 * np.cos(met_angle0)
         Wt_th = W_th0 * np.sin(met_angle0)
 
-        rho_th = self.eos(hmass_th, s0)  # Isentropic
+        # Isentropic throat density
+        rho_th = self.eos(hmass_th, s0)
 
         original_area = hh0 * pitch
         restrict_area = hh0 * (pitch - bld_thick / np.cos(met_angle0))
@@ -108,3 +116,16 @@ class ChokingCriterion(EquationBase):
         r3 = oth_p_choke1 - stc_p_th
 
         return r1, r2, r3
+
+
+class ThroatConditions(EquationBase):
+    def residual(
+        self,
+        th: n0.geo.ThroatArea.Hint,
+    ):
+        #  ____
+        #      \____
+        #       ____
+        #      /
+        #  ````
+        pass
