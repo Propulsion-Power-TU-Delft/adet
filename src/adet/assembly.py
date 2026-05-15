@@ -794,7 +794,7 @@ class SystemAssembler(ABC):
             # If there is no guess and no manual value
             else:
                 # If the user has defined a fallback, use that
-                if fallback:
+                if fallback is not None:
                     guess_value = fallback
                 # Otherwise ask for user input
                 else:

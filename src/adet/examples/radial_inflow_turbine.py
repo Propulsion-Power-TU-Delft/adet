@@ -1,3 +1,4 @@
+from adet.tools.plotting import plot_velocity_triangles
 import logging
 
 import matplotlib.pyplot as plt
@@ -28,7 +29,10 @@ inl = Inlet(
         n0.tot.Temperature: Quantity(300, 'degC'),
         n0.oth.CumMassFlow: 0.132,
         n0.kin.FlowAngleAbs: Quantity(60, 'deg'),
-        # n0.kin.Mach: 0.03,
+        # Geometrical
+        n0.geo.Height: Quantity(2, 'mm'),
+        n0.geo.Rmid: Quantity(30, 'mm'),
+        n0.geo.MeridionalAngle: Quantity(-90, 'deg'),
     }
 )
 
@@ -46,17 +50,14 @@ stator = BladeRow(
     'nozzle',
     row_type='stator',
     bound_cond={
-        n0.geo.Height: Quantity(2, 'mm'),
         n1.geo.Height: Quantity(2, 'mm'),
-        n0.geo.Rmid: Quantity(38, 'mm'),
         n1.geo.Rmid: Quantity(33, 'mm'),
-        n0.geo.MeridionalAngle: Quantity(-90, 'deg'),
         n1.geo.MeridionalAngle: Quantity(-90, 'deg'),
         n0.geo.BldThick: 0.0,
         n1.geo.BldThick: 0.0,
-        n1.geo.MetalAngle: Quantity(0, 'deg'),
+        n1.geo.MetalAngle: Quantity(70, 'deg'),
         # *** Blades
-        n1.geo.NumBlades: 1,
+        n1.geo.NumBlades: 12,
         n1.geo.ChordAx: Quantity(0.01, 'mm'),
     },
     shaft=casing,
@@ -71,18 +72,15 @@ rotor = BladeRow(
     row_type='rotor',
     bound_cond={
         # *** Inlet
-        n0.geo.Height: Quantity(2, 'mm'),
-        n0.geo.Rmid: Quantity(30, 'mm'),
-        n0.geo.MeridionalAngle: Quantity(-90, 'deg'),
         n0.geo.BldThick: 0.0,
         # *** Outlet
         n1.geo.Height: Quantity(12, 'mm'),
         n1.geo.Rmid: Quantity(20, 'mm'),
         n1.geo.MeridionalAngle: Quantity(0, 'deg'),
-        n1.kin.FlowAngleAbs: Quantity(80, 'deg'),
+        n1.kin.FlowAngleAbs: Quantity(0, 'deg'),
         n1.geo.BldThick: 0.0,
         # *** Blades
-        n1.geo.NumBlades: 10,
+        n1.geo.NumBlades: 13,
         n1.geo.ChordAx: Quantity(10.0, 'mm'),
     },
     shaft=shaft,
@@ -107,15 +105,20 @@ ntw = ComponentNetwork(
     fluid_settings,
     inl,
     CasadiSystem(1),
-    [stator],
+    [
+        # stator,
+        rotor,
+    ],
 )
 
 ntw.build()
 
 rtfn = ntw.system.make_rootfinder('ipopt', opts={'error_on_fail': False})
-x0 = ntw.system.get_scaled_guess(fallback=0.5)
+x0 = ntw.system.get_scaled_guess(fallback=0.1)
 kn = ntw.system.get_scaled_constraints()
-bnd = ntw.system.get_arguments_bounds()
+bnd = ntw.system.get_arguments_bounds(
+    # {n1.kin.Mach: (1.1, 10.0)},
+)
 sol = solve_root_problem(rtfn, x0, kn, suppress_output=False)
 
 sol_dct = ntw.system.sol_to_dict(sol)
@@ -124,8 +127,9 @@ plain_bcs = ntw.system._constraint_manager.get_plain_bc_dict()
 
 all_data = {**plain_bcs, **sol_dct}
 
+fig, ax = plt.subplots()
 
-geom = RowGeometry(
+sta_geom = RowGeometry(
     float(all_data[n0.geo.Rmid][0]),
     float(all_data[n1.geo.Rmid][0]),
     float(all_data[n0.geo.Height][0]),
@@ -135,7 +139,36 @@ geom = RowGeometry(
     float(all_data[n1.geo.ChordAx][0]),
 )
 
-fig, ax = plt.subplots()
+# rot_geom = RowGeometry(
+#     float(all_data[n2.geo.Rmid][0]),
+#     float(all_data[n3.geo.Rmid][0]),
+#     float(all_data[n2.geo.Height][0]),
+#     float(all_data[n3.geo.Height][0]),
+#     float(all_data[n2.geo.MeridionalAngle][0]),
+#     float(all_data[n3.geo.MeridionalAngle][0]),
+#     float(all_data[n3.geo.ChordAx][0]),
+# )
+
 ax.set_aspect('equal')
-lines = geom.plot_meridional_profile(color='k', ax=ax)
-fig.show()
+sta_geom.plot_meridional_profile(color='k', ax=ax)
+# rot_geom.plot_meridional_profile(color='k', ax=ax)
+
+fig, ax = plt.subplots(1, 2)
+plot_velocity_triangles(
+    all_data[n0.kin.V_tan],
+    all_data[n0.kin.W_mer],
+    all_data[n0.kin.W_tan],
+    all_data[n0.kin.BladeSpeed],
+    all_data[n0.geo.RDistr],
+    ax[0],
+)
+plot_velocity_triangles(
+    all_data[n1.kin.V_tan],
+    all_data[n1.kin.W_mer],
+    all_data[n1.kin.W_tan],
+    all_data[n1.kin.BladeSpeed],
+    all_data[n1.geo.RDistr],
+    ax[1],
+)
+
+plt.show()

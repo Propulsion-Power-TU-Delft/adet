@@ -19,10 +19,10 @@ logger = logging.getLogger(__name__)
 # )
 
 
-def plot_velocity_triangles(kin, geo, fontsize, ax: Axes):
+def plot_velocity_triangles(Vt, Vm, Wt, U, rr, ax: Axes, fontsize=11):
     plot_settings = {'angles': 'xy', 'scale_units': 'xy', 'scale': 1}
-    ticksize = fontsize / 1.5 // 1
     fontdict = {'fontsize': fontsize}
+    ticksize = fontsize / 1.5 // 1
 
     ax.set_ylabel(r'Radial coordinate [mm]', fontdict)
     ax.set_xlabel(r'Axial coordinate [mm]', fontdict)
@@ -35,13 +35,7 @@ def plot_velocity_triangles(kin, geo, fontsize, ax: Axes):
     cmap_w = plt.get_cmap('Blues')
     cmap_u = plt.get_cmap('Purples')
 
-    Wt = kin.Wt
-    Wm = kin.Wm
-    U = kin.U
-    Vt = kin.Vt
-    Vm = kin.Vm
-    rr = geo.rr
-    num_span = geo._num_span
+    num_span = len(Vt)
 
     colors_v = [cmap_v((i + 1) / num_span) for i in range(num_span)]
     colors_w = [cmap_w((i + 1) / num_span) for i in range(num_span)]
@@ -49,10 +43,10 @@ def plot_velocity_triangles(kin, geo, fontsize, ax: Axes):
 
     # Plot all quivers at once (vectorized)
     ax.quiver(  # W
-        np.zeros(num_span), np.zeros(num_span), Wm, Wt, color=colors_w, **plot_settings
+        np.zeros(num_span), np.zeros(num_span), Vm, Wt, color=colors_w, **plot_settings
     )
     ax.quiver(  # U
-        Wm, Wt, np.zeros(num_span), U, color=colors_u, **plot_settings
+        Vm, Wt, np.zeros(num_span), U, color=colors_u, **plot_settings
     )
     ax.quiver(  # V
         np.zeros(num_span), np.zeros(num_span), Vm, Vt, color=colors_v, **plot_settings
@@ -61,7 +55,7 @@ def plot_velocity_triangles(kin, geo, fontsize, ax: Axes):
     # Set the limits of the plot
     ax.set_xlim(0, max(Vm) * 1.05)
 
-    tang_stack = np.stack([np.zeros(kin._num_span), Wt, Vt])
+    tang_stack = np.stack([np.zeros(num_span), Wt, Vt])
     ax.set_ylim(-10 + np.min(tang_stack), 10 + np.max(tang_stack))
 
     ax.grid(alpha=0.3)
