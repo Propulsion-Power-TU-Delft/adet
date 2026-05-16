@@ -1,4 +1,5 @@
 from adet.tools.plotting import plot_velocity_triangles
+import CoolProp as cp
 import logging
 
 import matplotlib.pyplot as plt
@@ -26,13 +27,13 @@ n3 = NodeVariables(3)
 inl = Inlet(
     {
         # EITHER
-        # n0.tot.Pressure: Quantity(18.1, 'bar'),  # This is before the stator!
         # n0.stc.Pressure: Quantity(0.7, 'bar'),
+        # n0.tot.Pressure: Quantity(18.1, 'bar'),
         n0.kin.Mach: 2.2,
         # ---
-        n0.tot.Temperature: Quantity(315, 'degC'),
+        n0.tot.Temperature: Quantity(300, 'degC'),
         n0.oth.CumMassFlow: 0.132,
-        n0.kin.FlowAngleAbs: Quantity(60, 'deg'),
+        n0.kin.FlowAngleAbs: Quantity(45, 'deg'),
         # --- Geometrical
         n0.geo.Height: Quantity(2, 'mm'),
         n0.geo.Rmid: Quantity(30, 'mm'),
@@ -54,13 +55,13 @@ stator = BladeRow(
     'nozzle',
     row_type='stator',
     bound_cond={
-        n1.geo.Height: Quantity(2, 'mm'),
         n1.geo.Rmid: Quantity(33, 'mm'),
+        n1.geo.Height: Quantity(2, 'mm'),
+        n1.geo.MetalAngle: Quantity(70, 'deg'),
         n1.geo.MeridionalAngle: Quantity(-90, 'deg'),
+        # *** Blades
         n0.geo.BldThick: 0.0,
         n1.geo.BldThick: 0.0,
-        n1.geo.MetalAngle: Quantity(70, 'deg'),
-        # *** Blades
         n1.geo.NumBlades: 12,
         n1.geo.ChordAx: Quantity(0.01, 'mm'),
     },
@@ -78,10 +79,10 @@ rotor = BladeRow(
         # *** Inlet
         n0.geo.BldThick: 0.0,
         # *** Outlet
-        n1.geo.Height: Quantity(10, 'mm'),
-        n1.geo.Rmid: Quantity(20, 'mm'),
+        n1.geo.HeightRatio: 6.5,
+        n1.geo.Rmid: Quantity(15, 'mm'),
         n1.geo.MeridionalAngle: Quantity(0, 'deg'),
-        n1.geo.MetalAngle: Quantity(-40, 'deg'),
+        n1.geo.MetalAngle: Quantity(-20, 'deg'),
         n1.geo.BldThick: 0.0,
         # *** Blades
         n1.geo.NumBlades: 13,
@@ -176,5 +177,22 @@ plot_velocity_triangles(
     all_data[n1.geo.RDistr],
     axs_tri[1],
 )
+
+# TODO: Make this automated
+abs_state.update(
+    cp.PT_INPUTS,
+    all_data[n0.tot.Pressure],
+    all_data[n0.tot.Temperature],
+)
+ht0 = abs_state.hmass()
+
+abs_state.update(
+    cp.PT_INPUTS,
+    all_data[n1.tot.Pressure],
+    all_data[n1.tot.Temperature],
+)
+ht1 = abs_state.hmass()
+
+print(f'Turbine power {all_data[n0.oth.CumMassFlow] * (ht0 - ht1)}')
 
 plt.show()
