@@ -13,7 +13,7 @@ from adet.equations.fundamental import (
 from adet.equations.geometrical import AnnulusAreas
 from adet.equations.nondimensional import AbsoluteMachNumber, GammaIdeal
 from adet.equations.special import ThermoVarsAdder
-from adet.equations.variables import NodeVariables, ThermoVariables
+from adet.variables import NodeVariables, ThermoVariables
 from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidSettings
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState

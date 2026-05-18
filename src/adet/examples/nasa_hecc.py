@@ -22,7 +22,7 @@ from adet.equations.nondimensional import (
     TotalTotalPressureRatio,
 )
 from adet.equations.utils import residual_debugger
-from adet.equations.variables import NodeVariables, ThermoVariables
+from adet.variables import NodeVariables, ThermoVariables
 from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
 from adet.losses.basic import (

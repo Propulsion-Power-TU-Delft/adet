@@ -18,7 +18,7 @@ from adet.equations.fundamental import (
 from adet.equations.nondimensional import AbsoluteMachNumber
 from adet.equations.special import ThermoVarsAdder
 from adet.equations.utils import safe_abs, safe_if_else
-from adet.equations.variables import NodeVariables, ThermoVariables
+from adet.variables import NodeVariables, ThermoVariables
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
 from adet.losses.basic import PercentageEntropyLoss
 from adet.registries import GuessRegistry, VariableBoundsRegistry

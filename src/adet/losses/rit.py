@@ -1,7 +1,5 @@
-from adet.varspec import VarSpec
-from adet.equations.utils import thermo_deriv
-from adet.equations.base_equation import EquationConfig, EquationBase
-from adet.equations.variables import NodeVariables, ThermoVariables
+from adet.equations.base_equation import EquationConfig
+from adet.variables import NodeVariables, ThermoVariables
 import CoolProp as cp
 from adet.losses.base_loss import LossModel
 import numpy as np

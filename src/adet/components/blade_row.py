@@ -28,7 +28,7 @@ from adet.equations.geometrical import (
     RadialGeometry,
 )
 from adet.equations.special import GeometricalAdder
-from adet.equations.variables import (
+from adet.variables import (
     GeometricVariables,
     KinematicVariables,
     NodeVariables,
@@ -162,7 +162,7 @@ class BladeRow(BaseComponent):
     @shaft.setter
     def shaft(self, shaft: Shaft):
         self._shaft = shaft
-        from adet.equations.variables import NodeVariables
+        from adet.variables import NodeVariables
 
         n1 = NodeVariables(1)
         if shaft.is_constrained:

@@ -1,6 +1,6 @@
 from adet.equations.base_equation import EquationConfig
 from adet.equations.utils import safe_if_else
-from adet.equations.variables import NodeVariables, ThermoVariables
+from adet.variables import NodeVariables, ThermoVariables
 from adet.losses.base_loss import LossModel
 import numpy as np
 import casadi as cs

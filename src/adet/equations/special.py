@@ -9,7 +9,7 @@ do not even appear in the system, leading to an exception
 """
 
 from adet.equations import EquationBase
-from adet.equations.variables import NodeVariables
+from adet.variables import NodeVariables
 
 n0 = NodeVariables(0)
 

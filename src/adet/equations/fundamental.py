@@ -9,7 +9,7 @@ from adet.equations.utils import (
     safe_sum,
     span_fin_diff,
 )
-from adet.equations.variables import NodeVariables
+from adet.variables import NodeVariables
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)

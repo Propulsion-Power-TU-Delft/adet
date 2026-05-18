@@ -10,7 +10,7 @@ from adet.equations.utils import (
     safe_min,
     safe_sign,
 )
-from adet.equations.variables import NodeVariables, ThermoVariables
+from adet.variables import NodeVariables, ThermoVariables
 from adet.losses.base_loss import LossModel
 
 n0 = NodeVariables(0)

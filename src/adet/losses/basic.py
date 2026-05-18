@@ -1,4 +1,4 @@
-from adet.equations.variables import NodeVariables
+from adet.variables import NodeVariables
 from adet.equations.base_equation import DeviationModel, LossApplier
 from adet.equations.utils import get_midspan_idx
 

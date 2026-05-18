@@ -7,7 +7,7 @@ import CoolProp as cp
 import numpy as np
 
 from adet.equations.base_equation import EquationBase, EquationConfig
-from adet.equations.variables import NodeVariables, ThermoVariables
+from adet.variables import NodeVariables, ThermoVariables
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)

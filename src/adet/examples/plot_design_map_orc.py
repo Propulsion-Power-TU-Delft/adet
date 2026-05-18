@@ -2,7 +2,7 @@
 Regenerate meridional channel plots from saved design map data
 """
 
-from adet.equations.variables import NodeVariables
+from adet.variables import NodeVariables
 
 import pathlib
 import pickle

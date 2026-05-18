@@ -2,7 +2,7 @@ import numpy as np
 
 from adet.assembly import CasadiSystem, EquationBase
 from adet.diagnostics import SystemDiagnostics
-from adet.equations.variables import NodeVariables, OtherVariables
+from adet.variables import NodeVariables, OtherVariables
 from adet.registries import DefaultUnitsRegistry
 
 
@@ -54,14 +54,20 @@ exact_sol = {
 original_order = tuple(system.data.free_args)
 
 # Create index map from VarSpec to original paper order
-index_map = {system.data.free_args.index(arg): idx for idx, arg in enumerate(original_order)}
+index_map = {
+    system.data.free_args.index(arg): idx for idx, arg in enumerate(original_order)
+}
 
 # Build exact_x0 from the exact solution values (would need matching VarSpec objects)
-exact_x0 = np.array([1.0, 1.0, 4.0, 1.0, 2.0, 2.2])  # Placeholder values matching expected solution
+exact_x0 = np.array(
+    [1.0, 1.0, 4.0, 1.0, 2.0, 2.2]
+)  # Placeholder values matching expected solution
 
 # Get constraint values from the system's boundary condition dict
 constraint_values = list(system.data.boun_cond.values())
-analyzer = SystemDiagnostics(system, np.concatenate(constraint_values) if constraint_values else np.array([]))
+analyzer = SystemDiagnostics(
+    system, np.concatenate(constraint_values) if constraint_values else np.array([])
+)
 
 # === The first guesses are rounded in the paper
 x0_case1 = np.round(exact_x0 - 1e-5 * exact_x0, 5)

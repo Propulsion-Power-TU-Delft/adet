@@ -6,7 +6,7 @@ variables of either the inlet or outlet node
 """
 
 from adet.varspec import VarSpec
-from adet.equations.variables import NodeVariables
+from adet.variables import NodeVariables
 import CoolProp as cp
 import numpy as np
 

@@ -9,7 +9,7 @@ import numpy as np
 from adet.equations import EquationBase
 from adet.equations.base_equation import EquationConfig
 from adet.equations.utils import get_midspan_idx, safe_abs, thermo_deriv
-from adet.equations.variables import NodeVariables, ThermoVariables
+from adet.variables import NodeVariables, ThermoVariables
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)

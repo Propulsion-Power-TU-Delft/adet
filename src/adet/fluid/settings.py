@@ -98,7 +98,7 @@ class FluidSettings:
 if __name__ == '__main__':
     import CoolProp as cp
     from copy import deepcopy
-    from adet.equations.variables import ThermoVariables
+    from adet.variables import ThermoVariables
 
     eos = cp.AbstractState('HEOS', 'R134a')
 

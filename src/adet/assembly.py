@@ -23,7 +23,7 @@ from pint.facets.plain import PlainQuantity
 
 from adet.constants import AdetArray
 from adet.equations.base_equation import EquationBase, EquationConfig
-from adet.equations.variables import NodeVariables, ThermoVariables
+from adet.variables import NodeVariables, ThermoVariables
 from adet.varspec import NodeStates, VarSpec
 from adet.errors import ExistingEquationError
 from adet.fluid.casadi_eos import CasadiEos

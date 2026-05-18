@@ -14,7 +14,7 @@ from adet.equations.utils import (
     safe_min_clip,
     safe_sum,
 )
-from adet.equations.variables import NodeVariables
+from adet.variables import NodeVariables
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)

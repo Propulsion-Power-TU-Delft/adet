@@ -4,7 +4,7 @@ import CoolProp as cp
 import numpy as np
 
 from adet.equations.utils import safe_abs, trapezoid2
-from adet.equations.variables import NodeVariables, ThermoVariables
+from adet.variables import NodeVariables, ThermoVariables
 from adet.losses.base_loss import LossModel
 
 n0 = NodeVariables(0)

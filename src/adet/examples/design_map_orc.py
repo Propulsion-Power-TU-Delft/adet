@@ -34,7 +34,7 @@ from adet.equations.nondimensional import (
     VolumetricFlowRatio,
     WorkCoefficient,
 )
-from adet.equations.variables import NodeVariables, ThermoVariables
+from adet.variables import NodeVariables, ThermoVariables
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.losses.leakage import DentonTrapLeakage

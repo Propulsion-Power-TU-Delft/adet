@@ -6,7 +6,7 @@ from typing import Any, Callable, ClassVar, cast, get_type_hints
 import casadi as cs
 from pint import Unit
 
-from adet.equations.variables import NodeVariables, VarSpec
+from adet.variables import NodeVariables, VarSpec
 from adet.fluid.casadi_eos import CasadiEos
 from adet.tools.loggers import setup_logger
 

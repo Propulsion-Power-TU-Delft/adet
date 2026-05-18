@@ -12,7 +12,7 @@ from adet.equations.fundamental import Kinematics, TotalStaticMatching
 from adet.equations.nondimensional import AbsoluteMachNumber, StaticPressRatio
 from adet.equations.special import ThermoVarsAdder
 from adet.equations.utils import residual_debugger, safe_abs
-from adet.equations.variables import NodeVariables, ThermoVariables
+from adet.variables import NodeVariables, ThermoVariables
 from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
 from adet.registries import VariableBoundsRegistry, reset_registries
@@ -166,20 +166,22 @@ if __name__ == '__main__':
     )
 
     bld_thick_val = 0.01
-    sys.add_boundary_conditions({
-        n0.tot.Pressure: 3e5,
-        n0.tot.Temperature: 400,
-        n0.geo.RDistr: 0.1,
-        n0.geo.Pitch: 1.0,
-        n0.geo.BldThick: bld_thick_val,
-        n0.oth.MomThick: bld_thick_val * 0.075,
-        n0.oth.DispThick: bld_thick_val * 0.15,
-        n0.oth.PBase: 1.3e5,
-        n0.kin.Omega: 0.0,
-        n0.kin.FlowAngleRel: Quantity(60, 'deg'),
-        n0.kin.Mach: 1.0,
-        n1.ndim.PRatio: 0.3,
-    })
+    sys.add_boundary_conditions(
+        {
+            n0.tot.Pressure: 3e5,
+            n0.tot.Temperature: 400,
+            n0.geo.RDistr: 0.1,
+            n0.geo.Pitch: 1.0,
+            n0.geo.BldThick: bld_thick_val,
+            n0.oth.MomThick: bld_thick_val * 0.075,
+            n0.oth.DispThick: bld_thick_val * 0.15,
+            n0.oth.PBase: 1.3e5,
+            n0.kin.Omega: 0.0,
+            n0.kin.FlowAngleRel: Quantity(60, 'deg'),
+            n0.kin.Mach: 1.0,
+            n1.ndim.PRatio: 0.3,
+        }
+    )
 
     sys.build()
     VariableBoundsRegistry().from_dict(
@@ -218,7 +220,9 @@ if __name__ == '__main__':
     # angle_idx = constraint_map[n0.kin.FlowAngleRel]
     # pRatio_idx = constraint_map[n1.ndim.PRatio]
 
-    RUN_SWEEP = False  # Simplified - set to True and implement index mapping above for sweep
+    RUN_SWEEP = (
+        False  # Simplified - set to True and implement index mapping above for sweep
+    )
     N_PTS = 20
     ANGLES = [
         45,
