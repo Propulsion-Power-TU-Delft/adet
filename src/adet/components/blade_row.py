@@ -16,6 +16,7 @@ from adet.equations.fundamental import (
     EulerEquation,
     MassConservation,
     ZeroBlockage,
+    ConstantAngMomentum,
 )
 from adet.equations.geometrical import (
     BladePitch,
@@ -54,9 +55,10 @@ logger = logging.getLogger(__name__)
 # Initialize variable enums with DEF_NODE to get base VarSpec objects
 _kin = KinematicVariables(node=DEF_NODE)
 _geo = GeometricVariables(node=DEF_NODE)
-_thermo_tot = ThermoVariables(node=DEF_NODE, state=NodeStates.TOTAL)
-_thermo_stc = ThermoVariables(node=DEF_NODE, state=NodeStates.STATIC)
 _oth = OtherVariables(node=DEF_NODE)
+_thrm_tot = ThermoVariables(node=DEF_NODE, state=NodeStates.TOTAL)
+_thrm_stc = ThermoVariables(node=DEF_NODE, state=NodeStates.STATIC)
+
 n1 = NodeVariables(1)
 
 ABSOLUTE_LINK = [
@@ -64,8 +66,8 @@ ABSOLUTE_LINK = [
     _kin.V_tan,
     _kin.V_mer,
     # No work & no entropy
-    _thermo_stc.Entropy,
-    _thermo_tot.Enthalpy,
+    _thrm_stc.Entropy,
+    _thrm_tot.Enthalpy,
 ]
 """
 This preserves the absolute triangles,
@@ -80,6 +82,7 @@ GEOM_LINK = [
     _geo.Height,
     _geo.MeridionalAngle,
 ]
+_oth = OtherVariables(node=DEF_NODE)
 
 
 class BladeRow(BaseComponent):
@@ -179,7 +182,6 @@ class VanelessDiffuser(BaseComponent):
         (AmiranteDiffuserMomentum, (0, 1)),
         (MassConservation, (0, 1)),
         # Meridional Geometry
-        (GeometricalAdder, 0),
         (MeridionalGeometry, 1),
         # No blades
         (ZeroBlockage, 0),
@@ -188,10 +190,8 @@ class VanelessDiffuser(BaseComponent):
         (RadialGeometry, (0, 1)),
     ]
 
-    _oth = OtherVariables(node=DEF_NODE)
     constant_variables = [
         _kin.Omega,
-        _geo.MeridionalAngle,
     ]
 
     from_previous_node = (
@@ -201,6 +201,39 @@ class VanelessDiffuser(BaseComponent):
             _geo.HDistr,
             _geo.RDistr,
             _oth.WakeFrac,
+        ]
+    )
+
+    def _post_init(self):
+        self._boundary_conditions[n1.kin.Omega] = 0
+        # NOTE: Null axial chord => exactly radial diffuser
+        self._boundary_conditions[n1.geo.ChordAx] = 0.0
+
+
+class Interspace(BaseComponent):
+    base_equations = [
+        # Fundamental equations
+        (ConstRelEnthalpy, (0, 1)),
+        (MassConservation, (0, 1)),
+        (ConstantAngMomentum, (0, 1)),
+        # Meridional Geometry
+        (MeridionalGeometry, 1),
+        (RadialGeometry, (0, 1)),
+        # No blades
+        (ZeroBlockage, 0),
+        (ZeroBlockage, 1),
+    ]
+
+    constant_variables = [
+        _kin.Omega,
+    ]
+
+    from_previous_node = (
+        ABSOLUTE_LINK
+        + GEOM_LINK
+        + [
+            _geo.HDistr,
+            _geo.RDistr,
         ]
     )
 

@@ -159,11 +159,16 @@ class RadialGeometry(EquationBase):
         h0: n0.geo.Height.Hint,
         h1: n1.geo.Height.Hint,
         h_ratio1: n1.geo.HeightRatio.Hint,
+        r_ratio1: n1.geo.RadiusRatio.Hint,
+        mer_ang0: n0.geo.MeridionalAngle.Hint,
+        mer_ang1: n1.geo.MeridionalAngle.Hint,
     ):
         r1 = chord1 - (rr_mid1 - rr_mid0)
         r2 = h0 * h_ratio1 - h1
+        r3 = rr_mid0 * r_ratio1 - rr_mid1
+        r4 = mer_ang0 - mer_ang1
 
-        return r1, r2
+        return r1, r2, r3, r4
 
 
 class BladePitch(EquationBase):
