@@ -26,7 +26,7 @@ def computePrustHerman(Q):
 # *** Stator
 class StatorProfileLoss(LossModel):
     config = EquationConfig(
-        manual_units=(),
+        manual_units=('J / kg / K',),
         input_pair=cp.HmassP_INPUTS,
         out_properties=(thrm.Pressure,),
     )
@@ -36,7 +36,7 @@ class StatorProfileLoss(LossModel):
 
     def residual(
         self,
-        angle_out,
+        angle_out: n1.kin.FlowAngleRel.Hint,
         bld_thick: n1.geo.BldThick.Hint,
         mom_th: n1.oth.MomThick.Hint,
         pitch: n1.geo.Pitch.Hint,

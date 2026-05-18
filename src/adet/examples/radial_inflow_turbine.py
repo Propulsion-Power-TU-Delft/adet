@@ -1,3 +1,5 @@
+from adet.equations.nondimensional import GammaPV
+from adet.losses.rit import StatorProfileLoss
 from adet.tools.plotting import plot_velocity_triangles
 import CoolProp as cp
 import logging
@@ -73,6 +75,9 @@ stator = BladeRow(
     extra_equations={
         IsentropicLink(): (0, 1),
         ZeroDeviation(): 0,  # No incidence
+        # StatorProfileLoss(): (0, 1),
+        GammaPV(): 0,
+        GammaPV(): 1,
     },
 )
 
@@ -224,7 +229,7 @@ plot_velocity_triangles(
     fontsize=17,
 )
 
-# TODO: Make this automated
+# TODO: Make this automated on system
 abs_state.update(
     cp.PT_INPUTS,
     sol_data[n0.tot.Pressure],

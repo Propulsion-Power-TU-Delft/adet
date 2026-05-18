@@ -1,14 +1,15 @@
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Callable, ClassVar, cast, get_type_hints
+from inspect import getfullargspec
+from typing import Any, Callable, ClassVar, cast
 
 import casadi as cs
 from pint import Unit
 
-from adet.variables import NodeVariables, VarSpec
 from adet.fluid.casadi_eos import CasadiEos
 from adet.tools.loggers import setup_logger
+from adet.variables import NodeVariables, VarSpec
 
 logger = logging.getLogger(__name__)
 
@@ -88,11 +89,14 @@ class EquationBase(ABC):
         return sorted({s.node for s in vars_specs})
 
     def _get_args_specs(self) -> list[VarSpec]:
-        args_type_hints = get_type_hints(self.residual, include_extras=True)
+        residual_specs = getfullargspec(self.residual)
+        all_args = residual_specs.args[1:]
+        args_hints = residual_specs.annotations
 
         vars_specs = []
-        for hint in args_type_hints.values():
+        for arg in all_args:
             # NOTE: Only use the first annotation by convention
+            hint = args_hints[arg]
             spec = cast(VarSpec, hint.__metadata__[0])
             logger.debug(f'Variable is {spec}')
 
