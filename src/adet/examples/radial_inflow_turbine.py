@@ -128,7 +128,7 @@ ntw = ComponentNetwork(
     [
         stator,
         interspace,
-        # rotor,
+        rotor,
     ],
 )
 
@@ -175,35 +175,53 @@ sta_geom = RowGeometry(
     float(sol_data[n1.geo.ChordAx][0]),
 )
 
-# rot_geom = RowGeometry(
-#     float(all_data[n2.geo.Rmid][0]),
-#     float(all_data[n3.geo.Rmid][0]),
-#     float(all_data[n2.geo.Height][0]),
-#     float(all_data[n3.geo.Height][0]),
-#     float(all_data[n2.geo.MeridionalAngle][0]),
-#     float(all_data[n3.geo.MeridionalAngle][0]),
-#     float(all_data[n3.geo.ChordAx][0]),
-# )
+rot_geom = RowGeometry(
+    float(sol_data[n4.geo.Rmid][0]),
+    float(sol_data[n5.geo.Rmid][0]),
+    float(sol_data[n4.geo.Height][0]),
+    float(sol_data[n5.geo.Height][0]),
+    float(sol_data[n4.geo.MeridionalAngle][0]),
+    float(sol_data[n5.geo.MeridionalAngle][0]),
+    float(sol_data[n5.geo.ChordAx][0]),
+)
 
 sta_geom.plot_meridional_profile(color='k', ax=ax_mer)
-# rot_geom.plot_meridional_profile(color='k', ax=ax)
+rot_geom.plot_meridional_profile(color='k', ax=ax_mer)
 
-fig, axs_tri = plt.subplots(1, 2)
-[ax.set_aspect('equal') for ax in axs_tri]
+fig, axs_tri = plt.subplots(2, 2, figsize=(10, 20), dpi=70)
+[ax.set_aspect('equal') for ax in axs_tri.flat]
 
 plot_velocity_triangles(
     sol_data[n0.kin.V_tan],
     sol_data[n0.kin.V_mer],
     sol_data[n0.kin.BladeSpeed],
     sol_data[n0.geo.RDistr],
-    axs_tri[0],
+    axs_tri[0, 0],
+    fontsize=17,
 )
 plot_velocity_triangles(
     sol_data[n1.kin.V_tan],
     sol_data[n1.kin.V_mer],
     sol_data[n1.kin.BladeSpeed],
     sol_data[n1.geo.RDistr],
-    axs_tri[1],
+    axs_tri[0, 1],
+    fontsize=17,
+)
+plot_velocity_triangles(
+    sol_data[n4.kin.V_tan],
+    sol_data[n4.kin.V_mer],
+    sol_data[n4.kin.BladeSpeed],
+    sol_data[n4.geo.RDistr],
+    axs_tri[1, 0],
+    fontsize=17,
+)
+plot_velocity_triangles(
+    sol_data[n5.kin.V_tan],
+    sol_data[n5.kin.V_mer],
+    sol_data[n5.kin.BladeSpeed],
+    sol_data[n5.geo.RDistr],
+    axs_tri[1, 1],
+    fontsize=17,
 )
 
 # TODO: Make this automated
@@ -216,8 +234,8 @@ ht0 = abs_state.hmass()
 
 abs_state.update(
     cp.PT_INPUTS,
-    sol_data[n1.tot.Pressure],
-    sol_data[n1.tot.Temperature],
+    sol_data[n5.tot.Pressure],
+    sol_data[n5.tot.Temperature],
 )
 ht1 = abs_state.hmass()
 
