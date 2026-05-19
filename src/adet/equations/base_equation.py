@@ -2,16 +2,45 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from inspect import getfullargspec
-from typing import Any, Callable, ClassVar, cast
+from typing import Any, Callable, ClassVar, Sequence, cast
 
 import casadi as cs
+import numpy as np
 from pint import Unit
+from pint.facets.plain import PlainQuantity
+from pint.registry import Quantity
 
 from adet.fluid.casadi_eos import CasadiEos
 from adet.tools.loggers import setup_logger
 from adet.variables import NodeVariables, VarSpec
 
 logger = logging.getLogger(__name__)
+
+
+class EmbeddedEos:
+    def __init__(
+        self,
+        eos_obj: CasadiEos | cs.Function | Any,
+        out_properties: Sequence[VarSpec],
+    ):
+        self._eos_obj = eos_obj
+        self._out_pts = out_properties
+
+    def _pass_units(self, *args) -> list[PlainQuantity]:
+        lengths = {len(a) for a in args}
+        if len(lengths) > 1:
+            raise ValueError('Incompatible thermodynamic lengths, strange...')
+
+        num_span = lengths.pop()
+
+        return [Quantity(num_span * [np.nan], spec.unit) for spec in self._out_pts]
+
+    def __call__(self, *args) -> Sequence[Any]:
+        is_quantity = [isinstance(q, PlainQuantity) for q in args]
+        if any(is_quantity):
+            return self._pass_units(*args)
+        else:
+            return self._eos_obj(*args)
 
 
 @dataclass(frozen=True)
@@ -21,7 +50,7 @@ class EquationConfig:
     manual_units: tuple[str, ...] = ()
     scaling_factor: tuple[float | None, ...] | None = None
     input_pair: int = 0
-    out_properties: tuple[VarSpec, ...] = ()
+    out_properties: tuple[VarSpec, ...] = ()  # TODO: Potentially phase out
 
 
 class EquationBase(ABC):
@@ -34,7 +63,7 @@ class EquationBase(ABC):
     """
 
     config: ClassVar[EquationConfig] = EquationConfig()
-    _eos: ClassVar[None | CasadiEos | cs.Function] = None
+    _eos: ClassVar[None | EmbeddedEos] = None
 
     def __init__(self, custom_scaling_factor: list[float] | None = None):
         """
@@ -78,6 +107,10 @@ class EquationBase(ABC):
     @property
     def num_args(self):
         return len(self._arguments)
+
+    @property
+    def arg_names(self) -> list[str]:
+        return getfullargspec(self.residual).args[1:]
 
     @property
     def arg_specs(self) -> list[VarSpec]:
@@ -142,6 +175,8 @@ class EquationBase(ABC):
         if cls._eos is None:
             raise AttributeError(f'Missing equation of state for {cls}')
 
+        # TODO: Check if this types calls correctly
+        # return cls._eos
         return cast(
             Callable[[Any, Any], tuple[Any, ...]],
             cls._eos,
@@ -149,7 +184,7 @@ class EquationBase(ABC):
 
     # TODO: Fix typing here for analytical/symbolic EoS
     @eos.setter
-    def eos(self, eos: CasadiEos | cs.Function | Any):
+    def eos(self, eos: EmbeddedEos):
         cls = self.__class__
         if cls._eos is not None:
             logger.debug(f'Overwriting EoS for {cls}')

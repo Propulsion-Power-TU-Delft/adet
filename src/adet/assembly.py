@@ -437,8 +437,8 @@ class UnitScalingManager:
 
     def _test_eq_units(self, equation: EquationBase) -> tuple[str, ...]:
         probe_args = []
-        if equation.config.manual_units:
-            return equation.config.manual_units
+        # if equation.config.manual_units:
+        #     return equation.config.manual_units
 
         for spec in equation.arg_specs:
             if spec.scalar:
@@ -1080,8 +1080,8 @@ class CasadiSystem(SystemAssembler):
                 args.append(self._all_symbols[abs_arg])
 
             res_syms = eq.residual(*args)
-            if eq.config.manual_units:
-                self._manual_units_check(eq, res_syms)
+            # if eq.config.manual_units:
+            #     self._manual_units_check(eq, res_syms)
 
             residuals.append(res_syms)
 
