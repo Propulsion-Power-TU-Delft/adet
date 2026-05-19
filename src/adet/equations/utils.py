@@ -1,5 +1,5 @@
 import sys
-from typing import Literal, Mapping
+from typing import Literal, Mapping, cast
 
 import casadi as cs
 import numpy as np
@@ -8,7 +8,7 @@ from pint import Quantity
 from pint.facets.plain import PlainQuantity
 from sympy import Symbol
 
-from adet.equations.base_equation import EquationBase
+from adet.equations.base_equation import EquationBase, EmbeddedEos
 from adet.fluid.casadi_eos import CasadiEos
 from adet.varspec import VarSpec
 
@@ -112,17 +112,30 @@ def safe_min_clip(x, min_value):
     return x
 
 
-def thermo_deriv(eos, arg0, arg1, wrt: Literal[0, 1]):
+def thermo_deriv(eos: EmbeddedEos, arg0, arg1, wrt: Literal[0, 1]):
     """
     wrt
     ---
         0 -> Derivative wrt to first arg
         1 -> Derivative wrt to second arg
     """
-    # This is very cryptic and mysterious
-    eos_value = (eos(arg0, arg1),)
-    jacobian = eos.jacobian()(arg0, arg1, *eos_value)
-    return [cs.diag(jacobian[wrt + 2 * i]) for i in range(eos.n_out())]
+    if any_is_qty(arg0, arg1):
+        # |> For unit checks
+        num_span = len(arg0)
+        args = [arg0, arg1]
+
+        if eos.out_pties is None:
+            raise AttributeError('Cannot compute derivative without output properties')
+        out_qties = [Quantity(num_span * [np.nan], s.unit) for s in eos.out_pties]
+
+        return [qty / args[wrt] for qty in out_qties]
+    else:
+        # For casadi symbolics
+        # This is very cryptic and mysterious
+        eos_func = cast(cs.Function, eos.callable)
+        eos_value = (eos(arg0, arg1),)
+        jacobian = eos_func.jacobian()(arg0, arg1, *eos_value)
+        return [cs.diag(jacobian[wrt + 2 * i]) for i in range(eos_func.n_out())]
 
 
 def thermo_fwd_fd(eos: CasadiEos, arg0, arg1, wrt: Literal[0, 1]):
@@ -141,6 +154,8 @@ def thermo_fwd_fd(eos: CasadiEos, arg0, arg1, wrt: Literal[0, 1]):
 
 def trapezoid1(y, x):
     """Trapezoidal rule"""
+    if any_is_qty(y, x):
+        raise TypeError('Cannot apply trapezoid for quantities, use manual units')
     dx = x[1:, :] - x[:-1, :]
     integrand = (y[:-1, :] + y[1:, :]) * dx / 2
     return cs.sum1(integrand)
@@ -148,6 +163,8 @@ def trapezoid1(y, x):
 
 def trapezoid2(y, x):
     """Trapezoidal rule"""
+    if any_is_qty(y, x):
+        raise TypeError('Cannot apply trapezoid for quantities, use manual units')
     dx = x[:, 1:] - x[:, :-1]
     integrand = (y[:, :-1] + y[:, 1:]) * dx / 2
     return cs.sum2(integrand)

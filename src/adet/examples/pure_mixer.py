@@ -1,4 +1,3 @@
-import ipdb
 import jax
 import numpy as np
 from pint import Quantity
@@ -201,9 +200,6 @@ if __name__ == '__main__':
     sys.write_solution_to_nodes(sol)
     n0 = sys.nodes[0]
     n1 = sys.nodes[1]
-
-    if not np.isclose(n0.kin.beta, n0.kin.alpha):
-        ipdb.set_trace()
 
     print(n0.kin)
     print(n1.kin)

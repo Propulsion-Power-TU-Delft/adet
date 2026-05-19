@@ -32,13 +32,10 @@ class StatorProfileLoss(LossModel):
     """
 
     config = EquationConfig(
-        manual_units=('J / kg / K',),
         input_pair=cp.HmassP_INPUTS,
         out_properties=(thrm.Entropy,),
     )
-    # WARN: Need to add GammaPV() computations
     # on both nodes. For ideal gas need to use
-    # the dedicated equation, NOT GammaPV()
 
     def residual(
         self,
@@ -57,9 +54,9 @@ class StatorProfileLoss(LossModel):
         U0: n0.kin.BladeSpeed.Hint,
         U1: n1.kin.BladeSpeed.Hint,
         p1: n1.stc.Pressure.Hint,
-        Ds_prof: n1.loss.Ds_profile.Hint,
         gPv0: n0.oth.GammaPV.Hint,
         gPv1: n1.oth.GammaPV.Hint,
+        Ds_prof: n1.loss.Ds_profile.Hint,
     ):
 
         R = gas_const / mmass
@@ -88,50 +85,49 @@ class StatorEndwallLoss(LossModel):
     def residual(self): ...
 
 
-class ShockLoss(LossModel):
-    def residual(
-        self,
-        gPv1: n1.oth.GammaPV.Hint,
-        M1: n1.kin.RelMach.Hint,
-        p1: n1.stc.Pressure.Hint,
-        s0: n0.stc.Entropy.Hint,
-        cp: n1.stc.Cp.Hint,
-        R_un: n1.stc.GasConstant.Hint,
-        mmass: n1.stc.MolarMass.Hint,
-    ):
-        R = R_un / mmass
-
-        beta = 2
-        if M1 * np.sin(beta) >= 1.0:
-            M1_normal = M1 * np.sin(beta)
-            theta = np.arctan(
-                2
-                / np.tan(beta)
-                * (M1**2 * np.sin(beta) ** 2 - 1)
-                / (M1**2 * (gPv1 + np.cos(2 * beta) + 2))
-            )
-            M2_normal = np.sqrt(
-                (1 + (gPv1 - 1) / 2 * M1_normal**2)
-                / (gPv1 * M1_normal**2 - (gPv1 - 1) / 2)
-            )
-            M2 = M2_normal / np.sin(beta)
-            P_ratio = 1 + (2 * gPv1) / (gPv1 + 1) * (M1_normal**2 - 1)
-            D_ratio = (1 + (gPv1 + 1) / (gPv1 - 1) * P_ratio) / (
-                (gPv1 + 1) / (gPv1 - 1) + P_ratio
-            )
-            T_ratio = P_ratio / D_ratio
-            delta_s = cp * np.log(T_ratio) - R * np.log(P_ratio)
-        else:
-            M2 = M1
-            P_ratio = 1
-            T_ratio = 1
-            delta_s = 0
-
-            # Shock angle computation
-            shock_angle_new = np.arcsin(1 / M_preShock[ii]) + (gamma_Pv[ii] + 1) / 4 * \
-                              M_preShock[ii] ** 2 / (M_preShock[ii] ** 2 - 1) * theta
-            dshock_angle = (shock_angle[ii] - shock_angle_new) / shock_angle[ii]
-            shock_angle[ii] = shock_angle_new           theta = 0
+# class ShockLoss(LossModel):
+#     def residual(
+#         self,
+#         M1: n1.kin.RelMach.Hint,
+#         p1: n1.stc.Pressure.Hint,
+#         s0: n0.stc.Entropy.Hint,
+#         cp: n1.stc.Cp.Hint,
+#         R_un: n1.stc.GasConstant.Hint,
+#         mmass: n1.stc.MolarMass.Hint,
+#     ):
+#         R = R_un / mmass
+#
+#         beta = 2
+#         if M1 * np.sin(beta) >= 1.0:
+#             M1_normal = M1 * np.sin(beta)
+#             theta = np.arctan(
+#                 2
+#                 / np.tan(beta)
+#                 * (M1**2 * np.sin(beta) ** 2 - 1)
+#                 / (M1**2 * (gPv1 + np.cos(2 * beta) + 2))
+#             )
+#             M2_normal = np.sqrt(
+#                 (1 + (gPv1 - 1) / 2 * M1_normal**2)
+#                 / (gPv1 * M1_normal**2 - (gPv1 - 1) / 2)
+#             )
+#             M2 = M2_normal / np.sin(beta)
+#             P_ratio = 1 + (2 * gPv1) / (gPv1 + 1) * (M1_normal**2 - 1)
+#             D_ratio = (1 + (gPv1 + 1) / (gPv1 - 1) * P_ratio) / (
+#                 (gPv1 + 1) / (gPv1 - 1) + P_ratio
+#             )
+#             T_ratio = P_ratio / D_ratio
+#             delta_s = cp * np.log(T_ratio) - R * np.log(P_ratio)
+#         else:
+#             M2 = M1
+#             P_ratio = 1
+#             T_ratio = 1
+#             delta_s = 0
+#
+#             # Shock angle computation
+#             shock_angle_new = np.arcsin(1 / M_preShock[ii]) + (gamma_Pv[ii] + 1) / 4 * \
+#                               M_preShock[ii] ** 2 / (M_preShock[ii] ** 2 - 1) * theta
+#             dshock_angle = (shock_angle[ii] - shock_angle_new) / shock_angle[ii]
+#             shock_angle[ii] = shock_angle_new           theta = 0
 
 
 # *** Impeller

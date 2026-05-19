@@ -128,7 +128,6 @@ class IsentropicProperties(EquationBase):
     config = EquationConfig(
         input_pair=cp.PSmass_INPUTS,
         out_properties=(thrm.Enthalpy, thrm.Temperature),
-        manual_units=('J / kg', 'K', 'J / kg', 'K'),
     )
 
     def residual(

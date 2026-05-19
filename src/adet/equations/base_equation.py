@@ -18,29 +18,43 @@ logger = logging.getLogger(__name__)
 
 
 class EmbeddedEos:
-    def __init__(
-        self,
-        eos_obj: CasadiEos | cs.Function | Any,
-        out_properties: Sequence[VarSpec],
-    ):
-        self._eos_obj = eos_obj
-        self._out_pts = out_properties
+    def __init__(self):
+        self.out_pties: Sequence[VarSpec] | None = None
+        self.callable: CasadiEos | cs.Function | Any | None = None
+        self.parent: None | EquationBase = None
 
-    def _pass_units(self, *args) -> list[PlainQuantity]:
+    def _pass_units(self, *args) -> PlainQuantity | list[PlainQuantity]:
         lengths = {len(a) for a in args}
         if len(lengths) > 1:
             raise ValueError('Incompatible thermodynamic lengths, strange...')
 
         num_span = lengths.pop()
 
-        return [Quantity(num_span * [np.nan], spec.unit) for spec in self._out_pts]
+        if not self.out_pties:
+            raise AttributeError(
+                f'{self.parent} is calling an EoS without output properties'
+            )
 
-    def __call__(self, *args) -> Sequence[Any]:
+        all_outputs = [
+            Quantity(num_span * [np.nan], spec.unit) for spec in self.out_pties
+        ]
+
+        if len(all_outputs) == 1:
+            return all_outputs[0]
+        else:
+            return all_outputs
+
+    def __call__(self, *args) -> Any | Sequence[Any]:
         is_quantity = [isinstance(q, PlainQuantity) for q in args]
+
         if any(is_quantity):
             return self._pass_units(*args)
+        elif self.callable is None:
+            raise AttributeError(
+                f'Equation of state for {self.parent} was not assignned at runtime'
+            )
         else:
-            return self._eos_obj(*args)
+            return self.callable(*args)
 
 
 @dataclass(frozen=True)
@@ -63,7 +77,7 @@ class EquationBase(ABC):
     """
 
     config: ClassVar[EquationConfig] = EquationConfig()
-    _eos: ClassVar[None | EmbeddedEos] = None
+    _eos: ClassVar[EmbeddedEos]
 
     def __init__(self, custom_scaling_factor: list[float] | None = None):
         """
@@ -74,6 +88,13 @@ class EquationBase(ABC):
         """
 
         self._arguments: tuple[str, ...] = ()
+
+        cls = self.__class__
+        # If the config calls for it, add
+        if cls.config.input_pair and cls.config.out_properties:
+            cls._eos = EmbeddedEos()
+            cls._eos.parent = self
+            cls._eos.out_pties = self.config.out_properties
 
         if custom_scaling_factor:
             self._scaling_factor = custom_scaling_factor
@@ -164,19 +185,14 @@ class EquationBase(ABC):
                 f'Please specify both input_pair and out_properties in {cls}'
             )
 
-        if config.input_pair and not config.manual_units:
-            raise ValueError('Multi state equations requires manual unit inputs')
+        # if config.input_pair and config.manual_units:
+        #     logger.warning(f'{cls.__name__} defines manual units, may not be necessary')
 
         return super().__init_subclass__()
 
     @property
     def eos(self):
         cls = self.__class__
-        if cls._eos is None:
-            raise AttributeError(f'Missing equation of state for {cls}')
-
-        # TODO: Check if this types calls correctly
-        # return cls._eos
         return cast(
             Callable[[Any, Any], tuple[Any, ...]],
             cls._eos,
@@ -186,9 +202,11 @@ class EquationBase(ABC):
     @eos.setter
     def eos(self, eos: EmbeddedEos):
         cls = self.__class__
-        if cls._eos is not None:
+
+        if cls._eos.callable is not None:
             logger.debug(f'Overwriting EoS for {cls}')
-        cls._eos = eos
+
+        cls._eos.callable = eos
 
 
 class UniqueEquation(EquationBase):

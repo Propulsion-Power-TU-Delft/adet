@@ -24,7 +24,6 @@ class FullIncidence(EquationBase):
     config = EquationConfig(
         input_pair=cp.HmassSmass_INPUTS,
         out_properties=(n0.stc.Density.Glob,),
-        manual_units=('kg / s', 'rad'),
     )
 
     def residual(

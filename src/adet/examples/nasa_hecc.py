@@ -104,7 +104,6 @@ fluid_settings = FluidSettings(
 
 class LossPicker(LossApplier):
     config = EquationConfig(
-        manual_units=('Pa', 'J / kg'),
         input_pair=cp.PSmass_INPUTS,
         out_properties=(n0.stc.Enthalpy.Glob,),
     )

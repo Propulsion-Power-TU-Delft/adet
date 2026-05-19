@@ -462,8 +462,8 @@ class LeakageLostWork(LossModel):
 class AmiranteDiffuserMomentum(EquationBase):
     config = EquationConfig(
         input_pair=cp.PSmass_INPUTS,
-        manual_units=('m^2 / s', 'K'),
         out_properties=(thrm.Enthalpy,),
+        manual_units=('m^2 / s', 'K'),  # TODO: Check these units
     )
 
     def residual(

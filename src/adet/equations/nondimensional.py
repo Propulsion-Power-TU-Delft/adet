@@ -69,7 +69,6 @@ class TotalTotalExpansionEfficiency(EquationBase):
     config = EquationConfig(
         input_pair=cp.PSmass_INPUTS,
         out_properties=(thrm.Enthalpy,),
-        manual_units=('dimensionless',),
     )
 
     def residual(
@@ -88,7 +87,6 @@ class TotalTotalCompressionEfficiency(EquationBase):
     config = EquationConfig(
         input_pair=cp.PSmass_INPUTS,
         out_properties=(thrm.Enthalpy,),
-        manual_units=('J / kg',),
     )
 
     def residual(
@@ -107,7 +105,6 @@ class TotalStaticLoadingCoefficient(EquationBase):
     config = EquationConfig(
         input_pair=cp.PSmass_INPUTS,
         out_properties=(thrm.Enthalpy,),
-        manual_units=('J / kg',),
     )
 
     def residual(
@@ -297,9 +294,9 @@ class RelativeMachNumber(EquationBase):
 
     def residual(
         self,
-        rel_mach0: n0.kin.RelMach.Hint,
         w0: n0.kin.W_mag.Hint,
         a_sound0: n0.stc.SpeedSound.Hint,
+        rel_mach0: n0.kin.RelMach.Hint,
     ):
         return rel_mach0 * a_sound0 - w0
 
@@ -308,7 +305,6 @@ class GammaPV(EquationBase):
     config = EquationConfig(
         input_pair=cp.DmassSmass_INPUTS,
         out_properties=(thrm.Pressure,),
-        manual_units=('dimensionless',),
     )
 
     def residual(

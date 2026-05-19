@@ -1,5 +1,7 @@
 """Mixing losses downstream of turbomachinery blades"""
 
+import ipdb
+
 from pathlib import Path
 from typing import Literal
 
@@ -232,7 +234,6 @@ class AungierSimpleMixLoss(LossModel):
     config = EquationConfig(
         input_pair=cp.HmassP_INPUTS,
         out_properties=(thrm.Entropy,),
-        manual_units=('J / kg / K',),
     )
 
     def residual(
@@ -265,7 +266,7 @@ class DentonMixingLoss(LossModel):
     config = EquationConfig(
         input_pair=cp.HmassP_INPUTS,
         out_properties=(thrm.Entropy,),
-        manual_units=('J / kg / K',),
+        # manual_units=('J / kg / K',),
     )
 
     def residual(
@@ -298,7 +299,7 @@ class DentonMixingLoss(LossModel):
             mom_thick0,
             disp_thick0,
         )
-        # zeta = minmax_bound(zeta, 0.0, 1.0)
+        zeta = minmax_bound(zeta, 0.0, 1.0)
 
         rlt_p1_loss = p_rlt0 - dyn_press * zeta
         smass1_loss = self.eos(h_rlt0, rlt_p1_loss)
