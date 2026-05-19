@@ -10,8 +10,7 @@ from sympy import Symbol
 
 from adet.equations.base_equation import EquationBase
 from adet.fluid.casadi_eos import CasadiEos
-from adet.node import FlowNode
-from adet.tools.strings import get_arg_state, get_arg_type, get_index
+from adet.varspec import VarSpec
 
 
 def get_midspan_idx(var):
@@ -180,7 +179,9 @@ def span_fin_diff(f, x, edge_order: Literal['first', 'second'] = 'second'):
 
 
 def residual_debugger(
-    equation: EquationBase, nodes: list[FlowNode]
+    equation: EquationBase,
+    nodes: list[int],
+    data: dict[VarSpec, NDArray],
 ) -> Mapping[str, NDArray | EquationBase]:
     """
     Transpose the local namespace and variables of a
@@ -190,17 +191,7 @@ def residual_debugger(
     module = sys.modules[equation.__module__]
 
     out = {'self': equation, **vars(module)}
-    for arg in equation.arg_symbols:
-        arg_state = get_arg_state(arg)
-        arg_type = get_arg_type(arg)
-        arg_index = get_index(arg)
-
-        out[arg] = (
-            nodes[arg_index]
-            .fetch_state(arg_state)
-            .get(arg_type)
-            .to_base_units()
-            .magnitude
-        )
+    for name, spec in zip(equation.arg_names, equation.arg_specs):
+        out[name] = data[spec._at_node(nodes.index(spec.node))]
 
     return out
