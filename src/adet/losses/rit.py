@@ -1,3 +1,4 @@
+from adet.equations.utils import safe_max
 from adet.equations.base_equation import EquationConfig
 from adet.variables import NodeVariables, ThermoVariables
 import CoolProp as cp
@@ -25,10 +26,15 @@ def computePrustHerman(Q):
 
 # *** Stator
 class StatorProfileLoss(LossModel):
+    """
+    From `COMPUTER PROGRAM FOR DESIGN ANALYSIS OF RADIAL-INFLOW TURBINES`
+    Arthur J. Glassman
+    """
+
     config = EquationConfig(
         manual_units=('J / kg / K',),
         input_pair=cp.HmassP_INPUTS,
-        out_properties=(thrm.Pressure,),
+        out_properties=(thrm.Entropy,),
     )
     # WARN: Need to add GammaPV() computations
     # on both nodes. For ideal gas need to use
@@ -68,7 +74,9 @@ class StatorProfileLoss(LossModel):
         zeta_2D = (E * theta_s) / (np.cos(angle_out) - t_s - H * theta_s)
 
         Roth0 = h0 + W0**2 / 2 - U0**2 / 2
-        W1_is = (2 * (Roth0 - h1_is) + U1**2) ** 0.5
+        # Avoid negative square argument
+        roth_minus_his = safe_max(Roth0 - h1_is, 0.001 * h1_is)
+        W1_is = (2 * roth_minus_his + U1**2) ** 0.5
         W1_lss = W1_is * (1 - zeta_2D) ** 0.5
         h1_lss = Roth0 - W1_lss**2 / 2 + U1**2 / 2
         s1_profile = self.eos(h1_lss, p1)
@@ -81,7 +89,49 @@ class StatorEndwallLoss(LossModel):
 
 
 class ShockLoss(LossModel):
-    def residual(self): ...
+    def residual(
+        self,
+        gPv1: n1.oth.GammaPV.Hint,
+        M1: n1.kin.RelMach.Hint,
+        p1: n1.stc.Pressure.Hint,
+        s0: n0.stc.Entropy.Hint,
+        cp: n1.stc.Cp.Hint,
+        R_un: n1.stc.GasConstant.Hint,
+        mmass: n1.stc.MolarMass.Hint,
+    ):
+        R = R_un / mmass
+
+        beta = 2
+        if M1 * np.sin(beta) >= 1.0:
+            M1_normal = M1 * np.sin(beta)
+            theta = np.arctan(
+                2
+                / np.tan(beta)
+                * (M1**2 * np.sin(beta) ** 2 - 1)
+                / (M1**2 * (gPv1 + np.cos(2 * beta) + 2))
+            )
+            M2_normal = np.sqrt(
+                (1 + (gPv1 - 1) / 2 * M1_normal**2)
+                / (gPv1 * M1_normal**2 - (gPv1 - 1) / 2)
+            )
+            M2 = M2_normal / np.sin(beta)
+            P_ratio = 1 + (2 * gPv1) / (gPv1 + 1) * (M1_normal**2 - 1)
+            D_ratio = (1 + (gPv1 + 1) / (gPv1 - 1) * P_ratio) / (
+                (gPv1 + 1) / (gPv1 - 1) + P_ratio
+            )
+            T_ratio = P_ratio / D_ratio
+            delta_s = cp * np.log(T_ratio) - R * np.log(P_ratio)
+        else:
+            M2 = M1
+            P_ratio = 1
+            T_ratio = 1
+            delta_s = 0
+
+            # Shock angle computation
+            shock_angle_new = np.arcsin(1 / M_preShock[ii]) + (gamma_Pv[ii] + 1) / 4 * \
+                              M_preShock[ii] ** 2 / (M_preShock[ii] ** 2 - 1) * theta
+            dshock_angle = (shock_angle[ii] - shock_angle_new) / shock_angle[ii]
+            shock_angle[ii] = shock_angle_new           theta = 0
 
 
 # *** Impeller

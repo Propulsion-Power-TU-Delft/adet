@@ -1,22 +1,24 @@
-from adet.equations.nondimensional import GammaPV
-from adet.losses.rit import StatorProfileLoss
-from adet.tools.plotting import plot_velocity_triangles
-import CoolProp as cp
 import logging
 
+import CoolProp as cp
 import matplotlib.pyplot as plt
 from pint import Quantity
 
 from adet.assembly import CasadiSystem
-from adet.components.blade_row import BladeRow, RowGeometry, Interspace
+from adet.components.blade_row import BladeRow, Interspace, RowGeometry
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
-from adet.variables import NodeVariables
+from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
+from adet.equations.nondimensional import GammaPV
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
-from adet.losses.basic import ZeroDeviation, IsentropicLink
+from adet.losses.basic import IsentropicLink, ZeroDeviation
+from adet.losses.rit import StatorProfileLoss
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
+from adet.tools.plotting import plot_velocity_triangles
+from adet.variables import NodeVariables
+from adet.varspec import NodeStates
 
 logger = logging.getLogger(__name__)
 setup_logger(logger)
@@ -70,12 +72,19 @@ stator = BladeRow(
         n1.geo.BldThick: 0.0,
         n1.geo.NumBlades: 12,
         n1.geo.ChordAx: Quantity(0.01, 'mm'),
+        # *** Boundary Layer
+        n1.oth.MomByBld: 0.075,
+        n1.oth.DispByMom: 2.0,
+        n1.oth.DispByHgt: 0.09,
     },
     shaft=casing,
     extra_equations={
         IsentropicLink(): (0, 1),
         ZeroDeviation(): 0,  # No incidence
-        # StatorProfileLoss(): (0, 1),
+        # *** Loss + Dependencies
+        StatorProfileLoss(): (0, 1),
+        IsentropicProperties(): (0, 1),
+        BoundaryLayerRatios(): 1,
         GammaPV(): 0,
         GammaPV(): 1,
     },
@@ -143,7 +152,14 @@ rtfn = ntw.system.make_rootfinder(
     'ipopt',
     opts={'error_on_fail': False},
 )
-x0 = ntw.system.get_scaled_guess(fallback=0.1)
+x0 = ntw.system.get_scaled_guess(
+    {
+        # NOTE: Without these I get negative initial sqrt arg
+        n0.oth.Enthalpy_Is.Glob: 2e5,
+        n0.oth.Enthalpy_totIs.Glob: 2e5,
+    },
+    fallback=0.1,
+)
 kn = ntw.system.get_scaled_constraints()
 bnd = ntw.system.get_arguments_bounds(
     {
@@ -190,7 +206,7 @@ rot_geom = RowGeometry(
     float(sol_data[n5.geo.ChordAx][0]),
 )
 
-sta_geom.plot_meridional_profile(color='k', ax=ax_mer)
+sta_geom.plot_meridional_profile(color='b', ax=ax_mer)
 rot_geom.plot_meridional_profile(color='k', ax=ax_mer)
 
 fig, axs_tri = plt.subplots(2, 2, figsize=(10, 20), dpi=70)
@@ -229,21 +245,41 @@ plot_velocity_triangles(
     fontsize=17,
 )
 
-# TODO: Make this automated on system
-abs_state.update(
-    cp.PT_INPUTS,
-    sol_data[n0.tot.Pressure],
-    sol_data[n0.tot.Temperature],
-)
-ht0 = abs_state.hmass()
+# Thermodynamic properties extractor
+# TODO: Move this to a system method or post-process func
+# Global instances, node is arbitrary
+TO_WRITE = [
+    n0.stc.Enthalpy.Glob,
+    n0.stc.Entropy.Glob,
+    n0.stc.MolarMass.Glob,
+    n0.stc.GasConstant.Glob,
+]
 
-abs_state.update(
-    cp.PT_INPUTS,
-    sol_data[n5.tot.Pressure],
-    sol_data[n5.tot.Temperature],
-)
-ht1 = abs_state.hmass()
+glob_prss = n0.stc.Pressure
+glob_temp = n0.stc.Temperature
+for spec in TO_WRITE:
+    for state in NodeStates:
+        for node in range(ntw.system.last_node + 1):
+            temp = glob_temp._at_node(node)._with_state(state)
+            prss = glob_prss._at_node(node)._with_state(state)
 
-print(f'Turbine power {sol_data[n0.oth.CumMassFlow] * (ht0 - ht1)}')
+            temp_value = sol_data[temp]
+            prss_value = sol_data[prss]
+
+            abs_state.update(cp.PT_INPUTS, prss_value, temp_value)
+            pty_meth = getattr(abs_state, spec.symbol)
+            ppty_val = pty_meth()
+
+            spec = spec._at_node(node)._with_state(state)
+            sol_data[spec] = ppty_val
+
+# Turbine power
+pwr = sol_data[n0.oth.CumMassFlow] * (
+    sol_data[n4.tot.Enthalpy] - sol_data[n5.tot.Enthalpy]
+)
+print(f'Turbine power {pwr}')
+
+# Debug loss
+# globals().update(residual_debugger(StatorProfileLoss(), [0, 1], sol_data))
 
 plt.show()
