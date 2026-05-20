@@ -1,0 +1,91 @@
+import logging
+
+from pint import Quantity
+
+from adet.assembly import CasadiSystem
+from adet.equations.control_volumes import ObliqueShock
+from adet.equations.fundamental import (
+    Kinematics,
+    MassAreaRelation,
+    TotalStaticMatching,
+    ZeroBlockage,
+)
+from adet.equations.geometrical import AnnulusAreas
+from adet.equations.nondimensional import (
+    AbsoluteMachNumber,
+    GammaPV,
+    RelativeMachNumber,
+)
+from adet.fluid.settings import ExternalFluidModel, FluidSettings
+from adet.solution import solve_root_problem
+from adet.tools.coolprop_utils import DebugAbstractState
+from adet.tools.loggers import setup_logger
+from adet.variables import NodeVariables, ThermoVariables
+
+logger = logging.getLogger(__name__)
+setup_logger(logger)
+
+EQUATIONS = {
+    TotalStaticMatching(): 0,
+    AnnulusAreas(): 0,
+    MassAreaRelation(): 0,
+    AbsoluteMachNumber(): 0,
+    RelativeMachNumber(): 0,
+    ZeroBlockage(): 0,
+    Kinematics(): 0,
+    GammaPV(): 0,
+    # *** Out
+    TotalStaticMatching(): 1,
+    AnnulusAreas(): 1,
+    MassAreaRelation(): 1,
+    AbsoluteMachNumber(): 1,
+    RelativeMachNumber(): 1,
+    ZeroBlockage(): 1,
+    Kinematics(): 1,
+    GammaPV(): 1,
+    # *** Link
+    ObliqueShock(): (0, 1),
+}
+
+system = CasadiSystem()
+# *** Fluid model
+model = ExternalFluidModel(DebugAbstractState('REFPROP', 'MM'))
+# model = AnalyticalFluidModel(IdealGasState(1.4, 287, 2e-5))
+# ***
+thrm = ThermoVariables()
+fluid_settings = FluidSettings(model, (thrm.Pressure, thrm.Temperature))
+system.fluid_settings = fluid_settings
+
+for eq, pos in EQUATIONS.items():
+    system.add_equation(eq, pos)
+
+n0 = NodeVariables(0)
+n1 = NodeVariables(1)
+
+BC = {
+    # *** INLET
+    n0.kin.Omega: 0.0,
+    n0.kin.FlowAngleAbs: Quantity(0, 'deg'),
+    n0.kin.Mach: 1.5,
+    n0.geo.RDistr: 0.04,
+    n0.geo.HDistr: 0.002,
+    n0.tot.Pressure: 18.1e5,
+    n0.tot.Temperature: 573.15,
+    # *** OUTLET
+    n1.kin.Omega: 0.0,
+    n1.geo.RDistr: 0.04,
+    n1.geo.HDistr: 0.002,
+    n1.oth.ShockAngle: Quantity(30, 'deg'),
+}
+
+system.add_boundary_conditions(BC)
+system.build()
+
+rtfn = system.make_rootfinder('kinsol')
+
+x0 = system.get_scaled_guess()
+kn = system.get_scaled_constraints()
+
+sol = solve_root_problem(rtfn, x0, kn)
+
+sol_dict = system.sol_to_dict(sol)

@@ -117,6 +117,41 @@ class ChokingCriterion(EquationBase):
         return r1, r2, r3
 
 
+class ObliqueShock(EquationBase):
+    def residual(
+        self,
+        W0: n0.kin.W_mag.Hint,
+        W1: n1.kin.W_mag.Hint,
+        beta0: n0.kin.FlowAngleRel.Hint,
+        beta1: n1.kin.FlowAngleRel.Hint,
+        rho0: n0.stc.Density.Hint,
+        rho1: n1.stc.Density.Hint,
+        h0: n0.rlt.Enthalpy.Hint,
+        h1: n1.rlt.Enthalpy.Hint,
+        p0: n0.stc.Pressure.Hint,
+        p1: n1.stc.Pressure.Hint,
+        shock_angle: n1.oth.ShockAngle.Hint,
+        post_sh_angle: n1.oth.ShockDefAngle.Hint,
+    ):
+        w0 = W0 * np.sin(shock_angle)
+        u0 = W0 * np.cos(shock_angle)
+
+        w1 = W1 * np.sin(post_sh_angle)
+        u1 = W1 * np.cos(post_sh_angle)
+
+        # Continuity
+        r1 = w0 - w1
+        # Normal momentum
+        r2 = (p0 + rho0 * u0**2) - (p1 + rho1 * u1**2)
+        # Energy
+        r3 = h0 + u0**2 / 2 - h1 + u1**2 / 2
+
+        r4 = beta1 - (beta0 + post_sh_angle)
+        r5 = W1 - u1 / np.sin(shock_angle - post_sh_angle)
+
+        return r1, r2, r3, r4, r5
+
+
 class ThroatConditions(EquationBase):
     def residual(
         self,

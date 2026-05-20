@@ -180,6 +180,8 @@ class OtherVariables(VariableEnum):
     DispThickEW = VarSpec('disp_thick_ew', 'm', 2e-5, None, 0, True)
     Enthalpy_Is = VarSpec('stc_hmass_is', 'J / kg', 6e5)
     ChokeMassflow = VarSpec('massflow_choke', 'kg / s', None, (1e-7, 5e4), 0, True)
+    ShockAngle = VarSpec('sh_angle', 'rad', 0.2)
+    ShockDefAngle = VarSpec('post_sh_angle', 'rad', 0.25)
     Enthalpy_totIs = VarSpec('tot_hmass_is', 'J / kg', 6e5)
     BlLoadingCoeff = VarSpec('bl_loadingCoeff', '')
     SlipFactor = VarSpec('slip_factor', '')
