@@ -338,6 +338,7 @@ SCALING_FACTORS: dict[str, float] = {
     'J / kg / m': 5e5,  # Radial equilibrium
     'kg / s': 5,
     'meter * rad / s': 1e2,  # Tangential velocity
+    'kg / m**2 / s': 1e3,  # pass
     'Pa * s': 1e-5,  # Dynamic viscosity
     'rad / s': 1e3,  # Omega
     'rad': 1.0,

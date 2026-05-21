@@ -1,5 +1,5 @@
 from adet.constants import CoolProperties
-from adet.varspec import NodeStates, VarSpec, DEF_NODE
+from adet.varspec import NodeStates, VarSpec, DEF_NODE, DEF_STATE
 
 
 class BaseEnum:
@@ -28,7 +28,7 @@ class ThermoVariables(BaseEnum):
     def __init__(
         self,
         node: int = DEF_NODE,
-        state: NodeStates | None = None,
+        state: NodeStates | None = DEF_STATE,
     ):
         super().__init__(node, state)
 
@@ -180,8 +180,8 @@ class OtherVariables(VariableEnum):
     DispThickEW = VarSpec('disp_thick_ew', 'm', 2e-5, None, 0, True)
     Enthalpy_Is = VarSpec('stc_hmass_is', 'J / kg', 6e5)
     ChokeMassflow = VarSpec('massflow_choke', 'kg / s', None, (1e-7, 5e4), 0, True)
-    ShockAngle = VarSpec('sh_angle', 'rad', 0.2)
-    ShockDefAngle = VarSpec('post_sh_angle', 'rad', 0.25)
+    ShockAngle = VarSpec('sh_angle', 'rad', 1.0)
+    ShockDeflection = VarSpec('post_sh_angle', 'rad', 0.1)
     Enthalpy_totIs = VarSpec('tot_hmass_is', 'J / kg', 6e5)
     BlLoadingCoeff = VarSpec('bl_loadingCoeff', '')
     SlipFactor = VarSpec('slip_factor', '')

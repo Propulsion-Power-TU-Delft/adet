@@ -4,7 +4,8 @@ from casadi import MX
 from dataclasses import dataclass
 from enum import Enum
 
-DEF_NODE: int
+DEF_NODE: int = -1
+DEF_STATE: None
 
 class NodeStates(Enum):
     STATIC = 'stc_'

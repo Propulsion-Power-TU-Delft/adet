@@ -750,7 +750,51 @@ class SystemAssembler(ABC):
             sol_dict[spec] = solution[curr_idx : curr_idx + arg_length] * scl
             curr_idx += arg_length
 
-        return sol_dict
+        bc_dict = self._constraint_manager.get_plain_bc_dict()
+        thrm_dict = self._compute_secondary_thermo({**sol_dict, **bc_dict})
+
+        return {**sol_dict, **thrm_dict, **bc_dict}
+
+    def _compute_secondary_thermo(
+        self, sol_data: dict[VarSpec, NDArray]
+    ) -> dict[VarSpec, NDArray]:
+        thrm_data = {}
+
+        # TODO: Choose variables to write
+        _thrm = ThermoVariables()
+        TO_WRITE = [
+            _thrm.Entropy,
+            _thrm.Density,
+            _thrm.Enthalpy,
+            _thrm.SpeedSound,
+        ]
+
+        # Extract fluid settings data
+        fluid_settings = self.data.fluid_settings
+        abs_state = fluid_settings.model.eos_object
+        input_pair = fluid_settings.input_pair
+        # Global version of updated variables
+        var0_glb = fluid_settings.update_variables[0].Glob
+        var1_glb = fluid_settings.update_variables[1].Glob
+
+        # Write the specs at each node
+        for spec in TO_WRITE:
+            for state in NodeStates:
+                for node in range(self.last_node + 1):
+                    upd_var0 = var1_glb._at_node(node)._with_state(state)
+                    upd_var1 = var0_glb._at_node(node)._with_state(state)
+
+                    temp_value = sol_data[upd_var0]
+                    prss_value = sol_data[upd_var1]
+
+                    abs_state.update(input_pair, prss_value, temp_value)
+                    pty_meth = getattr(abs_state, spec.symbol)
+                    ppty_val = pty_meth()
+
+                    spec = spec._at_node(node)._with_state(state)
+                    thrm_data[spec] = ppty_val
+
+        return thrm_data
 
     def get_arguments_bounds(self, custom_bounds={}):
         self._scaling_manager.get_arguments_bounds(custom_bounds)
