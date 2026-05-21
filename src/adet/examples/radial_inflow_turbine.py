@@ -178,9 +178,7 @@ sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=False)
 # sol = solve_root_problem(rtfn, sol, kn)
 
 # Merge boundary conditions and solution
-sol_dct = ntw.system.sol_to_dict(sol)
-plain_bcs = ntw.system._constraint_manager.get_plain_bc_dict()
-sol_data = {**plain_bcs, **ntw.system.sol_to_dict(sol)}
+sol_data = ntw.system.sol_to_dict(sol)
 
 # Plotting
 fig, ax_mer = plt.subplots()
@@ -245,33 +243,6 @@ plot_velocity_triangles(
     fontsize=17,
 )
 
-# Thermodynamic properties extractor
-# TODO: Move this to a system method or post-process func
-# Global instances, node is arbitrary
-TO_WRITE = [
-    n0.stc.Enthalpy.Glob,
-    n0.stc.Entropy.Glob,
-    n0.stc.MolarMass.Glob,
-    n0.stc.GasConstant.Glob,
-]
-
-glob_prss = n0.stc.Pressure
-glob_temp = n0.stc.Temperature
-for spec in TO_WRITE:
-    for state in NodeStates:
-        for node in range(ntw.system.last_node + 1):
-            temp = glob_temp._at_node(node)._with_state(state)
-            prss = glob_prss._at_node(node)._with_state(state)
-
-            temp_value = sol_data[temp]
-            prss_value = sol_data[prss]
-
-            abs_state.update(cp.PT_INPUTS, prss_value, temp_value)
-            pty_meth = getattr(abs_state, spec.symbol)
-            ppty_val = pty_meth()
-
-            spec = spec._at_node(node)._with_state(state)
-            sol_data[spec] = ppty_val
 
 # Turbine power
 pwr = sol_data[n0.oth.CumMassFlow] * (
