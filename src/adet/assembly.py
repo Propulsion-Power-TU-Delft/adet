@@ -11,7 +11,7 @@ import sys
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from itertools import accumulate
-from typing import Any, Callable, Iterable, Literal, Self, Sequence, Type, cast, Mapping
+from typing import Any, Callable, Iterable, Literal, Mapping, Self, Sequence, Type, cast
 
 import casadi as cs
 import jax as jax
@@ -23,8 +23,6 @@ from pint.facets.plain import PlainQuantity
 
 from adet.constants import AdetArray
 from adet.equations.base_equation import EquationBase, EquationConfig
-from adet.variables import NodeVariables, ThermoVariables
-from adet.varspec import NodeStates, VarSpec
 from adet.errors import ExistingEquationError
 from adet.fluid.casadi_eos import CasadiEos
 from adet.fluid.eos_factory import EosFactory
@@ -35,30 +33,14 @@ from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.interpolation import resample_linear
 from adet.tools.iter import ensure_tuple, leaves
 from adet.tools.loggers import setup_logger
-from adet.tools.strings import get_index, rm_index
+from adet.variables import NodeVariables, ThermoVariables
+from adet.varspec import NodeStates, VarSpec
 
 logger = logging.getLogger(__name__)
 
 THERMO_CONST_SUFFIX = '__thrmCNS'
 
 _scale_reg = ScalingRegistry()
-
-
-def get_units_string(var):
-    return str(var.to_base_units().units)
-
-
-def get_absolute_arg(int_map: dict[int, int], rel_arg: str):
-    abs_idx = get_index(rel_arg)
-    rel_idx = int_map[abs_idx]
-    return rm_index(rel_arg) + str(rel_idx)
-
-
-def get_relative_arg(int_map: dict[int, int], abs_arg: str):
-    abs_idx = get_index(abs_arg)
-    arg_map_inv = {v: k for k, v in int_map.items()}
-    rel_idx = arg_map_inv[abs_idx]
-    return rm_index(abs_arg) + str(rel_idx)
 
 
 class SystemSharedData:
@@ -1554,81 +1536,3 @@ def {func_name}(equations, {', '.join(decl_arguments)}):
         cas_sys = CasadiSystem()
         cas_sys.from_dict(self.to_dict())
         return cas_sys
-
-
-if __name__ == '__main__':
-    nls = CasadiSystem(5)
-
-    setup_logger(logger)
-    n0 = NodeVariables(0)
-    n1 = NodeVariables(1)
-
-    import CoolProp as cp
-
-    thrm = ThermoVariables()
-
-    class TestEquation(EquationBase):
-        config = EquationConfig(
-            manual_units=('J / kg', 'J / kg / K'),
-            input_pair=cp.PT_INPUTS,
-            out_properties=(thrm.Entropy, thrm.SpeedSound, thrm.Viscosity),
-        )
-
-        def residual(
-            self,
-            h0: n0.tot.Enthalpy.Hint,
-            h1: n1.tot.Enthalpy.Hint,
-            p: n0.tot.Pressure.Hint,
-            t: n1.tot.Temperature.Hint,
-            s: n1.stc.Entropy.Hint,
-        ):
-            r1 = h0 - h1
-            r2 = s - self.eos(p, t)[0]
-
-            return r1, r2
-
-    class EulerEquation(EquationBase):
-        def residual(
-            self,
-            ht0: n0.tot.Enthalpy.Hint,
-            ht1: n1.tot.Enthalpy.Hint,
-            u0: n0.kin.BladeSpeed.Hint,
-            u1: n1.kin.BladeSpeed.Hint,
-            vt0: n0.kin.V_tan.Hint,
-            vt1: n1.kin.V_tan.Hint,
-        ):
-            return (ht1 - ht0) - (u1 * vt1 - u0 * vt0)
-
-    # +++ Fluid settings
-    fluid_model_real = ExternalFluidModel(
-        DebugAbstractState('HEOS', 'Air'),  # This just counts the number of updates
-    )
-
-    fluid_settings = FluidSettings(
-        model=fluid_model_real,
-        update_variables=(
-            thrm.Pressure,
-            thrm.Temperature,
-        ),
-    )
-    nls.fluid_settings = fluid_settings
-
-    n0 = NodeVariables(0)
-    n1 = NodeVariables(1)
-
-    nls.add_equation(TestEquation(), (3, 4))
-    nls.add_boundary_conditions(
-        {
-            n0.kin.V_tan: 10,
-            n1.kin.BladeSpeed: 10,
-        },
-    )
-
-    nls.add_spanwise_constants(
-        NodeVariables(3).tot.Enthalpy,
-    )
-    nls.build()
-    res_func = nls.make_residual_function()
-    nls.get_scaled_constraints()
-    nls.get_scaled_guess()
-    nls.make_rootfinder('ipopt')

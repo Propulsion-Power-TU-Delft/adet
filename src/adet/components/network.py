@@ -3,7 +3,7 @@ from typing import Any, Generic, Literal, Sequence, TypeVar
 
 from numpy.typing import NDArray
 
-from adet.assembly import SystemAssembler
+from adet.assembly import SystemAssembler, SystemSharedData
 from adet.components import BaseComponent
 from adet.components.blade_row import BladeRow
 from adet.components.connections import Inlet, Shaft
@@ -209,6 +209,11 @@ class ComponentNetwork(Generic[T]):
     def get_scaled_constraints(self) -> list[NDArray]:
         """Simple passthrough"""
         return self.system.get_scaled_constraints()
+
+    @property
+    def data(self) -> SystemSharedData:
+        """Convenience access method"""
+        return self.system.data
 
     def get_arguments_bounds(
         self, custom_bounds: dict[VarSpec, tuple[float, float]] | None = None

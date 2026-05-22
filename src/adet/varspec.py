@@ -58,6 +58,17 @@ class VarSpec:
         postfix = str(self.node) if index else ''
         return prefix + self.symbol + postfix
 
+    def __str__(self) -> str:
+        repr = f'{self.__class__.__name__}: {self.symbol}, node={self.node}'
+
+        if self.state is not None:
+            repr += f', state={self.state.value.removesuffix("_")}'
+
+        return repr
+
+    def __repr__(self) -> str:
+        return self.__str__()
+
     @property
     def Glob(self):
         return replace(self, state=DEF_STATE, node=DEF_NODE)

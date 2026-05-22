@@ -1,3 +1,5 @@
+import glob
+import ipdb
 import sys
 from typing import Literal, Mapping, cast
 
@@ -197,7 +199,7 @@ def span_fin_diff(f, x, edge_order: Literal['first', 'second'] = 'second'):
 
 def residual_debugger(
     equation: EquationBase,
-    nodes: list[int],
+    glob_nodes: list[int],
     data: dict[VarSpec, NDArray],
 ) -> Mapping[str, NDArray | EquationBase]:
     """
@@ -207,8 +209,13 @@ def residual_debugger(
     """
     module = sys.modules[equation.__module__]
 
+    node_map = dict(
+        zip(equation.arg_nodes, glob_nodes),
+    )
+
     out = {'self': equation, **vars(module)}
     for name, spec in zip(equation.arg_names, equation.arg_specs):
-        out[name] = data[spec._at_node(nodes.index(spec.node))]
+        glob_idx = node_map[spec.node]
+        out[name] = data[spec._at_node(glob_idx)]
 
     return out
