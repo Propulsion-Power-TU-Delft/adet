@@ -5,13 +5,13 @@ are not related to a node but associated to special
 variables of either the inlet or outlet node
 """
 
-from adet.varspec import VarSpec
-from adet.variables import NodeVariables
 import CoolProp as cp
 import numpy as np
 
 from adet.equations.base_equation import EquationBase, EquationConfig
-from adet.equations.utils import minmax_bound
+from adet.equations.utils import minmax_bound, safe_max, safe_if_else
+from adet.variables import NodeVariables
+from adet.varspec import VarSpec
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)
@@ -139,7 +139,7 @@ class ObliqueShock(EquationBase):
         w1 = W1 * np.cos(shock_angle - defl_angle)
         u1 = W1 * np.sin(shock_angle - defl_angle)
 
-        # Continuity
+        # Continuity + numerical shock forcing
         r1 = (rho1 * u1) - (rho0 * u0)
         # Tangential momentum
         r2 = (rho0 * u0 * w0) - (rho1 * u1 * w1)
@@ -148,7 +148,7 @@ class ObliqueShock(EquationBase):
         # Energy
         r4 = (h0 + u0**2 / 2) - (h1 + u1**2 / 2)
         # Link flow angle with shock deflection
-        r5 = beta1 - (beta0 + defl_angle)
+        r5 = beta1 - (beta0 - defl_angle)
 
         return r1, r2, r3, r4, r5
 

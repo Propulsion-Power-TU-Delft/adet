@@ -1,3 +1,4 @@
+from adet.tools.coolprop_utils import DebugAbstractState
 from adet.fluid.symbolic_eos import IdealGasState
 import logging
 
@@ -18,7 +19,7 @@ from adet.equations.nondimensional import (
     AbsoluteMachNumber,
     RelativeMachNumber,
 )
-from adet.fluid.settings import FluidSettings, AnalyticalFluidModel
+from adet.fluid.settings import FluidSettings, AnalyticalFluidModel, ExternalFluidModel
 from adet.solution import solve_root_problem
 from adet.tools.loggers import setup_logger
 from adet.variables import NodeVariables, ThermoVariables
@@ -57,6 +58,9 @@ system = CasadiSystem()
 
 # *** Fluid model
 model = AnalyticalFluidModel(IdealGasState(1.4, 287, 2e-5))
+abs_state = DebugAbstractState('REFPROP', 'MM')
+model = ExternalFluidModel(abs_state)
+
 thrm = ThermoVariables()
 fluid_settings = FluidSettings(model, (thrm.Pressure, thrm.Temperature))
 system.fluid_settings = fluid_settings
@@ -72,13 +76,13 @@ BC = {
     n0.kin.Mach: 2.0,  # Placeholder, will be updated
     n0.geo.RDistr: 0.1,
     n0.geo.HDistr: 0.1,
-    n0.tot.Pressure: 30e5,
+    n0.tot.Pressure: 18.1e5,
     n0.tot.Temperature: 573.15,
     # *** OUTLET
     n1.kin.Omega: 0.0,
     n1.geo.RDistr: 0.1,
     n1.geo.HDistr: 0.1,
-    n1.oth.ShockAngle: Quantity(10, 'deg'),  # Placeholder, will be updated
+    n1.oth.ShockAngle: Quantity(20, 'deg'),  # Placeholder, will be updated
 }
 
 system.add_boundary_conditions(BC)
@@ -92,23 +96,28 @@ bnd = system.get_arguments_bounds(
 )
 
 # Parametric sweep ranges
-mach_values = np.linspace(2.0, 5.0, 4)
-shock_angle_values = np.linspace(40, 90, 20)
+mach_values = np.linspace(2.0, 3.0, 3)
+shock_angle_values = np.linspace(90, 50, 20)
 results = {}
 for mach in mach_values:
     results[mach] = {'shock_angles': [], 'deflections': []}
 
 sol_dict = {}
+sol_dict_normal = {}
 for mach_idx, mach in enumerate(mach_values):
     print(f'Mach = {mach:.2f}  [{mach_idx + 1}/{len(mach_values)}]')
 
-    for angle in shock_angle_values:
+    for idx, angle in enumerate(shock_angle_values):
         # Update Mach in system.data
         system.data.boun_cond[n0.kin.Mach] = mach
         # Update shock angle in system.data (convert to radians)
         system.data.boun_cond[n1.oth.ShockAngle] = np.radians(angle)
 
-        x0 = system.get_scaled_guess(sol_dict)
+        if idx == 0:
+            precursor = sol_dict_normal
+        else:
+            precursor = sol_dict
+        x0 = system.get_scaled_guess(sol_dict_normal)
         kn = system.get_scaled_constraints()
 
         rtfn = system.make_rootfinder(
@@ -129,6 +138,8 @@ for mach_idx, mach in enumerate(mach_values):
         try:
             sol = solve_root_problem(rtfn, sol, kn, suppress_output=True)
             sol_dict = system.sol_to_dict(sol)
+            if idx == 0:
+                sol_dict_normal = sol_dict
             # Extract deflection angle (convert from radians to degrees)
             deflection_val = sol_dict[n1.oth.ShockDeflection]
             deflection_rad = float(np.atleast_1d(deflection_val)[0])

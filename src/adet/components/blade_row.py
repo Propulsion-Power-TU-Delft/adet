@@ -8,7 +8,7 @@ from matplotlib.lines import Line2D
 from adet.assembly import CasadiSystem
 from adet.components import BaseComponent, Shaft
 from adet.equations import EquationBase
-from adet.equations.control_volumes import ChokingCriterion
+from adet.equations.control_volumes import ChokingCriterion, ObliqueShock
 from adet.equations.definitions import MeridionalVelocityRatio, OptimalIncidence
 from adet.equations.fundamental import (
     BladeBlockage,
@@ -274,6 +274,51 @@ class IncidenceVolume(BaseComponent):
     constant_variables = GEOM_LINK + [
         # Keep reference frame alive
         _kin.Omega,
+    ]
+
+    def _post_init(self):
+        pass
+
+
+class ShockMixer(BaseComponent):
+    base_equations = [
+        # *** Fundamental
+        (ObliqueShock, (0, 1)),
+        # *** Blockage
+        (BladePitch, 0),  # Only needed at the inlet
+        (BladeBlockage, 0),  # Blade + b.l. blockage
+        (ZeroBlockage, 1),  # No blockage mixed out
+        # Special adders - Mainly for plotting
+    ]
+
+    # Keep the absolute triangle
+    # energy, meridional geometry
+    from_previous_node = (
+        ABSOLUTE_LINK
+        + GEOM_LINK
+        + [
+            # Stay in the same MRF as blade row
+            _kin.Omega,
+            # Copy the relevant geometry
+            _geo.HDistr,
+            _geo.RDistr,
+            _geo.NumBlades,
+            _geo.MetalAngle,
+            _kin.W_choke,  # Get row choking
+            _oth.PBase,  # Base pressure
+            # Boundary layer and blade thicknesses
+            _geo.BldThick,
+            _oth.DispThick,
+            _oth.MomThick,
+        ]
+    )
+
+    constant_variables = GEOM_LINK + [
+        # Keep reference frame alive
+        _kin.Omega,
+        # Keep the span geometry constant
+        _geo.HDistr,
+        _geo.RDistr,
     ]
 
     def _post_init(self):

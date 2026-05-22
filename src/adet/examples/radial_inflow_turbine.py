@@ -1,3 +1,5 @@
+from adet.equations.control_volumes import ObliqueShock
+from adet.equations.utils import residual_debugger
 import logging
 
 import CoolProp as cp
@@ -5,7 +7,7 @@ import matplotlib.pyplot as plt
 from pint import Quantity
 
 from adet.assembly import CasadiSystem
-from adet.components.blade_row import BladeRow, Interspace, RowGeometry
+from adet.components.blade_row import BladeRow, Interspace, RowGeometry, ShockMixer
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
@@ -101,6 +103,13 @@ interspace = Interspace(
     },
 )
 
+shock_mix = ShockMixer(
+    'st_shock',
+    bound_cond={
+        n1.oth.ShockAngle: Quantity(60, 'deg'),
+    },
+)
+
 rotor = BladeRow(
     'impeller',
     row_type='rotor',
@@ -141,8 +150,9 @@ ntw = ComponentNetwork(
     CasadiSystem(1),
     [
         stator,
-        interspace,
-        rotor,
+        shock_mix,
+        # interspace,
+        # rotor,
     ],
 )
 
@@ -152,22 +162,16 @@ rtfn = ntw.system.make_rootfinder(
     'ipopt',
     opts={'error_on_fail': False},
 )
-x0 = ntw.system.get_scaled_guess(
-    {
-        # NOTE: Without these I get negative initial sqrt arg
-        n0.oth.Enthalpy_Is.Glob: 2e5,
-        n0.oth.Enthalpy_totIs.Glob: 2e5,
-    },
-    fallback=0.1,
-)
+x0 = ntw.system.get_scaled_guess(fallback=0.5)
 kn = ntw.system.get_scaled_constraints()
 bnd = ntw.system.get_arguments_bounds(
     {
         # WARN: Force the supersonic solution w/ bounds
         n1.kin.Mach: (1.1, 4.0),
+        n3.oth.ShockDeflection: (0.01, 1.5),
         # NOTE: These stabilize massively the solution
-        n0.stc.Pressure.Glob: (0.01, 22e5),
-        n0.stc.Temperature.Glob: (450, abs_state.Tmax()),
+        n0.stc.Temperature.Glob: (100, 1e4),
+        n0.stc.Pressure.Glob: (1e5, 1e9),
     }
 )
 
@@ -184,28 +188,28 @@ sol_data = ntw.system.sol_to_dict(sol)
 fig, ax_mer = plt.subplots()
 ax_mer.set_aspect('equal')
 
-sta_geom = RowGeometry(
-    float(sol_data[n0.geo.Rmid][0]),
-    float(sol_data[n1.geo.Rmid][0]),
-    float(sol_data[n0.geo.Height][0]),
-    float(sol_data[n1.geo.Height][0]),
-    float(sol_data[n0.geo.MeridionalAngle][0]),
-    float(sol_data[n1.geo.MeridionalAngle][0]),
-    float(sol_data[n1.geo.ChordAx][0]),
-)
-
-rot_geom = RowGeometry(
-    float(sol_data[n4.geo.Rmid][0]),
-    float(sol_data[n5.geo.Rmid][0]),
-    float(sol_data[n4.geo.Height][0]),
-    float(sol_data[n5.geo.Height][0]),
-    float(sol_data[n4.geo.MeridionalAngle][0]),
-    float(sol_data[n5.geo.MeridionalAngle][0]),
-    float(sol_data[n5.geo.ChordAx][0]),
-)
-
-sta_geom.plot_meridional_profile(color='b', ax=ax_mer)
-rot_geom.plot_meridional_profile(color='k', ax=ax_mer)
+# sta_geom = RowGeometry(
+#     float(sol_data[n0.geo.Rmid][0]),
+#     float(sol_data[n1.geo.Rmid][0]),
+#     float(sol_data[n0.geo.Height][0]),
+#     float(sol_data[n1.geo.Height][0]),
+#     float(sol_data[n0.geo.MeridionalAngle][0]),
+#     float(sol_data[n1.geo.MeridionalAngle][0]),
+#     float(sol_data[n1.geo.ChordAx][0]),
+# )
+#
+# rot_geom = RowGeometry(
+#     float(sol_data[n4.geo.Rmid][0]),
+#     float(sol_data[n5.geo.Rmid][0]),
+#     float(sol_data[n4.geo.Height][0]),
+#     float(sol_data[n5.geo.Height][0]),
+#     float(sol_data[n4.geo.MeridionalAngle][0]),
+#     float(sol_data[n5.geo.MeridionalAngle][0]),
+#     float(sol_data[n5.geo.ChordAx][0]),
+# )
+#
+# sta_geom.plot_meridional_profile(color='b', ax=ax_mer)
+# rot_geom.plot_meridional_profile(color='k', ax=ax_mer)
 
 fig, axs_tri = plt.subplots(2, 2, figsize=(10, 20), dpi=70)
 [ax.set_aspect('equal') for ax in axs_tri.flat]
@@ -227,30 +231,30 @@ plot_velocity_triangles(
     fontsize=17,
 )
 plot_velocity_triangles(
-    sol_data[n4.kin.V_tan],
-    sol_data[n4.kin.V_mer],
-    sol_data[n4.kin.BladeSpeed],
-    sol_data[n4.geo.RDistr],
+    sol_data[n2.kin.V_tan],
+    sol_data[n2.kin.V_mer],
+    sol_data[n2.kin.BladeSpeed],
+    sol_data[n2.geo.RDistr],
     axs_tri[1, 0],
     fontsize=17,
 )
 plot_velocity_triangles(
-    sol_data[n5.kin.V_tan],
-    sol_data[n5.kin.V_mer],
-    sol_data[n5.kin.BladeSpeed],
-    sol_data[n5.geo.RDistr],
+    sol_data[n3.kin.V_tan],
+    sol_data[n3.kin.V_mer],
+    sol_data[n3.kin.BladeSpeed],
+    sol_data[n3.geo.RDistr],
     axs_tri[1, 1],
     fontsize=17,
 )
 
 
 # Turbine power
-pwr = sol_data[n0.oth.CumMassFlow] * (
-    sol_data[n4.tot.Enthalpy] - sol_data[n5.tot.Enthalpy]
-)
-print(f'Turbine power {pwr}')
+# pwr = sol_data[n0.oth.CumMassFlow] * (
+#     sol_data[n4.tot.Enthalpy] - sol_data[n5.tot.Enthalpy]
+# )
+# print(f'Turbine power {pwr}')
 
 # Debug loss
-# globals().update(residual_debugger(StatorProfileLoss(), [0, 1], sol_data))
+# globals().update(residual_debugger(ObliqueShock(), [2, 3], sol_data))
 
 plt.show()
