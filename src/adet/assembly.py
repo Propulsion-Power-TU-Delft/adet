@@ -735,7 +735,15 @@ class SystemAssembler(ABC):
         bc_dict = self._constraint_manager.get_plain_bc_dict()
         thrm_dict = self._compute_secondary_thermo({**sol_dict, **bc_dict})
 
-        return {**sol_dict, **thrm_dict, **bc_dict}
+        all_data = {**sol_dict, **thrm_dict, **bc_dict}
+
+        def sort_func(x: tuple[VarSpec, Any]):
+            name = x[0].symbol + str(x[0])
+            return name.lower()
+
+        return dict(
+            sorted(all_data.items(), key=sort_func),
+        )
 
     def _compute_secondary_thermo(
         self, sol_data: dict[VarSpec, NDArray]

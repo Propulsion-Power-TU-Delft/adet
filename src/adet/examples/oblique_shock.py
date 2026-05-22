@@ -7,7 +7,7 @@ import numpy as np
 from pint import Quantity
 
 from adet.assembly import CasadiSystem
-from adet.equations.control_volumes import ObliqueShock
+from adet.equations.control_volumes import OutletShock
 from adet.equations.fundamental import (
     Kinematics,
     MassAreaRelation,
@@ -46,7 +46,7 @@ EQUATIONS = {
     Kinematics(): 1,
     # GammaPV(): 1,
     # *** Link
-    ObliqueShock(): (0, 1),
+    OutletShock(): (0, 1),
 }
 
 n0 = NodeVariables(0)

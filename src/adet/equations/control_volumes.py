@@ -9,14 +9,15 @@ import CoolProp as cp
 import numpy as np
 
 from adet.equations.base_equation import EquationBase, EquationConfig
-from adet.equations.utils import minmax_bound, safe_max, safe_if_else
-from adet.variables import NodeVariables
+from adet.equations.utils import minmax_bound
+from adet.variables import NodeVariables, ThermoVariables
 from adet.varspec import VarSpec
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)
 
 
+_thrm = ThermoVariables()
 ThroatVelocity = VarSpec('W_throat', 'm / s', node=0, guess=10)
 
 
@@ -117,10 +118,49 @@ class ChokingCriterion(EquationBase):
         return r1, r2, r3
 
 
+class OutletShock(EquationBase):
+    config = EquationConfig(
+        input_pair=cp.HmassSmass_INPUTS,
+        out_properties=(_thrm.Pressure, _thrm.Density),
+    )
+
+    def residual(
+        self,
+        # *** Shock properties
+        W_presh: n0.kin.W_presh.Hint,
+        s_presh: n0.oth.EntropyPresh.Hint,
+        shock_angle: n0.oth.ShockAngle.Hint,
+        defl_angle: n0.oth.ShockDeflection.Hint,
+        # *** Outlet
+        W1: n0.kin.W_mag.Hint,
+        rho1: n0.stc.Density.Hint,
+        h_rlt1: n0.rlt.Enthalpy.Hint,
+        p1: n0.stc.Pressure.Hint,
+    ):
+        w0 = W_presh * np.cos(shock_angle)
+        u0 = W_presh * np.sin(shock_angle)
+
+        w1 = W1 * np.cos(shock_angle - defl_angle)
+        u1 = W1 * np.sin(shock_angle - defl_angle)
+
+        # This implicitly enforces energy
+        h_presh = h_rlt1 - W_presh**2 / 2
+        p0, rho0 = self.eos(h_presh, s_presh)
+
+        # Continuity
+        r1 = (rho1 * u1) - (rho0 * u0)
+        # Tangential momentum
+        r2 = (rho0 * u0 * w0) - (rho1 * u1 * w1)
+        # Normal momentum
+        r3 = (p0 + rho0 * u0**2) - (p1 + rho1 * u1**2)
+
+        return r1, r2, r3
+
+
 class ObliqueShock(EquationBase):
     def residual(
         self,
-        W0: n0.kin.W_mag.Hint,
+        W0: n0.kin.W_presh.Hint,
         W1: n1.kin.W_mag.Hint,
         beta0: n0.kin.FlowAngleRel.Hint,
         beta1: n1.kin.FlowAngleRel.Hint,
@@ -139,7 +179,7 @@ class ObliqueShock(EquationBase):
         w1 = W1 * np.cos(shock_angle - defl_angle)
         u1 = W1 * np.sin(shock_angle - defl_angle)
 
-        # Continuity + numerical shock forcing
+        # Continuity
         r1 = (rho1 * u1) - (rho0 * u0)
         # Tangential momentum
         r2 = (rho0 * u0 * w0) - (rho1 * u1 * w1)

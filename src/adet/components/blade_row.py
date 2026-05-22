@@ -8,7 +8,7 @@ from matplotlib.lines import Line2D
 from adet.assembly import CasadiSystem
 from adet.components import BaseComponent, Shaft
 from adet.equations import EquationBase
-from adet.equations.control_volumes import ChokingCriterion, ObliqueShock
+from adet.equations.control_volumes import ChokingCriterion, OutletShock
 from adet.equations.definitions import MeridionalVelocityRatio, OptimalIncidence
 from adet.equations.fundamental import (
     BladeBlockage,
@@ -283,12 +283,15 @@ class IncidenceVolume(BaseComponent):
 class ShockMixer(BaseComponent):
     base_equations = [
         # *** Fundamental
-        (ObliqueShock, (0, 1)),
+        (OutletShock, (0, 1)),
+        # (MassConservation, (0, 1)),
         # *** Blockage
         (BladePitch, 0),  # Only needed at the inlet
         (BladeBlockage, 0),  # Blade + b.l. blockage
         (ZeroBlockage, 1),  # No blockage mixed out
-        # Special adders - Mainly for plotting
+        # *** Special adders - Forward the geometry
+        (GeometricalAdder, 0),
+        (GeometricalAdder, 1),
     ]
 
     # Keep the absolute triangle
@@ -335,10 +338,10 @@ class DownstreamMixer(BaseComponent):
         (BladePitch, 0),  # Only needed at the inlet
         (BladeBlockage, 0),  # Blade + b.l. blockage
         (ZeroBlockage, 1),  # No blockage mixed out
-        # Special adders - Mainly for plotting
+        # *** Special adders - Forward the geometry
         (GeometricalAdder, 0),
         (GeometricalAdder, 1),
-        (ZeroDeviation, 1),  # Creates a dummy metal angle (for plots)
+        (ZeroDeviation, 1),  # Creates a metal angle for plots
     ]
 
     # Keep the absolute triangle
