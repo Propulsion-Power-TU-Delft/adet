@@ -5,7 +5,9 @@
       "Bash(find:*)",
       "Bash(git:*)",
       "Bash(okular:*)",
-      "Bash(uv run:*)"
+      "Bash(uv run:*)",
+      "Bash(rm -rf build/*)",
+      "Bash(make html *)"
     ],
     "deny": []
   }

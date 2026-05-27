@@ -76,11 +76,12 @@ ADeT uses an equation-based modeling approach centered around three key concepts
 ### Equation and Component Structure
 
 **Equation System** (`src/adet/equations/`):
-- **EquationBase** (`base_equation.py`): Abstract base class enabling symbolic equation definitions
-- Fundamental equations: mass balance, kinematics, energy
-- Gas relations: ideal gas, real gas (CoolProp), nondimensional forms
-- Component linkers: equations connecting outputs of one component to inputs of another
-- Loss models: integrated into blade row equations
+- **EquationBase** (`base_equation.py`): Abstract base class enabling symbolic equation definitions with automatic EOS integration
+- **Fundamental equations** (`fundamental.py`): Mass balance, kinematics, energy, total-static relations
+- **Gas relations** (`nondimensional.py`, `special.py`): Ideal gas, real gas (CoolProp), nondimensional forms (Mach, gamma)
+- **Shock models** (`control_volumes.py`): Oblique shock relations, outlet shock equations for blade row analysis
+- **Component linkers**: Equations connecting outputs of one component to inputs of another
+- **Loss models**: Integrated into blade row equations via `losses/` module
 
 **Components** (`src/adet/components/`):
 - **BaseComponent**: Abstract interface for all turbomachinery components
@@ -103,11 +104,21 @@ ADeT uses an equation-based modeling approach centered around three key concepts
 - **basic.py**: Simplified loss correlations
 - Extensible loss base class for custom models
 
-### Data Flow and Typical Workflow
+### Data Flow and Typical Workflows
 
-As demonstrated in `src/adet/main.py`:
+**Low-level API** (equation-by-equation, as in `src/adet/examples/mach_problem.py`):
+1. Create `CasadiSystem()` instance
+2. Define fluid settings (`FluidSettings` with `FluidModel` and update variables)
+3. Add equations explicitly with `system.add_equation(equation_instance, position)`
+4. Set boundary conditions with `system.add_boundary_conditions(bc_dict)`
+5. Call `system.build()` to compile equations
+6. Create rootfinder with `system.make_rootfinder('kinsol')` or `'ipopt'`
+7. Get scaled guess and constraints, solve with `solve_root_problem()`
+8. Convert solution back with `system.sol_to_dict(sol)`
+
+**High-level API** (component-network based, as in `src/adet/main.py`):
 1. Configure fluid settings (thermodynamic model, real gas, update variables)
-2. Create component instances (inlet, blade rows)
+2. Create component instances (inlet, blade rows, diffusers)
 3. Define component connections (geometry parameters, flow angles)
 4. Build SystemAssembler with ComponentNetwork
 5. Select backend solver (Newton-Raphson, IPOPT via CasADi)
@@ -128,18 +139,27 @@ As demonstrated in `src/adet/main.py`:
   - Models: `FluidSettings`, `FluidModel`, `LossModel`
   - Specialized: `UniqueEquation`, `DeviationModel`, `IncidenceModel`, `CamberLineGeom`
 
-### Variable Names
-- **FlowNode state containers**:
-  - `stc` - Static thermodynamic state
-  - `tot` - Total thermodynamic state
-  - `rlt` - Relative total thermodynamic state
-  - `kin` - Kinematics (velocity components)
-  - `geo` - Geometry
-  - `oth` - Other variables
-- **Equation arguments**: Format `<state>_<var_type><index>` (e.g., `stc_p0`, `tot_T1`, `kin_V0`)
-  - State identifiers: `stc`, `tot`, `rlt`, `kin`, `geo`, `oth`
-  - Trailing digit indicates node index
-- **Common variables**: `snake_case` (e.g., `num_span`, `scaling_factor`, `node_name`)
+### Variable Names and Specifications
+
+**Variables Module** (`src/adet/variables.py`):
+- **NodeVariables**: Per-node, per-state variable access (e.g., `n0 = NodeVariables(0)`)
+- **ThermoVariables**: Thermodynamic properties with unit specs, scaling hints, and bounds
+- **VarSpec**: Variable specification with name, units, guess value, and physical bounds
+- Access pattern: `node.container.PropertyName._at_node()` for unit-aware variable definitions
+
+**FlowNode state containers**:
+- `stc` - Static thermodynamic state
+- `tot` - Total thermodynamic state
+- `rlt` - Relative total thermodynamic state
+- `kin` - Kinematics (velocity components)
+- `geo` - Geometry
+- `oth` - Other variables (entropy, angles, losses, etc.)
+
+**Equation arguments**: Format `<state>_<var_type><index>` (e.g., `stc_p0`, `tot_T1`, `kin_V0`)
+- State identifiers: `stc`, `tot`, `rlt`, `kin`, `geo`, `oth`
+- Trailing digit indicates node index
+
+**Common variables**: `snake_case` (e.g., `num_span`, `scaling_factor`, `node_name`)
 
 ### Function/Method Names
 - **snake_case** for all functions and methods (e.g., `read_from_node`, `fetch_state`, `to_symbolic`)
@@ -163,20 +183,29 @@ quote-style = "single"
 docstring-code-format = true
 ```
 
-## Key Directories
+## Key Directories and Modules
 
 ```
 src/adet/
 ├── components/        # Turbomachinery component definitions
 ├── equations/         # Equation definitions and residuals
+│   ├── base_equation.py    # EquationBase abstract class
+│   ├── fundamental.py      # Core equations (mass, energy, kinematics)
+│   ├── nondimensional.py   # Mach, gamma, and dimensionless relations
+│   ├── control_volumes.py  # Shock models, outlet conditions
+│   ├── special.py          # Thermo variable adders, specialized equations
+│   └── geometrical.py      # Annulus areas, geometric relations
 ├── losses/           # Loss model implementations
 ├── fluid/            # Thermodynamic models and EOS
 ├── tools/            # Utilities (plotting, numerics, strings, etc.)
 ├── examples/         # Example scripts demonstrating usage
-├── assembly.py       # System assembly and solving
-├── node.py          # FlowNode for thermokinematic state
-├── main.py          # Main demonstration/entry point
-└── config_main.py   # Configuration constants
+├── assembly.py       # System assembly and solving (CasadiSystem, SystemAssembler)
+├── variables.py      # Variable enums (NodeVariables, ThermoVariables)
+├── varspec.py        # VarSpec for unit-aware variable definitions
+├── node.py           # FlowNode for thermokinematic state
+├── solution.py       # Root problem solving utilities
+├── main.py           # Main demonstration/entry point
+└── config_main.py    # Configuration constants
 ```
 
 ## Important Notes
