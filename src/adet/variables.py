@@ -21,7 +21,7 @@ class BaseEnum:
 
 class VariableEnum(BaseEnum):
     def __init__(self, node: int):
-        super().__init__(node, None)
+        super().__init__(node, DEF_STATE)
 
 
 class ThermoVariables(BaseEnum):
@@ -70,11 +70,11 @@ class KinematicVariables(VariableEnum):
     Beta_hub = VarSpec('beta_hub', 'rad', None, None, 0, True)
     Beta_tip = VarSpec('beta_tip', 'rad', None, None, 0, True)
     BladeSpeed = VarSpec('U', 'm / s', 1e-2, (-700.0, 700.0))
-    Deflection = VarSpec('deflection', 'rad', 1.0)
-    FlowAngleAbs = VarSpec('alpha', 'rad', 1e-2, (-1.45, 1.45))
-    FlowAngleRel = VarSpec('beta', 'rad', 1e-2, (-1.45, 1.45))
     RelMach_hub = VarSpec('relmach_hub', '', 0.3, None, 0, True)
     RelMach_tip = VarSpec('relmach_tip', '', 0.3, None, 0, True)
+    FlowAngleAbs = VarSpec('alpha', 'rad', 1e-2, (-1.45, 1.45))
+    FlowAngleRel = VarSpec('beta', 'rad', 1e-2, (-1.45, 1.45))
+    RowDeflection = VarSpec('row_defl', 'rad', 1.0)
 
 
 class GeometricVariables(VariableEnum):

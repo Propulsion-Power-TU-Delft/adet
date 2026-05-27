@@ -77,7 +77,7 @@ class EquationBase(ABC):
     """
 
     config: ClassVar[EquationConfig] = EquationConfig()
-    _eos: ClassVar[EmbeddedEos]
+    _eos: ClassVar[EmbeddedEos | None] = None
 
     def __init__(self, custom_scaling_factor: list[float] | None = None):
         """
@@ -90,11 +90,14 @@ class EquationBase(ABC):
         self._arguments: tuple[str, ...] = ()
 
         cls = self.__class__
-        # If the config calls for it, add
-        if cls.config.input_pair and cls.config.out_properties:
-            cls._eos = EmbeddedEos()
-            cls._eos.parent = self
-            cls._eos.out_pties = self.config.out_properties
+
+        # If the class has not an assigned eos
+        if cls._eos is None:
+            # If the config calls for it, add
+            if cls.config.input_pair and cls.config.out_properties:
+                cls._eos = EmbeddedEos()
+                cls._eos.parent = self
+                cls._eos.out_pties = self.config.out_properties
 
         if custom_scaling_factor:
             self._scaling_factor = custom_scaling_factor
@@ -203,10 +206,9 @@ class EquationBase(ABC):
     def eos(self, eos: EmbeddedEos):
         cls = self.__class__
 
-        if cls._eos.callable is not None:
+        if cls._eos is not None:
             logger.debug(f'Overwriting EoS for {cls}')
-
-        cls._eos.callable = eos
+            cls._eos.callable = eos
 
 
 class UniqueEquation(EquationBase):

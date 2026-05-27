@@ -21,7 +21,7 @@ class AngleDeflection(EquationBase):
         self,
         beta0: n0.kin.FlowAngleRel.Hint,
         beta1: n1.kin.FlowAngleRel.Hint,
-        defl1: n1.kin.Deflection.Hint,
+        defl1: n1.kin.RowDeflection.Hint,
     ):
         return defl1 - (beta1 - beta0)
 
