@@ -1305,7 +1305,7 @@ class CasadiSystem(SystemAssembler):
                     # Lower = stricter restoration (def = 100 * tol)
                     'ipopt.resto_failure_feasibility_threshold': 1e-7,
                     'ipopt.expect_infeasible_problem': 'yes',
-                    # 'ipopt.hessian_approximation': 'limited-memory',  # Less updates
+                    'ipopt.hessian_approximation': 'limited-memory',  # Less updates
                     **opts,
                 },
             )

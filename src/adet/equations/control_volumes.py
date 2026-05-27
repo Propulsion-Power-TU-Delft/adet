@@ -9,7 +9,7 @@ import CoolProp as cp
 import numpy as np
 
 from adet.equations.base_equation import EquationBase, EquationConfig
-from adet.equations.utils import minmax_bound
+from adet.equations.utils import minmax_bound, safe_min, safe_abs
 from adet.variables import NodeVariables, ThermoVariables
 from adet.varspec import VarSpec
 
@@ -118,49 +118,70 @@ class ChokingCriterion(EquationBase):
         return r1, r2, r3
 
 
+MachRatio = VarSpec('machRatio', '', node=0, guess=2.0, bounds=(1.05, 10.0))
+
+
 class OutletShock(EquationBase):
     config = EquationConfig(
         input_pair=cp.HmassSmass_INPUTS,
-        out_properties=(_thrm.Pressure, _thrm.Density),
+        out_properties=(_thrm.Pressure, _thrm.Density, _thrm.SpeedSound),
     )
 
     def residual(
         self,
         # *** Shock properties
-        W_presh: n0.kin.W_presh.Hint,
-        s_presh: n0.oth.EntropyPresh.Hint,
+        mach0: n0.kin.MachPresh.Hint,
+        h0: n0.oth.EnthalpyPresh.Hint,
+        s0: n0.oth.EntropyPresh.Hint,
         shock_angle: n0.oth.ShockAngle.Hint,
         defl_angle: n0.oth.ShockDeflection.Hint,
         # *** Outlet
-        W1: n0.kin.W_mag.Hint,
-        rho1: n0.stc.Density.Hint,
-        h_rlt1: n0.rlt.Enthalpy.Hint,
         p1: n0.stc.Pressure.Hint,
+        mach1: n0.kin.Mach.Hint,
+        machRatio: MachRatio.Hint,
+        rho1: n0.stc.Density.Hint,
+        h1: n0.stc.Enthalpy.Hint,
+        W1: n0.kin.W_mag.Hint,
+        gPv: n0.oth.GammaPV.Hint,
     ):
-        w0 = W_presh * np.cos(shock_angle)
-        u0 = W_presh * np.sin(shock_angle)
+        p0, rho0, a0 = self.eos(h0, s0)
+        W0 = a0 * mach0
+
+        w0 = W0 * np.cos(shock_angle)
+        u0 = W0 * np.sin(shock_angle)
 
         w1 = W1 * np.cos(shock_angle - defl_angle)
         u1 = W1 * np.sin(shock_angle - defl_angle)
 
-        # This implicitly enforces energy
-        h_presh = h_rlt1 - W_presh**2 / 2
-        p0, rho0 = self.eos(h_presh, s_presh)
-
         # Continuity
         r1 = (rho1 * u1) - (rho0 * u0)
+
         # Tangential momentum
         r2 = (rho0 * u0 * w0) - (rho1 * u1 * w1)
+
         # Normal momentum
         r3 = (p0 + rho0 * u0**2) - (p1 + rho1 * u1**2)
 
-        return r1, r2, r3
+        # Energy
+        r4 = (h1 + u1**2 / 2) - (h0 + u0**2 / 2)
+
+        # Shock angle (arcsin is defined only below 1)
+        mach0 = safe_abs(W0 / a0)
+        one_by_mach = safe_min(1 / mach0, 0.99)
+        r5 = shock_angle - (
+            np.arcsin(one_by_mach)  # ty: ignore
+            + (gPv + 1) / 4 * mach0**2 / (mach0**2 - 1) * defl_angle
+        )
+
+        r6 = machRatio - mach0 / mach1
+
+        return r1, r2, r3, r4, r5, r6
 
 
 class ObliqueShock(EquationBase):
     def residual(
         self,
-        W0: n0.kin.W_presh.Hint,
+        W0: n0.kin.W_mag.Hint,
         W1: n1.kin.W_mag.Hint,
         beta0: n0.kin.FlowAngleRel.Hint,
         beta1: n1.kin.FlowAngleRel.Hint,
@@ -170,8 +191,12 @@ class ObliqueShock(EquationBase):
         h1: n1.stc.Enthalpy.Hint,
         p0: n0.stc.Pressure.Hint,
         p1: n1.stc.Pressure.Hint,
+        mach0: n0.kin.Mach.Hint,
+        # mach1: n1.kin.Mach.Hint,
+        # machRatio: MachRatio.Hint,
         shock_angle: n1.oth.ShockAngle.Hint,
         defl_angle: n1.oth.ShockDeflection.Hint,
+        gPv: n0.oth.GammaPV.Hint,
     ):
         w0 = W0 * np.cos(shock_angle)
         u0 = W0 * np.sin(shock_angle)
@@ -188,9 +213,26 @@ class ObliqueShock(EquationBase):
         # Energy
         r4 = (h0 + u0**2 / 2) - (h1 + u1**2 / 2)
         # Link flow angle with shock deflection
-        r5 = beta1 - (beta0 - defl_angle)
+        r5 = beta1 - (beta0 + defl_angle)
 
-        return r1, r2, r3, r4, r5
+        # Flow angle expression - FIX the shock angle
+        one_by_mach = safe_min(1 / mach0, 0.99)
+        _r6 = shock_angle - (
+            np.arcsin(one_by_mach)  # ty:ignore
+            + (gPv + 1) / 4 * mach0**2 / (mach0**2 - 1) * defl_angle
+        )
+
+        # _r7 = machRatio - mach0 / mach1
+
+        return (
+            r1,
+            r2,
+            r3,
+            r4,
+            r5,
+            # _r6,
+            # _r7,
+        )
 
 
 class ThroatConditions(EquationBase):

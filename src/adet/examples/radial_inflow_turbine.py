@@ -78,14 +78,13 @@ stator = BladeRow(
         n1.oth.DispByMom: 2.0,
         n1.oth.DispByHgt: 0.09,
         # *** Shock
-        n1.oth.ShockAngle: Quantity(27.5, 'deg'),
     },
     shaft=casing,
     extra_equations={
         IsentropicLink(): (0, 1),
-        OutletShock(): 1,
         ZeroDeviation(): 0,  # No incidence
         # *** Loss + Dependencies
+        # OutletShock(): 1,
         StatorProfileLoss(): (0, 1),
         IsentropicProperties(): (0, 1),
         BoundaryLayerRatios(): 1,
@@ -170,11 +169,10 @@ bnd = ntw.system.get_arguments_bounds(
     {
         # WARN: Force the supersonic solution w/ bounds
         n1.kin.Mach: (1.1, 4.0),
-        n1.kin.W_presh: (1.0, 1e4),
         # n1.oth.ShockDeflection: (0.1, 1.5),
-        # NOTE: These stabilize massively the solution
-        n0.stc.Temperature.Glob: (100, 1e4),
-        n0.stc.Pressure.Glob: (1e5, 1e9),
+        # NOTE: Thermo bounding stabilizes a lot
+        n0.stc.Temperature.Glob: (300, 580),
+        n0.stc.Pressure.Glob: (1e3, 1e9),
     }
 )
 
