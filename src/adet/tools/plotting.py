@@ -1,4 +1,7 @@
+from typing import Any
 import logging
+import matplotlib as mpl
+import matplotlib.font_manager as fm
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,12 +12,33 @@ from matplotlib.ticker import FuncFormatter
 
 logger = logging.getLogger(__name__)
 
-# plt.rcParams.update(
-#     {
-#         'text.usetex': False,
-#         'font.family': 'serif',
-#     }
-# )
+
+def setup_mpl(fontdict: dict[str, Any] = {}):
+    """
+    Setup matplotlib using custom parameters,
+    add fonts from system directories
+    """
+    try:
+        fm.fontManager.addfont(
+            path='C:/Users/fvaccari/AppData/Local/Microsoft/Windows/'
+            'Fonts/EBGaramond-VariableFont_wght.ttf',
+        )
+        fm.fontManager.addfont(
+            path='C:/Users/fvaccari/AppData/Local/Microsoft/Windows/'
+            'Fonts/OldStandardTT-Regular.ttf',
+        )
+    except FileNotFoundError:
+        pass
+
+    custom_params = {
+        'font.family': 'serif',
+        'mathtext.fontset': 'cm',
+        'font.weight': 'regular',
+        'font.size': 16,
+        **fontdict,
+    }
+
+    mpl.rcParams.update(custom_params)
 
 
 def plot_velocity_triangles(Vt, Vm, U, rr, ax: Axes, fontsize=11):

@@ -1,6 +1,8 @@
-from adet.equations.utils import residual_debugger
+from adet.tools.plotting import setup_mpl
+import matplotlib.font_manager as fm
 import logging
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from pint import Quantity
@@ -16,9 +18,10 @@ from adet.equations.fundamental import (
 from adet.equations.geometrical import AnnulusAreas
 from adet.equations.nondimensional import (
     AbsoluteMachNumber,
-    RelativeMachNumber,
     GammaPV,
+    RelativeMachNumber,
 )
+from adet.equations.utils import residual_debugger
 from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
 from adet.solution import solve_root_problem
@@ -86,8 +89,11 @@ BC = {
     n1.kin.Omega: 0.0,
     n1.geo.RDistr: 0.1,
     n1.geo.HDistr: 0.1,
-    n1.oth.ShockAngle: Quantity(60, 'deg'),  # Placeholder, will be updated
+    n1.oth.ShockAngle: Quantity(70, 'deg'),  # Placeholder, will be updated
 }
+
+# NOTE:
+# - mach0=2 with shock angle of 60 deg => mach1=1.2
 
 system.add_boundary_conditions(BC)
 system.build()
@@ -107,13 +113,12 @@ bnd = system.get_arguments_bounds(
     {
         n0.stc.Temperature.Glob: (100, 600),
         n0.stc.Pressure.Glob: (1e2, 1e9),
-        # n0.kin.Mach.Glob: (1.0, 10),
     },
 )
 
 sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=False)
 rtfn = system.make_rootfinder('kinsol')
-# sol = solve_root_problem(rtfn, sol, kn, suppress_output=False)
+sol = solve_root_problem(rtfn, sol, kn, suppress_output=False)
 
 sol_data = system.sol_to_dict(sol)
 
@@ -121,8 +126,8 @@ globals().update(residual_debugger(ObliqueShock(), [0, 1], sol_data))
 
 if RUN_SWEEP:
     # Parametric sweep ranges
-    mach_values = np.linspace(1.5, 3.0, 4)
-    shock_angle_values = np.linspace(90, 30, 40)
+    mach_values = np.linspace(1.5, 3.0, 5)
+    shock_angle_values = np.linspace(90, 30, 20)
     results = {}
     for mach in mach_values:
         results[mach] = {'shock_angles': [], 'deflections': [], 'outlet_machs': []}
@@ -149,7 +154,7 @@ if RUN_SWEEP:
                 'ipopt',
                 opts={
                     'error_on_fail': False,
-                    'ipopt.max_wall_time': 5,
+                    'ipopt.max_wall_time': 2,
                     'ipopt.print_level': 0,
                 },
             )
@@ -189,32 +194,29 @@ if RUN_SWEEP:
 
         print(f'  Completed {len(shock_angle_values)} points')
 
-    # Plot: deflection on x-axis, shock angle on y-axis, colors for different Mach
+    setup_mpl({'font.family': 'EB Garamond'})
     fig, ax = plt.subplots(figsize=(10, 8))
 
-    cmap = plt.get_cmap('Dark2')
-    colors = cmap(np.linspace(0, 1, len(mach_values)))
+    cmap = plt.get_cmap('autums')
+    colors = cmap(np.linspace(0, 0.85, len(mach_values)))
 
     for mach, color in zip(mach_values, colors):
         ax.plot(
-            results[mach]['deflections'],
+            results[mach]['outlet_machs'],
             results[mach]['shock_angles'],
             'o-',
-            label=f'M_in = {mach:.1f}',
+            label=r'$M_{in}$' f' = {mach:.1f}',
             color=color,
             linewidth=2,
             markersize=6,
         )
 
-    ax.set_xlabel('Deflection Angle (°)', fontsize=12, fontweight='bold')
-    ax.set_ylabel('Shock Angle (°)', fontsize=12, fontweight='bold')
-    ax.set_title(
-        'Oblique Shock: Deflection vs Shock Angle', fontsize=14, fontweight='bold'
-    )
+    ax.set_xlabel(r'Outlet Mach')
+    ax.set_ylabel(r'Shock angle $\beta$ [deg]')
     ax.grid(True, alpha=0.3)
-    ax.legend(loc='best', fontsize=11)
+    ax.legend(loc='best')
     ax.set_xlim(left=0)
-    ax.set_ylim(5, 95)
+    # ax.set_ylim(5, 95)
 
     plt.tight_layout()
     plt.show()
