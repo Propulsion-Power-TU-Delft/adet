@@ -118,7 +118,7 @@ class ChokingCriterion(EquationBase):
         return r1, r2, r3
 
 
-MachRatio = VarSpec('machRatio', '', node=0, guess=2.0, bounds=(1.05, 10.0))
+MachRatio = VarSpec('machRatio', '', node=0, guess=2.0, bounds=(0.05, 10.0))
 
 
 class OutletShock(EquationBase):
@@ -155,13 +155,10 @@ class OutletShock(EquationBase):
 
         # Continuity
         r1 = (rho1 * u1) - (rho0 * u0)
-
         # Tangential momentum
-        r2 = (rho0 * u0 * w0) - (rho1 * u1 * w1)
-
+        r2 = (rho1 * u1 * w1) - (rho0 * u0 * w0)
         # Normal momentum
-        r3 = (p0 + rho0 * u0**2) - (p1 + rho1 * u1**2)
-
+        r3 = (p1 + rho1 * u1**2) - (p0 + rho0 * u0**2)
         # Energy
         r4 = (h1 + u1**2 / 2) - (h0 + u0**2 / 2)
 
@@ -192,8 +189,8 @@ class ObliqueShock(EquationBase):
         p0: n0.stc.Pressure.Hint,
         p1: n1.stc.Pressure.Hint,
         mach0: n0.kin.Mach.Hint,
-        # mach1: n1.kin.Mach.Hint,
-        # machRatio: MachRatio.Hint,
+        mach1: n1.kin.Mach.Hint,
+        machRatio: MachRatio.Hint,
         shock_angle: n1.oth.ShockAngle.Hint,
         defl_angle: n1.oth.ShockDeflection.Hint,
         gPv: n0.oth.GammaPV.Hint,
@@ -207,11 +204,11 @@ class ObliqueShock(EquationBase):
         # Continuity
         r1 = (rho1 * u1) - (rho0 * u0)
         # Tangential momentum
-        r2 = (rho0 * u0 * w0) - (rho1 * u1 * w1)
+        r2 = (rho1 * u1 * w1) - (rho0 * u0 * w0)
         # Normal momentum
-        r3 = (p0 + rho0 * u0**2) - (p1 + rho1 * u1**2)
+        r3 = (p1 + rho1 * u1**2) - (p0 + rho0 * u0**2)
         # Energy
-        r4 = (h0 + u0**2 / 2) - (h1 + u1**2 / 2)
+        r4 = (h1 + u1**2 / 2) - (h0 + u0**2 / 2)
         # Link flow angle with shock deflection
         r5 = beta1 - (beta0 + defl_angle)
 
@@ -222,7 +219,7 @@ class ObliqueShock(EquationBase):
             + (gPv + 1) / 4 * mach0**2 / (mach0**2 - 1) * defl_angle
         )
 
-        # _r7 = machRatio - mach0 / mach1
+        _r7 = machRatio - mach0 / mach1
 
         return (
             r1,
@@ -231,7 +228,7 @@ class ObliqueShock(EquationBase):
             r4,
             r5,
             # _r6,
-            # _r7,
+            _r7,
         )
 
 

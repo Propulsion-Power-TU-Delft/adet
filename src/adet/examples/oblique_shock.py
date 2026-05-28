@@ -126,14 +126,14 @@ globals().update(residual_debugger(ObliqueShock(), [0, 1], sol_data))
 
 if RUN_SWEEP:
     # Parametric sweep ranges
-    mach_values = np.linspace(1.5, 3.0, 5)
-    shock_angle_values = np.linspace(90, 30, 20)
+    mach_values = np.linspace(1.5, 3.0, 10)
+    shock_angle_values = np.linspace(90, 30, 60)
     results = {}
     for mach in mach_values:
         results[mach] = {'shock_angles': [], 'deflections': [], 'outlet_machs': []}
 
     sol_data = {}
-    sol_dict_normal = {}
+    sol_dict_nrm_shk = {}
     for mach_idx, mach in enumerate(mach_values):
         print(f'Mach = {mach:.2f}  [{mach_idx + 1}/{len(mach_values)}]')
 
@@ -144,33 +144,38 @@ if RUN_SWEEP:
             system.data.boun_cond[n1.oth.ShockAngle] = np.radians(angle)
 
             if idx == 0:
-                precursor = sol_dict_normal
+                precursor = sol_dict_nrm_shk
             else:
                 precursor = sol_data
-            x0 = system.get_scaled_guess(sol_dict_normal)
+            x0 = system.get_scaled_guess(sol_dict_nrm_shk)
             kn = system.get_scaled_constraints()
+
+            bnd = system.get_arguments_bounds(
+                {
+                    n0.stc.Temperature.Glob: (100, 600),
+                    n0.stc.Pressure.Glob: (1e2, 1e9),
+                    n1.kin.Mach: (0.0, 0.88 * mach),
+                }
+            )
 
             rtfn = system.make_rootfinder(
                 'ipopt',
                 opts={
                     'error_on_fail': False,
-                    'ipopt.max_wall_time': 2,
+                    'ipopt.max_wall_time': 2.5,
                     'ipopt.print_level': 0,
                 },
             )
-            sol = solve_root_problem(rtfn, x0, kn, suppress_output=True)
+            sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=True)
 
-            rtfn = system.make_rootfinder(
-                'kinsol',
-                opts={'error_on_fail': True},
-            )
+            rtfn = system.make_rootfinder('kinsol')
 
             try:
                 sol = solve_root_problem(rtfn, sol, kn, suppress_output=True)
                 sol_data = system.sol_to_dict(sol)
                 print(f'Outlet mach is {sol_data[n1.kin.Mach]}')
                 if idx == 0:
-                    sol_dict_normal = sol_data
+                    sol_dict_nrm_shk = sol_data
                 # Extract deflection angle (convert from radians to degrees)
                 deflection_val = sol_data[n1.oth.ShockDeflection]
                 deflection_rad = float(np.atleast_1d(deflection_val)[0])
@@ -194,27 +199,33 @@ if RUN_SWEEP:
 
         print(f'  Completed {len(shock_angle_values)} points')
 
-    setup_mpl({'font.family': 'EB Garamond'})
-    fig, ax = plt.subplots(figsize=(10, 8))
+    # *** PLOTS
+    setup_mpl(
+        {
+            'font.family': 'EB Garamond',
+            'font.size': '20',
+        }
+    )
+    cmap = plt.get_cmap('plasma')
 
-    cmap = plt.get_cmap('autums')
+    fig, ax = plt.subplots(figsize=(10, 8))
     colors = cmap(np.linspace(0, 0.85, len(mach_values)))
 
     for mach, color in zip(mach_values, colors):
         ax.plot(
-            results[mach]['outlet_machs'],
+            results[mach]['deflections'],
             results[mach]['shock_angles'],
-            'o-',
+            '-',
             label=r'$M_{in}$' f' = {mach:.1f}',
             color=color,
             linewidth=2,
             markersize=6,
         )
 
-    ax.set_xlabel(r'Outlet Mach')
+    ax.set_xlabel(r'Deflection angle $\theta$ [deg]')
     ax.set_ylabel(r'Shock angle $\beta$ [deg]')
     ax.grid(True, alpha=0.3)
-    ax.legend(loc='best')
+    ax.legend(loc='lower right')
     ax.set_xlim(left=0)
     # ax.set_ylim(5, 95)
 
