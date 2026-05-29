@@ -22,18 +22,16 @@ from pint import Quantity, Unit
 from pint.facets.plain import PlainQuantity
 
 from adet.constants import AdetArray
-from adet.equations.base_equation import EquationBase, EquationConfig
+from adet.equations.base_equation import EquationBase
 from adet.errors import ExistingEquationError
 from adet.fluid.casadi_eos import CasadiEos
 from adet.fluid.eos_factory import EosFactory
-from adet.fluid.settings import EmptyFluidModel, ExternalFluidModel, FluidSettings
+from adet.fluid.settings import EmptyFluidModel, FluidSettings
 from adet.registries import ScalingRegistry
 from adet.tools.context import override_operators
-from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.interpolation import resample_linear
 from adet.tools.iter import ensure_tuple, leaves
-from adet.tools.loggers import setup_logger
-from adet.variables import NodeVariables, ThermoVariables
+from adet.variables import ThermoVariables
 from adet.varspec import NodeStates, VarSpec
 
 logger = logging.getLogger(__name__)
@@ -757,6 +755,8 @@ class SystemAssembler(ABC):
             _thrm.Density,
             _thrm.Enthalpy,
             _thrm.SpeedSound,
+            _thrm.GasConstant,
+            _thrm.MolarMass,
         ]
 
         # Extract fluid settings data

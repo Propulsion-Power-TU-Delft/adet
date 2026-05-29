@@ -7,13 +7,12 @@ from adet.assembly import CasadiSystem
 from adet.components.blade_row import BladeRow, Interspace, ShockMixer
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
-from adet.equations.control_volumes import OutletShock
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
 from adet.equations.nondimensional import GammaPV
 from adet.equations.utils import residual_debugger
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation
-from adet.losses.rit import StatorProfileLoss
+from adet.losses.rit import ShockLoss, StatorProfileLoss
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
@@ -66,11 +65,12 @@ stator = BladeRow(
         n1.geo.Rmid: Quantity(25.75, 'mm'),
         n1.geo.MeridionalAngle: Quantity(-90, 'deg'),
         # *** Outlet
-        n1.kin.FlowAngleAbs: Quantity(78, 'deg'),
+        n1.geo.MetalAngle: Quantity(78, 'deg'),
+        # n1.kin.FlowAngleRel: Quantity(78, 'deg'),
         # n1.kin.Mach: 2.2,
         # *** Blades
-        n0.geo.BldThick: 0.0,
-        n1.geo.BldThick: 0.0,
+        n0.geo.ThickByPitch: 0.05,
+        n1.geo.ThickByPitch: 0.05,
         n1.geo.NumBlades: 12,
         n1.geo.ChordAx: Quantity(0.01, 'mm'),
         # *** Boundary Layer
@@ -84,7 +84,7 @@ stator = BladeRow(
         IsentropicLink(): (0, 1),
         ZeroDeviation(): 0,  # No incidence
         # *** Loss + Dependencies
-        # OutletShock(): 1,
+        # ShockLoss(): 1,
         StatorProfileLoss(): (0, 1),
         IsentropicProperties(): (0, 1),
         BoundaryLayerRatios(): 1,
@@ -168,7 +168,7 @@ kn = ntw.system.get_scaled_constraints()
 bnd = ntw.system.get_arguments_bounds(
     {
         # WARN: Force the supersonic solution w/ bounds
-        n1.kin.Mach: (1.1, 4.0),
+        # n1.kin.Mach: (1.1, 4.0),
         # n1.oth.ShockDeflection: (0.1, 1.5),
         # NOTE: Thermo bounding stabilizes a lot
         n0.stc.Temperature.Glob: (300, 580),
@@ -259,4 +259,4 @@ if PLOTS:
 # print(f'Turbine power {pwr}')
 
 # Debug loss
-globals().update(residual_debugger(OutletShock(), [1], sol_data))
+globals().update(residual_debugger(StatorProfileLoss(), [0, 1], sol_data))

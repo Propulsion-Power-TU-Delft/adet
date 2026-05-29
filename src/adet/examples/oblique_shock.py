@@ -1,10 +1,9 @@
-from adet.tools.plotting import setup_mpl
-import matplotlib.font_manager as fm
 import logging
 
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import Normalize
 from pint import Quantity
 
 from adet.assembly import CasadiSystem
@@ -27,6 +26,7 @@ from adet.fluid.symbolic_eos import IdealGasState
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
+from adet.tools.plotting import setup_mpl
 from adet.variables import NodeVariables, ThermoVariables
 
 logger = logging.getLogger(__name__)
@@ -113,12 +113,13 @@ bnd = system.get_arguments_bounds(
     {
         n0.stc.Temperature.Glob: (100, 600),
         n0.stc.Pressure.Glob: (1e2, 1e9),
+        # n0.oth.ShockDeflection.Glob: (0.0, 2.0),
     },
 )
 
 sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=False)
 rtfn = system.make_rootfinder('kinsol')
-sol = solve_root_problem(rtfn, sol, kn, suppress_output=False)
+# sol = solve_root_problem(rtfn, sol, kn, suppress_output=False)
 
 sol_data = system.sol_to_dict(sol)
 
@@ -127,10 +128,15 @@ globals().update(residual_debugger(ObliqueShock(), [0, 1], sol_data))
 if RUN_SWEEP:
     # Parametric sweep ranges
     mach_values = np.linspace(1.5, 3.0, 10)
-    shock_angle_values = np.linspace(90, 30, 60)
+    shock_angle_values = np.linspace(90, 30, 30)
     results = {}
     for mach in mach_values:
-        results[mach] = {'shock_angles': [], 'deflections': [], 'outlet_machs': []}
+        results[mach] = {
+            'shock_angles': [],
+            'deflections': [],
+            'outlet_machs': [],
+            'entropy_prod': [],
+        }
 
     sol_data = {}
     sol_dict_nrm_shk = {}
@@ -147,14 +153,15 @@ if RUN_SWEEP:
                 precursor = sol_dict_nrm_shk
             else:
                 precursor = sol_data
-            x0 = system.get_scaled_guess(sol_dict_nrm_shk)
+
+            x0 = system.get_scaled_guess(precursor)
             kn = system.get_scaled_constraints()
 
             bnd = system.get_arguments_bounds(
                 {
-                    n0.stc.Temperature.Glob: (100, 600),
+                    n0.stc.Temperature.Glob: (100, 630),
                     n0.stc.Pressure.Glob: (1e2, 1e9),
-                    n1.kin.Mach: (0.0, 0.88 * mach),
+                    n1.loss.Ds_shock: (0.0, 1e5),
                 }
             )
 
@@ -186,9 +193,10 @@ if RUN_SWEEP:
                 )
                 deflection_deg = deflection_rad * 180 / np.pi
 
-                results[mach]['shock_angles'].append(angle)
+                results[mach]['shock_angles'].append(sol_data[n1.oth.ShockAngle])
                 results[mach]['deflections'].append(deflection_deg)
                 results[mach]['outlet_machs'].append(sol_data[n1.kin.Mach])
+                results[mach]['entropy_prod'].append(sol_data[n1.loss.Ds_shock])
             except (RuntimeError, ValueError) as e:
                 err_msg = str(e)[:50]
                 print(
@@ -209,12 +217,14 @@ if RUN_SWEEP:
     cmap = plt.get_cmap('plasma')
 
     fig, ax = plt.subplots(figsize=(10, 8))
-    colors = cmap(np.linspace(0, 0.85, len(mach_values)))
+    colors = cmap(
+        np.linspace(0, 1, len(mach_values)),
+    )
 
     for mach, color in zip(mach_values, colors):
         ax.plot(
-            results[mach]['deflections'],
-            results[mach]['shock_angles'],
+            np.degrees(results[mach]['shock_angles']),
+            results[mach]['entropy_prod'],
             '-',
             label=r'$M_{in}$' f' = {mach:.1f}',
             color=color,
@@ -222,11 +232,17 @@ if RUN_SWEEP:
             markersize=6,
         )
 
-    ax.set_xlabel(r'Deflection angle $\theta$ [deg]')
-    ax.set_ylabel(r'Shock angle $\beta$ [deg]')
-    ax.grid(True, alpha=0.3)
-    ax.legend(loc='lower right')
-    ax.set_xlim(left=0)
+    ax.set_xlabel(r'$\beta$ / [deg]')
+    ax.set_ylabel(r'$\Delta s$ / $\mathrm{[Jkg^{-1}K^{-1}]}$')
+    ax.grid(True, alpha=0.5)
+
+    # *** Colorbar
+    sm = ScalarMappable(cmap=cmap, norm=Normalize(mach_values[0], mach_values[-1]))
+    # bar = plt.colorbar(sm, ax=ax)
+    # bar.set_label(r'$M_{in}$')
+
+    ax.legend(loc='best')
+    # ax.set_xlim(left=0)
     # ax.set_ylim(5, 95)
 
     plt.tight_layout()

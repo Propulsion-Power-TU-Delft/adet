@@ -9,7 +9,7 @@ import CoolProp as cp
 import numpy as np
 
 from adet.equations.base_equation import EquationBase, EquationConfig
-from adet.equations.utils import minmax_bound, safe_min, safe_abs
+from adet.equations.utils import minmax_bound, safe_min
 from adet.variables import NodeVariables, ThermoVariables
 from adet.varspec import VarSpec
 
@@ -118,63 +118,6 @@ class ChokingCriterion(EquationBase):
         return r1, r2, r3
 
 
-MachRatio = VarSpec('machRatio', '', node=0, guess=2.0, bounds=(0.05, 10.0))
-
-
-class OutletShock(EquationBase):
-    config = EquationConfig(
-        input_pair=cp.HmassSmass_INPUTS,
-        out_properties=(_thrm.Pressure, _thrm.Density, _thrm.SpeedSound),
-    )
-
-    def residual(
-        self,
-        # *** Shock properties
-        mach0: n0.kin.MachPresh.Hint,
-        h0: n0.oth.EnthalpyPresh.Hint,
-        s0: n0.oth.EntropyPresh.Hint,
-        shock_angle: n0.oth.ShockAngle.Hint,
-        defl_angle: n0.oth.ShockDeflection.Hint,
-        # *** Outlet
-        p1: n0.stc.Pressure.Hint,
-        mach1: n0.kin.Mach.Hint,
-        machRatio: MachRatio.Hint,
-        rho1: n0.stc.Density.Hint,
-        h1: n0.stc.Enthalpy.Hint,
-        W1: n0.kin.W_mag.Hint,
-        gPv: n0.oth.GammaPV.Hint,
-    ):
-        p0, rho0, a0 = self.eos(h0, s0)
-        W0 = a0 * mach0
-
-        w0 = W0 * np.cos(shock_angle)
-        u0 = W0 * np.sin(shock_angle)
-
-        w1 = W1 * np.cos(shock_angle - defl_angle)
-        u1 = W1 * np.sin(shock_angle - defl_angle)
-
-        # Continuity
-        r1 = (rho1 * u1) - (rho0 * u0)
-        # Tangential momentum
-        r2 = (rho1 * u1 * w1) - (rho0 * u0 * w0)
-        # Normal momentum
-        r3 = (p1 + rho1 * u1**2) - (p0 + rho0 * u0**2)
-        # Energy
-        r4 = (h1 + u1**2 / 2) - (h0 + u0**2 / 2)
-
-        # Shock angle (arcsin is defined only below 1)
-        mach0 = safe_abs(W0 / a0)
-        one_by_mach = safe_min(1 / mach0, 0.99)
-        r5 = shock_angle - (
-            np.arcsin(one_by_mach)  # ty: ignore
-            + (gPv + 1) / 4 * mach0**2 / (mach0**2 - 1) * defl_angle
-        )
-
-        r6 = machRatio - mach0 / mach1
-
-        return r1, r2, r3, r4, r5, r6
-
-
 class ObliqueShock(EquationBase):
     def residual(
         self,
@@ -184,13 +127,14 @@ class ObliqueShock(EquationBase):
         beta1: n1.kin.FlowAngleRel.Hint,
         rho0: n0.stc.Density.Hint,
         rho1: n1.stc.Density.Hint,
+        s0: n0.stc.Entropy.Hint,
+        s1: n1.stc.Entropy.Hint,
         h0: n0.stc.Enthalpy.Hint,
         h1: n1.stc.Enthalpy.Hint,
         p0: n0.stc.Pressure.Hint,
         p1: n1.stc.Pressure.Hint,
         mach0: n0.kin.Mach.Hint,
-        mach1: n1.kin.Mach.Hint,
-        machRatio: MachRatio.Hint,
+        ds_shock: n1.loss.Ds_shock.Hint,
         shock_angle: n1.oth.ShockAngle.Hint,
         defl_angle: n1.oth.ShockDeflection.Hint,
         gPv: n0.oth.GammaPV.Hint,
@@ -209,7 +153,7 @@ class ObliqueShock(EquationBase):
         r3 = (p1 + rho1 * u1**2) - (p0 + rho0 * u0**2)
         # Energy
         r4 = (h1 + u1**2 / 2) - (h0 + u0**2 / 2)
-        # Link flow angle with shock deflection
+        # Link flow angles (no effect on shock)
         r5 = beta1 - (beta0 + defl_angle)
 
         # Flow angle expression - FIX the shock angle
@@ -219,7 +163,7 @@ class ObliqueShock(EquationBase):
             + (gPv + 1) / 4 * mach0**2 / (mach0**2 - 1) * defl_angle
         )
 
-        _r7 = machRatio - mach0 / mach1
+        _r7 = ds_shock - (s1 - s0)
 
         return (
             r1,

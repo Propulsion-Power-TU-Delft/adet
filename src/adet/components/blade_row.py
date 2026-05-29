@@ -8,7 +8,7 @@ from matplotlib.lines import Line2D
 from adet.assembly import CasadiSystem
 from adet.components import BaseComponent, Shaft
 from adet.equations import EquationBase
-from adet.equations.control_volumes import ChokingCriterion, OutletShock
+from adet.equations.control_volumes import ChokingCriterion, ObliqueShock
 from adet.equations.definitions import MeridionalVelocityRatio, OptimalIncidence
 from adet.equations.fundamental import (
     BladeBlockage,
@@ -283,7 +283,7 @@ class IncidenceVolume(BaseComponent):
 class ShockMixer(BaseComponent):
     base_equations = [
         # *** Fundamental
-        (OutletShock, (0, 1)),
+        (ObliqueShock, (0, 1)),
         # (MassConservation, (0, 1)),
         # *** Blockage
         (BladePitch, 0),  # Only needed at the inlet

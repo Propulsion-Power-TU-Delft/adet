@@ -1,5 +1,5 @@
-from adet.equations.utils import safe_max
-from adet.equations.base_equation import EquationConfig
+from adet.equations.utils import safe_max, safe_abs
+from adet.equations.base_equation import EquationConfig, DeviationModel
 from adet.variables import NodeVariables, ThermoVariables
 import CoolProp as cp
 from adet.losses.base_loss import LossModel
@@ -72,7 +72,7 @@ class StatorProfileLoss(LossModel):
 
         Roth0 = h0 + W0**2 / 2 - U0**2 / 2
         # Avoid negative square argument
-        roth_minus_his = safe_max(Roth0 - h1_is, 0.001 * h1_is)
+        roth_minus_his = safe_max(Roth0 - h1_is, 0.0 * h1_is)
         W1_is = (2 * roth_minus_his + U1**2) ** 0.5
         W1_lss = W1_is * (1 - zeta_2D) ** 0.5
         h1_lss = Roth0 - W1_lss**2 / 2 + U1**2 / 2
@@ -81,56 +81,64 @@ class StatorProfileLoss(LossModel):
         return Ds_prof - (s1_profile - s0)
 
 
-class StatorEndwallLoss(LossModel):
-    def residual(self): ...
+class ShockLoss(DeviationModel):
+    config = EquationConfig(
+        input_pair=cp.HmassSmass_INPUTS,
+        out_properties=(thrm.Pressure, thrm.Density, thrm.SpeedSound),
+    )
 
-
-class ShockLoss(LossModel):
     def residual(
         self,
-        cp: n1.stc.Cp.Hint,
-        s0: n0.stc.Entropy.Hint,
-        M1: n1.kin.RelMach.Hint,
-        p1: n1.stc.Pressure.Hint,
-        gPv1: n1.oth.GammaPV.Hint,
-        mmass: n1.stc.MolarMass.Hint,
-        R_un: n1.stc.GasConstant.Hint,
-        shock_angle: n1.oth.ShockAngle.Hint,
+        # *** Shock properties
+        mach0: n0.kin.MachPresh.Hint,
+        h0: n0.oth.EnthalpyPresh.Hint,
+        s0: n0.oth.EntropyPresh.Hint,
+        s1: n0.stc.Entropy.Hint,
+        shock_angle: n0.oth.ShockAngle.Hint,
+        defl_angle: n0.oth.ShockDeflection.Hint,
+        metal_ang: n0.geo.MetalAngle.Hint,
+        beta1: n0.kin.FlowAngleRel.Hint,
+        # *** Outlet
+        p1: n0.stc.Pressure.Hint,
+        rho1: n0.stc.Density.Hint,
+        h1: n0.stc.Enthalpy.Hint,
+        W1: n0.kin.W_mag.Hint,
+        gPv: n0.oth.GammaPV.Hint,
+        ds_shock: n0.loss.Ds_shock.Hint,
     ):
-        R = R_un / mmass
+        p0, rho0, a0 = self.eos(h0, s0)
+        W0 = a0 * mach0
 
-        theta = np.arctan(
-            2
-            / np.tan(shock_angle)
-            * (M1**2 * np.sin(shock_angle) ** 2 - 1)
-            / (M1**2 * (gPv1 + np.cos(2 * shock_angle) + 2))
+        w0 = W0 * np.cos(shock_angle)
+        u0 = W0 * np.sin(shock_angle)
+
+        w1 = W1 * np.cos(shock_angle - defl_angle)
+        u1 = W1 * np.sin(shock_angle - defl_angle)
+
+        # Continuity
+        r1 = (rho1 * u1) - (rho0 * u0)
+        # Tangential momentum
+        r2 = (rho1 * u1 * w1) - (rho0 * u0 * w0)
+        # Normal momentum
+        r3 = (p1 + rho1 * u1**2) - (p0 + rho0 * u0**2)
+        # Energy
+        r4 = (h1 + u1**2 / 2) - (h0 + u0**2 / 2)
+
+        # Shock angle (arcsin is defined only below 1)
+        mach0 = safe_abs(W0 / a0)
+        r5 = shock_angle - (
+            np.arcsin(1 / mach0)
+            + (gPv + 1) / 4 * mach0**2 / (mach0**2 - 1) * defl_angle
         )
-        if M1 * np.sin(shock_angle) >= 1.0:
-            M1_normal = M1 * np.sin(shock_angle)
-            M2_normal = np.sqrt(
-                (1 + (gPv1 - 1) / 2 * M1_normal**2)
-                / (gPv1 * M1_normal**2 - (gPv1 - 1) / 2)
-            )
-            M2 = M2_normal / np.sin(shock_angle)
-            P_ratio = 1 + (2 * gPv1) / (gPv1 + 1) * (M1_normal**2 - 1)
-            D_ratio = (1 + (gPv1 + 1) / (gPv1 - 1) * P_ratio) / (
-                (gPv1 + 1) / (gPv1 - 1) + P_ratio
-            )
-            T_ratio = P_ratio / D_ratio
-            delta_s = cp * np.log(T_ratio) - R * np.log(P_ratio)
-        else:
-            M2 = M1
-            P_ratio = 1
-            T_ratio = 1
-            delta_s = 0
 
-            # Shock angle computation
-            shock_angle_new = (
-                np.arcsin(1 / M1) + (gPv1 + 1) / 4 * M1**2 / (M1**2 - 1) * theta
-            )
-            dshock_angle = (shock_angle - shock_angle_new) / shock_angle
-            shock_angle = shock_angle_new
-            theta = 0
+        r6 = ds_shock - (s1 - s0)
+        r7 = beta1 - (metal_ang - defl_angle)
+
+        return r1, r2, r3, r4, r5, r6, r7
+
+
+class StatorEndwallLoss(LossModel):
+    def residual(self): ...
 
 
 # *** Impeller

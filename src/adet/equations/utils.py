@@ -1,5 +1,3 @@
-import glob
-import ipdb
 import sys
 from typing import Literal, Mapping, cast
 
@@ -10,7 +8,7 @@ from pint import Quantity
 from pint.facets.plain import PlainQuantity
 from sympy import Symbol
 
-from adet.equations.base_equation import EquationBase, EmbeddedEos
+from adet.equations.base_equation import EmbeddedEos, EquationBase
 from adet.fluid.casadi_eos import CasadiEos
 from adet.varspec import VarSpec
 
