@@ -41,6 +41,25 @@ THERMO_CONST_SUFFIX = '__thrmCNS'
 _scale_reg = ScalingRegistry()
 
 
+IPOPT_DEFAULTS = {
+    'error_on_fail': True,
+    # Reasonable defaults for IPOPT, overwritten by user
+    'ipopt.print_level': 3,
+    'ipopt.max_iter': 6000,
+    'ipopt.max_wall_time': 60,
+    'ipopt.tol': 1e-8,
+    'ipopt.acceptable_constr_viol_tol': 1e-10,
+    'ipopt.bound_frac': 0.1,  # Relative initial push < 0.5
+    'ipopt.mu_init': 0.3,  # Initial barrier param
+    'ipopt.mu_strategy': 'adaptive',
+    'ipopt.linear_solver': 'spral',
+    # Lower = stricter restoration (def = 100 * tol)
+    'ipopt.resto_failure_feasibility_threshold': 1e-7,
+    'ipopt.expect_infeasible_problem': 'yes',
+    'ipopt.hessian_approximation': 'limited-memory',  # Less updates
+}
+
+
 class SystemSharedData:
     """
     Shared data container accessible to all managers.
@@ -1139,12 +1158,10 @@ class CasadiSystem(SystemAssembler):
         )
 
         if num_vars != num_residuals:
-            answer = input(
-                f'*** WARNING: Mismatch in number of equations {num_residuals}'
-                f' and variables {num_vars}, continue anyway? [y/n] '
+            logger.warning(
+                f'Mismatch in number of equations {num_residuals}'
+                f' and variables {num_vars}.'
             )
-            if answer not in ('y', 'Y', 'yes'):
-                sys.exit()
 
     def get_residual_indices(self):
         idx = 0
@@ -1291,21 +1308,7 @@ class CasadiSystem(SystemAssembler):
                 'ipopt',
                 rootfind_problem,
                 {
-                    'error_on_fail': True,
-                    # Reasonable defaults for IPOPT, overwritten by user
-                    'ipopt.print_level': 3,
-                    'ipopt.max_iter': 6000,
-                    'ipopt.max_wall_time': 60,
-                    'ipopt.tol': 1e-8,
-                    'ipopt.acceptable_constr_viol_tol': 1e-10,
-                    'ipopt.bound_frac': 0.1,  # Relative initial push < 0.5
-                    'ipopt.mu_init': 0.3,  # Initial barrier param
-                    'ipopt.mu_strategy': 'adaptive',
-                    'ipopt.linear_solver': 'spral',
-                    # Lower = stricter restoration (def = 100 * tol)
-                    'ipopt.resto_failure_feasibility_threshold': 1e-7,
-                    'ipopt.expect_infeasible_problem': 'yes',
-                    'ipopt.hessian_approximation': 'limited-memory',  # Less updates
+                    **IPOPT_DEFAULTS,
                     **opts,
                 },
             )

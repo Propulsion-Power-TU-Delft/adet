@@ -61,7 +61,10 @@ class MeridionalGeometry(MeridionalGeom):
 
 class AnnulusAreas(EquationBase):
     def residual(
-        self, a0: n0.geo.Area.Hint, rr0: n0.geo.RDistr.Hint, hh0: n0.geo.HDistr.Hint
+        self,
+        a0: n0.geo.Area.Hint,
+        rr0: n0.geo.RDistr.Hint,
+        hh0: n0.geo.HDistr.Hint,
     ):
         return a0 - 2 * np.pi * rr0 * hh0
 
