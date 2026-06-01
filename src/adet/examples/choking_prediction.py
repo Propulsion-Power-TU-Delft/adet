@@ -1,10 +1,9 @@
-from adet.equations.nondimensional import AbsoluteMachNumber
 import logging
 
 import casadi as cs
 import numpy as np
 
-from adet.assembly import CasadiSystem, IPOPT_DEFAULTS
+from adet.assembly import IPOPT_DEFAULTS, CasadiSystem
 from adet.equations.fundamental import (
     EulerEquation,
     Kinematics,
@@ -12,8 +11,10 @@ from adet.equations.fundamental import (
     MassConservation,
     TotalStaticMatching,
 )
+from adet.equations.nondimensional import AbsoluteMachNumber
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
 from adet.losses.basic import IsentropicLink
+from adet.registries import ScalingRegistry
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 from adet.variables import NodeVariables
@@ -21,9 +22,12 @@ from adet.variables import NodeVariables
 logger = logging.getLogger(__name__)
 setup_logger(logger)
 
+ScalingRegistry()['K * kg * s / m**2'] = 1000
+
 system = CasadiSystem(1)
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)
+
 
 EQS = {
     EulerEquation(): (0, 1),
@@ -49,6 +53,7 @@ BCS = {
     n0.geo.EffArea: 0.1,
     n1.geo.EffArea: 0.02,
 }
+
 
 abs_state = DebugAbstractState('HEOS', 'Air')
 fluid_model = ExternalFluidModel(abs_state)
@@ -78,23 +83,34 @@ cons_sym = list(system.const_sym.values())
 free_args_symbols = cs.vertcat(*args_sym)
 constraints_symbols = cs.vertcat(*cons_sym)
 
-res_expr_partial = res_func(
+res_expr = res_func(
     free_args_symbols,
     constraints_symbols,
 )
 
+# Manual Lagrangian choking formulation
 mf = system.free_args_sym[n0.oth.MassFlow]
+lamb = cs.MX.sym('lambda', max(res_expr.shape))
+
+# Objective function is massflow
+lagrangian = mf + cs.dot(lamb, res_expr)
+grad_lagrangian = cs.gradient(lagrangian, free_args_symbols)
+
+full_residual = cs.vertcat(res_expr, grad_lagrangian)
+full_variables = cs.vertcat(free_args_symbols, lamb)
+
 
 opt_problem = {
-    'x': free_args_symbols,
-    'p': constraints_symbols,
-    'f': 1 / mf,
-    'g': res_expr_partial,
+    'x': full_variables,  # Free args (with multipliers)
+    'p': constraints_symbols,  # Knowns
+    'g': full_residual,  # Equality constraints = 0
 }
 
 optimizer = cs.nlpsol('optimizer', 'ipopt', opt_problem, IPOPT_DEFAULTS)
 
-x0 = np.concatenate(system.get_scaled_guess())
+x0 = np.concatenate(
+    (system.get_scaled_guess(), np.zeros(lamb.shape)),
+)
 kn = np.concatenate(system.get_scaled_constraints())
 bnd = system.get_arguments_bounds()
 
@@ -102,9 +118,13 @@ kwargs = {
     # Force the root problem
     'lbg': 0,
     'ubg': 0,
-    # Free variables limits
-    'lbx': bnd[0],
-    'ubx': bnd[1],
+    # Free variables limits + far limit on multipliers
+    'lbx': np.concatenate(
+        (bnd[0], -1e20 * np.ones(lamb.shape)),
+    ),
+    'ubx': np.concatenate(
+        (bnd[1], +1e20 * np.ones(lamb.shape)),
+    ),
 }
 
 solution = optimizer(x0=x0, p=kn, **kwargs)
