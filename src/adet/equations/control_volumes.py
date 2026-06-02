@@ -176,14 +176,57 @@ class ObliqueShock(EquationBase):
         )
 
 
+LagMult1 = VarSpec('lamb1', '', node=0, guess=0.0)
+LagMult2 = VarSpec('lamb2', '(kg / s) * (J / kg / K)**-1', node=0, guess=0.0)
+LagMult3 = VarSpec('lamb3', '(kg / s) * (J / kg)**-1', node=0, guess=0.0)
+
+
 class ThroatConditions(EquationBase):
+    config = EquationConfig(
+        input_pair=cp.PT_INPUTS,
+        out_properties=(
+            _thrm.SpeedSound,
+            _thrm.Density,
+            _thrm.Entropy,
+            _thrm.Enthalpy,
+        ),
+    )
+
     def residual(
         self,
-        th: n0.geo.ThroatArea.Hint,
+        mf0: n0.oth.MassFlow.Hint,
+        htr0: n0.rlt.Enthalpy.Hint,
+        U0: n0.kin.BladeSpeed.Hint,
+        s0: n0.stc.Entropy.Hint,
+        # Throat quantities
+        mf_th: n0.oth.ThrMassFlow.Hint,
+        A_th: n0.geo.ThroatArea.Hint,
+        mach_th: n0.kin.MachThroat.Hint,
+        T_th: n0.oth.ThrTemperature.Hint,
+        p_th: n0.oth.ThrPressure.Hint,
+        # lamb1: LagMult1.Hint,
+        # lamb2: LagMult2.Hint,
+        # lamb3: LagMult3.Hint,
     ):
-        #  ____
-        #      \____
-        #       ____
-        #      /
-        #  ````
-        pass
+
+        a_th, rho_th, s_th, h_th = self.eos(p_th, T_th)
+        w_th = mach_th * a_th
+        r0 = mf_th - rho_th * w_th * A_th  # Definition
+
+        roth0 = htr0 - U0**2 / 2
+        U_th = U0  # TODO: Add the throat radius
+        roth_th = h_th + w_th**2 / 2 - U_th**2 / 2
+
+        # Main residuals
+        r1 = mf0 - mf_th
+        r2 = s0 - s_th
+        r3 = roth0 - roth_th
+
+        # Lagrangian step
+        # lagr = mf_th + lamb1 * r1 + lamb2 * r2 + lamb3 * r3
+        # variables = [Wm0, mach_th, p_th]
+        # r_lagr = safe_gradient(lagr, variables)
+        #
+        # residuals.extend(r_lagr)
+
+        return r0, r1, r2, r3

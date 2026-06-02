@@ -140,8 +140,8 @@ class IsentropicProperties(EquationBase):
         h_is1: n1.oth.Enthalpy_Is.Hint,
         T_is1: n1.oth.Tis_stc.Hint,
     ):
-        h_tot_is, T_tot_is = self.eos(p1_tot, s0)
         h_stc_is, T_stc_is = self.eos(p1_stc, s0)
+        h_tot_is, T_tot_is = self.eos(p1_tot, s0)
 
         r1 = h_is_tot1 - h_tot_is
         r2 = T_is_tot1 - T_tot_is

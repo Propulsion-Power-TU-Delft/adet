@@ -163,7 +163,7 @@ class DentonTrapProfile(LossModel):
         W1: n1.kin.W_mag.Hint,
         Vt0: n0.kin.V_tan.Hint,
         Vt1: n1.kin.V_tan.Hint,
-        ch_mf1: n1.oth.ChMassflow.Hint,
+        ch_mf1: n1.oth.ChanMassflow.Hint,
         xi_A1: n1.oth.XiCambLenA.Hint,
         xi_B1: n1.oth.XiCambLenB.Hint,
         k_prof1: n1.oth.ProfileLoading.Hint,

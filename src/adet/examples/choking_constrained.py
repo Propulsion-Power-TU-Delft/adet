@@ -1,10 +1,9 @@
-from adet.equations.nondimensional import AbsoluteMachNumber
 import logging
 
 import casadi as cs
 import numpy as np
 
-from adet.assembly import CasadiSystem, IPOPT_DEFAULTS
+from adet.assembly import IPOPT_DEFAULTS, CasadiSystem
 from adet.equations.fundamental import (
     EulerEquation,
     Kinematics,
@@ -12,6 +11,7 @@ from adet.equations.fundamental import (
     MassConservation,
     TotalStaticMatching,
 )
+from adet.equations.nondimensional import AbsoluteMachNumber
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
 from adet.losses.basic import IsentropicLink
 from adet.tools.coolprop_utils import DebugAbstractState
@@ -22,33 +22,63 @@ logger = logging.getLogger(__name__)
 setup_logger(logger)
 
 system = CasadiSystem(1)
+# Some nodes
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)
+n2 = NodeVariables(2)
+n3 = NodeVariables(3)
+n4 = NodeVariables(4)
+n5 = NodeVariables(5)
+n6 = NodeVariables(6)
+n7 = NodeVariables(7)
+n8 = NodeVariables(8)
+
+
+def add_node(idx: int):
+    return {  # *** Node 1
+        Kinematics(): idx,
+        MassAreaRelation(): idx,
+        AbsoluteMachNumber(): idx,
+        TotalStaticMatching(): idx,
+        # --- 0 -> 1
+        EulerEquation(): (idx - 1, idx),
+        MassConservation(): (idx - 1, idx),
+        IsentropicLink(): (idx - 1, idx),
+    }
+
 
 EQS = {
-    EulerEquation(): (0, 1),
-    MassConservation(): (0, 1),
-    IsentropicLink(): (0, 1),
-    MassAreaRelation(): 0,
-    MassAreaRelation(): 1,
+    # *** Node 0
     Kinematics(): 0,
-    Kinematics(): 1,
-    TotalStaticMatching(): 0,
-    TotalStaticMatching(): 1,
+    MassAreaRelation(): 0,
     AbsoluteMachNumber(): 0,
-    AbsoluteMachNumber(): 1,
+    TotalStaticMatching(): 0,
+    **add_node(1),
+    **add_node(2),
+    **add_node(3),
 }
 
 BCS = {
     n0.tot.Pressure: 20e5,
-    n0.tot.Temperature: 300,
+    n0.tot.Temperature: 500,
     n0.kin.FlowAngleAbs: 0,
     # n0.oth.MassFlow: 10.0,
     n0.kin.Omega: 0,
     n0.geo.RDistr: 0.1,
+    # Areas
     n0.geo.EffArea: 0.1,
     n1.geo.EffArea: 0.02,
+    n2.geo.EffArea: 0.05,
+    n3.geo.EffArea: 0.01,
 }
+
+#  ------
+#        \     /```````\___
+#         \___/
+#
+#  |      |     |         |
+#
+#  0      1     2         3
 
 abs_state = DebugAbstractState('HEOS', 'Air')
 fluid_model = ExternalFluidModel(abs_state)
@@ -61,9 +91,14 @@ system.fluid_settings = FluidSettings(
 
 [system.add_equation(eq, pos) for eq, pos in EQS.items()]
 system.add_equalities(
-    (n0.kin.Omega, n1.kin.Omega),
-    (n0.geo.RDistr, n1.geo.RDistr),
-    (n0.kin.FlowAngleAbs, n1.kin.FlowAngleAbs),
+    (n0.kin.Omega, n1.kin.Omega, n2.kin.Omega, n3.kin.Omega),
+    (n0.geo.RDistr, n1.geo.RDistr, n2.geo.RDistr, n3.geo.RDistr),
+    (
+        n0.kin.FlowAngleAbs,
+        n1.kin.FlowAngleAbs,
+        n2.kin.FlowAngleAbs,
+        n3.kin.FlowAngleAbs,
+    ),
 )
 
 system.add_boundary_conditions(BCS)
@@ -78,7 +113,7 @@ cons_sym = list(system.const_sym.values())
 free_args_symbols = cs.vertcat(*args_sym)
 constraints_symbols = cs.vertcat(*cons_sym)
 
-res_expr_partial = res_func(
+res_expr = res_func(
     free_args_symbols,
     constraints_symbols,
 )
@@ -89,14 +124,27 @@ opt_problem = {
     'x': free_args_symbols,
     'p': constraints_symbols,
     'f': 1 / mf,
-    'g': res_expr_partial,
+    'g': res_expr,
 }
 
-optimizer = cs.nlpsol('optimizer', 'ipopt', opt_problem, IPOPT_DEFAULTS)
+optimizer = cs.nlpsol(
+    'optimizer',
+    'ipopt',
+    opt_problem,
+    {**IPOPT_DEFAULTS, 'error_on_fail': False},
+)
 
 x0 = np.concatenate(system.get_scaled_guess())
 kn = np.concatenate(system.get_scaled_constraints())
-bnd = system.get_arguments_bounds()
+bnd = system.get_arguments_bounds(
+    {
+        n0.stc.Pressure.Glob: (1e2, 30e5),
+        n0.stc.Temperature.Glob: (150.0, 1e4),
+        n2.kin.Mach: (1.0, 100.0),
+        # n3.kin.Mach: (0.0, 1.0),
+    },
+    ignore_defaults=True,
+)
 
 kwargs = {
     # Force the root problem

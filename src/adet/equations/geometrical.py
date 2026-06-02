@@ -194,7 +194,7 @@ class BladePitch(EquationBase):
         pitch0: n0.geo.Pitch.Hint,
         n_blades0: n0.geo.NumBlades.Hint,
         mf0: n0.oth.MassFlow.Hint,
-        ch_mf0: n0.oth.ChMassflow.Hint,
+        ch_mf0: n0.oth.ChanMassflow.Hint,
     ):
         r1 = pitch0 * n_blades0 - 2 * np.pi * rr0
         r2 = n_blades0 * ch_mf0 - mf0

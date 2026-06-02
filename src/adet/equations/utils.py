@@ -89,6 +89,20 @@ def safe_mean(x):
     return safe_sum(x) / size
 
 
+def safe_gradient(
+    expression: cs.MX | Quantity,
+    variables: list[cs.MX | Quantity],
+) -> list[cs.MX | Quantity]:
+    if any_is_qty(*variables):
+        return [expression / v for v in variables]
+    else:
+        # dep(0) -> Take only the variables, not the scaling factors
+        cat_vars = cs.vertcat(*(v.dep(0) for v in variables))
+        scales = [v.dep(1) for v in variables]
+        grad = cs.gradient(expression, cat_vars)
+        return [val / scl for val, scl in zip(cs.vertsplit(grad), scales)]
+
+
 def safe_min_clip(x, min_value):
     """
     Lower clipping of the absolute vaue of x

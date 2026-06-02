@@ -27,7 +27,7 @@ class DentonTrapLeakage(LossModel):
         W0: n0.kin.W_mag.Hint,
         W1: n1.kin.W_mag.Hint,
         camb_len1: n1.geo.CamberLength.Hint,
-        ch_mf1: n1.oth.ChMassflow.Hint,
+        ch_mf1: n1.oth.ChanMassflow.Hint,
         xi_A1: n1.oth.XiCambLenA.Hint,
         xi_B1: n1.oth.XiCambLenB.Hint,
         k_prof1: n1.oth.ProfileLoading.Hint,

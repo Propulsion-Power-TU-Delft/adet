@@ -3,13 +3,11 @@ Numerical methods implementation
 """
 
 import logging
-from typing import Callable
 from collections import namedtuple
-import casadi as cs
+from typing import Callable
 
-import jax.numpy as jnp
 import jax
-
+import jax.numpy as jnp
 
 logger = logging.getLogger(__name__)
 
