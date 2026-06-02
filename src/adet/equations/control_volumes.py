@@ -194,14 +194,14 @@ class ThroatConditions(EquationBase):
 
     def residual(
         self,
-        mf0: n0.oth.MassFlow.Hint,
-        htr0: n0.rlt.Enthalpy.Hint,
+        mf0: n0.oth.ChokeMassflow.Hint,
+        htr0: n0.oth.RltEnthalpyChoke.Hint,
         U0: n0.kin.BladeSpeed.Hint,
         s0: n0.stc.Entropy.Hint,
         # Throat quantities
         mf_th: n0.oth.ThrMassFlow.Hint,
         A_th: n0.geo.ThroatArea.Hint,
-        mach_th: n0.kin.MachThroat.Hint,
+        mach_th: n1.kin.MachThroat.Hint,
         T_th: n0.oth.ThrTemperature.Hint,
         p_th: n0.oth.ThrPressure.Hint,
         # lamb1: LagMult1.Hint,
