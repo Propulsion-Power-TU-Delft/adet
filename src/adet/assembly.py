@@ -7,7 +7,6 @@ Sometimes the CasADi api is slightly cryptic, sorry.
 """
 
 import logging
-import sys
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from itertools import accumulate
@@ -485,14 +484,15 @@ class UnitScalingManager:
         for spec in self.data.free_args:
             if spec in custom_bounds:
                 lower_bound, upper_bound = custom_bounds[spec]
-            elif spec.Glob in custom_bounds:
-                lower_bound, upper_bound = custom_bounds[spec.Glob]
             else:
-                if not spec.bounds or ignore_defaults:
-                    lower_bound = -1e20
-                    upper_bound = 1e20
+                if spec.Glob in custom_bounds:
+                    lower_bound, upper_bound = custom_bounds[spec.Glob]
                 else:
-                    lower_bound, upper_bound = spec.bounds
+                    if spec.bounds is None or ignore_defaults:
+                        lower_bound = -1e20
+                        upper_bound = 1e20
+                    else:
+                        lower_bound, upper_bound = spec.bounds
 
             scaling = _scale_reg.get(spec.unit)
             bounds.append(
@@ -1058,17 +1058,15 @@ class CasadiSystem(SystemAssembler):
         for equal_args in self.data.equalities:
             eq_args_ls = list(equal_args)
             arg_couples = [(eq_args_ls[0], arg) for arg in eq_args_ls[1:]]
-            for arg_tuple in arg_couples:
+            for two_args in arg_couples:
                 # If both argument do not appear in the equations, skip to next couple
                 # if one of them is unused by other eqns. it is useless to add it
-                if not set(arg_tuple).issubset(self._all_symbols):
+                if not set(two_args).issubset(self._all_symbols):
                     continue
+                sym0 = self._all_symbols[two_args[0]]
+                sym1 = self._all_symbols[two_args[1]]
 
-                sym0 = self._all_symbols[arg_tuple[0]]
-                sym1 = self._all_symbols[arg_tuple[1]]
-
-                # NOTE: We don't care about scaling, they
-                # are just identities, either on scaled or unscaled vars
+                # NOTE: We don't care about scaling, they are just identities
                 equalities_expressions.append(sym1 - sym0)
 
         return equalities_expressions

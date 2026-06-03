@@ -6,6 +6,7 @@ from adet.equations import EquationBase
 from adet.equations.base_equation import EquationConfig, MeridAreaBlockage
 from adet.equations.utils import (
     get_midspan_idx,
+    safe_min,
     safe_sum,
     span_fin_diff,
 )
@@ -54,6 +55,17 @@ class TotalMassFlow(EquationBase):
 
     def residual(self, cum_mf0: n0.oth.CumMassFlow.Hint, mf0: n0.oth.MassFlow.Hint):
         return cum_mf0 - safe_sum(mf0)
+
+
+class LimitedMassflow(EquationBase):
+    def residual(
+        self,
+        mf_target: n0.oth.TgtMassFlow.Hint,
+        mf_actual: n0.oth.MassFlow.Hint,
+        mf_choke: n0.oth.ChokeMassflow.Hint,
+    ):
+
+        return mf_actual - safe_min(mf_target, mf_choke)
 
 
 class TotalArea(EquationBase):
