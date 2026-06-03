@@ -2,9 +2,9 @@ import logging
 
 import casadi as cs
 import numpy as np
+from pint import Quantity
 
 from adet.assembly import IPOPT_DEFAULTS, CasadiSystem
-from adet.equations.base_equation import EquationBase
 from adet.equations.control_volumes import ThroatConditions
 from adet.equations.fundamental import (
     EulerEquation,
@@ -13,8 +13,7 @@ from adet.equations.fundamental import (
     MassConservation,
     TotalStaticMatching,
 )
-from adet.equations.nondimensional import AbsoluteMachNumber
-from adet.equations.utils import safe_if_else, safe_max, safe_min
+from adet.equations.nondimensional import RelativeMachNumber
 from adet.fluid.settings import ExternalFluidModel, FluidSettings
 from adet.losses.basic import IsentropicLink
 from adet.tools.coolprop_utils import DebugAbstractState
@@ -42,9 +41,8 @@ def add_node(idx: int):
         Kinematics(): idx,
         MassAreaRelation(): idx,
         TotalStaticMatching(): idx,
-        ThroatConditions(): (idx - 1, idx),
-        # LimitedMach(): idx,
-        AbsoluteMachNumber(): idx,
+        ThroatConditions(): idx - 1,
+        RelativeMachNumber(): idx,
         # --- 0 -> 1
         EulerEquation(): (idx - 1, idx),
         MassConservation(): (idx - 1, idx),
@@ -52,38 +50,11 @@ def add_node(idx: int):
     }
 
 
-class LimitedMach(EquationBase):
-    def residual(
-        self,
-        mach_th: n0.kin.MachThroat.Hint,
-        a1: n0.stc.SpeedSound.Hint,
-        W1: n0.kin.W_mag.Hint,
-        mach1: n0.kin.Mach.Hint,
-    ):
-
-        res_lim = W1 - safe_max(1.0 * a1, mach1 * a1)
-        res_unl = W1 - mach1 * a1
-
-        return safe_if_else(mach_th >= 0.99, res_lim, res_unl)
-
-
-class LimitedMassflow(EquationBase):
-    def residual(
-        self,
-        mf_target: n0.oth.TgtMassFlow.Hint,
-        mf_actual: n0.oth.MassFlow.Hint,
-        mf_choke: n0.oth.ChokeMassflow.Hint,
-    ):
-
-        return mf_actual - safe_min(mf_target, mf_choke)
-
-
 EQS = {
     # *** Node 0
-    # LimitedMassflow(): 0,
     Kinematics(): 0,
     MassAreaRelation(): 0,
-    AbsoluteMachNumber(): 0,
+    RelativeMachNumber(): 0,
     TotalStaticMatching(): 0,
     **add_node(1),
     **add_node(2),
@@ -94,15 +65,18 @@ BCS = {
     # n0.oth.TgtMassFlow: 109,
     n0.tot.Pressure: 20e5,
     n0.tot.Temperature: 500,
-    n0.kin.FlowAngleAbs: 0,
+    n0.kin.FlowAngleAbs: Quantity(0, 'deg'),
+    # n1.kin.FlowAngleRel: Quantity(-20, 'deg'),
     # n0.oth.MassFlow: 10.0,
     n0.kin.Omega: 0,
     n0.geo.RDistr: 0.1,
     # Areas
     n0.geo.EffArea: 0.1,
     n0.geo.ThroatArea: 0.05,
+    n0.geo.ThroatRadius: 0.1,
     n1.geo.EffArea: 0.08,
     n1.geo.ThroatArea: 0.03,
+    n1.geo.ThroatRadius: 0.1,
     n2.geo.EffArea: 0.07,
 }
 
@@ -150,7 +124,7 @@ res_expr = res_func(
 )
 
 # Manual Lagrangian choking formulation
-mf = system.free_args_sym[n1.oth.ThrMassFlow]
+mf = system.free_args_sym[n1.oth.MassFlow]
 lamb = cs.MX.sym('lambda', max(res_expr.shape))
 
 # Objective function is massflow
@@ -175,17 +149,20 @@ optimizer = cs.nlpsol(
 )
 
 x0 = np.concatenate(
-    (system.get_scaled_guess(), np.zeros(lamb.shape)),
+    (system.get_scaled_guess(), np.ones(lamb.shape)),
 )
 kn = np.concatenate(system.get_scaled_constraints())
 bnd = system.get_arguments_bounds(
     {
         # Node limiters
-        n0.stc.Pressure.Glob: (1e2, 30e5),
-        n0.stc.Temperature.Glob: (150.0, 1e4),
+        n0.stc.Pressure.Glob: (1, 1e7),
+        n0.stc.Temperature.Glob: (150, 1e4),
         # Throat limiters
-        n0.oth.ThrPressure.Glob: (1e2, 30e5),
-        n0.oth.ThrTemperature.Glob: (150.0, 1e4),
+        n0.oth.ThrPressure.Glob: (1, 1e7),
+        n0.oth.ThrTemperature.Glob: (150, 1e4),
+        # Inlet Mach limit
+        # n0.kin.MachThroat.Glob: (0.0, 1.01),
+        n0.kin.RelMach: (0.0, 1.0),
     },
     ignore_defaults=True,
 )
@@ -204,5 +181,8 @@ kwargs = {
 }
 
 solution = optimizer(x0=x0, p=kn, **kwargs)
+
+rtfn = cs.rootfinder('rtfn', 'kinsol', opt_problem)
+rtfn(x0=solution['x'], p=kn)
 
 sol_data = system.sol_to_dict(solution['x'].toarray().flatten())

@@ -206,28 +206,28 @@ def incomp_mixing_zeta(
 class AungierDeviationModel(DeviationModel):
     def residual(
         self,
-        kin_beta0,
-        kin_relmach0,
-        geo_metal_angle0,
+        beta_out: n0.kin.FlowAngleRel.Hint,
+        mach_out: n0.kin.RelMach.Hint,
+        met_angle: n0.geo.MetalAngle.Hint,
     ):
-        cos_beta = np.cos(geo_metal_angle0)  # > 0
-        beta = safe_abs(geo_metal_angle0)  # > 0
-        delta0_rad = beta - np.arccos(
-            cos_beta * (1 + (1 - cos_beta) * (2 * beta / np.pi) ** 2)  # pyright:ignore
+        cos_beta = np.cos(met_angle)  # > 0
+        beta_abs = safe_abs(met_angle)  # > 0
+        delta0_rad = beta_abs - np.arccos(
+            cos_beta * (1 + (1 - cos_beta) * (2 * beta_abs / np.pi) ** 2)
         )
 
-        X = 2 * kin_relmach0 - 1
+        X = 2 * mach_out - 1
         delta_sub_rad = delta0_rad * (1 - 10 * X**3 + 15 * X**4 - 6 * X**5)
 
         deviation_rad = safe_if_else(
-            kin_relmach0 <= 0.5,
+            mach_out <= 0.5,
             delta0_rad,
             delta_sub_rad,
         )
 
-        deviation_rad = -np.sign(geo_metal_angle0) * deviation_rad
+        deviation_rad = -np.sign(met_angle) * deviation_rad
 
-        return kin_beta0 - (geo_metal_angle0 + deviation_rad)
+        return beta_out - (met_angle + deviation_rad)
 
 
 class AungierSimpleMixLoss(LossModel):

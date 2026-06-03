@@ -194,16 +194,18 @@ class ThroatConditions(EquationBase):
 
     def residual(
         self,
-        mf0: n0.oth.ChokeMassflow.Hint,
-        htr0: n0.oth.RltEnthalpyChoke.Hint,
+        mf0: n0.oth.MassFlow.Hint,
+        htr0: n0.rlt.Enthalpy.Hint,
         U0: n0.kin.BladeSpeed.Hint,
         s0: n0.stc.Entropy.Hint,
         # Throat quantities
-        mf_th: n0.oth.ThrMassFlow.Hint,
         A_th: n0.geo.ThroatArea.Hint,
-        mach_th: n1.kin.MachThroat.Hint,
-        T_th: n0.oth.ThrTemperature.Hint,
         p_th: n0.oth.ThrPressure.Hint,
+        mf_th: n0.oth.ThrMassFlow.Hint,
+        mach_th: n0.kin.MachThroat.Hint,
+        T_th: n0.oth.ThrTemperature.Hint,
+        omega: n0.kin.Omega.Hint,
+        r_th: n0.geo.ThroatRadius.Hint,
         # lamb1: LagMult1.Hint,
         # lamb2: LagMult2.Hint,
         # lamb3: LagMult3.Hint,
@@ -211,11 +213,10 @@ class ThroatConditions(EquationBase):
 
         a_th, rho_th, s_th, h_th = self.eos(p_th, T_th)
         w_th = mach_th * a_th
-        r0 = mf_th - rho_th * w_th * A_th  # Definition
+        r0 = mf_th - rho_th * w_th * A_th  # Massflow definition
 
         roth0 = htr0 - U0**2 / 2
-        U_th = U0  # TODO: Add the throat radius
-        roth_th = h_th + w_th**2 / 2 - U_th**2 / 2
+        roth_th = h_th + w_th**2 / 2 - U0**2 / 2
 
         # Main residuals
         r1 = mf0 - mf_th
