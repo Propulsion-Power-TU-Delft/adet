@@ -1061,13 +1061,14 @@ class CasadiSystem(SystemAssembler):
             for two_args in arg_couples:
                 # If both argument do not appear in the equations, skip to next couple
                 # if one of them is unused by other eqns. it is useless to add it
-                if not set(two_args).issubset(self._all_symbols):
-                    continue
-                sym0 = self._all_symbols[two_args[0]]
-                sym1 = self._all_symbols[two_args[1]]
+                if set(two_args).intersection(self._all_symbols):
+                    # TODO: Make this fail more gracefully
+                    # or add the equalities to free arguments
+                    sym0 = self._all_symbols[two_args[0]]
+                    sym1 = self._all_symbols[two_args[1]]
 
-                # NOTE: We don't care about scaling, they are just identities
-                equalities_expressions.append(sym1 - sym0)
+                    # NOTE: We don't care about scaling, they are just identities
+                    equalities_expressions.append(sym1 - sym0)
 
         return equalities_expressions
 

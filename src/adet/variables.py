@@ -128,7 +128,7 @@ class Nondimensional(VariableEnum):
     PRatio = VarSpec('pRatio', '')
     VmRatio = VarSpec('VmRatio', '', 1.0)
     PRatioTT = VarSpec('pRatio_tt', '')
-    PRatioTS = VarSpec('pRatio_ts', '')
+    PRatioTS = VarSpec('pRatio_ts', '', guess=1.0)
     RhoRatio = VarSpec('rhoRatio', '')
     WorkCoeff = VarSpec('work_coeff', '')
     FlowCoeff = VarSpec('flow_coeff', '', 0.8)

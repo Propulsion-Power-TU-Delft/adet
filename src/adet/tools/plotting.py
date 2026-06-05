@@ -21,7 +21,7 @@ def setup_mpl(fontdict: dict[str, Any] = {}):
     try:
         fm.fontManager.addfont(
             path='C:/Users/fvaccari/AppData/Local/Microsoft/Windows/'
-            'Fonts/EBGaramond-VariableFont_wght.ttf',
+            'Fonts/EBGaramond-Regular.ttf',
         )
         fm.fontManager.addfont(
             path='C:/Users/fvaccari/AppData/Local/Microsoft/Windows/'
