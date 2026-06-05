@@ -42,5 +42,6 @@ class GeometricalAdder(EquationBase):
         h0: n0.geo.Height.Hint,
         rr_mid0: n0.geo.Rmid.Hint,
         mer_angle0: n0.geo.MeridionalAngle.Hint,
+        rr0: n0.geo.RDistr.Hint,
     ):
         return ()
