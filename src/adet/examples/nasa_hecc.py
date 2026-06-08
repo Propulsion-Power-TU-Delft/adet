@@ -3,12 +3,11 @@ import logging
 import CoolProp as cp
 import matplotlib.pyplot as plt
 import numpy as np
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes, mark_inset
 from pint import Quantity
 
 from adet.assembly import CasadiSystem
 from adet.components import BladeRow
-from adet.components.blade_row import VanelessDiffuser, plot_from_nodes
+from adet.components.blade_row import RowGeometry, VanelessDiffuser
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.base_equation import EquationConfig, LossApplier
@@ -21,8 +20,6 @@ from adet.equations.geometrical import MinimalCamberLine
 from adet.equations.nondimensional import (
     TotalTotalPressureRatio,
 )
-from adet.equations.utils import residual_debugger
-from adet.variables import NodeVariables, ThermoVariables
 from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
 from adet.losses.basic import (
@@ -46,6 +43,8 @@ from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.interpolation import resample_linear
 from adet.tools.loggers import setup_logger
+from adet.tools.plotting import setup_mpl
+from adet.variables import NodeVariables, ThermoVariables
 
 logger = logging.Logger(__name__)
 setup_logger(logger)
@@ -56,21 +55,21 @@ n2 = NodeVariables(2)
 n3 = NodeVariables(3)
 
 
-plt.rcParams.update(
+setup_mpl(
     {
-        'text.usetex': True,
-        'font.family': 'serif',
+        'font.family': 'EB Garamond',
+        'font.size': 30,
     }
 )
 
 NUM_SPAN = 5
 ENABLE_LOSSES = True
-RUN_MULTI = True
+RUN_MULTI = False
 RUN_SPEEDLINES = False
 SPDL_PTS = 50  # Number of speedline points
 RPM_DES = 21000  #
 #
-RUN_PLOTS = False  # plotting section
+RUN_PLOTS = True  # plotting section
 SHOW_PLOTS = True  # non-interactive testing
 
 # +++ Shafts
@@ -93,7 +92,7 @@ fluid_model_ideal = AnalyticalFluidModel(
 )
 thrm = ThermoVariables()
 fluid_settings = FluidSettings(
-    model=fluid_model_ideal,
+    model=fluid_model_real,
     update_variables=(
         thrm.Pressure,
         thrm.Temperature,
@@ -786,143 +785,56 @@ if __name__ == '__main__':
 
     # ---------------- PLOT ---------------------
     if RUN_PLOTS and not RUN_SPEEDLINES:
+        from adet.tools.plotting import plot_velocity_triangles
+
         fig, axs = plt.subplots(2, 2, figsize=(8, 20))
-        if len(ntw_hecc.components) > 2:
-            plottable_components = ntw_hecc.components[1:]
-        else:
-            plottable_components = ntw_hecc.components
 
-        for cmp_idx, comp in enumerate(plottable_components):
-            inlet_node = comp.get_inlet_node(ntw_hecc)
-            outlet_node = comp.get_outlet_node(ntw_hecc)
-
-            if inlet_node is None or outlet_node is None:
-                raise ValueError('Missing nodes')
-
-            node_idx = 0
-            for n in (inlet_node, outlet_node):
-                ax = axs[cmp_idx][node_idx]
-
-                ax.set_title(f'Node number {2 * cmp_idx + node_idx}')
+        # Node pairs: (inlet, outlet) for each component
+        node_pairs = [(n0, n1), (n1, n2)]
+        for plot_idx, (inlet_n, outlet_n) in enumerate(node_pairs):
+            for node_idx, n in enumerate([inlet_n, outlet_n]):
+                ax = axs[plot_idx][node_idx]
                 ax.set_aspect('equal')
-                n.kin.plot(n.geo, 8, ax)
 
-                node_idx += 1
-
-        fig, ax = plt.subplots(figsize=(10, 7))
-        ax.set_aspect('equal')
-        offset = 0.0
-        impeller_outlet_x = None
-        impeller_outlet_y = None
-
-        for comp in plottable_components:
-            if comp == vaneless_diff:
-                continue
-            inlet_node = comp.get_inlet_node(ntw_hecc)
-            outlet_node = comp.get_outlet_node(ntw_hecc)
-            if not inlet_node or not outlet_node:
-                raise ValueError('missing nodes')
-
-            lines = plot_from_nodes(
-                inlet_node,
-                outlet_node,
-                False,
-                offset,
-                'k',
-                ax,
-            )
-
-            MAIN_MARK_SIZE = 7
-            STT_COLOR = '#b31529'
-            # Only plot impeller outlet
-            ax.plot(
-                np.ones(NUM_SPAN) * offset,
-                inlet_node.geo.rr,
-                'o',
-                color=STT_COLOR,
-                markersize=MAIN_MARK_SIZE,
-            )
-
-            offset += outlet_node.geo.chord_ax[0]
-            hh_points = (
-                offset - outlet_node.geo.height / 2 + np.cumsum(outlet_node.geo.hh)
-            )
-            rr_points = hh_points - outlet_node.geo.hh / 2
-            ax.plot(
-                rr_points,
-                outlet_node.geo.rr,
-                'o',
-                color=STT_COLOR,
-                markersize=MAIN_MARK_SIZE,
-            )
-            ax.grid(alpha=0.4)
-            # Store outlet location for inset
-            impeller_outlet_x = rr_points
-            impeller_outlet_y = outlet_node.geo.rr
-
-        # Increase label and title font sizes
-        ax.set_xlabel(
-            r'$z$ [m]',
-            fontsize=35,
-            # fontweight='bold',
-        )
-        ax.set_ylabel(
-            r'$r$ [m]',
-            fontsize=35,
-            # fontweight='bold',
-        )
-        # ax.set_title('Impeller Geometry', fontsize=14, fontweight='bold')
-        ax.tick_params(axis='both', labelsize=30)
-
-        # Add inset axis for zoomed region
-        axins = inset_axes(
-            ax, width='40%', height='40%', loc='upper left', borderpad=1.5
-        )
-        axins.set_aspect('equal')
-
-        # Plot zoomed region on inset
-        inset_offset = 0.0
-        for comp in plottable_components:
-            if comp == vaneless_diff:
-                continue
-            inlet_node = comp.get_inlet_node(ntw_hecc)
-            outlet_node = comp.get_outlet_node(ntw_hecc)
-
-            # Plot geometry on inset
-            plot_from_nodes(
-                inlet_node,
-                outlet_node,
-                False,
-                inset_offset,
-                'k',
-                axins,
-            )
-
-            inset_offset += outlet_node.geo.chord_ax[0]
-
-            # Replot outlet points on inset
-            if impeller_outlet_x is not None and impeller_outlet_y is not None:
-                axins.plot(
-                    impeller_outlet_x,
-                    impeller_outlet_y,
-                    'o',
-                    color=STT_COLOR,
-                    markersize=10,
+                plot_velocity_triangles(
+                    sol_is_dict[n.kin.V_tan],
+                    sol_is_dict[n.kin.V_mer],
+                    sol_is_dict[n.kin.BladeSpeed],
+                    sol_is_dict[n.geo.RDistr],
+                    ax,
+                    fontsize=8,
                 )
 
-        # Set zoom region
-        axins.set_xlim(0.125, 0.145)
-        axins.set_ylim(0.21, 0.218)
-        axins.tick_params(labelbottom=False, labelleft=False)
-        # axins.set_xlabel('Axial [m]', fontsize=11, fontweight='bold')
-        # axins.set_ylabel('Radial [m]', fontsize=11, fontweight='bold')
-        # axins.set_title('Outlet Detail', fontsize=12, fontweight='bold')
+        fig, ax = plt.subplots(figsize=(12, 7))
+        ax.set_aspect('equal')
 
-        # Add grid to inset
-        axins.grid(True, alpha=0.3)
+        # Plot meridional profile for impeller only
+        inlet_n = n0
+        outlet_n = n1
 
-        # Connect inset to main axis with lines
-        mark_inset(ax, axins, loc1=2, loc2=4, fc='none', ec='0.5')
+        r_in = float(sol_is_dict[inlet_n.geo.Rmid][0])
+        r_out = float(sol_is_dict[outlet_n.geo.Rmid][0])
+        height_in = float(sol_is_dict[inlet_n.geo.Height][0])
+        height_out = float(sol_is_dict[outlet_n.geo.Height][0])
+        mer_angle_in = float(sol_is_dict[inlet_n.geo.MeridionalAngle][0])
+        mer_angle_out = float(sol_is_dict[outlet_n.geo.MeridionalAngle][0])
+        axial_chord = float(sol_is_dict[outlet_n.geo.ChordAx][0])
+
+        geom = RowGeometry(
+            r_in=r_in,
+            r_out=r_out,
+            height_in=height_in,
+            height_out=height_out,
+            mer_angle_in=mer_angle_in,
+            mer_angle_out=mer_angle_out,
+            axial_chord=axial_chord,
+        )
+        geom.plot_meridional_profile(color='k', ax=ax)
+
+        ax.set_title('Meridional profile')
+        ax.set_xlabel(r'$z$ / [m]')
+        ax.set_ylabel(r'$r$ / [m]')
+        ax.grid(True, alpha=0.3)
 
         fig.tight_layout()
         if SHOW_PLOTS:
@@ -930,8 +842,6 @@ if __name__ == '__main__':
         else:
             plt.close('all')
 
-        globals().update(residual_debugger(FullIncidence(), [n0]))
-        globals().update(residual_debugger(IncidenceGalvas(), [n0, n1]))
         spanwise = np.arange(len(n1.oth.delta_hmass_loading))
         plt.stackplot(
             spanwise,

@@ -45,7 +45,6 @@ from adet.losses.mixing import (
     MixingMomentumBalances,
     SieverdingBasePressure,
 )
-from adet.node import FlowNode
 
 if TYPE_CHECKING:
     from adet.components.network import ComponentNetwork
@@ -604,47 +603,6 @@ class RowGeometry:
 
         self.merdional_surface_area += np.sign(self._le_sign) * self._le_curve.area
         self.merdional_surface_area += -np.sign(self._te_sign) * self._te_curve.area
-
-
-def plot_from_nodes(
-    n0: FlowNode | None,
-    n1: FlowNode | None,
-    semi_cone_angle: bool = False,
-    axial_offset: float = 0.0,
-    color: tuple | str = 'k',
-    ax=None,
-    force_straight: bool = False,
-):
-    """
-    Utility plot function, for now the chord is
-    just specified manually, to be deleted
-    """
-
-    if n0 is None or n1 is None:
-        raise AttributeError('None nodes found')
-
-    TO_READ = ('rr_midspan', 'height', 'meridional_angle')
-
-    args = []
-    for var in TO_READ:
-        for node in [n0, n1]:
-            args.append(node.geo.get(var).to_base_units().magnitude[0])
-
-    args.append(n1.geo.chord_ax[0])
-
-    geom = RowGeometry(
-        *args,
-        semi_cone_angle=semi_cone_angle,
-        axial_offset=axial_offset,
-        force_straight=force_straight,
-    )
-
-    lines = geom.plot_meridional_profile(color, ax=ax)
-
-    for line in lines:
-        line.set_linewidth(2.5)
-
-    return lines
 
 
 def geometry_main(geo_inputs, color):
