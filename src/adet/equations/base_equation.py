@@ -61,10 +61,10 @@ class EmbeddedEos:
 class EquationConfig:
     """Configuration for equation class properties"""
 
+    input_pair: int = 0
     manual_units: tuple[str, ...] = ()
     scaling_factor: tuple[float | None, ...] | None = None
-    input_pair: int = 0
-    out_properties: tuple[VarSpec, ...] = ()  # TODO: Potentially phase out
+    out_properties: tuple[VarSpec, ...] = ()
 
 
 class EquationBase(ABC):
@@ -97,7 +97,7 @@ class EquationBase(ABC):
             if cls.config.input_pair and cls.config.out_properties:
                 cls._eos = EmbeddedEos()
                 cls._eos.parent = self
-                cls._eos.out_pties = self.config.out_properties
+                cls._eos.out_pties = [pty.Glob for pty in self.config.out_properties]
 
         if custom_scaling_factor:
             self._scaling_factor = custom_scaling_factor
@@ -152,7 +152,7 @@ class EquationBase(ABC):
 
         vars_specs = []
         for arg in all_args:
-            # NOTE: Only use the first annotation by convention
+            # NOTE: Only use the first annotation is used by convention!
             hint = args_hints[arg]
             spec = cast(VarSpec, hint.__metadata__[0])
             logger.debug(f'Variable is {spec}')
@@ -183,13 +183,14 @@ class EquationBase(ABC):
             cls.config = EquationConfig()
 
         config = cls.config
+        # This checks if both exist
         if bool(config.out_properties) != bool(config.input_pair):
             raise ValueError(
                 f'Please specify both input_pair and out_properties in {cls}'
             )
 
-        # if config.input_pair and config.manual_units:
-        #     logger.warning(f'{cls.__name__} defines manual units, may not be necessary')
+        if config.manual_units:
+            logger.debug(f'{cls.__name__} defines its units manually')
 
         return super().__init_subclass__()
 
@@ -197,7 +198,10 @@ class EquationBase(ABC):
     def eos(self) -> Callable:
         cls = self.__class__
         return cast(
-            Callable[[Any, Any], tuple[Any, ...]],
+            Callable[
+                [Any, Any],
+                tuple[Any, ...],
+            ],
             cls._eos,
         )
 
