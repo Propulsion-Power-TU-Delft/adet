@@ -2,11 +2,12 @@
 Compare experimental speedline data with computed results from nasa_hecc.py
 """
 
+import importlib.util
 import json
 import pathlib
-import importlib.util
-import numpy as np
+
 import matplotlib.pyplot as plt
+import numpy as np
 
 # Load speedline data from data directory
 data_dir = (

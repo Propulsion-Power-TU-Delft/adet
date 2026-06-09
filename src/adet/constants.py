@@ -1,8 +1,8 @@
 from enum import Enum
 from typing import Literal, Union
-from numpy.typing import NDArray
 
 import CoolProp as cp
+from numpy.typing import NDArray
 
 NodeStatesNames = Literal['stc', 'tot', 'rlt', 'kin', 'geo', 'oth']
 

@@ -1,6 +1,7 @@
-from pathlib import Path
-from art import tprint
 from datetime import datetime
+from pathlib import Path
+
+from art import tprint
 
 current_year = datetime.now().year
 

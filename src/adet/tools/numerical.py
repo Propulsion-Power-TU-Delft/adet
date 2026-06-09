@@ -6,7 +6,6 @@ import logging
 from collections import namedtuple
 from typing import Callable
 
-import jax
 import jax.numpy as jnp
 
 logger = logging.getLogger(__name__)

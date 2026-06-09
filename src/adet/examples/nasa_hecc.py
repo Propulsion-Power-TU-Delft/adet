@@ -20,7 +20,7 @@ from adet.equations.geometrical import MinimalCamberLine
 from adet.equations.nondimensional import (
     TotalTotalPressureRatio,
 )
-from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidSettings
+from adet.fluid.settings import FluidModel, FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
 from adet.losses.basic import (
     PercentageEntropyLoss,
@@ -84,10 +84,10 @@ casing = Shaft(
 )
 
 # +++ Fluid settings
-fluid_model_real = ExternalFluidModel(
+fluid_model_real = FluidModel(
     DebugAbstractState('HEOS', 'Air'),  # This just counts the number of updates
 )
-fluid_model_ideal = AnalyticalFluidModel(
+fluid_model_ideal = FluidModel(
     IdealGasState(1.4, 287, 2e-5),
 )
 thrm = ThermoVariables()

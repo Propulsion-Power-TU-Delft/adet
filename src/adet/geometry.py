@@ -1,12 +1,11 @@
 from abc import ABC, abstractmethod
 
+import matplotlib.pyplot as plt
 import numpy as np
+from bezier import Curve
+from matplotlib.lines import Line2D
 from numpy.typing import NDArray
 from scipy.interpolate import CubicSpline
-from bezier import Curve
-
-from matplotlib.lines import Line2D
-import matplotlib.pyplot as plt
 
 
 class Point:

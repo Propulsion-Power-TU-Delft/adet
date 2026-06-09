@@ -10,9 +10,9 @@ from adet.components.network import ComponentNetwork
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
 from adet.equations.nondimensional import GammaPV
 from adet.equations.utils import residual_debugger
-from adet.fluid.settings import ExternalFluidModel, FluidSettings
+from adet.fluid.settings import FluidModel, FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation
-from adet.losses.rit import ShockLoss, StatorProfileLoss
+from adet.losses.rit import StatorProfileLoss
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
@@ -135,7 +135,7 @@ rotor = BladeRow(
 )
 
 abs_state = DebugAbstractState('REFPROP', 'MM')
-fluid_model = ExternalFluidModel(abs_state)
+fluid_model = FluidModel(abs_state)
 
 fluid_settings = FluidSettings(
     fluid_model,

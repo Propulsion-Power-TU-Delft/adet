@@ -1,8 +1,9 @@
-from pint import Quantity
-from typing import Annotated
-from casadi import MX
 from dataclasses import dataclass
 from enum import Enum
+from typing import Annotated
+
+from casadi import MX
+from pint import Quantity
 
 DEF_NODE: int = -1
 DEF_STATE: None

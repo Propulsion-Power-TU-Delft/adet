@@ -1,59 +1,19 @@
-from adet.tools.coolprop_utils import pair_id_from_tuple
-from adet.constants import COOLPROP_NAMES_MAP
-from adet.varspec import VarSpec
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
 from typing import Generic, TypeVar
 
-from adet.fluid.symbolic_eos import SymbolicAbstractState
-
+from adet.constants import COOLPROP_NAMES_MAP
+from adet.tools.coolprop_utils import pair_id_from_tuple
+from adet.varspec import VarSpec
 
 logger = logging.getLogger(__name__)
 
 E = TypeVar('E')  # External fluid object typevar
 
 
-class FluidModel:
-    """Parent class for identifying fluid models"""
-
-    def __init__(self, eos_object):
-        self.eos_object = eos_object
-
-    def get_eos_object(self):
-        return self.eos_object
-
-
-# TODO: Make this recognize which model you are feeding it and
-# adjust its type accordingly
-
-
-class EmptyFluidModel(FluidModel):
-    def __init__(self, eos_object=None):
-        pass
-
-    def get_eos_object(self):
-        raise AttributeError('Empty fluid model cannot be called')
-
-
 @dataclass
-class AnalyticalFluidModel(FluidModel):
-    """
-    Models which do not require passing through
-    external thermodynamic libraries
-    """
-
-    eos_object: SymbolicAbstractState
-
-    def get_eos_object(self) -> SymbolicAbstractState:
-        return super().get_eos_object()
-
-
-@dataclass
-class ExternalFluidModel(FluidModel, Generic[E]):
+class FluidModel(Generic[E]):
     eos_object: E
-
-    def get_eos_object(self) -> E:
-        return super().get_eos_object()
 
     def __copy__(self):
         cls = self.__class__
@@ -96,14 +56,16 @@ class FluidSettings:
 
 
 if __name__ == '__main__':
-    import CoolProp as cp
     from copy import deepcopy
+
+    import CoolProp as cp
+
     from adet.variables import ThermoVariables
 
     eos = cp.AbstractState('HEOS', 'R134a')
 
     sett = FluidSettings(
-        ExternalFluidModel(eos),
+        FluidModel(eos),
         (
             ThermoVariables.Pressure,
             ThermoVariables.Temperature,

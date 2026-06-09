@@ -2,8 +2,8 @@ import numpy as np
 
 from adet.assembly import CasadiSystem, EquationBase
 from adet.diagnostics import SystemDiagnostics
-from adet.variables import NodeVariables, OtherVariables
 from adet.registries import DefaultUnitsRegistry
+from adet.variables import NodeVariables
 
 
 class HeatExchangerProblem(EquationBase):

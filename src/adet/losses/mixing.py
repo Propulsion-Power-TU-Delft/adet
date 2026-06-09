@@ -1,6 +1,5 @@
 """Mixing losses downstream of turbomachinery blades"""
 
-import ipdb
 
 from pathlib import Path
 from typing import Literal
@@ -11,9 +10,9 @@ import numpy as np
 
 from adet.equations.base_equation import DeviationModel, EquationBase, EquationConfig
 from adet.equations.utils import minmax_bound, safe_abs, safe_if_else, safe_min
-from adet.variables import NodeVariables, ThermoVariables
 from adet.losses.base_loss import LossModel
 from adet.tools.interpolation import make_casadi_interpolant
+from adet.variables import NodeVariables, ThermoVariables
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)

@@ -14,15 +14,14 @@ It shows how to:
 
 # === IMPORTS
 # Standard library
-from copy import deepcopy
 import logging
+from copy import deepcopy
 
 import matplotlib.pyplot as plt
 from pint import Quantity
 
 from adet.assembly import CasadiSystem
 from adet.components import BladeRow, ComponentNetwork, Inlet, Shaft
-from adet.components.blade_row import plot_from_nodes
 from adet.equations.base_equation import LossApplier
 from adet.equations.definitions import RepeatedStage
 from adet.equations.fundamental import FreeVortexDistribution
@@ -36,7 +35,7 @@ from adet.equations.nondimensional import (
     StaticTotalDegreeOfReaction,
     WorkCoefficient,
 )
-from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidSettings
+from adet.fluid.settings import FluidModel, FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.losses.profile import DentonTrapProfile
@@ -81,8 +80,8 @@ abs_state = DebugAbstractState('HEOS', 'Air')
 idl_state = IdealGasState(1.4, 287.0, 2e-5)
 abs_state.debug_print = False
 
-real_model = ExternalFluidModel(abs_state)
-ideal_model = AnalyticalFluidModel(idl_state)
+real_model = FluidModel(abs_state)
+ideal_model = FluidModel(idl_state)
 
 # Configure fluid settings with update variables
 # Update variables are used to solve for thermodynamic state

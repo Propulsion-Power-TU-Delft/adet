@@ -1,8 +1,7 @@
 """ADeT Logo Generator"""
 
-import numpy as np
 import matplotlib.pyplot as plt
-
+import numpy as np
 
 ANGLE = 60 * np.pi / 180
 NUM_ARROWS = 15

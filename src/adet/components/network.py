@@ -18,10 +18,10 @@ from adet.equations.fundamental import (
 )
 from adet.equations.geometrical import AnnulusAreas
 from adet.equations.nondimensional import AbsoluteMachNumber, RelativeMachNumber
-from adet.variables import KinematicVariables
-from adet.varspec import DEF_NODE, VarSpec
 from adet.fluid.settings import FluidSettings
 from adet.tools.iter import ensure_tuple
+from adet.variables import KinematicVariables
+from adet.varspec import DEF_NODE, VarSpec
 
 T = TypeVar('T', bound=SystemAssembler)
 

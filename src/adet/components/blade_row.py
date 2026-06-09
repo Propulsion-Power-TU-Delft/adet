@@ -12,11 +12,11 @@ from adet.equations.control_volumes import ChokingCriterion, ObliqueShock
 from adet.equations.definitions import MeridionalVelocityRatio, OptimalIncidence
 from adet.equations.fundamental import (
     BladeBlockage,
+    ConstantAngMomentum,
     ConstRelEnthalpy,
     EulerEquation,
     MassConservation,
     ZeroBlockage,
-    ConstantAngMomentum,
 )
 from adet.equations.geometrical import (
     BladePitch,
@@ -28,14 +28,6 @@ from adet.equations.geometrical import (
     RadialGeometry,
 )
 from adet.equations.special import GeometricalAdder
-from adet.variables import (
-    GeometricVariables,
-    KinematicVariables,
-    NodeVariables,
-    OtherVariables,
-    ThermoVariables,
-)
-from adet.varspec import DEF_NODE, NodeStates, VarSpec
 from adet.geometry import BezierCurve, StraightLine
 from adet.losses.basic import IsentropicLink, ZeroDeviation
 from adet.losses.compressors import AmiranteDiffuserMomentum
@@ -45,6 +37,14 @@ from adet.losses.mixing import (
     MixingMomentumBalances,
     SieverdingBasePressure,
 )
+from adet.variables import (
+    GeometricVariables,
+    KinematicVariables,
+    NodeVariables,
+    OtherVariables,
+    ThermoVariables,
+)
+from adet.varspec import DEF_NODE, NodeStates, VarSpec
 
 if TYPE_CHECKING:
     from adet.components.network import ComponentNetwork

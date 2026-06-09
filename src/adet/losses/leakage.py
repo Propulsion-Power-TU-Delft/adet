@@ -1,11 +1,11 @@
-from adet.equations.base_equation import EquationConfig
 import casadi as cs
 import CoolProp as cp
 
+from adet.equations.base_equation import EquationConfig
 from adet.equations.utils import trapezoid2
-from adet.variables import NodeVariables, ThermoVariables
 from adet.losses.base_loss import LossModel
 from adet.losses.profile import rectangular_vel_profile, trapezoidal_vel_profile
+from adet.variables import NodeVariables, ThermoVariables
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)

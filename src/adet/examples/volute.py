@@ -1,11 +1,9 @@
-from adet.varspec import VarSpec
 import logging
 
 import matplotlib.pyplot as plt
 import numpy as np
 from pint import Quantity
 
-from adet.solution import solve_root_problem
 from adet.assembly import CasadiSystem
 from adet.equations import EquationBase
 from adet.equations.fundamental import (
@@ -18,12 +16,14 @@ from adet.equations.fundamental import (
 from adet.equations.nondimensional import AbsoluteMachNumber
 from adet.equations.special import ThermoVarsAdder
 from adet.equations.utils import safe_abs, safe_if_else
-from adet.variables import NodeVariables, ThermoVariables
-from adet.fluid.settings import ExternalFluidModel, FluidSettings
+from adet.fluid.settings import FluidModel, FluidSettings
 from adet.losses.basic import PercentageEntropyLoss
 from adet.registries import GuessRegistry, VariableBoundsRegistry
+from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
+from adet.variables import NodeVariables, ThermoVariables
+from adet.varspec import VarSpec
 
 logger = logging.getLogger(__name__)
 setup_logger(logger)
@@ -296,7 +296,7 @@ if __name__ == '__main__':
 
         system = CasadiSystem()
 
-        fluid_model = ExternalFluidModel(
+        fluid_model = FluidModel(
             DebugAbstractState('HEOS', 'MM'),
         )
         thrm = ThermoVariables()

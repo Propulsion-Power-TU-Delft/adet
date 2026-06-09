@@ -1,9 +1,9 @@
-from pint import Quantity
-from typing import Annotated
-from casadi import MX
 from dataclasses import dataclass, replace
 from enum import Enum
+from typing import Annotated
 
+from casadi import MX
+from pint import Quantity
 
 DEF_NODE = -1
 DEF_STATE = None

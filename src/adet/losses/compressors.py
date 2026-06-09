@@ -1,5 +1,5 @@
-import numpy as np
 import CoolProp as cp
+import numpy as np
 
 from adet.equations.base_equation import DeviationModel, EquationBase, EquationConfig
 from adet.equations.utils import (
@@ -10,8 +10,8 @@ from adet.equations.utils import (
     safe_min,
     safe_sign,
 )
-from adet.variables import NodeVariables, ThermoVariables
 from adet.losses.base_loss import LossModel
+from adet.variables import NodeVariables, ThermoVariables
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)

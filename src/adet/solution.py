@@ -4,8 +4,8 @@ from typing import Any
 import casadi as cs
 import numpy as np
 from numpy.typing import NDArray
-from adet.tools.context import dummy_context, output_suppression
 
+from adet.tools.context import dummy_context, output_suppression
 
 logger = logging.getLogger(__name__)
 

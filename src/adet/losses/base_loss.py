@@ -5,8 +5,8 @@ Library of basics loss models
 # from inspect import getfullargspec
 # from abc import ABC, abstractmethod
 from typing import Literal, TypeAlias
-from adet.equations import EquationBase
 
+from adet.equations import EquationBase
 
 LossType: TypeAlias = Literal['delta_smass', 'delta_tot_p', 'delta_tot_hmass']
 

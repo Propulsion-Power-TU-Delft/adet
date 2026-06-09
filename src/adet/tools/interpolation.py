@@ -1,8 +1,9 @@
 from typing import Literal
-from numpy.typing import NDArray
-import numpy as np
-import matplotlib.pyplot as plt
+
 import casadi as cs
+import matplotlib.pyplot as plt
+import numpy as np
+from numpy.typing import NDArray
 
 
 def make_casadi_interpolant(

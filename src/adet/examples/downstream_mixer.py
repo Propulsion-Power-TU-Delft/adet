@@ -8,10 +8,8 @@ import numpy as np
 from pint import Quantity
 
 from adet.assembly import CasadiSystem
-from adet.components import BladeRow, Inlet, Shaft
-from adet.components import ComponentNetwork
-from adet.components.blade_row import DownstreamMixer
-from adet.components.blade_row import plot_from_nodes
+from adet.components import BladeRow, ComponentNetwork, Inlet, Shaft
+from adet.components.blade_row import DownstreamMixer, plot_from_nodes
 from adet.equations.control_volumes import ChokingCriterion
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
 from adet.equations.fundamental import BladeBlockage
@@ -21,8 +19,7 @@ from adet.equations.nondimensional import (
     TotalTotalExpansionEfficiency,
 )
 from adet.equations.utils import residual_debugger
-from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel
-from adet.fluid.settings import FluidSettings
+from adet.fluid.settings import FluidModel, FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.losses.mixing import AungierDeviationModel, SieverdingBasePressure
@@ -52,8 +49,8 @@ abs_state = DebugAbstractState('REFPROP', 'MM')
 abs_state.debug_print = False
 id_state = IdealGasState(1.4, 287, 1.8e5)
 
-real_model = ExternalFluidModel(abs_state)
-ideal_model = AnalyticalFluidModel(id_state)
+real_model = FluidModel(abs_state)
+ideal_model = FluidModel(id_state)
 
 settings = FluidSettings(
     model=real_model,

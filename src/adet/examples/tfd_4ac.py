@@ -1,20 +1,19 @@
-from collections import namedtuple
 import csv
+from collections import namedtuple
 from pathlib import Path
 
 import numpy as np
 from pint import Quantity
 
+from adet.assembly import CasadiSystem
 from adet.components import BladeRow, ComponentNetwork, Inlet
 from adet.components.connections import Shaft
-from adet.solution import solve_root_problem
-from adet.assembly import CasadiSystem
 from adet.equations.geometrical import MinimalCamberLine
+from adet.fluid.settings import FluidModel, FluidSettings
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
-from adet.fluid.settings import FluidSettings, ExternalFluidModel
 from adet.registries import DefaultUnitsRegistry, GuessRegistry, ScalingRegistry
+from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
-
 
 # Import Data
 '../../../data/opencases/tfd_4ac/'
@@ -200,7 +199,7 @@ PRINTS = True
 # Real gas model using CoolProp
 abs_state = DebugAbstractState('HEOS', 'Air')
 abs_state.debug_print = False
-real_model = ExternalFluidModel(abs_state)
+real_model = FluidModel(abs_state)
 
 _dfu_reg = DefaultUnitsRegistry()
 _scl_reg = ScalingRegistry()

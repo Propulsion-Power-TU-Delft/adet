@@ -3,10 +3,10 @@ This is just a sketch for a vaneless diffuser solution
 using a real gas model
 """
 
-import CoolProp as cp
 import casadi as cs
-import numpy as np
+import CoolProp as cp
 import matplotlib.pyplot as plt
+import numpy as np
 
 from adet.fluid.casadi_eos import CasadiEos
 from adet.tools.coolprop_utils import DebugAbstractState

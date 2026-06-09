@@ -24,7 +24,7 @@ from adet.equations.base_equation import EquationBase
 from adet.errors import ExistingEquationError
 from adet.fluid.casadi_eos import CasadiEos
 from adet.fluid.eos_factory import EosFactory
-from adet.fluid.settings import EmptyFluidModel, FluidSettings
+from adet.fluid.settings import FluidSettings
 from adet.registries import ScalingRegistry
 from adet.tools.interpolation import resample_linear
 from adet.tools.iter import ensure_tuple, leaves
@@ -83,7 +83,7 @@ class SystemSharedData:
         self.scaled: bool = False
 
         # Settings
-        self.fluid_settings: FluidSettings = FluidSettings(EmptyFluidModel())
+        self.fluid_settings: None | FluidSettings = None
         self.num_span: int = 1
 
         # Thermo update arguments
@@ -338,18 +338,18 @@ class ArgumentResolver:
         Get the real thermodynamic and kinematic arguments needed to complete
         the different states of the node.
         """
-        if isinstance(self.data.fluid_settings.model, EmptyFluidModel):
-            return tuple(set(self.data.decl_args) - set(self.data.boun_cond))
-        else:
-            return tuple(self._get_effective_arguments())
+        return tuple(self._get_effective_arguments())
 
-    def _get_effective_arguments(self):
+    def _get_effective_arguments(self) -> set[VarSpec]:
         """
         Get the thermo that act on thermodynamic state updates.
         e.g. if hmass, smass, p, T appear on the same state,
         only two variables are effective (pure substance + phase),
         while the other two are followers
         """
+        if self.data.fluid_settings is None:
+            return set(self.data.decl_args) - set(self.data.boun_cond)
+
         # Non thermodynamic arguments
         nonthermo_args = [arg for arg in self.data.decl_args if not arg.state]
 
@@ -587,7 +587,7 @@ class SystemAssembler(ABC):
     def reset(self) -> None:
         old_settings = self.data.fluid_settings
         self.__init__(self.data.num_span)
-        self.fluid_settings = old_settings
+        self.data.fluid_settings = old_settings
 
     def copy(self) -> Self:
         new_instance = self.__class__(self.data.num_span)
@@ -763,6 +763,10 @@ class SystemAssembler(ABC):
     def _compute_secondary_thermo(
         self, sol_data: dict[VarSpec, NDArray]
     ) -> dict[VarSpec, NDArray]:
+
+        if self.data.fluid_settings is None:
+            return {}
+
         thrm_data = {}
 
         # TODO: Choose variables to write
@@ -968,7 +972,10 @@ class CasadiSystem(SystemAssembler):
     def _build_equations_of_state(
         self, all_args_products: dict[VarSpec, cs.MX]
     ) -> dict[VarSpec, cs.MX]:
-        fl_model = self.fluid_settings.model
+        if self.data.fluid_settings is None:
+            return {}
+
+        fl_model = self.data.fluid_settings.model
 
         # TODO: Fix typing here for analytical eos
         self._eos_callbacks: dict[

@@ -3,8 +3,8 @@ Simple module to time functions and methods in classes
 """
 
 import timeit
-from functools import wraps
 import types
+from functools import wraps
 
 
 def function_timer(custom_str=''):

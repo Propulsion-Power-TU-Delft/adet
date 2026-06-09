@@ -4,8 +4,8 @@ import numpy as np
 from adet.equations.base_equation import (
     CamberLineGeom,
     EquationBase,
-    MeridionalGeom,
     EquationConfig,
+    MeridionalGeom,
 )
 from adet.equations.utils import (
     get_midspan_idx,

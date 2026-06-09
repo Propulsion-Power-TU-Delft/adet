@@ -34,8 +34,7 @@ from adet.equations.nondimensional import (
     VolumetricFlowRatio,
     WorkCoefficient,
 )
-from adet.variables import NodeVariables, ThermoVariables
-from adet.fluid.settings import ExternalFluidModel, FluidSettings
+from adet.fluid.settings import FluidModel, FluidSettings
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.losses.leakage import DentonTrapLeakage
 from adet.losses.mixing import DentonMixingLoss, SieverdingBasePressure
@@ -44,6 +43,7 @@ from adet.losses.secondary import SecondaryBSM
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
+from adet.variables import NodeVariables, ThermoVariables
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)
@@ -229,7 +229,7 @@ DUTY_COEFFS = {
 PHI_SPAN = np.linspace(0.4, 1.5, MAP_POINTS)
 PSI_SPAN = np.linspace(3.0, 10.0, MAP_POINTS)
 
-real_model = ExternalFluidModel(abs_state)
+real_model = FluidModel(abs_state)
 INLET_PRESSURE = 1.3 * abs_state.p_critical()
 INLET_TEMPERATURE = 1.045 * abs_state.T_critical()
 abs_state.update(cp.PT_INPUTS, INLET_PRESSURE, INLET_TEMPERATURE)

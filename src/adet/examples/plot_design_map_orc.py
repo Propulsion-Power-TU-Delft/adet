@@ -2,8 +2,6 @@
 Regenerate meridional channel plots from saved design map data
 """
 
-from adet.variables import NodeVariables
-
 import pathlib
 import pickle
 
@@ -13,6 +11,7 @@ from matplotlib.gridspec import GridSpec
 from scipy.interpolate import RectBivariateSpline
 
 from adet.equations.geometrical import ParabolicCamberline
+from adet.variables import NodeVariables
 
 # Constants
 CONTOUR_LEVELS = 50

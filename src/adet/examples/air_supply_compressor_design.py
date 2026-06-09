@@ -16,7 +16,6 @@ import logging
 import matplotlib.pyplot as plt
 from pint import Quantity
 
-from adet.solution import solve_root_problem
 from adet.assembly import CasadiSystem
 from adet.components import BladeRow
 from adet.components.blade_row import VanelessDiffuser, plot_from_nodes
@@ -30,11 +29,11 @@ from adet.equations.nondimensional import (
     WorkCoefficient,
 )
 from adet.equations.utils import residual_debugger
-from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidSettings
+from adet.fluid.settings import FluidModel, FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
 from adet.losses.basic import (
-    PercTotalPressureLoss,
     PercentageEntropyLoss,
+    PercTotalPressureLoss,
     ZeroDeviation,
 )
 from adet.losses.compressors import (
@@ -47,6 +46,7 @@ from adet.losses.compressors import (
     SkinFrictionJansen,
 )
 from adet.registries import GuessRegistry, VariableBoundsRegistry
+from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 
@@ -93,11 +93,11 @@ casing = Shaft(
 )
 
 # +++ Fluid settings
-realgas_model = ExternalFluidModel(
+realgas_model = FluidModel(
     DebugAbstractState('HEOS', 'Air'),  # This just counts the number of updates
 )
 
-idealgas_model = AnalyticalFluidModel(
+idealgas_model = FluidModel(
     IdealGasState(1.4, 287, 1.8e-5),
 )
 

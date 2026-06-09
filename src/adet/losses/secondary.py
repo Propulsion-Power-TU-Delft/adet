@@ -1,10 +1,10 @@
+import CoolProp as cp
+import numpy as np
+
 from adet.equations.base_equation import EquationConfig
 from adet.equations.utils import safe_if_else
-from adet.variables import NodeVariables, ThermoVariables
 from adet.losses.base_loss import LossModel
-import numpy as np
-import casadi as cs
-import CoolProp as cp
+from adet.variables import NodeVariables, ThermoVariables
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)

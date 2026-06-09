@@ -1,13 +1,12 @@
 import logging
-from typing import Any, ClassVar, Generic, TypeVar, overload
+from typing import Any, overload
+
 import casadi as cs
 import CoolProp as cp
 import jax
 
 from adet.constants import COOLPROP_NAMES_MAP
-from adet.fluid.settings import ExternalFluidModel
 from adet.tools.coolprop_utils import DebugAbstractState, inames_from_id
-
 
 logger = logging.getLogger(__name__)
 
@@ -478,43 +477,9 @@ class CasadiEosVaccarian(cs.Callback):
         return [cs.DM.zeros(self.get_sparsity_out(i)) for i in range(self.get_n_out())]
 
 
-M = TypeVar('M', bound=ExternalFluidModel)
-
-
-class CasadiEosFactory(Generic[M]):
-    instance_counter: ClassVar[int] = 0
-
-    def __init__(self, fluid_model: M) -> None:
-        self.fluid_model = fluid_model
-
-    def make_eos(
-        self,
-        input_pair: int,
-        output_quantities: tuple[str, ...] | list[str],
-        length: int,
-        name: str = '',
-    ):
-        pair_name = ''.join(inames_from_id(input_pair))
-
-        if not name:
-            name = f'eos_{pair_name}_l{length}'
-
-        eos_callback = CasadiEos(
-            name,
-            self.fluid_model.eos_object,
-            input_pair,
-            output_quantities,
-            length,
-        )
-
-        return eos_callback
-
-
 # ------------------- USAGE EXAMPLE -------------------
 
 if __name__ == '__main__':
-    from numpy.typing import ArrayLike
-
     # Setup a CoolProp EOS
     eos = DebugAbstractState('HEOS', 'Air')
 

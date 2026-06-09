@@ -1,6 +1,6 @@
+import logging
 from abc import ABC, abstractmethod
 from inspect import getfullargspec
-import logging
 from typing import Any, Callable
 
 import CoolProp as cp
@@ -116,6 +116,9 @@ class SymbolicAbstractState(ABC):
     def speed_sound(self):
         return self.current_state['speed_sound']
 
+    def gas_constant(self):
+        return 8.31451
+
 
 class IdealGasState(SymbolicAbstractState):
     def eos(self, p, T, rhomass, hmass, umass, smass, speed_sound):
@@ -126,18 +129,6 @@ class IdealGasState(SymbolicAbstractState):
         r5 = smass - self._cpmass * sm.log(T) + self._gas_constant * sm.log(p)
 
         return r1, r2, r3, r4, r5
-
-
-def update_func(pair: int):
-    eos = IdealGasState(
-        gamma=1.4,
-        gas_constant=287.0,
-        viscosity=1e-6,
-    )
-    name = COOLPROP_PAIRS[pair]
-    print(f'Update with {name}')
-    eos.update(pair, 10, 10)
-    return pair
 
 
 if __name__ == '__main__':
@@ -152,8 +143,8 @@ if __name__ == '__main__':
     # Polymorphic!
     eos.update(
         cp.PT_INPUTS,
-        cs.MX.sym('p'),  # pyright:ignore
-        cs.MX.sym('T'),  # pyright:ignore
+        cs.MX.sym('p'),
+        cs.MX.sym('T'),
     )
 
     print(f'Hmass is {eos.hmass()}')

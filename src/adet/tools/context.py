@@ -2,12 +2,11 @@
 Functions that act as context managers
 """
 
-from typing import Callable
-from types import ModuleType
-from contextlib import contextmanager
-
 import os
 import sys
+from contextlib import contextmanager
+from types import ModuleType
+from typing import Callable
 
 
 @contextmanager

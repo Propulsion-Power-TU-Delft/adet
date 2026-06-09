@@ -1,16 +1,17 @@
-from adet.solution import solve_root_problem
-from adet.losses.basic import ZeroDeviation, IsentropicLink
 import logging
-from adet.tools.loggers import setup_logger
-from adet.fluid.settings import FluidSettings, ExternalFluidModel
-from adet.assembly import CasadiSystem
-from adet.components.network import ComponentNetwork
-from pint import Quantity
-from adet.components.connections import Shaft, Inlet
-from ambiance import Atmosphere
-from adet.components.blade_row import BladeRow
-from CoolProp import AbstractState
 
+from ambiance import Atmosphere
+from CoolProp import AbstractState
+from pint import Quantity
+
+from adet.assembly import CasadiSystem
+from adet.components.blade_row import BladeRow
+from adet.components.connections import Inlet, Shaft
+from adet.components.network import ComponentNetwork
+from adet.fluid.settings import FluidModel, FluidSettings
+from adet.losses.basic import IsentropicLink, ZeroDeviation
+from adet.solution import solve_root_problem
+from adet.tools.loggers import setup_logger
 
 logger = logging.getLogger(__name__)
 setup_logger(logger)
@@ -70,7 +71,7 @@ fan_blade = BladeRow(
     constant_variables=['geo_rr_midspan'],
 )
 
-fluid_model = ExternalFluidModel(abs_state)
+fluid_model = FluidModel(abs_state)
 
 settings = FluidSettings(fluid_model, ('p', 'T'), 2)
 

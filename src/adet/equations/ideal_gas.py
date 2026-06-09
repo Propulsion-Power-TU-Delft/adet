@@ -1,4 +1,5 @@
 import numpy as np
+
 from adet.equations.base_equation import EquationBase
 
 # WARN: This module is unused, will likely be deprecated soon

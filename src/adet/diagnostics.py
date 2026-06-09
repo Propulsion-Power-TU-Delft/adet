@@ -1,15 +1,14 @@
-from collections import namedtuple
 import logging
+from collections import namedtuple
 from typing import Generic, TypeAlias, TypeVar, Union
 
 import casadi as cs
-from jax import Array
 import jax
 import numpy as np
+from jax import Array
 from numpy.typing import NDArray
 
 from adet.assembly import CasadiSystem, JaxSystem, SystemAssembler
-
 
 logger = logging.getLogger(__name__)
 

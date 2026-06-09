@@ -1,8 +1,8 @@
-from typing import Any
 import logging
+from typing import Any
+
 import matplotlib as mpl
 import matplotlib.font_manager as fm
-
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes

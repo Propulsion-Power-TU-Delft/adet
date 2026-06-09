@@ -7,14 +7,14 @@ import logging
 import re
 from math import ceil
 from typing import Sequence
+
 import CoolProp as cp
-import numpy as np
-
-from numpy.typing import NDArray
 import matplotlib.pyplot as plt
+import numpy as np
+from numpy.typing import NDArray
 
-from adet.tools.interpolation import TransfiniteInterpolator
 from adet.constants import COOLPROP_NAMES_MAP, COOLPROP_PAIRS, INVERSE_CP_NAMES_MAP
+from adet.tools.interpolation import TransfiniteInterpolator
 
 cp_INPUTS_SUFFIX = '_INPUTS'
 

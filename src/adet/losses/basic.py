@@ -1,6 +1,6 @@
-from adet.variables import NodeVariables
 from adet.equations.base_equation import DeviationModel, LossApplier
 from adet.equations.utils import get_midspan_idx
+from adet.variables import NodeVariables
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)

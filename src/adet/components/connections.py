@@ -1,7 +1,9 @@
-from adet.varspec import VarSpec
 from dataclasses import dataclass
 from typing import Any
+
 from pint.facets.plain import PlainQuantity
+
+from adet.varspec import VarSpec
 
 
 @dataclass

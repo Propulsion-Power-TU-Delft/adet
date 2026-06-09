@@ -10,7 +10,7 @@ from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.base_equation import EquationBase
 from adet.equations.fundamental import BladeBlockage
-from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidSettings
+from adet.fluid.settings import FluidModel, FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
 from adet.losses.basic import PercentageEntropyLoss
 from adet.solution import solve_root_problem
@@ -38,8 +38,8 @@ inlet = Inlet(
 )
 fluid_state = IdealGasState(1.4, 287, 1.8e-5)
 real_state = DebugAbstractState('REFPROP', 'Air')
-model = ExternalFluidModel(real_state)
-model = AnalyticalFluidModel(fluid_state)
+model = FluidModel(real_state)
+model = FluidModel(fluid_state)
 
 settings = FluidSettings(model, ('p', 'T'))
 

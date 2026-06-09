@@ -3,7 +3,8 @@ Basic tools for string manipulation
 """
 
 import re
-from typing import get_args, cast
+from typing import cast, get_args
+
 from adet.constants import NodeStatesNames
 
 STATE_NAMES = get_args(NodeStatesNames)

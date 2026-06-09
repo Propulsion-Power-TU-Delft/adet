@@ -1,7 +1,8 @@
-from itertools import zip_longest
 from collections.abc import Iterable
-import numpy as np
+from itertools import zip_longest
 from typing import Any, Iterator, Literal, TypeVar, overload
+
+import numpy as np
 
 T = TypeVar('T')  # Iterable type
 F = TypeVar('F')  # Fillvalue type

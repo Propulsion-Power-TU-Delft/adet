@@ -6,7 +6,6 @@ import numpy as np
 from pint import Quantity
 
 from adet.assembly import IPOPT_DEFAULTS, CasadiSystem
-from adet.equations.control_volumes import ThroatConditions
 from adet.equations.fundamental import (
     EulerEquation,
     Kinematics,
@@ -15,8 +14,7 @@ from adet.equations.fundamental import (
     TotalStaticMatching,
 )
 from adet.equations.nondimensional import RelativeMachNumber, StaticTotalPressRatio
-from adet.equations.utils import safe_min
-from adet.fluid.settings import ExternalFluidModel, FluidSettings
+from adet.fluid.settings import FluidModel, FluidSettings
 from adet.losses.basic import IsentropicLink
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
@@ -98,7 +96,7 @@ BCS = {
 #     0     th    1    th    2
 
 abs_state = DebugAbstractState('HEOS', 'Air')
-fluid_model = ExternalFluidModel(abs_state)
+fluid_model = FluidModel(abs_state)
 
 system.fluid_settings = FluidSettings(
     fluid_model,

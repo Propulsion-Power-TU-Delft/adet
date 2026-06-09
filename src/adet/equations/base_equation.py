@@ -194,16 +194,15 @@ class EquationBase(ABC):
         return super().__init_subclass__()
 
     @property
-    def eos(self):
+    def eos(self) -> Callable:
         cls = self.__class__
         return cast(
             Callable[[Any, Any], tuple[Any, ...]],
             cls._eos,
         )
 
-    # TODO: Fix typing here for analytical/symbolic EoS
     @eos.setter
-    def eos(self, eos: EmbeddedEos):
+    def eos(self, eos: cs.Function | CasadiEos):
         cls = self.__class__
 
         if cls._eos is not None:

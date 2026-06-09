@@ -1,10 +1,10 @@
-from adet.equations.utils import safe_max, safe_abs
-from adet.equations.base_equation import EquationConfig, DeviationModel
-from adet.variables import NodeVariables, ThermoVariables
 import CoolProp as cp
-from adet.losses.base_loss import LossModel
 import numpy as np
 
+from adet.equations.base_equation import DeviationModel, EquationConfig
+from adet.equations.utils import safe_abs, safe_max
+from adet.losses.base_loss import LossModel
+from adet.variables import NodeVariables, ThermoVariables
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)

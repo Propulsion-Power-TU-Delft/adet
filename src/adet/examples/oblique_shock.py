@@ -21,7 +21,7 @@ from adet.equations.nondimensional import (
     RelativeMachNumber,
 )
 from adet.equations.utils import residual_debugger
-from adet.fluid.settings import AnalyticalFluidModel, ExternalFluidModel, FluidSettings
+from adet.fluid.settings import FluidModel, FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
@@ -64,9 +64,9 @@ n1 = NodeVariables(1)
 system = CasadiSystem()
 
 # *** Fluid model
-model = AnalyticalFluidModel(IdealGasState(1.4, 287, 2e-5))
+model = FluidModel(IdealGasState(1.4, 287, 2e-5))
 abs_state = DebugAbstractState('REFPROP', 'MM')
-model = ExternalFluidModel(abs_state)
+model = FluidModel(abs_state)
 
 thrm = ThermoVariables()
 fluid_settings = FluidSettings(model, (thrm.Pressure, thrm.Temperature))
