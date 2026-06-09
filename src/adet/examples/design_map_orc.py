@@ -78,8 +78,6 @@ FLARE_MAX = 30  # deg - ONLY USED IN DYNAMIC !
 # Loss used at first pass (isentropic)
 INITIAL_LOSS = PercentageEntropyLoss(0.0)
 
-# Manual initial guesses for solver
-
 
 # ================================================
 class AddAxialLosses(LossApplier):
