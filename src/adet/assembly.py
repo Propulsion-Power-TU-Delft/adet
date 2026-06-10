@@ -309,6 +309,9 @@ class ConstraintManager:
             self._check_arg_declaration(arg, 'spanwise constants')
 
         for arg in self.data.boun_cond:
+            # Skip update arguments
+            if arg in self.data.thermo_updt_args:
+                continue
             self._check_arg_declaration(arg, 'boundary conditions')
 
     def get_array_boun_conds(self) -> list[NDArray]:
@@ -338,7 +341,9 @@ class ArgumentResolver:
         Get the real thermodynamic and kinematic arguments needed to complete
         the different states of the node.
         """
-        return tuple(self._get_effective_arguments())
+        return tuple(
+            self._get_effective_arguments(),
+        )
 
     def _get_effective_arguments(self) -> set[VarSpec]:
         """
@@ -357,10 +362,11 @@ class ArgumentResolver:
         self.data.thermo_updt_args = []
         prescr_upd_vars = self.data.fluid_settings.update_variables
 
-        first_node = min(arg.node for arg in self.data.decl_args)
-        max_node = max(arg.node for arg in self.data.decl_args)
+        nodes = [arg.node for arg in self.data.decl_args]
+        first_node = min(nodes)
+        last_node = max(nodes)
 
-        for node in range(first_node, max_node + 1):
+        for node in range(first_node, last_node + 1):
             for st in NodeStates:
                 upd_args = [v._at_node(node)._with_state(st) for v in prescr_upd_vars]
                 self.data.thermo_updt_args.extend(upd_args)
@@ -695,17 +701,18 @@ class SystemAssembler(ABC):
         self.data._arg_maps = self._equation_registry._build_argument_maps()
         self.data.decl_args = self._equation_registry._read_decl_args()
 
+        # Build the free arguments
+        self.data.free_args = self._argument_resolver.identify_free_arguments()
+
+        # Check thast boundary conditions respect their declared units
         self._constraint_manager._validate_all_units()
         self._constraint_manager.check_constraints_effectiveness()
 
-        # Arguments manipulation
-        self.data.free_args = self._argument_resolver.identify_free_arguments()
-
-        # Validity checks and scaling
+        # Check the equations units and build their scaling factors
         self._scaling_manager.check_equations_units()
 
         self.data.built = True
-        logger.info('System assembled successfully')
+        logger.info('Parent system assembled successfully')
 
     def _check_built(self) -> None:
         """Check that the system is flagged as built"""
@@ -902,9 +909,11 @@ class CasadiSystem(SystemAssembler):
         super().build(scaled)
         logger.info('Building CasADi backend...')
         self._reset_symbols()
-        self._build_base_symbols()
-        self._build_products()
-        self._build_residual_expressions()
+        self._build_base_symbols()  # Create symbols and their scaler
+        self._build_products()  # Multiply them
+        self._build_residual_expressions()  # Plug them into residual expressions
+        logger.info('Backend built successfully')
+        self._count_variables()
 
     def _create_symbols(
         self, arg_specs: Sequence[VarSpec], num_span: int, scale_suffix: str
@@ -1126,17 +1135,20 @@ class CasadiSystem(SystemAssembler):
         ]
 
         # Build and concatenate residual equations
-        logger.info('Building residual equation symbolics (this may take a while)...')
+        logger.info('Building residual equation symbolics...')
 
         residuals: list[Any | tuple[Any, ...]] = []
         for eq in self.data.equations:
             args = []
+            # Transpose to absolute node indices
             for spec in eq.arg_specs:
                 arg_map = self.data._arg_maps[eq]
                 abs_arg = spec._at_node(arg_map[spec.node])
                 args.append(self._all_symbols[abs_arg])
 
             res_syms = eq.residual(*args)
+
+            # Check that the manual units have the correct length
             if eq.config.manual_units:
                 self._man_units_len_check(eq, res_syms)
 
@@ -1151,10 +1163,13 @@ class CasadiSystem(SystemAssembler):
             )
         )
 
+        # Add secondary expressions
         self.residual_expr += self._build_equalities_expr()
         self.residual_expr += self._build_spanwise_constants()
         self.residual_expr += self._build_thermo_constraints()
 
+    def _count_variables(self):
+        # Count variables and residuals -> Warn user for mismatch
         num_vars = max(cs.vertcat(*self.free_args_sym.values()).shape)
         num_residuals = max(cs.vertcat(*self.residual_expr).shape)
         logger.info(
@@ -1189,9 +1204,7 @@ class CasadiSystem(SystemAssembler):
         equation: EquationBase,
         residual_symbols: cs.MX | tuple[cs.MX, ...] | list[cs.MX],
     ):
-        """
-        Check the matching between residual and manual units
-        """
+        """Check the matching between residual and manual units"""
 
         if not isinstance(residual_symbols, (tuple, list)):
             residual_symbols = (residual_symbols,)
@@ -1284,14 +1297,19 @@ class CasadiSystem(SystemAssembler):
                 'g': res_expr_partial,
             }
 
-        # CasADi boilerplate
+        # NOTE:
+        # CasADi boilerplate:
+        # minimize f(x,p)
+        # subj. to:
+        # --- lbg <= g(x,p) <= lbg
+        # --- lbx <= x <= ubx
+
         rootfind_problem = {
             'x': free_args_symbols,
             'p': constraints_symbols,
             **func_spec,
         }
 
-        # TODO: remove hardcoded options
         if root_method == 'newton':
             # Newton-Raphson solver -> Fast but unstable w/o good guess
             rootfinder = cs.rootfinder(
@@ -1304,6 +1322,17 @@ class CasadiSystem(SystemAssembler):
                     **opts,
                 },
             )
+        elif root_method == 'kinsol':
+            # kinsol rootfinder
+            rootfinder = cs.rootfinder(
+                'kinsol_rootfinder',
+                'kinsol',
+                rootfind_problem,
+                {
+                    'error_on_fail': True,
+                    **opts,
+                },
+            )
 
         elif root_method == 'ipopt' or root_method == 'lstsq':
             # IPOPT solver
@@ -1313,17 +1342,6 @@ class CasadiSystem(SystemAssembler):
                 rootfind_problem,
                 {
                     **IPOPT_DEFAULTS,
-                    **opts,
-                },
-            )
-        elif root_method == 'kinsol':
-            # kinsol rootfinder
-            rootfinder = cs.rootfinder(
-                'kinsol_rootfinder',
-                'kinsol',
-                rootfind_problem,
-                {
-                    'error_on_fail': True,
                     **opts,
                 },
             )

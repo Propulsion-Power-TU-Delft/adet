@@ -1,10 +1,8 @@
 from enum import Enum
-from typing import Literal, Union
+from typing import Union
 
 import CoolProp as cp
 from numpy.typing import NDArray
-
-NodeStatesNames = Literal['stc', 'tot', 'rlt', 'kin', 'geo', 'oth']
 
 
 class CoolProperties(Enum):

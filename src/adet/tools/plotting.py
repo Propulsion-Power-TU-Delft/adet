@@ -1,3 +1,4 @@
+from adet.equations.utils import safe_min_clip
 import logging
 from typing import Any
 
@@ -41,20 +42,12 @@ def setup_mpl(fontdict: dict[str, Any] = {}):
     mpl.rcParams.update(custom_params)
 
 
-def plot_velocity_triangles(Vt, Vm, U, rr, ax: Axes, fontsize=11):
+def plot_velocity_triangles(Vt, Vm, U, rr, ax: Axes):
     plot_settings = {'angles': 'xy', 'scale_units': 'xy', 'scale': 1}
-    fontdict = {'fontsize': fontsize}
-    ticksize = fontsize / 1.5 // 1
 
     # Preprocess
     num_span = len(Vt)
     Wt = Vt - U
-
-    ax.set_ylabel(r'Radial coordinate [mm]', fontdict)
-    ax.set_xlabel(r'Axial coordinate [mm]', fontdict)
-
-    ax.tick_params(labelsize=ticksize)
-    ax.grid()
 
     # Define a colormap for each quiver
     cmap_v = plt.get_cmap('Reds')
@@ -99,21 +92,67 @@ def plot_velocity_triangles(Vt, Vm, U, rr, ax: Axes, fontsize=11):
     cbar_v = plt.colorbar(
         sm,
         ax=ax,
-        orientation='vertical',
-        fraction=0.02,
         pad=0.10,
-        ticks=np.linspace(rr[0], rr[-1], 5),
+        fraction=0.02,
+        orientation='vertical',
         format=FuncFormatter(fmt),
+        ticks=np.linspace(rr[0], rr[-1], 5),
     )
-    cbar_v.set_label('Radius [m]', loc=None, **fontdict)
+    cbar_v.set_label('Radius [m]', loc=None)
 
-    ax.legend(['W', 'U', 'V'], loc='lower right', **fontdict)
+    ax.legend(['W', 'U', 'V'], loc='best')
+    ax.set_xlabel(r'$V_m$ / [m/s]')
+    ax.set_ylabel(r'$V_t$ / [m/s]')
 
-    ax.set_xlabel(
-        'Meridional Component [m/s]',
-        fontdict=fontdict,
-    )
-    ax.set_ylabel(
-        'Tangential Component [m/s]',
-        fontdict=fontdict,
-    )
+
+def plot_camberline(
+    inlet_angle,
+    outlet_angle,
+    chord_ax,
+    ax,
+    color,
+    *,
+    axial_offset=0.0,
+    tangential_offset=0.0,
+    n_points=50,
+    **kwargs,
+):
+    """
+    Plot a 2D parabolic camber line on the given axis.
+
+    Parameters
+    ----------
+    axis : matplotlib.axes.Axes
+        The axes to plot on
+    inlet_angle : float
+        Inlet metal angle [rad]
+    outlet_angle : float
+        Outlet metal angle [rad]
+    chord_ax : float
+        Axial chord length [m]
+    color : str or color
+        Color for the camber line
+    axial_offset : float, optional
+        Offset in axial direction (default: 0.0)
+    tangential_offset : float, optional
+        Offset in tangential/pitch direction (default: 0.0)
+    n_points : int, optional
+        Number of points to generate along camber line (default: 50)
+    **kwargs : optional
+        Additional keyword arguments passed to matplotlib's plot function
+        (e.g., linewidth, linestyle, alpha)
+    """
+    tan0 = np.tan(inlet_angle)
+    tan1 = np.tan(outlet_angle)
+
+    a = (tan1 - tan0) / (2 * chord_ax)
+    b = tan0
+
+    a = safe_min_clip(a, 1e-3)
+
+    # y_out = a * chord_ax**2 + b * chord_ax
+
+    x = np.linspace(0, chord_ax, n_points)
+    y = a * x**2 + b * x
+
+    ax.plot(axial_offset + x, tangential_offset + y, color=color, **kwargs)

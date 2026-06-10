@@ -103,16 +103,25 @@ class BaseComponent(ABC):
     def _post_init(self):
         raise NotImplementedError
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+        # Force children to define these class attributes
+        if not hasattr(cls, 'base_equations'):
+            raise TypeError(f'{cls.__name__} must define `base_equations`')
+
+        cls._verify_base_equation_format()
+
     def attach_network(self, network: 'ComponentNetwork'):
         logger.debug(f'Attached network {network} to {self}')
         self._attached_networks.add(network)
 
     @property
-    def inlet_bc(self):
+    def inlet_bc(self) -> list[VarSpec]:
         return [spec for spec in self._boundary_conditions if spec.node == 0]
 
     @property
-    def outlet_bc(self):
+    def outlet_bc(self) -> list[VarSpec]:
         return [spec for spec in self._boundary_conditions if spec.node == 1]
 
     @property
@@ -211,15 +220,6 @@ class BaseComponent(ABC):
 
         return {**base_eqs, **user_eqs}
 
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-
-        # Force children to define these class attributes
-        if not hasattr(cls, 'base_equations'):
-            raise TypeError(f'{cls.__name__} must define `base_equations`')
-
-        cls._verify_base_equation_format()
-
     @classmethod
     def _verify_base_equation_format(cls):
         """Verify that the base equations are entered in the correct format"""
@@ -281,7 +281,7 @@ class BaseComponent(ABC):
                 f'No loss applier function for `{self.name}` component instance'
             )
 
-    # ================== Interaction with the system ==================
+    # ================== Interactions with the system ==================
     def add_equation(
         self,
         equation: EquationBase,
@@ -353,7 +353,7 @@ class BaseComponent(ABC):
     def set_component_constants(self, *arguments: VarSpec):
         self._equalities_helper('const', *arguments)
 
-    def bc_from_dict(self, bound_conds: Mapping[VarSpec, AdetArray]):
+    def set_bc_from_dict(self, bound_conds: Mapping[VarSpec, AdetArray]):
         for spec, value in bound_conds.items():
             self.set_boundary_cond(spec, value)
 

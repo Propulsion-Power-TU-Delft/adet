@@ -3,10 +3,10 @@ Basic tools for string manipulation
 """
 
 import re
-from typing import cast, get_args
+from typing import cast, get_args, Literal
 
-from adet.constants import NodeStatesNames
 
+NodeStatesNames = Literal['stc', 'tot', 'rlt', 'kin', 'geo', 'oth']
 STATE_NAMES = get_args(NodeStatesNames)
 
 

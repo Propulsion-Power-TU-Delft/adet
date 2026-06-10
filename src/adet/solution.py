@@ -124,7 +124,7 @@ def solve_root_problem(
                 guess_cat, knowns_cat, root_fn, delta_pert, num_samples
             )
 
-        extra_args = {}
+        extra_args: dict[str, int | cs.DM] = {}
         if rootfinder.n_in() > 2:
             extra_args.update({'lbg': 0, 'ubg': 0})
             if arg_bounds:
