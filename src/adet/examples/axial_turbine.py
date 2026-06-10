@@ -39,9 +39,10 @@ abs_state = DebugAbstractState('HEOS', 'Air')
 # *** Inlet conditions
 inlet = Inlet(
     boundary_conditions={
-        # n0.kin.V_mer: 40,
         # *** Inlet geometry
+        n0.kin.V_mer: 100.0,
         n0.geo.Rmid: 0.1,
+        n0.geo.HubTipRatio: 0.85,
         n0.geo.MeridionalAngle: Quantity(0, 'deg'),
         # *** Inlet total conditions
         n0.tot.Pressure: 10e5,
@@ -61,11 +62,11 @@ stator = BladeRow(
         n0.geo.ThickByPitch: 0.04,
         n1.geo.MeridionalAngle: Quantity(0, 'deg'),
         n1.geo.ThickByPitch: 0.02,
-        # n1.geo.AspectRatio: 3.0,
-        n1.geo.FlareAngle: Quantity(30, 'deg'),
-        # n1.geo.ClearanceByHeight: 0.01,
-        n1.geo.NumBlades: 10,
-        # n1.geo.ZweifelCoeff: 0.85,
+        n1.geo.AspectRatio: 3.0,
+        # n1.geo.FlareAngle: Quantity(30, 'deg'),
+        n1.geo.ClearanceByHeight: 0.01,
+        n1.geo.NumBlades: 80,
+        # n1.geo.ZweifelCoeff: 0.8,
         # *** Boundary layer
         n1.oth.MomByBld: 0.075,
         n1.oth.DispByMom: 2,
@@ -75,7 +76,6 @@ stator = BladeRow(
         n1.oth.XiCambLenA: 0.375,
         n1.oth.XiCambLenB: 0.675,
         n1.oth.DischCoeff: 0.35,
-        # n1.stc.Pressure: 1.462617e6, # Legacy ?
     },
     extra_equations={
         ZeroDeviation(): 0,  # No incidence (design)
@@ -90,6 +90,8 @@ stator.set_component_constants(n0.geo.Rmid.Glob)
 rotor = deepcopy(stator)  # Reuse the stator as template
 rotor.shaft = shaft  # Assign the rotating shaft
 rotor.name = 'rotor'
+# ==
+
 
 fluid_model = FluidModel(abs_state)
 fluid_settings = FluidSettings(
@@ -105,10 +107,10 @@ ntw = ComponentNetwork(
 )
 
 
-ntw.system.add_equation(RepeatedStage(), (0, 1, 2, 3))
-ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, 2, 3))
 ntw.system.add_equation(FlowCoefficient(), (0, 3))
 ntw.system.add_equation(WorkCoefficient(), (0, 3))
+ntw.system.add_equation(RepeatedStage(), (0, 1, 2, 3))
+ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, 2, 3))
 # ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
 
 rotor.set_spanwise_constant(n1.geo.ChordAx)
@@ -119,23 +121,22 @@ stator.set_spanwise_constant(
     # Uniform chords along the span
     n1.geo.ChordAx,
 )
-# Copy meridional geometry from previous node
-# instead of computing it
+
+# Copy meridional geometry from previous node instead of computing
 rotor.copy_from_previous(n0.geo.HDistr, n0.geo.RDistr)
 rotor.remove_equation(MeridionalGeometry, 0)
 
 stator.set_bc_from_dict(
     {
-        n1.kin.RelMach: 0.8,
+        # n0.kin.RelMach: 1.2,
     },
 )
 
 rotor.set_bc_from_dict(
     {
-        n1.geo.HubTipRatio: 0.818,
-        n1.ndim.FlowCoeff: 0.4,
-        n1.ndim.WorkCoeff: -1.0,
-        n1.ndim.DegreeOfReactionTS: 0.5,
+        n1.ndim.FlowCoeff: 0.5,
+        n1.ndim.WorkCoeff: -3.0,
+        n1.ndim.DegreeOfReactionTS: 0.0,
     }
 )
 ntw.build()
@@ -146,7 +147,9 @@ x0 = ntw.system.get_scaled_guess(fallback=0.8)
 kn = ntw.system.get_scaled_constraints()
 bnd = ntw.system.get_arguments_bounds(
     {
-        n0.stc.Pressure.Glob: (100.0, 13e5),
+        # n1.geo.NumBlades.Glob: (20.0, 1e5),
+        n0.geo.Chord.Glob: (0.0, 1e5),
+        n0.stc.Pressure.Glob: (10.0, 13e5),
         n0.stc.Temperature.Glob: (60.0, 500),
     },
     ignore_defaults=False,
@@ -154,8 +157,15 @@ bnd = ntw.system.get_arguments_bounds(
 
 
 # Ipopt
-rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': False})
-sol = solve_root_problem(rtfn, x0, kn, bnd)
+try:
+    # Unbounded
+    rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': True})
+    sol = solve_root_problem(rtfn, x0, kn, suppress_output=True)
+except RuntimeError:
+    # Bounded
+    rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': False})
+    sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=True)
+
 
 # Kinsol
 rtfn = ntw.system.make_rootfinder('kinsol')
@@ -165,7 +175,8 @@ data = ntw.system.sol_to_dict(sol)
 
 # globals().update(residual_debugger(ModifiedZweifel(), [0, 1], data))
 
-if True:
+PLOTS = True
+if PLOTS:
     setup_mpl({'font.family': 'EB Garamond', 'font.size': 15})
 
     # *** Velocity triangles
@@ -184,6 +195,7 @@ if True:
     fig_cbl, ax_cbl = plt.subplots()
 
     # Setup axes
+    ax_mer.set_ylim(0.0, 1.01 * data[n3.geo.Rtip])
     ax_mer.set_aspect('equal')
     ax_cbl.set_aspect('equal')
     ax_mer.grid(alpha=0.4)

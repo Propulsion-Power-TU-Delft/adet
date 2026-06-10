@@ -319,7 +319,7 @@ class ModifiedZweifel(EquationBase):
             0.01 * wt0,
         )
         solidity_ax = (
-            0.5 * (rho0 * wm0 + rho1 * wm1) * delta_Vt / (zweif_coeff1 * (p_rlt0 - p1))
+            (rho0 * wm0 + rho1 * wm1) * delta_Vt / (2 * zweif_coeff1 * (p_rlt0 - p1))
         )
 
         optimal_pitch = chord_ax1[midspan] / solidity_ax[midspan]
