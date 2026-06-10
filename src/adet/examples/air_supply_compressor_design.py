@@ -145,7 +145,6 @@ EQS_WITH_LOSSES = {
 rotor = BladeRow(
     name='rotor',
     shaft=shaft,
-    row_type='rotor',
     in_constraints={
         'geo': {
             # *** Meridional geometry

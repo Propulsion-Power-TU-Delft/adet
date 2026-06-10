@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from matplotlib.lines import Line2D
@@ -123,7 +123,6 @@ class BladeRow(BaseComponent):
         self,
         name: str,
         shaft: Shaft,
-        row_type: Literal['stator', 'rotor'],
         bound_cond: dict[VarSpec, Any] = {},
         extra_equations: dict[
             EquationBase,
@@ -149,7 +148,6 @@ class BladeRow(BaseComponent):
         self._shaft = None
         # This uses the setter logic
         self.shaft = shaft
-        self.row_type: Literal['stator', 'rotor'] = row_type
 
     def _post_init(self):
         pass
@@ -171,6 +169,18 @@ class BladeRow(BaseComponent):
             # When switching from a fixed to nonfixed shaft
             # remove omega from the boundary conditions
             self._boundary_conditions.pop(n1.kin.Omega, None)
+
+    @property
+    def row_type(self) -> str:
+        if self._shaft and self._shaft.is_constrained:
+            omega_value = (
+                self._shaft.omega.magnitude
+                if hasattr(self._shaft.omega, 'magnitude')
+                else self._shaft.omega
+            )
+            if omega_value == 0:
+                return 'stator'
+        return 'rotor'
 
 
 class VanelessDiffuser(BaseComponent):

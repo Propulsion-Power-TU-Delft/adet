@@ -133,7 +133,6 @@ inlet = Inlet(
 row = BladeRow(
     name='stator',
     shaft=shaft,
-    row_type='rotor',
     in_constraints={
         'geo': {
             'thick_by_pitch': 0.04,

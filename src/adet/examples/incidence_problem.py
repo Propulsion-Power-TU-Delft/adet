@@ -62,7 +62,6 @@ angle_distribution = Quantity(angle_values, 'deg')
 impeller = BladeRow(
     name='rotor',
     shaft=shaft,
-    row_type='rotor',
     in_constraints={
         'geo': {
             # *** Meridional geometry

@@ -168,7 +168,6 @@ inlet = Inlet(
 stator = BladeRow(
     'Stator',
     shaft=casing,
-    row_type='stator',
     in_constraints={
         'geo': {
             'thick_by_pitch': 0.04,
@@ -199,7 +198,6 @@ stator = BladeRow(
 rotor = BladeRow(
     'Rotor',
     shaft=shaft,
-    row_type='rotor',
     in_constraints={
         'geo': {
             'thick_by_pitch': 0.04,

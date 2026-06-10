@@ -330,7 +330,6 @@ inlet = Inlet(
 stator = BladeRow(
     name='Stator',
     shaft=casing,
-    row_type='stator',
     bound_cond={
         n0.geo.ThickByPitch: 0.04,
         n1.geo.MeridionalAngle: Quantity(0, 'deg'),
@@ -360,12 +359,11 @@ stator.set_component_constants(n0.geo.Rmid.Glob)
 rotor = deepcopy(stator)  # Reuse the stator as template
 rotor.shaft = shaft  # Assign the rotating shaft
 rotor.name = 'rotor'
-rotor.row_type = 'rotor'  # Set the type (useless now)
 rotor.add_equation(WorkCoefficient(), (0, 1))
 
 # *** Duty coefficients
 rotor.set_boundary_cond(n1.geo.HubTipRatio, 0.818)
-rotor.bc_from_dict(DUTY_COEFFS)  # Duty coefficients at node 1
+rotor.set_bc_from_dict(DUTY_COEFFS)  # Duty coefficients at node 1
 
 # ================================================
 # Create network

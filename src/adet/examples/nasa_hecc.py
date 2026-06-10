@@ -218,7 +218,6 @@ angle_distribution = Quantity(angle_values, 'deg')
 impeller = BladeRow(
     name='rotor',
     shaft=shaft,
-    row_type='rotor',
     bound_cond={
         # *** Node 0 ***
         # > Geometry

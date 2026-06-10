@@ -58,7 +58,6 @@ shaft = Shaft(
 
 stator = BladeRow(
     'nozzle',
-    row_type='stator',
     bound_cond={
         n1.geo.HeightRatio: 1.0,
         n1.geo.RadiusRatio: 0.75,
@@ -113,7 +112,6 @@ shock_mix = ShockMixer(
 
 rotor = BladeRow(
     'impeller',
-    row_type='rotor',
     bound_cond={
         # *** Meridional Geometry
         n1.geo.Rhub: Quantity(8.2, 'mm'),
