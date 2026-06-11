@@ -353,7 +353,9 @@ class BaseComponent(ABC):
     def set_component_constants(self, *arguments: VarSpec):
         self._equalities_helper('const', *arguments)
 
-    def set_bc_from_dict(self, bound_conds: Mapping[VarSpec, AdetArray]):
+    def set_bc_from_dict(
+        self, bound_conds: Mapping[VarSpec, PlainQuantity | AdetArray]
+    ):
         for spec, value in bound_conds.items():
             self.set_boundary_cond(spec, value)
 

@@ -1,6 +1,5 @@
 """Mixing losses downstream of turbomachinery blades"""
 
-
 from pathlib import Path
 from typing import Literal
 
@@ -203,30 +202,47 @@ def incomp_mixing_zeta(
 
 
 class AungierDeviationModel(DeviationModel):
+    """Only valid for subsonic deviation"""
+
     def residual(
         self,
-        beta_out: n0.kin.FlowAngleRel.Hint,
-        mach_out: n0.kin.RelMach.Hint,
+        rho0: n0.stc.Density.Hint,
+        rho1: n1.stc.Density.Hint,
+        v0: n0.kin.V_mag.Hint,
+        v1: n1.kin.V_mag.Hint,
         met_angle: n0.geo.MetalAngle.Hint,
+        dev_angle: n1.kin.DevAngle.Hint,
+        pitch: n0.geo.Pitch.Hint,
+        mach_out: n1.kin.RelMach.Hint,
     ):
         cos_beta = np.cos(met_angle)  # > 0
         beta_abs = safe_abs(met_angle)  # > 0
-        delta0_rad = beta_abs - np.arccos(
+        delta0 = beta_abs - np.arccos(
             cos_beta * (1 + (1 - cos_beta) * (2 * beta_abs / np.pi) ** 2)
         )
 
         X = 2 * mach_out - 1
-        delta_sub_rad = delta0_rad * (1 - 10 * X**3 + 15 * X**4 - 6 * X**5)
+        delta_sub = delta0 * (1 - 10 * X**3 + 15 * X**4 - 6 * X**5)
 
-        deviation_rad = safe_if_else(
+        # Supersonic deviation
+        throat = pitch * np.cos(met_angle)
+        mf_th = rho0 * v0 * throat
+        argument = safe_min(mf_th / (rho1 * v1 * pitch), 0.99)
+        deviation_super = met_angle - np.arccos(argument)  # ty:ignore
+
+        deviation_sub = safe_if_else(
             mach_out <= 0.5,
-            delta0_rad,
-            delta_sub_rad,
+            delta0,
+            delta_sub,
         )
 
-        deviation_rad = -np.sign(met_angle) * deviation_rad
+        deviation_switch = safe_if_else(
+            mach_out <= 1,
+            deviation_sub,
+            deviation_super,
+        )
 
-        return beta_out - (met_angle + deviation_rad)
+        return dev_angle + np.sign(met_angle) * deviation_switch
 
 
 class AungierSimpleMixLoss(LossModel):

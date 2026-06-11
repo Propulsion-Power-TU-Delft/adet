@@ -255,3 +255,32 @@ class GeneralWhirl(EquationBase):
         free_vortex_term = kin_Vt0 * geo_rr0
         frcd_vortex_term = kin_Vt0 / geo_rr0
         return kin_Vt0 - gen_whirl_a * geo_rr0**gen_whirl_n + gen_whirl_b / geo_rr0
+
+
+class AxialMomentumBalance(EquationBase):
+    def residual(
+        self,
+        v0: n0.kin.W_mag.Hint,
+        rho0: n0.stc.Density.Hint,
+        s0: n0.stc.Entropy.Hint,
+        s1: n1.stc.Entropy.Hint,
+        beta0: n0.kin.FlowAngleRel.Hint,
+        p0: n0.stc.Pressure.Hint,
+        v1: n1.kin.W_mag.Hint,
+        rho1: n1.stc.Density.Hint,
+        beta1: n1.kin.FlowAngleRel.Hint,
+        p1: n1.stc.Pressure.Hint,
+        pitch0: n0.geo.Pitch.Hint,
+        metal_angle: n0.geo.MetalAngle.Hint,
+        delta_s: n1.loss.Ds_mixing.Hint,
+    ):
+        throat = pitch0 * np.cos(metal_angle)
+        dev = beta0 - beta1
+
+        mom_inl = p0 * throat + rho0 * throat * v0 * v0
+        mom_out = p1 * throat + rho1 * throat * v0 * v1 * np.cos(dev)
+
+        r1 = mom_inl - mom_out
+        r2 = delta_s - (s1 - s0)
+
+        return r1, r2

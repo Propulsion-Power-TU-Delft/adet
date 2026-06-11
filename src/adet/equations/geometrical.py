@@ -70,11 +70,6 @@ class AnnulusAreas(EquationBase):
         return a0 - 2 * np.pi * rr0 * hh0
 
 
-class OuterThroat(EquationBase):
-    def residual(self, pitch, met_angl):
-        pass
-
-
 class MeridionalRatios(EquationBase):
     def residual(
         self,

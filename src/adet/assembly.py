@@ -1175,10 +1175,11 @@ class CasadiSystem(SystemAssembler):
         )
 
         if num_vars != num_residuals:
-            logger.warning(
-                f'Mismatch in number of equations {num_residuals}'
-                f' and variables {num_vars}.'
-            )
+            mismatch = abs(num_vars - num_residuals)
+            if num_vars > num_residuals:
+                logger.warning(f'Add {mismatch} conditions for a square system.')
+            else:
+                logger.warning(f'Release {mismatch} conditions for a square system.')
 
     def get_residual_indices(self):
         idx = 0
