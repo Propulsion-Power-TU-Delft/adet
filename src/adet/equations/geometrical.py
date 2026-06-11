@@ -308,8 +308,8 @@ class ModifiedZweifel(EquationBase):
         wm1: n1.kin.W_mer.Hint,
         p_rlt0: n0.rlt.Pressure.Hint,
         p1: n1.stc.Pressure.Hint,
-        zweif_coeff1: n1.geo.ZweifelCoeff.Hint,
-        n_blades1: n1.geo.NumBlades.Hint,
+        Zw: n1.geo.ZweifelCoeff.Hint,
+        n_bl_opt: n1.geo.NumBladesOpt.Hint,
         chord_ax1: n1.geo.ChordAx.Hint,
         rr_mid1: n1.geo.Rmid.Hint,
     ):
@@ -318,13 +318,11 @@ class ModifiedZweifel(EquationBase):
             safe_abs(wt1 - wt0),
             0.01 * wt0,
         )
-        solidity_ax = (
-            (rho0 * wm0 + rho1 * wm1) * delta_Vt / (2 * zweif_coeff1 * (p_rlt0 - p1))
-        )
+        solidity_ax = (rho0 * wm0 + rho1 * wm1) * delta_Vt / (2 * Zw * (p_rlt0 - p1))
 
         optimal_pitch = chord_ax1[midspan] / solidity_ax[midspan]
         num_blades_opt = (2 * np.pi * rr_mid1) / optimal_pitch
-        return n_blades1 - num_blades_opt
+        return n_bl_opt - num_blades_opt
 
 
 class MinimalCamberLine(CamberLineGeom):

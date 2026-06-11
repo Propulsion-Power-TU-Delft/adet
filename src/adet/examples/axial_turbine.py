@@ -1,4 +1,12 @@
 # === IMPORTS
+from adet.equations.fundamental import (
+    MassConservation,
+    Kinematics,
+    MassAreaRelation,
+    TotalStaticMatching,
+    EulerEquation,
+)
+import numpy as np
 from adet.equations.utils import residual_debugger
 from adet.components.blade_row import RowGeometry
 from adet.tools.plotting import plot_velocity_triangles, setup_mpl, plot_camberline
@@ -20,6 +28,7 @@ from adet.equations.nondimensional import (
     StaticTotalDegreeOfReaction,
     TotalTotalExpansionEfficiency,
     WorkCoefficient,
+    RelativeMachNumber,
 )
 from adet.fluid.settings import FluidModel, FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation
@@ -65,8 +74,8 @@ stator = BladeRow(
         n1.geo.AspectRatio: 3.0,
         # n1.geo.FlareAngle: Quantity(30, 'deg'),
         n1.geo.ClearanceByHeight: 0.01,
-        n1.geo.NumBlades: 80,
-        # n1.geo.ZweifelCoeff: 0.8,
+        n1.geo.NumBlades: 40,  # Dummy input
+        n1.geo.ZweifelCoeff: 0.9,
         # *** Boundary layer
         n1.oth.MomByBld: 0.075,
         n1.oth.DispByMom: 2,
@@ -81,7 +90,7 @@ stator = BladeRow(
         ZeroDeviation(): 0,  # No incidence (design)
         ZeroDeviation(): 1,  # No deviation
         IsentropicLink(): (0, 1),
-        # ModifiedZweifel(): (0, 1),
+        ModifiedZweifel(): (0, 1),
     },
 )
 stator.set_component_constants(n0.geo.Rmid.Glob)
@@ -106,6 +115,7 @@ ntw = ComponentNetwork(
     [stator, rotor],
 )
 
+# Throat system
 
 ntw.system.add_equation(FlowCoefficient(), (0, 3))
 ntw.system.add_equation(WorkCoefficient(), (0, 3))
@@ -221,6 +231,9 @@ if PLOTS:
             color='k',
             axial_offset=offset,
         )
+        opt_pitch = (
+            2 * np.pi * data[nodes[1].geo.Rmid] / data[nodes[1].geo.NumBladesOpt]
+        )
         plot_camberline(
             data[nodes[0].geo.MetalAngle],
             data[nodes[1].geo.MetalAngle],
@@ -228,7 +241,7 @@ if PLOTS:
             ax=ax_cbl,
             color='k',
             axial_offset=offset,
-            tangential_offset=data[nodes[1].geo.Pitch],
+            tangential_offset=opt_pitch,
         )
         geom.plot_meridional_profile(ax=ax_mer, color='k')
         # Add offset

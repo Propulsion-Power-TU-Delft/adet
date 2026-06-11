@@ -95,6 +95,7 @@ class GeometricVariables(VariableEnum):
     BldThick = VarSpec('bld_thick', 'm', 0.005)
     Solidity = VarSpec('solidity', '', 1.0)
     NumBlades = VarSpec('n_blades', '', 50.0, scalar=True)
+    NumBladesOpt = VarSpec('n_blades_opt', '', 50.0, scalar=True)
     ThroatArea = VarSpec('A_throat', 'm**2', 0.1)
     ThroatRadius = VarSpec('rr_throat', 'm', 0.01)
     EffSolidity = VarSpec('eff_solidity', '', 1.0)

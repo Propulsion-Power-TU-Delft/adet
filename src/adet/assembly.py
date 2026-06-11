@@ -133,7 +133,7 @@ class EquationRegistry:
     def contains(
         self,
         eq_class: Type[EquationBase],
-        abs_position: int | list[int] | tuple[int, ...],
+        abs_position: int | Sequence[int],
     ):
         abs_position = ensure_tuple(abs_position)
         for eq_instance, eq_pos in self.data.equations.items():
@@ -181,9 +181,7 @@ class EquationRegistry:
 
         return tuple(decl_args)
 
-    def _build_argument_maps(
-        self,
-    ) -> dict[EquationBase, dict[int, int]]:
+    def _build_argument_maps(self) -> dict[EquationBase, dict[int, int]]:
         arg_maps = {}
         logger.debug('Reading all the equation arguments...')
 
