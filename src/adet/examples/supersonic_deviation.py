@@ -11,15 +11,9 @@ from adet.components import BladeRow, Inlet
 from adet.components.blade_row import RowGeometry
 from adet.components.connections import Shaft
 from adet.components.network import ComponentNetwork
-from adet.equations.base_equation import EquationBase
-from adet.equations.utils import safe_min
 from adet.fluid.settings import FluidModel, FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation
-from adet.losses.mixing import (
-    SieverdingBasePressure,
-    AungierDeviationModel,
-)
-from adet.solution import solve_root_problem
+from adet.solution import solve_optimization_problem, solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 from adet.tools.plotting import plot_camberline, plot_velocity_triangles, setup_mpl
@@ -38,13 +32,13 @@ abs_state = DebugAbstractState('HEOS', 'Air')
 inlet = Inlet(
     boundary_conditions={
         # *** Inlet geometry
-        n0.kin.V_mer: 100.0,
+        # n0.oth.MassFlow: 227.5,
         n0.kin.FlowAngleAbs: 0.0,
         n0.geo.Rmid: 0.1,
-        n0.geo.HubTipRatio: 0.85,
+        n0.geo.Area: 0.1,
         n0.geo.MeridionalAngle: Quantity(0, 'deg'),
         # *** Inlet total conditions
-        n0.tot.Pressure: 10e5,
+        n0.tot.Pressure: 20e5,
         n0.tot.Temperature: 500,
     }
 )
@@ -58,13 +52,13 @@ stat_conv = BladeRow(
     name='stator',
     shaft=casing,
     bound_cond={
-        n0.geo.ThickByPitch: 0.07,
+        n0.geo.ThickByPitch: 0.0,
         n1.geo.MeridionalAngle: Quantity(0, 'deg'),
-        n1.geo.ThickByPitch: 0.25,
+        n1.geo.ThickByPitch: 0.0,
         n1.geo.AspectRatio: 3.0,
         # n1.geo.FlareAngle: Quantity(30, 'deg'),
         n1.geo.ClearanceByHeight: 0.01,
-        n1.geo.NumBlades: 40,  # Dummy input
+        n1.geo.NumBlades: 10,  # Dummy input
         # n1.geo.ZweifelCoeff: 0.9,
         # *** Boundary layer
         n1.oth.MomByBld: 0.075,
@@ -87,21 +81,22 @@ stat_conv = BladeRow(
 
 stat_div = deepcopy(stat_conv)
 stat_div.name = 'st_throat'
+stat_div.set_component_constants(n0.geo.Height)
 
 
 stat_conv.set_bc_from_dict(
     {
-        n1.kin.FlowAngleRel: Quantity(67.9442476, 'deg'),
+        n1.geo.Area: 0.11,
+        n1.kin.FlowAngleRel: Quantity(55, 'deg'),
         # n1.kin.RelMach: 1.0,
     }
 )
 
-stat_conv.set_component_constants(n1.geo.Height)
-stat_div.set_component_constants(n1.geo.Height)
 stat_div.set_bc_from_dict(
     {
-        # n1.kin.RelMach: 0.8,
-        n1.stc.Pressure: 9e5,
+        # n1.kin.RelMach: 1.5,
+        # n1.kin.FlowAngleRel: 0.0,
+        # n1.stc.Pressure: 15e5,
     }
 )
 
@@ -133,45 +128,48 @@ stat_conv.set_spanwise_constant(
     n1.geo.ChordAx,
 )
 
-# ntw.system.add_equation(SieverdingBasePressure(), (0, 3))
-
+ntw.system.add_equalities((n2.stc.Pressure, n3.stc.Pressure))
 ntw.build()
 input('Continue?')
 
 
-x0 = ntw.system.get_scaled_guess({n3.stc.Entropy: 4e6}, fallback=0.8)
+x0 = ntw.system.get_scaled_guess(fallback=0.8)
 kn = ntw.system.get_scaled_constraints()
 bnd = ntw.system.get_arguments_bounds(
     {
-        # n1.geo.NumBlades.Glob: (20.0, 1e5),
-        n1.kin.RelMach: (0.0, 0.9),
-        n0.geo.Chord.Glob: (0.0, 1e5),
-        n0.stc.Pressure.Glob: (10.0, 13e5),
+        n0.kin.RelMach: (0.0, 1.0),
+        n1.kin.RelMach: (0.0, 1.0),
+        # n0.geo.Chord.Glob: (0.0, 1e5),
+        n0.stc.Pressure.Glob: (10.0, 25e5),
         n0.stc.Temperature.Glob: (60.0, 500),
     },
     ignore_defaults=False,
 )
 
-# Ipopt
-try:
-    # Unbounded
-    rtfn = ntw.system.make_rootfinder(
-        'ipopt', {'error_on_fail': True, 'max_wall_time': 10}
-    )
-    sol = solve_root_problem(rtfn, x0, kn, suppress_output=False)
-except RuntimeError:
-    # Bounded
-    rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': False})
-    sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=False)
+obj_func = 1 / ntw.system.free_args_sym[n1.oth.MassFlow]
+sol, opt = solve_optimization_problem(ntw.system, obj_func, x0, kn, bnd)
+sol = sol['x'].toarray()
 
 
-# Kinsol
-rtfn = ntw.system.make_rootfinder('kinsol')
-sol = solve_root_problem(rtfn, sol, kn)
+# # Ipopt rootfinding
+# try:
+#     # Unbounded
+#     rtfn = ntw.system.make_rootfinder(
+#         'ipopt', {'error_on_fail': True, 'max_wall_time': 10}
+#     )
+#     sol = solve_root_problem(rtfn, x0, kn, suppress_output=False)
+# except RuntimeError:
+#     # Bounded
+#     rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': False})
+#     sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=False)
+#
+#
+# # Kinsol
+# rtfn = ntw.system.make_rootfinder('kinsol')
+# sol = solve_root_problem(rtfn, sol, kn)
 
 data = ntw.system.sol_to_dict(sol)
 
-# globals().update(residual_debugger(ModifiedZweifel(), [0, 1], data))
 
 LOOP = False
 if LOOP:
