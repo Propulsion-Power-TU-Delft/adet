@@ -1,3 +1,4 @@
+from adet.solution import solve_optimization_problem
 import logging
 
 import casadi as cs
@@ -106,8 +107,18 @@ system.fluid_settings = FluidSettings(
 
 [system.add_equation(eq, pos) for eq, pos in EQS.items()]
 system.add_equalities(
-    (n0.kin.Omega, n1.kin.Omega, n2.kin.Omega, n3.kin.Omega),
-    (n0.geo.RDistr, n1.geo.RDistr, n2.geo.RDistr, n3.geo.RDistr),
+    (
+        n0.kin.Omega,
+        n1.kin.Omega,
+        n2.kin.Omega,
+        n3.kin.Omega,
+    ),
+    (
+        n0.geo.RDistr,
+        n1.geo.RDistr,
+        n2.geo.RDistr,
+        n3.geo.RDistr,
+    ),
     (
         n0.kin.FlowAngleAbs,
         n1.kin.FlowAngleAbs,
@@ -120,37 +131,12 @@ system.add_boundary_conditions(BCS)
 system.build()
 input('Press enter to continue...')
 
-res_func = system.make_residual_function()
+# *** Optimizer formulation
+obj_func = 1 / system.free_args_sym[n1.oth.MassFlow]
+# ***
 
-args_sym = list(system.free_args_sym.values())
-cons_sym = list(system.const_sym.values())
-
-free_args_symbols = cs.vertcat(*args_sym)
-constraints_symbols = cs.vertcat(*cons_sym)
-
-res_expr = res_func(
-    free_args_symbols,
-    constraints_symbols,
-)
-
-mf = system.free_args_sym[n1.oth.MassFlow]
-
-opt_problem = {
-    'x': free_args_symbols,
-    'p': constraints_symbols,
-    'f': 1 / mf,
-    'g': res_expr,
-}
-
-optimizer = cs.nlpsol(
-    'optimizer',
-    'ipopt',
-    opt_problem,
-    {**IPOPT_DEFAULTS, 'error_on_fail': False},
-)
-
-x0 = np.concatenate(system.get_scaled_guess())
-kn = np.concatenate(system.get_scaled_constraints())
+x0 = system.get_scaled_guess()
+kn = system.get_scaled_constraints()
 bnd = system.get_arguments_bounds(
     {
         # Node limiters
@@ -170,18 +156,9 @@ bnd = system.get_arguments_bounds(
     ignore_defaults=True,
 )
 
-kwargs = {
-    # Force the root problem
-    'lbg': 0,
-    'ubg': 0,
-    # Free variables limits
-    'lbx': bnd[0],
-    'ubx': bnd[1],
-}
+solution, optimizer = solve_optimization_problem(system, obj_func, x0, kn, bnd)
 
-solution = optimizer(x0=x0, p=kn, **kwargs)
-
-sol_data = system.sol_to_dict(solution['x'].toarray().flatten())
+data = system.sol_to_dict(solution['x'].toarray().flatten())
 
 # * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
 
@@ -197,15 +174,15 @@ if True:
     for deviation in np.linspace(0.0, 0.8, N_PTS):
         scale = system._scaling_manager.get_constraints_scaling()[-1]
         # kn[-1] = p_out / scale
-        kn[-1] = deviation / scale
-        x0 = solution['x']
-        solution = optimizer(x0=x0, p=kn, **kwargs)
-        sol_data = system.sol_to_dict(solution['x'].toarray().flatten())
-        massflows.append(sol_data[n0.oth.MassFlow])
-        p_ratios.append(sol_data[n3.stc.Pressure] / sol_data[n0.tot.Pressure])
-        out_machs.append(sol_data[n3.kin.RelMach])
-        mervels.append(sol_data[n3.kin.V_mer])
-        tanvels.append(sol_data[n3.kin.V_tan])
+        kn[-1] = np.array([deviation / scale])
+        x0 = solution['x'].toarray()
+        solution = optimizer(x0, kn)
+        data = system.sol_to_dict(solution['x'].toarray().flatten())
+        massflows.append(data[n0.oth.MassFlow])
+        p_ratios.append(data[n3.stc.Pressure] / data[n0.tot.Pressure])
+        out_machs.append(data[n3.kin.RelMach])
+        mervels.append(data[n3.kin.V_mer])
+        tanvels.append(data[n3.kin.V_tan])
         deviations.append(
             np.abs(
                 np.degrees(deviation),

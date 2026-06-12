@@ -13,7 +13,6 @@ from adet.equations.utils import (
     safe_max,
     safe_min_clip,
     safe_sum,
-    safe_min,
 )
 from adet.variables import NodeVariables
 

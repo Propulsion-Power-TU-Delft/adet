@@ -1,5 +1,7 @@
+from functools import partial
+from adet.assembly import CasadiSystem, IPOPT_DEFAULTS
 import logging
-from typing import Any
+from typing import Any, Callable
 
 import casadi as cs
 import numpy as np
@@ -140,3 +142,73 @@ def solve_root_problem(
             sol = sol['x']
 
         return np.array(sol)
+
+
+def solve_optimization_problem(
+    system: CasadiSystem,
+    obj_func: cs.MX,
+    guess: list[NDArray] | NDArray,
+    knowns: list[NDArray],
+    arg_bounds: tuple[cs.DM, cs.DM] | None = None,
+) -> tuple[
+    dict[str, cs.DM],
+    Callable[[Any, Any], dict[str, cs.DM]],
+]:
+    """
+    Returns
+    -------
+    solution
+        The dictionary of specs of the solution
+    partial_opt
+        Partialized optimizer that takes the guess and
+        knowns vectors as inputs
+    """
+
+    args_sym = list(system.free_args_sym.values())
+    cons_sym = list(system.const_sym.values())
+
+    free_args_symbols = cs.vertcat(*args_sym)
+    constraints_symbols = cs.vertcat(*cons_sym)
+
+    res_func = system.make_residual_function()
+    res_expr = res_func(free_args_symbols, constraints_symbols)
+
+    opt_problem = {
+        'x': free_args_symbols,
+        'p': constraints_symbols,
+        'f': obj_func,
+        'g': res_expr,
+    }
+    optimizer = cs.nlpsol(
+        'optimizer',
+        'ipopt',
+        opt_problem,
+        {**IPOPT_DEFAULTS, 'error_on_fail': False},
+    )
+
+    x0 = np.concatenate(guess)
+    kn = np.concatenate(knowns)
+
+    kwargs_opt = {}
+    kwargs_opt.update(
+        {
+            # Force the root problem
+            'lbg': 0,
+            'ubg': 0,
+        }
+    )
+
+    if arg_bounds:
+        kwargs_opt.update(
+            {
+                'lbx': arg_bounds[0],
+                'ubx': arg_bounds[1],
+            }
+        )
+
+    solution = optimizer(x0=x0, p=kn, **kwargs_opt)
+
+    def partial_opt(x0, kn):
+        return optimizer(x0=x0, p=kn, **kwargs_opt)
+
+    return solution, partial_opt
