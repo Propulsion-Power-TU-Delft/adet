@@ -379,13 +379,17 @@ class ArgumentResolver:
         that were declared in the equations but have become extractions
         from the equations of state
         """
-        all_discarded = (
+        discarded_args = (
             set(self.data.decl_args)
             - set(self.data.thermo_updt_args)
             - set(self.data.free_args)
         )
 
-        return [arg for arg in all_discarded if arg.state]
+        for v_spec in self.data.boun_cond:
+            if self.data.thermo_updt_args:
+                discarded_args.add(v_spec)
+
+        return [arg for arg in discarded_args if arg.state]
 
     # *** System introspection
     def make_arg_structure(self, arguments: Sequence[VarSpec]):
@@ -813,9 +817,11 @@ class SystemAssembler(ABC):
         return thrm_data
 
     def get_arguments_bounds(self, custom_bounds={}):
+        self._check_built()
         self._scaling_manager.get_arguments_bounds(custom_bounds)
 
     def get_scaled_constraints(self) -> list[NDArray]:
+        self._check_built()
         dimensional_constr = self._constraint_manager.get_array_boun_conds()
         return jax.tree.map(
             lambda x, y: x / y,
@@ -829,6 +835,7 @@ class SystemAssembler(ABC):
         fallback: float | None = None,
     ) -> list[NDArray]:
         """Generate initial guesses for free arguments"""
+        self._check_built()
         guesses = []
         manual_values = dict(manual_values)
 
