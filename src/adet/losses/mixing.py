@@ -8,13 +8,21 @@ import CoolProp as cp
 import numpy as np
 
 from adet.equations.base_equation import DeviationModel, EquationBase, EquationConfig
-from adet.equations.utils import minmax_bound, safe_abs, safe_if_else, safe_min
+from adet.equations.utils import (
+    minmax_bound,
+    safe_abs,
+    safe_if_else,
+    safe_min,
+    safe_max,
+)
 from adet.losses.base_loss import LossModel
 from adet.tools.interpolation import make_casadi_interpolant
 from adet.variables import NodeVariables, ThermoVariables
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)
+n2 = NodeVariables(2)
+n3 = NodeVariables(3)
 thrm = ThermoVariables()
 
 BLADE_PARAM = 2  # For Sieverding -> tmp, make this an input
@@ -206,14 +214,14 @@ class AungierDeviationModel(DeviationModel):
 
     def residual(
         self,
-        rho0: n0.stc.Density.Hint,
-        rho1: n1.stc.Density.Hint,
-        v0: n0.kin.V_mag.Hint,
-        v1: n1.kin.V_mag.Hint,
-        met_angle: n0.geo.MetalAngle.Hint,
-        dev_angle: n1.kin.DevAngle.Hint,
-        pitch: n0.geo.Pitch.Hint,
+        pt0: n0.rlt.Pressure.Hint,
+        p3: n1.stc.Pressure.Hint,
+        met_angle: n1.geo.MetalAngle.Hint,
         mach_out: n1.kin.RelMach.Hint,
+        beta: n1.kin.FlowAngleRel.Hint,
+        pr_choke: n1.ndim.PRatio_choke.Hint,
+        mf: n1.oth.MassFlow.Hint,
+        mf_choke: n1.oth.ChokeMassflow.Hint,
     ):
         cos_beta = np.cos(met_angle)  # > 0
         beta_abs = safe_abs(met_angle)  # > 0
@@ -224,25 +232,22 @@ class AungierDeviationModel(DeviationModel):
         X = 2 * mach_out - 1
         delta_sub = delta0 * (1 - 10 * X**3 + 15 * X**4 - 6 * X**5)
 
-        # Supersonic deviation
-        throat = pitch * np.cos(met_angle)
-        mf_th = rho0 * v0 * throat
-        argument = safe_min(mf_th / (rho1 * v1 * pitch), 0.99)
-        deviation_super = met_angle - np.arccos(argument)  # ty:ignore
-
         deviation_sub = safe_if_else(
             mach_out <= 0.5,
             delta0,
             delta_sub,
         )
 
-        deviation_switch = safe_if_else(
-            mach_out <= 1,
-            deviation_sub,
-            deviation_super,
+        residual_sub = beta - (met_angle - deviation_sub)  # Deviation angle
+        residual_super = mf / mf_choke - 1.0  # Force throat choking
+
+        residual_switch = safe_if_else(
+            p3 >= pt0 / pr_choke,
+            residual_sub,
+            residual_super,
         )
 
-        return dev_angle + np.sign(met_angle) * deviation_switch
+        return residual_switch
 
 
 class AungierSimpleMixLoss(LossModel):

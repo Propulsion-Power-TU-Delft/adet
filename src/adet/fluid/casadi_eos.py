@@ -2,6 +2,7 @@ import logging
 from typing import Any, overload
 
 import casadi as cs
+from casadi import MX, Sparsity
 import CoolProp as cp
 import jax
 
@@ -23,36 +24,6 @@ NOT_JACOBIABLE = ['viscosity']
 NOT_HESSIABLE = ['speed_sound', 'cpmass', 'cvmass']
 # NOTE: Where derivatives are not available, we use 0.0
 # an alternative would be to code finite differences
-
-
-# These two classes are just to correct meaningless
-# type warnings (Some stubs are wrong in CasADi's python API)
-class MX(cs.MX):
-    @staticmethod
-    def sym(*args) -> cs.MX:
-        return cs.MX.sym(*args)
-
-
-class SX(cs.SX):
-    @staticmethod
-    def sym(*args) -> cs.SX:
-        return cs.SX.sym(*args)
-
-
-class DM(cs.DM):
-    @staticmethod
-    def ones(*args) -> cs.DM:
-        return cs.DM.ones(*args)
-
-
-class Sparsity(cs.Sparsity):
-    @staticmethod
-    def dense(*args):
-        return cs.Sparsity.dense(*args)
-
-    @staticmethod
-    def diag(*args):
-        return cs.Sparsity.diag(*args)
 
 
 # *** DUMMY HELPER FUNCTIONS FOR DEV

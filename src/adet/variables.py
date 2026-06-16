@@ -100,8 +100,7 @@ class GeometricVariables(VariableEnum):
     ThroatRadius = VarSpec('rr_throat', 'm', 0.01)
     EffSolidity = VarSpec('eff_solidity', '', 1.0)
     FlareAngle = VarSpec('fl_angle', 'rad', 0.1, (-1.5, 1.5), scalar=True)
-    BladeAngle = VarSpec('beta_bl', 'rad')
-    MetalAngle = VarSpec('metal_angle', 'rad', -0.3, (-1.5, 1.5))
+    MetalAngle = VarSpec('beta_geom', 'rad', -0.3, (-1.5, 1.5))
     RadiusRatio = VarSpec('radRatio', '', 1.0, scalar=True)
     HubTipRatio = VarSpec('hubtip_ratio', '', scalar=True)
     HeightRatio = VarSpec('heightRatio', '', 1.0, scalar=True)
@@ -127,6 +126,7 @@ class GeometricVariables(VariableEnum):
 class Nondimensional(VariableEnum):
     EtaTT = VarSpec('eta_tt', '', 0.9)
     PRatio = VarSpec('pRatio', '')
+    PRatio_choke = VarSpec('pRatio_chk', '')
     VmRatio = VarSpec('VmRatio', '', 1.0)
     PRatioTT = VarSpec('pRatio_tt', '')
     PRatioTS = VarSpec('pRatio_ts', '', guess=1.0)
