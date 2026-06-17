@@ -910,6 +910,14 @@ class CasadiSystem(SystemAssembler):
         self._eq_scales_sym: list[cs.MX] = []
         self.residual_expr: list[cs.MX]
 
+        self._eos_callbacks: dict[
+            int,
+            dict[
+                NodeStates,
+                cs.Function | CasadiEos | Any,
+            ],
+        ] = {}
+
     def build(self, scaled: bool = True):
         super().build(scaled)
         logger.info('Building CasADi backend...')
@@ -986,15 +994,14 @@ class CasadiSystem(SystemAssembler):
     def _build_equations_of_state(
         self, all_args_products: dict[VarSpec, cs.MX]
     ) -> dict[VarSpec, cs.MX]:
+
+        # TODO: Refactor this whole method, it is quite messy
         if self.data.fluid_settings is None:
             return {}
 
         fl_model = self.data.fluid_settings.model
 
-        # TODO: Fix typing here for analytical eos
-        self._eos_callbacks: dict[
-            int, dict[NodeStates, cs.Function | CasadiEos | Any]
-        ] = {
+        self._eos_callbacks = {
             n_idx: dict.fromkeys(
                 NodeStates,
                 None,
@@ -1015,7 +1022,6 @@ class CasadiSystem(SystemAssembler):
                     f'multi_{eq.__class__.__name__}',
                 )
 
-        # TODO: Refactor this, messy
         discarded_vars = self._argument_resolver.get_discarded_thermo_args()
         out_syms: dict[VarSpec, cs.MX] = {}
 
@@ -1031,6 +1037,10 @@ class CasadiSystem(SystemAssembler):
                 sorted_discarded[spec.node][spec.state].append(spec)
 
         for node_idx in range(self.first_node, self.last_node + 1):
+            # If there is no need for any update variables, move to next node
+            if node_idx not in sorted_discarded:
+                continue
+
             for state, out_specs in sorted_discarded[node_idx].items():
                 pair_id = self.data.fluid_settings.input_pair
 

@@ -150,6 +150,7 @@ def solve_optimization_problem(
     guess: list[NDArray] | NDArray,
     knowns: list[NDArray],
     arg_bounds: tuple[cs.DM, cs.DM] | None = None,
+    opts={},
 ) -> tuple[
     dict[str, cs.DM],
     Callable[[Any, Any], dict[str, cs.DM]],
@@ -183,7 +184,7 @@ def solve_optimization_problem(
         'optimizer',
         'ipopt',
         opt_problem,
-        {**IPOPT_DEFAULTS, 'error_on_fail': False},
+        {**IPOPT_DEFAULTS, **opts},
     )
 
     x0 = np.concatenate(guess)
