@@ -1033,7 +1033,7 @@ class CasadiSystem(SystemAssembler):
         for spec in discarded_vars:
             if spec.node not in sorted_discarded:
                 sorted_discarded[spec.node] = {state: [] for state in NodeStates}
-            if spec.state:
+            if spec.state and spec not in self.data.boun_cond:
                 sorted_discarded[spec.node][spec.state].append(spec)
 
         for node_idx in range(self.first_node, self.last_node + 1):

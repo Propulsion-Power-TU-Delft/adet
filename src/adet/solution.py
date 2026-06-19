@@ -146,7 +146,7 @@ def solve_root_problem(
 
 def solve_optimization_problem(
     system: CasadiSystem,
-    obj_func: cs.MX,
+    obj_func: cs.MX | float,
     guess: list[NDArray] | NDArray,
     knowns: list[NDArray],
     arg_bounds: tuple[cs.DM, cs.DM] | None = None,

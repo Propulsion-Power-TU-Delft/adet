@@ -368,6 +368,8 @@ class DiskFricDailyNece(LossModel):
         rho_mean = (rho0 + rho1) / 2
         Re1 = (u1 * rr1 * rho1) / visc1
 
+        # TODO: Check cl_ratio, radius instead of height
+        # and 0.0102 instead of 0.102?
         cl_ratio = back_cl1 / hgt1
         f_df_lo = 3.700 * cl_ratio**0.1 / (Re1**0.5)
         f_df_hi = 0.102 * cl_ratio**0.1 / (Re1**0.2)

@@ -119,6 +119,9 @@ class SymbolicAbstractState(ABC):
     def gas_constant(self):
         return 8.31451
 
+    def molar_mass(self):
+        return 0.0287
+
 
 class IdealGasState(SymbolicAbstractState):
     def eos(self, p, T, rhomass, hmass, umass, smass, speed_sound):
