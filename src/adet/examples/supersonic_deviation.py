@@ -1,11 +1,10 @@
 # === IMPORTS
-from adet.equations.utils import residual_debugger
-import ipdb
-from adet.equations.geometrical import MeridionalGeometry
+from adet.losses.mixing import AungierDeviationModel
 import logging
 from copy import deepcopy
 from typing import Literal
 
+import ipdb  # noqa: F401
 import matplotlib.pyplot as plt
 import numpy as np
 from pint import Quantity
@@ -15,9 +14,9 @@ from adet.components import BladeRow, Inlet
 from adet.components.blade_row import RowGeometry
 from adet.components.connections import Shaft
 from adet.components.network import ComponentNetwork
+from adet.equations.geometrical import MeridionalGeometry  # noqa: F401
 from adet.fluid.settings import FluidModel, FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation
-from adet.losses.mixing import AungierDeviationModel
 from adet.solution import solve_optimization_problem, solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
@@ -122,12 +121,10 @@ ntw = ComponentNetwork(
 
 final_comp = ntw.components[-1]
 
-# final_comp.remove_equation(ZeroDeviation, 1)
-# ntw.system.add_equation(AungierDeviationModel(), (0, 3))
+final_comp.remove_equation(ZeroDeviation, 1)
+ntw.system.add_equation(AungierDeviationModel(), (0, 3))
 
 final_comp.set_boundary_cond(n1.stc.Pressure, 0.7 * INLET_PTOT)
-final_comp.set_boundary_cond(n1.ndim.PRatio_choke, 1.88811703)
-final_comp.set_boundary_cond(n1.oth.ChokeMassflow, 94.18537946)
 # stat_mix.set_component_constants(n0.stc.Pressure)
 
 ntw.build()

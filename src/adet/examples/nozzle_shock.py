@@ -1,9 +1,10 @@
-from matplotlib.colors import Normalize
-from matplotlib.cm import ScalarMappable
+from adet.fluid.symbolic_eos import IdealGasState
 import logging
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import Normalize
 from pint import Quantity
 
 from adet.assembly import CasadiSystem
@@ -74,11 +75,10 @@ BCS = {
     n0.geo.RDistr: 0.1,
     # Areas
     n0.geo.EffArea: 0.1,
-    n1.geo.EffArea: 0.06,
+    n1.geo.EffArea: 0.05,
     # Pressure
     n4.geo.EffArea: 0.1,
-    n4.kin.FlowAngleAbs: 0.6,
-    n4.stc.Pressure: 6e5,
+    n4.stc.Pressure: 5.14e5,
 }
 
 # NOTE: Nozzle scheme
@@ -92,6 +92,8 @@ BCS = {
 #     0     1   2  3   4
 
 abs_state = DebugAbstractState('HEOS', 'Air')
+idl_state = IdealGasState(1.4, 287, 2e-5)
+
 fluid_model = FluidModel(abs_state)
 
 system.fluid_settings = FluidSettings(
@@ -115,7 +117,6 @@ class NormalShock(EquationBase):
     ):
         r1 = ds - (s1 - s0)
         r2 = (p0 + rho0 * w0**2) - (p1 + rho1 * w1**2)
-        r3 = (1 - (p0 - p1) / (2 * p0)) * 0.4
         return r1, r2
 
 
@@ -143,7 +144,7 @@ system.add_equalities(
         n1.kin.FlowAngleAbs,
         n2.kin.FlowAngleAbs,
         n3.kin.FlowAngleAbs,
-        # n4.kin.FlowAngleAbs,
+        n4.kin.FlowAngleAbs,
     ),
     (
         n2.geo.EffArea,
@@ -160,7 +161,7 @@ input('Press enter to continue...')
 obj_func = 1 / system.free_args_sym[n1.oth.MassFlow]
 # ***
 
-x0 = system.get_scaled_guess(fallback=0.8)
+x0 = system.get_scaled_guess(fallback=0.01)
 kn = system.get_scaled_constraints()
 bnd = system.get_arguments_bounds(
     {
@@ -169,22 +170,19 @@ bnd = system.get_arguments_bounds(
         n0.stc.Temperature.Glob: (110, 1e4),
         # Throat limiters
         # Inlet Mach limit
-        # n0.kin.MachThroat.Glob: (0.0, 1.01),
         n0.kin.RelMach: (0.0, 0.9),
         n2.kin.RelMach: (1.0, 10.0),
-        n3.geo.EffArea: (0.06, 0.1),
+        n3.geo.EffArea: (0.05, 0.1),
         n3.loss.Ds_shock: (0.0, 1e10),
     },
     ignore_defaults=True,
 )
 
+P_ISE = 513674.7538712
+P_SUBS = 906234.90298005
+
 solution, optimizer = solve_optimization_problem(
-    system,
-    obj_func,
-    x0,
-    kn,
-    bnd,
-    {'error_on_fail': True},
+    system, obj_func, x0, kn, bnd, {'error_on_fail': False}
 )
 
 sol = solution['x'].toarray().flatten()
@@ -202,7 +200,7 @@ setup_mpl(
 )
 SWEEP = True
 if SWEEP:
-    N_PTS = 15
+    N_PTS = 50
     massflows = []
     out_machs = []
     p_ratios = []
@@ -211,21 +209,22 @@ if SWEEP:
     tanvels = []
 
     fig_m, ax_m = plt.subplots(figsize=(8, 8))
-    SPACE = np.linspace(6e5, 9.0e5, N_PTS)
+    SPACE = np.linspace(P_ISE, P_SUBS, N_PTS)
 
     cmap = plt.get_cmap('plasma')
-    norm = Normalize(SPACE[0], SPACE[-1])
+    norm = Normalize(SPACE[0] / 1e6, SPACE[-1] / 1e6)
     for press in SPACE:
-        color = cmap(norm(press))
+        color = cmap(norm(press / 1e6))
         scale = system.constraints_scaling[-1]
         kn[-1] = np.array([press / scale])
         x0 = solution['x'].toarray()
         try:
             solution = optimizer(x0, kn)
+            data = system.sol_to_dict(solution['x'].toarray().flatten())
             ax_m.plot(
                 [
                     0,
-                    1 / 2,
+                    data[n1.geo.EffArea][0] / data[n4.geo.EffArea][0],
                     data[n3.geo.EffArea][0] / data[n4.geo.EffArea][0],
                     data[n3.geo.EffArea][0] / data[n4.geo.EffArea][0],
                     1,
@@ -242,19 +241,20 @@ if SWEEP:
             )
         except RuntimeError:
             continue
-        data = system.sol_to_dict(solution['x'].toarray().flatten())
+
+        p_ratios.append(press / 1e6)
         massflows.append(data[n0.oth.MassFlow])
         out_machs.append(data[n1.kin.RelMach])
         # mervels.append(data[n3.kin.V_mer])
         # tanvels.append(data[n3.kin.V_tan])
 
     # Plots machs
-    ax_m.set_xlabel(r'$x/l$ / [-]')
-    ax_m.set_ylabel(r'$M$ / [-]')
+    ax_m.set_xlabel(r'$x/l$')
+    ax_m.set_ylabel(r'$M$')
     ax_m.grid(alpha=0.5)
 
     cb = plt.colorbar(ScalarMappable(cmap=cmap, norm=norm), ax=ax_m)
-    cb.set_label(r'$p_{\mathrm{out}}$')
+    cb.set_label(r'$p_{\mathrm{e}} / p_{t,0}$')
 
     fig_m.show()
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 10), sharex=True)
@@ -263,7 +263,7 @@ if SWEEP:
     ax1.grid(alpha=0.4)
     ax1.set_ylabel(r'$\dot{m} / \mathrm{[kgs^{-1}]}$')
 
-    ax2.plot(SPACE, out_machs, linewidth=2, color='#880022')
+    ax2.plot(p_ratios, out_machs, linewidth=2, color='#880022')
     ax2.grid(alpha=0.4)
     ax2.set_xlabel(r'$p_3 / \mathrm{[Pa]}$')
     ax2.set_ylabel(r'$M_3$')
