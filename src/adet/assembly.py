@@ -6,6 +6,8 @@ data.
 Sometimes the CasADi api is slightly cryptic, sorry.
 """
 
+import ipdb
+
 import logging
 from abc import ABC, abstractmethod
 from copy import deepcopy
@@ -233,7 +235,10 @@ class ConstraintManager:
 
             if len(mag) != self.data.num_span:
                 if len(mag) == 1:
-                    mag_valid = mag * np.ones(self.data.num_span)
+                    if spec.scalar:
+                        mag_valid = mag * np.ones(1)
+                    else:
+                        mag_valid = mag * np.ones(self.data.num_span)
                 else:
                     raise ValueError(f'Length mismatch {spec}')
             else:
@@ -801,18 +806,20 @@ class SystemAssembler(ABC):
         for spec in TO_WRITE:
             for state in NodeStates:
                 for node in range(self.last_node + 1):
-                    upd_var0 = var1_glb._at_node(node)._with_state(state)
-                    upd_var1 = var0_glb._at_node(node)._with_state(state)
+                    upd_var0 = var0_glb._at_node(node)._with_state(state)
+                    upd_var1 = var1_glb._at_node(node)._with_state(state)
 
-                    temp_value = sol_data[upd_var0]
-                    prss_value = sol_data[upd_var1]
+                    v0_values = sol_data[upd_var0]
+                    v1_values = sol_data[upd_var1]
 
-                    abs_state.update(input_pair, prss_value, temp_value)
-                    pty_meth = getattr(abs_state, spec.symbol)
-                    ppty_val = pty_meth()
+                    pty_arr = []
+                    for v0, v1 in zip(v0_values, v1_values):
+                        abs_state.update(input_pair, v0, v1)
+                        pty_meth = getattr(abs_state, spec.symbol)
+                        pty_arr.append(pty_meth())
 
                     spec = spec._at_node(node)._with_state(state)
-                    thrm_data[spec] = ppty_val
+                    thrm_data[spec] = np.array(pty_arr)
 
         return thrm_data
 
