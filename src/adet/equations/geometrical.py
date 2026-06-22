@@ -236,6 +236,8 @@ class EndwallProperties(EquationBase):
         w_tip0: n0.kin.W_tip.Hint,
         rel_mach_hub0: n0.kin.RelMach_hub.Hint,
         rel_mach_tip0: n0.kin.RelMach_tip.Hint,
+        beta0: n0.kin.FlowAngleRel.Hint,
+        beta_mid0: n0.kin.Beta_mid.Hint,
         beta_hub0: n0.kin.Beta_hub.Hint,
         beta_tip0: n0.kin.Beta_tip.Hint,
     ):
@@ -262,12 +264,13 @@ class EndwallProperties(EquationBase):
 
         r6 = beta_hub0 - np.atan2(Wt_hub, wm0[midspan])
         r7 = beta_tip0 - np.atan2(Wt_tip, wm0[midspan])
+        r8 = beta_mid0 - beta0[midspan]
 
         # Use closest streamline for speed out sound
-        r8 = a_sound0[0] * rel_mach_hub0 - w_hub0
-        r9 = a_sound0[-1] * rel_mach_tip0 - w_tip0
+        r9 = a_sound0[0] * rel_mach_hub0 - w_hub0
+        r10 = a_sound0[-1] * rel_mach_tip0 - w_tip0
 
-        return r1, r2, r3, r4, r5, r6, r7, r8, r9
+        return r1, r2, r3, r4, r5, r6, r7, r8, r9, r10
 
 
 class LaxByOutradius(EquationBase):

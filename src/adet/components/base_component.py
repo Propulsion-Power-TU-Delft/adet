@@ -414,6 +414,8 @@ class BaseComponent(ABC):
 
     def set_spanwise_constant(self, *arguments: VarSpec):
         for spec in arguments:
+            if spec in self._boundary_conditions:
+                continue
             self._spanwise_constants.add(spec)
             for ntw in self._attached_networks:
                 abs_spec = spec._at_node(self.network_maps[ntw][spec.node])

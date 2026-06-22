@@ -336,6 +336,7 @@ SCALING_FACTORS: dict[str, float] = {
     'J / kg': 5e5,
     'J / kg / K': 1e3,  # Entropy
     'J / kg / m': 5e5,  # Radial equilibrium
+    '1 / s': 1e3,  # Forced vortex
     'kg / s': 5,
     'meter * rad / s': 1e2,  # Tangential velocity
     'kg / m**2 / s': 1e3,  # pass
