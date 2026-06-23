@@ -1,3 +1,4 @@
+from typing import Literal
 import logging
 
 import matplotlib.pyplot as plt
@@ -111,7 +112,7 @@ def build_stator_rotor_stage(
 
 
 # Configure number of stages here
-NUM_STAGES = 2
+NUM_STAGES = 7
 
 # Create inlet node
 n0 = NodeVariables(0)
@@ -144,23 +145,38 @@ BCS = {
 }
 
 
-MULTIPLIER = 1.15
+MULTIPLIER = 1.185
+# MULTIPLIER = 1
+MODE: Literal['lin', 'cum'] = 'lin'
+IN_AREA = 0.1
+FINAL_STAGE = 6
+FINAL_AREA = 0.38
 
 
 def generate_areas(last_idx):
     """Generate effective area for each node using multiplier mode."""
-    area = 0.1
+    area = IN_AREA
     for _ in range(last_idx + 1):
         yield area
         area *= MULTIPLIER
 
 
 # Add area boundary conditions for all nodes
-for i, (node, base_area) in enumerate(
-    zip(nodes[: last_node_idx + 1], generate_areas(last_node_idx))
-):
-    effective_area = base_area / 2 if i % 2 == 1 else base_area
-    BCS[node.geo.EffArea] = effective_area
+prev_area = IN_AREA
+if MODE == 'cum':
+    for i, (node, base_area) in enumerate(
+        zip(nodes[: last_node_idx + 1], generate_areas(last_node_idx))
+    ):
+        effective_area = prev_area if i % 2 == 1 else base_area * 2
+        prev_area = base_area
+        BCS[node.geo.EffArea] = effective_area
+elif MODE == 'lin':
+    for i, node in enumerate(nodes[: last_node_idx + 1]):
+        base_area = IN_AREA + (FINAL_AREA - IN_AREA) * i / 2 / FINAL_STAGE
+        effective_area = prev_area if i % 2 == 1 else base_area * 2
+        prev_area = base_area
+        BCS[node.geo.EffArea] = effective_area
+
 
 # NOTE: Stator + Rotor stages scheme
 #
@@ -281,14 +297,23 @@ if SWEEP_STAGES:
             }
 
             # Apply area boundary conditions
-            for i, (node, base_area) in enumerate(
-                zip(
-                    nodes[: last_node_idx_sweep + 1],
-                    generate_areas(last_node_idx_sweep),
-                )
-            ):
-                effective_area = base_area / 2 if i % 2 == 1 else base_area
-                BCS_sweep[node.geo.EffArea] = effective_area
+            prev_area_sweep = IN_AREA
+            if MODE == 'cum':
+                for i, (node, base_area) in enumerate(
+                    zip(
+                        nodes[: last_node_idx_sweep + 1],
+                        generate_areas(last_node_idx_sweep),
+                    )
+                ):
+                    effective_area = prev_area_sweep if i % 2 == 1 else base_area * 2
+                    prev_area_sweep = base_area
+                    BCS_sweep[node.geo.EffArea] = effective_area
+            elif MODE == 'lin':
+                for i, node in enumerate(nodes[: last_node_idx_sweep + 1]):
+                    base_area = IN_AREA + (FINAL_AREA - IN_AREA) * i / 2 / FINAL_STAGE
+                    effective_area = prev_area_sweep if i % 2 == 1 else base_area * 2
+                    prev_area_sweep = base_area
+                    BCS_sweep[node.geo.EffArea] = effective_area
 
             system_sweep.fluid_settings = FluidSettings(
                 fluid_model,
@@ -320,12 +345,12 @@ if SWEEP_STAGES:
                 {
                     n0.stc.Pressure.Glob: (1, 1e7),
                     n0.stc.Temperature.Glob: (110, 1e4),
-                    n0.kin.RelMach.Glob: (0.0, 1.0),
+                    n0.kin.RelMach.Glob: (0.0, 1.4),
                 },
                 ignore_defaults=True,
             )
 
-            opts = {'error_on_fail': False}
+            opts = {'error_on_fail': True}
             sol_sweep, opt_sweep = solve_optimization_problem(
                 system_sweep,
                 obj_func_sweep,
@@ -366,58 +391,22 @@ if SWEEP_STAGES:
     fig_area, ax_area = plt.subplots(figsize=(8, 6))
     node_indices = []
     area_values = []
-
-    for i, base_area in enumerate(generate_areas(last_node_idx_sweep)):
-        if i % 2 != 1:  # skip stator outlet nodes
-            node_indices.append(i)
-            area_values.append(base_area)
+    for i, node in enumerate(nodes):
+        if i % 2 == 0:
+            continue
+        node_indices.append(i)
+        area_values.append(BCS_sweep[node.geo.EffArea])
 
     ax_area.plot(
-        node_indices, area_values, 'o-', linewidth=2, markersize=8, color='steelblue'
+        node_indices,
+        np.array(area_values),
+        'o-',
+        linewidth=2,
+        markersize=8,
+        color='steelblue',
     )
     ax_area.set_xlabel('Node Index')
     ax_area.set_ylabel(r'Effective Area (m$^2$)')
     ax_area.grid(alpha=0.5)
     ax_area.set_title(f'Effective Area Distribution ({num_stages} stages)')
-    plt.show()
-
-SWEEP = False
-if SWEEP:
-    N_PTS = 30
-    massflows = []
-    out_machs = []
-    p_ratios = []
-    deviations = []
-    mervels = []
-    tanvels = []
-
-    SPACE = np.linspace(0.0, 0.5, N_PTS)
-
-    cmap = plt.get_cmap('plasma')
-    norm = Normalize(SPACE[0], SPACE[-1])
-    for press in SPACE:
-        color = cmap(norm(press))
-        scale = system.constraints_scaling[-1]
-        kn[-1] = np.array([press / scale])
-        x0 = solution['x'].toarray()
-        try:
-            solution = optimizer(x0, kn)
-            data = system.sol_to_dict(solution['x'].toarray().flatten())
-        except RuntimeError:
-            continue
-
-        p_ratios.append(data[nodes[last_node_idx].stc.Pressure] / data[n0.tot.Pressure])
-        massflows.append(data[n0.oth.MassFlow])
-        # mervels.append(data[nodes[last_node_idx].kin.V_mer])
-        # tanvels.append(data[nodes[last_node_idx].kin.V_tan])
-
-    fig_m, ax_m = plt.subplots(figsize=(8, 8))
-    # Plots machs
-    ax_m.plot(SPACE, p_ratios)
-    ax_m.set_xlabel(r'Work extraction coeff. [-]')
-    ax_m.set_ylabel(r'$p_e / p_{t,in}$')
-    ax_m.grid(alpha=0.5)
-
-    # cb = plt.colorbar(ScalarMappable(cmap=cmap, norm=norm), ax=ax_m)
-    # cb.set_label(r'$p_{\mathrm{e}} / p_{t,0}$')
-    plt.show()
+    plt.close('all')
