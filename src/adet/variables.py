@@ -170,6 +170,7 @@ class Losses(VariableEnum):
 
 class OtherVariables(VariableEnum):
     PBase = VarSpec('p_base', 'Pa', 3e5)
+    PSuction = VarSpec('p_suct', 'Pa', 3e5, bounds=(0.0, 1e6))
     GammaPV = VarSpec('gamma_pv', '', 1.4)
     Tis_tot = VarSpec('tot_T_is', 'K', 300.0)
     Tis_stc = VarSpec('stc_T_is', 'K', 300.0)

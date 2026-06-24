@@ -13,7 +13,6 @@ from adet.equations.utils import (
     safe_abs,
     safe_if_else,
     safe_min,
-    safe_max,
 )
 from adet.losses.base_loss import LossModel
 from adet.tools.interpolation import make_casadi_interpolant
@@ -25,7 +24,7 @@ n2 = NodeVariables(2)
 n3 = NodeVariables(3)
 thrm = ThermoVariables()
 
-BLADE_PARAM = 2  # For Sieverding -> tmp, make this an input
+BLADE_PARAM = 2  # TODO : For Sieverding -> make this an input
 
 
 class SieverdingBasePressure(EquationBase):
@@ -42,9 +41,9 @@ class SieverdingBasePressure(EquationBase):
 
     def residual(
         self,
-        pt0: n0.tot.Pressure.Hint,
         p1: n1.stc.Pressure.Hint,
-        p_base1: n1.oth.PBase.Hint,
+        pt0: n0.rlt.Pressure.Hint,
+        p_base0: n0.oth.PBase.Hint,
     ):
         # Detect array shapes
         num_span = max(pt0.shape)
@@ -60,7 +59,7 @@ class SieverdingBasePressure(EquationBase):
         second_param = BLADE_PARAM * (p1**0)  # it's just an array of 2s
         table_entry = cs.horzcat(first_param, second_param).T
         pb_by__ptin = base_p_interpolant(table_entry).T
-        return p_base1 - pb_by__ptin * pt0
+        return p_base0 - pb_by__ptin * pt0
 
 
 class MixingMomentumBalances(EquationBase):
@@ -72,64 +71,83 @@ class MixingMomentumBalances(EquationBase):
 
     def residual(
         self,
-        kin_W0,
-        stc_rhomass0,
-        geo_bld_thick0,
-        geo_metal_angle0,
-        oth_mom_thick0,
-        oth_p_base0,
-        stc_p0,
-        stc_speed_sound0,
-        stc_p1,
-        kin_W_choke0,
-        kin_W1,
-        geo_pitch0,
-        kin_beta0,
-        kin_beta1,
-        kin_dev_angle1,
-        oth_ch_massflow0,
-        stc_smass0,
-        stc_smass1,
-        geo_hh0,
-        oth_delta_smass_mixing1,
+        W0: n0.kin.W_mag.Hint,
+        rho0: n0.stc.Density.Hint,
+        bld_thick0: n0.geo.BldThick.Hint,
+        metal_angle0: n0.geo.MetalAngle.Hint,
+        mom_thick0: n0.oth.MomThick.Hint,
+        dsp_thick0: n0.oth.DispThick.Hint,
+        p_base0: n0.oth.PBase.Hint,
+        p0: n0.stc.Pressure.Hint,
+        p1: n1.stc.Pressure.Hint,
+        rlt_p0: n0.rlt.Pressure.Hint,
+        rlt_p1: n1.rlt.Pressure.Hint,
+        W1: n1.kin.W_mag.Hint,
+        pitch0: n0.geo.Pitch.Hint,
+        beta0: n0.kin.FlowAngleRel.Hint,
+        beta1: n1.kin.FlowAngleRel.Hint,
+        mf: n0.oth.MassFlow.Hint,
+        s0: n0.stc.Entropy.Hint,
+        s1: n1.stc.Entropy.Hint,
+        mach0: n0.kin.RelMach.Hint,
+        hh0: n0.geo.HDistr.Hint,
+        dev_angle1: n1.kin.DevAngle.Hint,
+        p_suct: n0.oth.PSuction.Hint,
+        ds_mix1: n1.loss.Ds_mixing.Hint,
     ):
-        # Blockage enforced through effective area
-        mf = oth_ch_massflow0 / geo_hh0
+        # NOTE: Blockage is enforced through effective
+        # area in mass conservation
+        mf_by_h = mf / hh0
 
-        opening = geo_pitch0 * np.cos(geo_metal_angle0)
+        outer_thr = pitch0 * np.cos(metal_angle0)
 
         # 1 *** X-Momentum
         mom_in_x = (
-            mf * kin_W0
-            + stc_p0 * (opening - geo_bld_thick0)
-            + oth_p_base0 * geo_bld_thick0
-            - stc_rhomass0 * kin_W0**2 * oth_mom_thick0
+            mf_by_h * W0
+            + p0 * (outer_thr - bld_thick0)
+            + p_base0 * bld_thick0
+            - rho0 * W0**2 * mom_thick0
         )
-        mom_out_x = mf * kin_W1 * np.cos(kin_dev_angle1) + stc_p1 * opening
+        mom_out_x = mf_by_h * W1 * np.cos(dev_angle1) + p1 * outer_thr
         r_momx = mom_in_x - mom_out_x
 
         # 2 *** Y-Momentum
-        # p_suct = (stc_p0 + oth_p_base0) / 2
-        p_suct = stc_p0
-        area_y = safe_abs(geo_pitch0 * np.sin(kin_beta0))
+        area_y = safe_abs(pitch0 * np.sin(beta0))
         mom_in_y = p_suct * area_y
-        mom_out_y = stc_p1 * area_y + mf * kin_W1 * np.sin(kin_dev_angle1)
+        mom_out_y = p1 * area_y + mf_by_h * W1 * np.sin(dev_angle1)
         r_momy = (mom_in_y - mom_out_y) / mom_in_y
 
-        # No deviation at subsonic outlet, choke otherwise
-        # r_no_dev = kin_beta0 - kin_beta1
-        r_choke = kin_W0 / stc_speed_sound0 - 1
-
-        r_regime = safe_if_else(kin_W0 >= kin_W_choke0, r_choke, r_momy)
-
-        # Delta smass for bounding
-        r_delta = oth_delta_smass_mixing1 - (stc_smass1 - stc_smass0)
+        q = 0.5 * rho0 * W0**2  # Dynamic head
+        zeta = incomp_mixing_zeta(
+            q,
+            p0,
+            metal_angle0,
+            pitch0,
+            bld_thick0,
+            p_base0,
+            mom_thick0,
+            dsp_thick0,
+        )
+        # Actual loss application
+        r_loss = 1 - (rlt_p0 - q * zeta) / rlt_p1
 
         # Positive metal angle => positive deviation reduces flow angle
-        deviation = np.sign(geo_metal_angle0) * (kin_beta0 - kin_beta1)
-        r_dev = kin_dev_angle1 - deviation
+        deviation = np.sign(metal_angle0) * (beta0 - beta1)
+        r_dev = dev_angle1 - deviation
 
-        return r_dev, r_momx, r_delta, r_regime
+        r_choke = mach0 - 0.999
+        r_switcher = safe_if_else(p1 / rlt_p0 >= 0.5297, r_momy, r_choke)
+
+        # Entropy production for bounding
+        r_ds = ds_mix1 - (s1 - s0)
+
+        return (
+            r_momx,
+            r_momy,
+            r_dev,
+            r_ds,
+            r_loss,
+        )
 
 
 class SimplifiedMixingBalances(EquationBase):
@@ -182,7 +200,6 @@ class SimplifiedMixingBalances(EquationBase):
         )
 
         r2 = rlt_p1 - (rlt_p0 - q * zeta)
-
         # Entropy production for bounding
         r3 = oth_delta_smass_mixing1 - (stc_smass1 - stc_smass0)
 
@@ -214,14 +231,9 @@ class AungierDeviationModel(DeviationModel):
 
     def residual(
         self,
-        pt0: n0.rlt.Pressure.Hint,
-        p3: n1.stc.Pressure.Hint,
-        met_angle: n1.geo.MetalAngle.Hint,
+        met_angle: n0.geo.MetalAngle.Hint,
         mach_out: n1.kin.RelMach.Hint,
         beta: n1.kin.FlowAngleRel.Hint,
-        pr_choke: n1.ndim.PRatio_choke.Hint,
-        mf: n1.oth.MassFlow.Hint,
-        mf_choke: n1.oth.ChokeMassflow.Hint,
     ):
         cos_beta = np.cos(met_angle)  # > 0
         beta_abs = safe_abs(met_angle)  # > 0
@@ -239,15 +251,8 @@ class AungierDeviationModel(DeviationModel):
         )
 
         residual_sub = beta - (met_angle - deviation_sub)  # Deviation angle
-        residual_super = mf / mf_choke - 1.0  # Force throat choking
 
-        residual_switch = safe_if_else(
-            p3 >= pt0 / pr_choke,
-            residual_sub,
-            residual_super,
-        )
-
-        return residual_switch
+        return residual_sub
 
 
 class AungierSimpleMixLoss(LossModel):

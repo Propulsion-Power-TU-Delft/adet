@@ -1,5 +1,6 @@
 # === IMPORTS
-from adet.losses.mixing import AungierDeviationModel
+from adet.equations.definitions import BoundaryLayerRatios
+from adet.equations.utils import residual_debugger
 import logging
 from copy import deepcopy
 from typing import Literal
@@ -17,6 +18,11 @@ from adet.components.network import ComponentNetwork
 from adet.equations.geometrical import MeridionalGeometry  # noqa: F401
 from adet.fluid.settings import FluidModel, FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation
+from adet.losses.mixing import (
+    MixingMomentumBalances,
+    SieverdingBasePressure,
+    AungierDeviationModel,
+)
 from adet.solution import solve_optimization_problem, solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
@@ -51,7 +57,7 @@ inlet = Inlet(
 
 
 casing = Shaft(0, is_constrained=True)
-shaft = Shaft(0, is_constrained=False)
+shaft = Shaft(3000, is_constrained=True)
 
 
 stat_blade = BladeRow(
@@ -60,8 +66,12 @@ stat_blade = BladeRow(
     bound_cond={
         n1.geo.MeridionalAngle: Quantity(0, 'deg'),
         n1.geo.NumBlades: 10,
-        # Blade thickness
-        n0.geo.ThickByPitch: 0.0,
+        # 0 == Blade/B.L. thickness
+        n0.geo.ThickByPitch: 0.1,
+        # n0.oth.DispByMom: 2,
+        # n0.oth.MomByBld: 0.08,
+        # n0.oth.DispByHgt: 0.0,
+        # 1 ==
         n1.geo.ThickByPitch: 0.0,
         # Blade chord
         n1.geo.ChordAx: 0.05,
@@ -70,8 +80,9 @@ stat_blade = BladeRow(
         ZeroDeviation(): 0,  # No incidence (design)
         ZeroDeviation(): 1,  # Flow aligned with throat
         IsentropicLink(): (0, 1),
+        # BoundaryLayerRatios(): 0,
     },
-    constant_variables=[n0.geo.Rmid],  # Constant mean radius
+    constant_variables=[n0.geo.Rmid, n0.geo.Height],  # Constant mean radius
 )
 
 stat_mix = deepcopy(stat_blade)
@@ -80,19 +91,38 @@ stat_mix.name = 'st_mix'
 
 stat_blade.set_bc_from_dict(
     {
-        n1.geo.Area: 0.1,
-        n1.geo.MetalAngle: Quantity(55, 'deg'),
+        n1.kin.FlowAngleRel: Quantity(60, 'deg'),
     }
 )
-stat_mix.set_bc_from_dict(
+# stat_mix.set_bc_from_dict(
+#     {
+#         n1.oth.MassFlow: 20,
+#     }
+# )
+
+# Remove isentropic
+stat_mix.remove_equation(IsentropicLink, (0, 1))
+
+# Add mixing equations
+# stat_mix.add_equation(MixingMomentumBalances(), (0, 1))
+stat_mix.add_equation(AungierDeviationModel(), (0, 1))
+# Base pressure correlation
+stat_mix.add_equation(SieverdingBasePressure(), (0, 1))
+
+# Rotor
+rot_blade = deepcopy(stat_blade)
+rot_blade.set_bc_from_dict(
     {
-        n1.geo.Area: 0.1,
-        n1.geo.MetalAngle: Quantity(55, 'deg'),
+        n0.kin.FlowAngleRel: Quantity(40, 'deg'),
+        n1.kin.FlowAngleRel: Quantity(-40, 'deg'),
     }
 )
 
+rot_blade.shaft = shaft
+#
+rot_mix = deepcopy(stat_mix)
+rot_mix.shaft = shaft
 
-# stat_div.remove_equation(IsentropicLink, (0, 1))
 
 stat_blade.set_spanwise_constant(
     # Uniform inlet
@@ -116,16 +146,15 @@ ntw = ComponentNetwork(
     [
         stat_blade,
         stat_mix,
+        # rot_blade,
+        # rot_mix,
     ],
 )
 
-final_comp = ntw.components[-1]
+MODE: Literal['root', 'opt'] = 'root'
 
-final_comp.remove_equation(ZeroDeviation, 1)
-ntw.system.add_equation(AungierDeviationModel(), (0, 3))
-
-final_comp.set_boundary_cond(n1.stc.Pressure, 0.7 * INLET_PTOT)
-# stat_mix.set_component_constants(n0.stc.Pressure)
+if MODE == 'root':
+    ntw.system.add_boundary_conditions({n3.stc.Pressure: 8e5})
 
 ntw.build()
 input('Continue?')
@@ -136,8 +165,7 @@ kn = ntw.system.get_scaled_constraints()
 bnd = ntw.system.get_arguments_bounds(
     {
         n0.kin.RelMach: (0.0, 1.0),
-        n1.kin.RelMach: (0.0, 1.0),
-        n3.kin.FlowAngleRel: (0.0, 1.6),
+        # n1.kin.RelMach: (0.0, 1.0),
         # n0.geo.Chord.Glob: (0.0, 1e5),
         n0.stc.Pressure.Glob: (10.0, 1.1 * INLET_PTOT),
         n0.stc.Temperature.Glob: (60.0, 1.1 * INLET_TEMPERATURE),
@@ -145,8 +173,6 @@ bnd = ntw.system.get_arguments_bounds(
     ignore_defaults=False,
 )
 
-
-MODE: Literal['root', 'opt'] = 'root'
 
 if MODE == 'opt':
     obj_func = 1 / ntw.system.free_args_sym[n1.oth.MassFlow]
@@ -156,11 +182,14 @@ if MODE == 'opt':
 
 elif MODE == 'root':
     # Ipopt rootfinding
-    ntw.build()
     try:
         # Unbounded
         rtfn = ntw.system.make_rootfinder(
-            'ipopt', {'error_on_fail': True, 'max_wall_time': 10}
+            'ipopt',
+            {
+                'error_on_fail': True,
+                'ipopt.max_wall_time': 5,
+            },
         )
         sol = solve_root_problem(rtfn, x0, kn, suppress_output=False)
     except RuntimeError:
@@ -169,8 +198,8 @@ elif MODE == 'root':
         sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=False)
 
     # kinsol
-    # rtfn = ntw.system.make_rootfinder('kinsol')
-    # sol = solve_root_problem(rtfn, sol, kn, suppress_output=True)
+    rtfn = ntw.system.make_rootfinder('kinsol')
+    sol = solve_root_problem(rtfn, sol, kn, suppress_output=True)
 
 data = ntw.system.sol_to_dict(sol)
 
@@ -183,14 +212,15 @@ if SWEEP:
     p_outs_plot = []
     mach_thrs = []
     mach_n1 = []
-    flow_angles = []
+    entropies = []
     mass_flows = []
     rtfn = ntw.system.make_rootfinder('kinsol', {'error_on_fail': True})
     out_node = n1 if len(ntw.components) == 1 else n3
 
-    p_outs = np.linspace(0.9 * INLET_PTOT, 0.3 * INLET_PTOT, N_PTS)
-    for po in p_outs:
-        kn[-2] = np.array([po]) / ntw.system.constraints_scaling[-2]
+    p_outs = np.linspace(0.8 * INLET_PTOT, 0.528 * INLET_PTOT, N_PTS)
+
+    for idx, po in enumerate(p_outs):
+        kn[-1] = np.array([po]) / ntw.system.constraints_scaling[-1]
         try:
             sol = solve_root_problem(rtfn, sol, kn)
             pass
@@ -215,13 +245,11 @@ if SWEEP:
             break
         data = ntw.system.sol_to_dict(sol)
         p_outs_plot.append(po)
-        devs.append(
-            np.abs(data[out_node.geo.MetalAngle] - data[out_node.kin.FlowAngleRel])
-        )
+        devs.append(np.abs(data[n1.geo.MetalAngle] - data[out_node.kin.FlowAngleRel]))
         # devs.append(data[n3.kin.DevAngle])
         mach_thrs.append(data[out_node.kin.RelMach])
         mach_n1.append(data[n1.kin.RelMach])
-        flow_angles.append(data[out_node.kin.FlowAngleRel])
+        entropies.append(data[out_node.loss.Ds_mixing])
         mass_flows.append(data[n1.oth.MassFlow])
 
     # Calculate pressure ratios
@@ -259,9 +287,9 @@ if SWEEP:
     )
 
     # Second subplot: outlet flow angle vs pressure ratio
-    ax_pr.plot(pr, flow_angles, 'C2')
+    ax_pr.plot(pr, entropies, 'C2')
     ax_pr.set_xlabel(r'$p_{out}/p_{t,in}$ / [-]')
-    ax_pr.set_ylabel(r'$\beta_2$ / [deg]')
+    ax_pr.set_ylabel(r'$\Delta s_{\mathrm{mix}}$ / $\mathrm{[Jkg^{-1}K^{-1}]}$')
     ax_pr.grid(alpha=0.3)
 
     # Third subplot: Mach number at n1 vs outlet pressure
@@ -279,7 +307,7 @@ if SWEEP:
     fig.tight_layout()
     fig.show()
 
-# globals().update(residual_debugger(AungierDeviationModel(), [0, 1, 3], data))
+# globals().update(residual_debugger(MixingMomentumBalances(), [2, 3], data))
 
 PLOTS = True
 if PLOTS:
