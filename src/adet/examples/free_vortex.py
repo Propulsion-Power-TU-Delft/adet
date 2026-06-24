@@ -1,25 +1,26 @@
-from adet.solution import solve_root_problem
 import logging
 
+import matplotlib.pyplot as plt
 from pint import Quantity
 
 from adet.assembly import CasadiSystem
 from adet.equations.fundamental import (
-    Kinematics,
-    TotalStaticMatching,
     FreeVortexDistribution,
+    Kinematics,
     MassAreaRelation,
+    TotalStaticMatching,
     ZeroBlockage,
 )
 from adet.equations.geometrical import (
-    MeridionalGeometry,
-    EndwallProperties,
     AnnulusAreas,
+    EndwallProperties,
+    MeridionalGeometry,
 )
 from adet.fluid.settings import FluidModel, FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
-from adet.tools.coolprop_utils import DebugAbstractState
+from adet.solution import solve_root_problem
 from adet.tools.loggers import setup_logger
+from adet.tools.plotting import plot_velocity_triangles
 from adet.variables import NodeVariables
 
 logger = logging.getLogger(__name__)
@@ -44,18 +45,17 @@ BCS = {
     n0.tot.Pressure: 1e6,
     n0.tot.Temperature: 500,
     # Kine
-    n0.kin.Omega: 0,
+    n0.kin.Omega: 500,
     n0.kin.V_mer: 30,
-    n0.kin.Beta_mid: Quantity(20, 'deg'),
+    n0.kin.Beta_mid: Quantity(0, 'deg'),
     # Geometry
     n0.geo.Rmid: 0.1,
-    n0.geo.Height: 0.1,
+    n0.geo.HubTipRatio: 0.7,
     n0.geo.MeridionalAngle: 0.0,
 }
-abs_state = DebugAbstractState('HEOS', 'Air')
 idl_state = IdealGasState(1.4, 287, 2e-5)
 
-fluid_model = FluidModel(abs_state)
+fluid_model = FluidModel(idl_state)
 
 system.fluid_settings = FluidSettings(
     fluid_model,
@@ -68,8 +68,6 @@ system.add_spanwise_constants(n0.oth.MassFlow)
 system.add_boundary_conditions(BCS)
 
 system.build()
-input('Press enter to continue...')
-
 
 x0 = system.get_scaled_guess(fallback=0.01)
 kn = system.get_scaled_constraints()
@@ -86,3 +84,15 @@ rtfn = system.make_rootfinder('kinsol', {'error_on_fail': False})
 sol = solve_root_problem(rtfn, x0, kn, bnd)
 
 data = system.sol_to_dict(sol)
+
+fig, ax = plt.subplots(figsize=(6, 10))
+ax.set_aspect('equal')
+plot_velocity_triangles(
+    data[n0.kin.V_tan],
+    data[n0.kin.V_mer],
+    data[n0.kin.BladeSpeed],
+    data[n0.geo.RDistr],
+    ax,
+)
+fig.tight_layout()
+fig.show()

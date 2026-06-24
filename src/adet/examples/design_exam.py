@@ -10,7 +10,10 @@ from adet.components import BladeRow, Inlet
 from adet.components.connections import Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.base_equation import EquationBase
-from adet.equations.fundamental import ForcedVortexDistribution, FreeVortexDistribution
+from adet.equations.fundamental import (  # noqa: F401
+    ForcedVortexDistribution,
+    FreeVortexDistribution,
+)
 from adet.equations.utils import get_midspan_idx, safe_abs
 from adet.fluid.settings import FluidModel, FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
@@ -158,12 +161,11 @@ bnd = ntw.system.get_arguments_bounds(
 
 
 # Ipopt rootfinding
-
 rtfn = ntw.system.make_rootfinder(
     'ipopt',
     {
         'error_on_fail': False,
-        'ipopt.max_wall_time': 50,
+        'ipopt.max_wall_time': 10,
     },
 )
 sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=False)
@@ -174,11 +176,13 @@ sol = solve_root_problem(rtfn, sol, kn, suppress_output=True)
 
 data = ntw.system.sol_to_dict(sol)
 
+#  #  #  #  #  #  #  Plots and prints #  #  #  #  #  #  #
 print(f'Effective HTR {data[n1.geo.RDistr][0] / data[n1.geo.RDistr][-1]}')
 
 setup_mpl({'font.family': 'EB Garamond', 'font.size': 20})
 
-fig, axs = plt.subplots(1, 3, figsize=(12, 10))
+fig, axs = plt.subplots(1, 3, figsize=(16, 8))
+fig.tight_layout()
 axs = axs.flatten()
 
 [a.set_aspect('equal') for a in axs]
@@ -228,3 +232,5 @@ print(f'Deflections are {deflection}')
 
 
 fig.show()
+
+#  #  #  #  #  #  #  #  #  #  #  #  #  #

@@ -41,7 +41,7 @@ inlet = Inlet(
         # *** Inlet geometry
         n0.kin.V_mer: 100.0,
         n0.geo.Rmid: 0.1,
-        n0.geo.HubTipRatio: 0.85,
+        n0.geo.HubTipRatio: 0.65,
         n0.geo.MeridionalAngle: Quantity(0, 'deg'),
         # *** Inlet total conditions
         n0.tot.Pressure: 10e5,
@@ -134,9 +134,9 @@ stator.set_bc_from_dict(
 
 rotor.set_bc_from_dict(
     {
-        n1.ndim.FlowCoeff: 0.5,
-        n1.ndim.WorkCoeff: -3.0,
-        n1.ndim.DegreeOfReactionTS: 0.0,
+        n1.ndim.FlowCoeff: 0.6,
+        n1.ndim.WorkCoeff: -1.0,
+        n1.ndim.DegreeOfReactionTS: 0.3,
     }
 )
 ntw.build()

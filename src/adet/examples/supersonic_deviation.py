@@ -68,7 +68,7 @@ stat_blade = BladeRow(
     },
     extra_equations={
         ZeroDeviation(): 0,  # No incidence (design)
-        ZeroDeviation(): 1,  # No incidence (design)
+        ZeroDeviation(): 1,  # Flow aligned with throat
         IsentropicLink(): (0, 1),
     },
     constant_variables=[n0.geo.Rmid],  # Constant mean radius
