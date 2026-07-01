@@ -3,6 +3,7 @@ import logging
 import CoolProp as cp
 import matplotlib.pyplot as plt
 import numpy as np
+from numpy.typing import NDArray
 from pint import Quantity
 
 from adet.assembly import CasadiSystem
@@ -11,7 +12,7 @@ from adet.components.blade_row import RowGeometry, VanelessDiffuser
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.base_equation import EquationConfig, LossApplier
-from adet.equations.control_volumes import FullIncidence
+from adet.equations.control_volumes import OptimalIncidence, ThroatConditions
 from adet.equations.definitions import (
     EffectiveBladeNumber,
     IsentropicProperties,
@@ -20,10 +21,11 @@ from adet.equations.geometrical import MinimalCamberLine
 from adet.equations.nondimensional import (
     TotalTotalPressureRatio,
 )
+from adet.equations.utils import residual_debugger
 from adet.fluid.settings import FluidModel, FluidSettings
 from adet.fluid.symbolic_eos import IdealGasState
 from adet.losses.basic import (
-    PercentageEntropyLoss,
+    IsentropicLink,
     ZeroDeviation,
 )
 from adet.losses.compressors import (
@@ -62,26 +64,23 @@ setup_mpl(
     }
 )
 
-NUM_SPAN = 5
+NUM_SPAN = 3
 ENABLE_LOSSES = True
-RUN_MULTI = False
-RUN_SPEEDLINES = False
+RUN_MULTI = True
+RUN_SPEEDLINES = True
 SPDL_PTS = 50  # Number of speedline points
-RPM_DES = 21000  #
 #
 RUN_PLOTS = True  # plotting section
 SHOW_PLOTS = True  # non-interactive testing
-
-# +++ Shafts
-shaft = Shaft(
-    omega=Quantity(RPM_DES, 'rpm'),
-    is_constrained=True,
-)
-
-casing = Shaft(
-    omega=Quantity(0, 'rpm'),
-    is_constrained=True,
-)
+BOUNDS = {
+    n0.stc.Pressure.Glob: (100.0, 1e6),
+    n0.stc.Temperature.Glob: (100.0, 1e3),
+    # n0.kin.MachThroat.Glob: (0.0, 1.1),
+    n0.oth.ThrPressure.Glob: (10.0, 1e6),
+    n0.oth.ThrTemperature.Glob: (100.0, 2e7),
+    # n0.ndim.EtaTT.Glob: (0.5, 1.0),
+    # n0.ndim.PRatioTT.Glob: (2.0, 7.0),
+}
 
 # +++ Fluid settings
 fluid_model_real = FluidModel(
@@ -91,8 +90,9 @@ fluid_model_ideal = FluidModel(
     IdealGasState(1.4, 287, 2e-5),
 )
 thrm = ThermoVariables()
+
 fluid_settings = FluidSettings(
-    model=fluid_model_real,
+    model=fluid_model_ideal,
     update_variables=(
         thrm.Pressure,
         thrm.Temperature,
@@ -104,7 +104,7 @@ fluid_settings = FluidSettings(
 class LossPicker(LossApplier):
     config = EquationConfig(
         input_pair=cp.PSmass_INPUTS,
-        out_properties=(n0.stc.Enthalpy.Glob,),
+        out_properties=(thrm.Enthalpy,),
     )
 
     def residual(
@@ -159,14 +159,25 @@ inlet = Inlet(
         n0.tot.Pressure: 101352.9,
         n0.tot.Temperature: 288.16,
         n0.kin.FlowAngleAbs: Quantity(0.0, 'rad'),
-        n0.oth.CumMassFlow: 4.98,
+        n0.oth.CumMassFlow: 4.1,
+        # n0.kin.MachThroat: 1.0,
     }
 )
 
+# +++ Shafts
+shaft = Shaft(
+    omega=Quantity(18000, 'rpm'),
+    is_constrained=True,
+)
+
+casing = Shaft(
+    omega=Quantity(0, 'rpm'),
+    is_constrained=True,
+)
 
 EQS_ISENTROPIC = {
     ZeroDeviation(): 1,  # No slip
-    PercentageEntropyLoss(0.0): (0, 1),
+    IsentropicLink(): (0, 1),
 }
 
 EQS_WITH_LOSSES = {
@@ -177,7 +188,7 @@ EQS_WITH_LOSSES = {
     ClearanceBrasz(): (0, 1),
     SkinFrictionJansen(): (0, 1),
     BladeLoadingCoppage(): (0, 1),
-    FullIncidence(): 0,
+    OptimalIncidence(): 0,
     IncidenceGalvas(): (0, 1),
     MixingJohnstonDean(): 1,
     RecirculationOh(): (0, 1),
@@ -187,32 +198,49 @@ EQS_WITH_LOSSES = {
 }
 
 # *** Speedline definitions
+RPM_DES = 21000
+R_HUB = 0.04064
+R_TIP = 0.1076833
+NUM_BLADES = 15
+height = R_TIP - R_HUB
+
+#
 SPEEDS = [21e3, 20e3, 19e3, 18e3]
-MASS_CHOKES = [5.6, 5.3, 4.9, 4.6]
-MIN_MASS = [4.07, 3.72, 3.5, 3.12]
+MASS_CHOKES = [5.5814, 5.5003, 5.4238, 5.3519]
+
+MIN_MASS = [4.1, 3.7, 3.5, 3.1]
 mass_limits = [(ms, mc + 0.0) for ms, mc in zip(MIN_MASS, MASS_CHOKES)]
 SPEED_LINES = dict(zip(SPEEDS, mass_limits))
 
 # *** Metal angle definition
-METAL_ANGLE = np.array([-30, -44, -53])
-HEIGHT = 0.0640433
-R_MID = 0.07416165
-deltaH = HEIGHT / NUM_SPAN
-r_min = R_MID - HEIGHT / 2
-r_max = R_MID + HEIGHT / 2
-rr = np.linspace(r_min + deltaH / 2, r_max - deltaH / 2, NUM_SPAN)
-angle_values = -30 - 23 / (r_max - r_min) * (rr - r_min)
+METAL_ANGLE = np.array(np.radians([-33, -44, -56]))
+BLADE_THICKNESS = np.array([0.003048, 0.000762])
 
 # *** Thickness distribution
-BLADE_THICKNESS = np.array([0.003048, 0.000762])
-angle_values = resample_linear(METAL_ANGLE, NUM_SPAN)
-thick_distribution = resample_linear(BLADE_THICKNESS, NUM_SPAN)
+angle_distr = resample_linear(METAL_ANGLE, NUM_SPAN + 1)
+thick_distr = resample_linear(BLADE_THICKNESS, NUM_SPAN + 1)
+rad_distr = np.linspace(R_HUB, R_TIP, NUM_SPAN + 1)
+
+
+def convert_to_cell_centers(distr: NDArray):
+    return np.array([(distr[i] + distr[i + 1]) / 2 for i, _ in enumerate(distr[:-1])])
+
+
+angle_distr = convert_to_cell_centers(angle_distr)
+thick_distr = convert_to_cell_centers(thick_distr)
+rad_distr = convert_to_cell_centers(rad_distr)
+
+throat_area = (
+    height
+    * NUM_BLADES
+    / NUM_SPAN
+    * np.sum(2 * np.pi * rad_distr / NUM_BLADES * np.cos(angle_distr) - thick_distr)
+)
+
 
 if NUM_SPAN == 1:
-    angle_values = np.array([-44])
-    thick_distribution = np.array([0.002])
-
-angle_distribution = Quantity(angle_values, 'deg')
+    angle_distr = np.array(np.radians([-44]))
+    thick_distr = np.array([0.001905])
 
 # +++ Components
 impeller = BladeRow(
@@ -222,17 +250,15 @@ impeller = BladeRow(
         # *** Node 0 ***
         # > Geometry
         # - Meridional
-        n0.geo.Rmid: R_MID,
-        n0.geo.Height: HEIGHT,
+        n0.geo.Rhub: R_HUB,
+        n0.geo.Rtip: R_TIP,
         n0.geo.MeridionalAngle: Quantity(0, 'deg'),
+        n0.geo.ThroatArea: throat_area,
         # - Blade
-        n0.geo.MetalAngle: Quantity(-44, 'deg'),
-        n0.geo.MetalAngleHub: Quantity(-30, 'deg'),
-        n0.geo.MetalAngleTip: Quantity(-53, 'deg'),
-        n0.geo.BldThick: 0.002,
-        n0.geo.TipClearance: Quantity(0.235, 'mm'),
-        # > Incidence loss coefficient
-        n0.oth.IncCoeff: 0.5,
+        n0.geo.MetalAngle: angle_distr[NUM_SPAN // 2],
+        n0.geo.MetalAngleHub: METAL_ANGLE[0],
+        n0.geo.MetalAngleTip: METAL_ANGLE[-1],
+        n0.geo.BldThick: np.average(thick_distr),
         # *** Node 1 ***
         # > Geometry
         n1.geo.MeridionalAngle: Quantity(90, 'deg'),
@@ -240,18 +266,20 @@ impeller = BladeRow(
         n1.geo.Height: Quantity(0.01524, 'm'),
         n1.geo.MetalAngle: Quantity(-30, 'deg'),
         n1.geo.ThickByPitch: 0.02,
-        n1.geo.BackClearance: 0.001,
-        n1.geo.TipClearance: Quantity(0.304, 'mm'),
         n1.geo.ChordAx: Quantity(0.133879895, 'm'),
-        n1.geo.NumBlades: 15,
-        n1.geo.NumSplitters: 15,
+        n1.geo.NumBlades: NUM_BLADES,
+        n1.geo.NumSplitters: NUM_BLADES,
+        # > Loss coefficients contributors
+        n0.oth.IncCoeff: 0.5,  # Incidence
+        n1.geo.BackClearance: 0.001,
+        n0.geo.TipClearance: Quantity(0.235, 'mm'),
+        n1.geo.TipClearance: Quantity(0.304, 'mm'),
         n1.geo.AbsRoughness: Quantity(1.524, 'micron'),
-        # > Loss coefficients
         n1.oth.SlipFactCoeff: 2.5,
         n1.oth.WorkLossCoeff: 0.3,
         n1.oth.BlLoadingCoeff: 0.75,
-        n1.oth.MinWakeFrac: 0.3,
-        n1.oth.MaxWakeFrac: 0.65,
+        n1.oth.MinWakeFrac: 0.35,
+        n1.oth.MaxWakeFrac: 0.35,
         n1.oth.WakeFrac: 0.3,
         n1.oth.ChokeMassflow: MASS_CHOKES[0],
     },
@@ -262,6 +290,7 @@ impeller = BladeRow(
         # *** Enthalpy based Losses
         IsentropicProperties(): (0, 1),
         # *** Blockage (optional)
+        ThroatConditions(): 0,
         # Definitions
         # WorkCoefficient(): (0, 1),
         **EQS_ISENTROPIC,
@@ -298,24 +327,20 @@ vaneless_diff.set_spanwise_constant(n1.stc.Pressure)
 
 ntw_hecc.build()
 
-x0 = ntw_hecc.system.get_scaled_guess(
-    manual_values={n0.kin.FlowAngleRel.Glob: -0.5},
-    fallback=0.5,
-)
+mf_th = ntw_hecc.system.free_args_sym[n0.oth.ThrMassFlow]
+obj_func = 1 / mf_th
+
+
+x0 = ntw_hecc.system.get_scaled_guess(fallback=0.5)
 kn_hecc_is = ntw_hecc.system.get_scaled_constraints()
 bnd_hecc_is = ntw_hecc.system.get_arguments_bounds(
-    custom_bounds={
-        n0.kin.V_mer.Glob: (10.0, 480.0),
-        n0.kin.BladeSpeed.Glob: (0, 600),
-        n0.kin.FlowAngleRel.Glob: (-1.48, 1.48),
-        n0.kin.RelMach.Glob: (0.0, 1.04),
-        n0.ndim.EtaTT.Glob: (0.5, 1.0),
-        n0.ndim.PRatioTT.Glob: (2.0, 7.0),
-    },
+    custom_bounds=BOUNDS,
+    ignore_defaults=False,
 )
 
 # IPOPT is more robust, takes variable limits into account -> For 'bi-stable' solutions
 # KINSOL is faster, sometimes converges on problems where ipopt struggles
+
 rootfinder_hecc_is = ntw_hecc.system.make_rootfinder(
     'ipopt',
     opts={
@@ -333,15 +358,16 @@ solution_hecc_is = solve_root_problem(
     bnd_hecc_is,
     suppress_output=False,
 )
-solution_hecc_is = solve_root_problem(rtfn_kin, solution_hecc_is, kn_hecc_is)
+# solution_hecc_is = solve_root_problem(rtfn_kin, solution_hecc_is, kn_hecc_is)
 sol_is_dict = ntw_hecc.system.sol_to_dict(solution_hecc_is)
+globals().update(residual_debugger(ThroatConditions(), [0], sol_is_dict))
 
 if RUN_MULTI:
     print('*** SOLVING MULTISPAN ISENTROPIC***')
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
     ntw_hecc.system.num_span = NUM_SPAN
-    impeller.set_boundary_cond(n0.geo.MetalAngle, angle_distribution)
-    impeller.set_boundary_cond(n0.geo.BldThick, thick_distribution)
+    impeller.set_boundary_cond(n0.geo.MetalAngle, angle_distr)
+    impeller.set_boundary_cond(n0.geo.BldThick, thick_distr)
 
     ntw_hecc.build()
     #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
@@ -374,9 +400,7 @@ if RUN_MULTI:
 
     sol_multi_dict = ntw_hecc.system.sol_to_dict(solution_hecc_multi)
 
-
-if __name__ == '__main__':
-    if RUN_MULTI and ENABLE_LOSSES:
+    if ENABLE_LOSSES:
         print('*** SOLVING MULTISPAN WITH LOSSES***')
         #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
         # Remove isentropic and add losses
@@ -387,7 +411,8 @@ if __name__ == '__main__':
 
         # Remove fixed wake fraction -> Dynamic
         ntw_hecc.system.data.boun_cond.pop(n1.oth.WakeFrac)
-        ntw_hecc.system.add_equation(LossPicker(), (0, 1, 2, 3))
+        # ntw_hecc.system.add_equation(LossPicker(), (0, 1, 2, 3))
+        ntw_hecc.system.add_equation(IsentropicLink(), (0, 1))
         ntw_hecc.build()
 
         rootfinder_hecc_loss = ntw_hecc.system.make_rootfinder(
@@ -396,18 +421,22 @@ if __name__ == '__main__':
         )
         rtfn_kin = ntw_hecc.system.make_rootfinder('kinsol')
         rtfn_ip = ntw_hecc.system.make_rootfinder('ipopt')
-        x0_loss = ntw_hecc.system.get_scaled_guess(sol_multi_dict, fallback=0.5)
+        x0_loss = ntw_hecc.system.get_scaled_guess(sol_multi_dict, fallback=0.9)
         kn_loss = ntw_hecc.system.get_scaled_constraints()
-        bnd_loss = ntw_hecc.system.get_arguments_bounds()
+        bnd_loss = ntw_hecc.system.get_arguments_bounds(custom_bounds=BOUNDS)
         solution_loss = solve_root_problem(
             rootfinder_hecc_loss,
             x0_loss,
             kn_loss,
-            bnd_loss,
+            # bnd_loss,
             suppress_output=False,
         )
+        sol_loss_dict = ntw_hecc.system.sol_to_dict(solution_loss)
+        globals().update(residual_debugger(DiskFricDailyNece(), [0, 1], sol_loss_dict))
+
         solution_loss = solve_root_problem(rtfn_kin, solution_loss, kn_loss)
         sol_loss_dict = ntw_hecc.system.sol_to_dict(solution_loss)
+
         #  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -  -
 
         # Loss breakdown bar plot at design point
@@ -494,15 +523,17 @@ if __name__ == '__main__':
             for rpm, k in SPEED_LINES.items()
         }
 
-        omega_idx = ntw_hecc.system.constraints.index('kin_omega1')
+        omega_idx = list(ntw_hecc.system.data.boun_cond.keys()).index(n1.kin.Omega)
         omega_scl = ntw_hecc.system.constraints_scaling[omega_idx]
 
-        mf_idx = ntw_hecc.system.constraints.index('oth_cum_massflow0')
+        mf_idx = list(ntw_hecc.system.data.boun_cond.keys()).index(n0.oth.CumMassFlow)
         mf_scl = ntw_hecc.system.constraints_scaling[mf_idx]
 
         print('*** RUNNING SPEEDLINES ***')
 
-        choke_idx = ntw_hecc.system.constraints.index('oth_massflow_choke1')
+        choke_idx = list(ntw_hecc.system.data.boun_cond.keys()).index(
+            n1.oth.ChokeMassflow
+        )
         choke_scl = ntw_hecc.system.constraints_scaling[choke_idx]
 
         # Find indices for loss components (active ones from LossPicker)
@@ -521,7 +552,7 @@ if __name__ == '__main__':
         loss_scales = {}
         for loss_name in loss_names:
             try:
-                idx = ntw_hecc.system.free_args.index(loss_name)
+                idx = ntw_hecc.system.data.free_args.index(loss_name)
                 loss_indices[loss_name] = idx
                 loss_scales[loss_name] = ntw_hecc.system.free_args_scaling[idx]
             except ValueError:
@@ -568,7 +599,7 @@ if __name__ == '__main__':
                     sol = closest_sol.copy()
 
                 try:
-                    sol = solve_root_problem(rtfn_kin, sol, kn, suppress_output=True)
+                    sol = solve_root_problem(rtfn_kin, sol, kn, suppress_output=False)
 
                     sol_dict = ntw_hecc.system.solution_to_dict(sol)
 
@@ -796,12 +827,11 @@ if __name__ == '__main__':
                 ax.set_aspect('equal')
 
                 plot_velocity_triangles(
-                    sol_is_dict[n.kin.V_tan],
-                    sol_is_dict[n.kin.V_mer],
-                    sol_is_dict[n.kin.BladeSpeed],
-                    sol_is_dict[n.geo.RDistr],
+                    sol_multi_dict[n.kin.V_tan],
+                    sol_multi_dict[n.kin.V_mer],
+                    sol_multi_dict[n.kin.BladeSpeed],
+                    sol_multi_dict[n.geo.RDistr],
                     ax,
-                    fontsize=8,
                 )
 
         fig, ax = plt.subplots(figsize=(12, 7))
@@ -811,13 +841,13 @@ if __name__ == '__main__':
         inlet_n = n0
         outlet_n = n1
 
-        r_in = float(sol_is_dict[inlet_n.geo.Rmid][0])
-        r_out = float(sol_is_dict[outlet_n.geo.Rmid][0])
-        height_in = float(sol_is_dict[inlet_n.geo.Height][0])
-        height_out = float(sol_is_dict[outlet_n.geo.Height][0])
-        mer_angle_in = float(sol_is_dict[inlet_n.geo.MeridionalAngle][0])
-        mer_angle_out = float(sol_is_dict[outlet_n.geo.MeridionalAngle][0])
-        axial_chord = float(sol_is_dict[outlet_n.geo.ChordAx][0])
+        r_in = float(sol_multi_dict[inlet_n.geo.Rmid][0])
+        r_out = float(sol_multi_dict[outlet_n.geo.Rmid][0])
+        height_in = float(sol_multi_dict[inlet_n.geo.Height][0])
+        height_out = float(sol_multi_dict[outlet_n.geo.Height][0])
+        mer_angle_in = float(sol_multi_dict[inlet_n.geo.MeridionalAngle][0])
+        mer_angle_out = float(sol_multi_dict[outlet_n.geo.MeridionalAngle][0])
+        axial_chord = float(sol_multi_dict[outlet_n.geo.ChordAx][0])
 
         geom = RowGeometry(
             r_in=r_in,
@@ -841,32 +871,32 @@ if __name__ == '__main__':
         else:
             plt.close('all')
 
-        spanwise = np.arange(len(n1.oth.delta_hmass_loading))
-        plt.stackplot(
-            spanwise,
-            n1.oth.delta_hmass_loading,
-            n1.oth.delta_hmass_clearance,
-            n1.oth.delta_hmass_skin,
-            n1.oth.delta_hmass_mixing,
-            n1.oth.delta_hmass_incidence,
-            n1.oth.delta_hmass_recirc,
-            n1.oth.delta_hmass_leakage,
-            n1.oth.delta_hmass_disk,
-            labels=[
-                'loading',
-                'clearance',
-                'skin',
-                'mixing',
-                'incidence',
-                'recirculation',
-                'leakage',
-                'disk',
-            ],
-        )
-        plt.ylabel('Enthalpy loss [J / kg / K]')
-        plt.xlabel('Spanwise station []')
-        plt.legend(loc='upper left')
-        plt.grid()
+        # spanwise = np.arange(len(solution_loss[n1.loss.Dht_loading]))
+        # plt.stackplot(
+        #     spanwise,
+        #     n1.oth.delta_hmass_loading,
+        #     n1.oth.delta_hmass_clearance,
+        #     n1.oth.delta_hmass_skin,
+        #     n1.oth.delta_hmass_mixing,
+        #     n1.oth.delta_hmass_incidence,
+        #     n1.oth.delta_hmass_recirc,
+        #     n1.oth.delta_hmass_leakage,
+        #     n1.oth.delta_hmass_disk,
+        #     labels=[
+        #         'loading',
+        #         'clearance',
+        #         'skin',
+        #         'mixing',
+        #         'incidence',
+        #         'recirculation',
+        #         'leakage',
+        #         'disk',
+        #     ],
+        # )
+        # plt.ylabel('Enthalpy loss [J / kg / K]')
+        # plt.xlabel('Spanwise station []')
+        # plt.legend(loc='upper left')
+        # plt.grid()
 
         if SHOW_PLOTS:
             plt.show()

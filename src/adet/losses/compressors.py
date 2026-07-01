@@ -368,13 +368,11 @@ class DiskFricDailyNece(LossModel):
         rho_mean = (rho0 + rho1) / 2
         Re1 = (u1 * rr1 * rho1) / visc1
 
-        # TODO: Check cl_ratio, radius instead of height
-        # and 0.0102 instead of 0.102?
         cl_ratio = back_cl1 / hgt1
         f_df_lo = 3.700 * cl_ratio**0.1 / (Re1**0.5)
-        f_df_hi = 0.102 * cl_ratio**0.1 / (Re1**0.2)
+        f_df_hi = 0.0102 * cl_ratio**0.1 / (Re1**0.2)
 
-        f_df = safe_if_else(Re1 < 3e5, f_df_lo, f_df_hi)
+        f_df = safe_if_else(Re1 <= 3e5, f_df_lo, f_df_hi)
 
         return dht_disk1 - 0.25 * (f_df * rho_mean * rr1**2 * u1**3) / cum_mf0
 
@@ -465,7 +463,7 @@ class AmiranteDiffuserMomentum(EquationBase):
     config = EquationConfig(
         input_pair=cp.PSmass_INPUTS,
         out_properties=(thrm.Enthalpy,),
-        manual_units=('m^2 / s', 'K'),  # TODO: Check these units
+        manual_units=('m^2 / s', 'K'),
     )
 
     def residual(

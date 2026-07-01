@@ -19,7 +19,6 @@ data_dir = (
 
 plt.rcParams.update(
     {
-        'text.usetex': True,
         'font.family': 'serif',
     }
 )

@@ -791,6 +791,7 @@ class SystemAssembler(ABC):
             _thrm.Enthalpy,
             _thrm.SpeedSound,
             _thrm.GasConstant,
+            _thrm.Viscosity,
             _thrm.MolarMass,
         ]
 

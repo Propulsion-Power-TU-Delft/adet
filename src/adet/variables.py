@@ -186,7 +186,7 @@ class OtherVariables(VariableEnum):
     ChanMassflow = VarSpec('ch_massflow', 'kg / s', 1.0, (0.0, 5e4))
     ThrMassFlow = VarSpec('thr_mass', 'kg / s', 1.0)
     TgtMassFlow = VarSpec('tgt_mass', 'kg / s', 1.0)
-    ChokeMassflow = VarSpec('massflow_choke', 'kg / s', guess=5.0)
+    ChokeMassflow = VarSpec('massflow_choke', 'kg / s', guess=5.0, scalar=True)
     RltEnthalpyChoke = VarSpec('hrlt_choke', 'J / kg', guess=5e5)
     ThrTemperature = VarSpec('thr_temp', 'K', 500)
     ThrPressure = VarSpec('thr_prss', 'Pa', 5e5)

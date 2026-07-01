@@ -9,7 +9,7 @@ import CoolProp as cp
 import numpy as np
 
 from adet.equations.base_equation import EquationBase, EquationConfig
-from adet.equations.utils import minmax_bound, safe_min
+from adet.equations.utils import minmax_bound, safe_min, safe_abs
 from adet.variables import NodeVariables, ThermoVariables
 from adet.varspec import VarSpec
 
@@ -21,7 +21,7 @@ _thrm = ThermoVariables()
 ThroatVelocity = VarSpec('W_throat', 'm / s', node=0, guess=10)
 
 
-class FullIncidence(EquationBase):
+class OptimalIncidence(EquationBase):
     config = EquationConfig(
         input_pair=cp.HmassSmass_INPUTS,
         out_properties=(n0.stc.Density.Glob,),
@@ -71,47 +71,44 @@ class ChokingCriterion(EquationBase):
         self,
         tot_hmass0,
         stc_smass0,
-        geo_eff_area0,
-        geo_eff_area1,
+        area0,
+        area_th,
         geo_metal_angle1,
         kin_U0,
-        geo_metal_angle0,
+        beta0,
         kin_U1,
         # Outputs
-        kin_W_choke0,
-        kin_W_choke1,
+        W_thr,
         oth_p_choke1,
+        W0,
     ):
-        Wt_in = kin_W_choke0 * np.sin(geo_metal_angle0)
-        Wt_th = kin_W_choke1 * np.sin(geo_metal_angle1)
+        Wt_in = W_thr * np.sin(beta0)
+        Wt_th = W0 * np.sin(geo_metal_angle1)
 
         Vt_in = Wt_in + kin_U0
         Vt_th = Wt_th + kin_U1
 
-        Vm_in = kin_W_choke0 * np.cos(geo_metal_angle0)
-        Vm_th = kin_W_choke1 * np.cos(geo_metal_angle1)
+        Vm_in = W_thr * np.cos(beta0)
+        Vm_th = W0 * np.cos(geo_metal_angle1)
 
         tot_hmass_th = tot_hmass0 + (kin_U1 * Vt_th - kin_U0 * Vt_in)
         stc_smass_th = stc_smass0
 
-        kin_W_choke0 = minmax_bound(kin_W_choke0, 0.1, 300)
-        kin_W_choke1 = minmax_bound(kin_W_choke1, 0.1, 300)
+        W_thr = minmax_bound(W_thr, 0.1, 300)
+        W0 = minmax_bound(W0, 0.1, 300)
 
-        stc_hmass_in = tot_hmass0 - kin_W_choke0**2 / 2
-        stc_hmass_th = tot_hmass_th - kin_W_choke1**2 / 2
+        stc_hmass_in = tot_hmass0 - W_thr**2 / 2
+        stc_hmass_th = tot_hmass_th - W0**2 / 2
 
         stc_rhomass_in, _, _ = self.eos(stc_hmass_in, stc_smass0)
         stc_rhomass_th, stc_speed_sound_th, stc_p_th = self.eos(
             stc_hmass_th, stc_smass_th
         )
 
-        r1 = (
-            stc_rhomass_in * Vm_in * geo_eff_area0
-            - stc_rhomass_th * Vm_th * geo_eff_area1
-        )
+        r1 = stc_rhomass_in * Vm_in * area0 - stc_rhomass_th * Vm_th * area_th
 
         # Assume velocity perpendicular to blade
-        r2 = kin_W_choke1 - stc_speed_sound_th
+        r2 = W0 - stc_speed_sound_th
 
         r3 = oth_p_choke1 - stc_p_th
 
@@ -176,11 +173,6 @@ class ObliqueShock(EquationBase):
         )
 
 
-LagMult1 = VarSpec('lamb1', '', node=0, guess=0.0)
-LagMult2 = VarSpec('lamb2', '(kg / s) * (J / kg / K)**-1', node=0, guess=0.0)
-LagMult3 = VarSpec('lamb3', '(kg / s) * (J / kg)**-1', node=0, guess=0.0)
-
-
 class ThroatConditions(EquationBase):
     config = EquationConfig(
         input_pair=cp.PT_INPUTS,
@@ -194,40 +186,43 @@ class ThroatConditions(EquationBase):
 
     def residual(
         self,
-        mf0: n0.oth.MassFlow.Hint,
+        mf0: n0.oth.CumMassFlow.Hint,
         htr0: n0.rlt.Enthalpy.Hint,
         U0: n0.kin.BladeSpeed.Hint,
         s0: n0.stc.Entropy.Hint,
-        # Throat quantities
+        rr0: n0.geo.RDistr.Hint,
+        rr_hub: n0.geo.Rhub.Hint,
+        rr_tip: n0.geo.Rtip.Hint,
+        hh0: n0.geo.HDistr.Hint,
+        # *** Throat quantities
         A_th: n0.geo.ThroatArea.Hint,
+        # r_th: n0.geo.ThroatRadius.Hint,
         p_th: n0.oth.ThrPressure.Hint,
         mf_th: n0.oth.ThrMassFlow.Hint,
         mach_th: n0.kin.MachThroat.Hint,
         T_th: n0.oth.ThrTemperature.Hint,
         omega: n0.kin.Omega.Hint,
-        r_th: n0.geo.ThroatRadius.Hint,
-        # lamb1: LagMult1.Hint,
-        # lamb2: LagMult2.Hint,
-        # lamb3: LagMult3.Hint,
+        # *** Geometry
+        n_blades: n0.geo.NumBlades.Hint,
+        met_angle: n0.geo.MetalAngle.Hint,
+        bld_thick: n0.geo.BldThick.Hint,
     ):
+
+        # TODO: Make some throat geometry spec
+        rr_th = ((rr_hub**2 + rr_tip**2) / 2) ** 0.5
+        U_th = omega * rr_th
+        # ---
 
         a_th, rho_th, s_th, h_th = self.eos(p_th, T_th)
         w_th = mach_th * a_th
-        r0 = mf_th - rho_th * w_th * A_th  # Massflow definition
+        r0 = mf_th - rho_th * w_th * A_th  # Throat massflow
 
         roth0 = htr0 - U0**2 / 2
-        roth_th = h_th + w_th**2 / 2 - U0**2 / 2
+        roth_th = h_th + w_th**2 / 2 - U_th**2 / 2
 
         # Main residuals
         r1 = mf0 - mf_th
         r2 = s0 - s_th
         r3 = roth0 - roth_th
-
-        # Lagrangian step
-        # lagr = mf_th + lamb1 * r1 + lamb2 * r2 + lamb3 * r3
-        # variables = [Wm0, mach_th, p_th]
-        # r_lagr = safe_gradient(lagr, variables)
-        #
-        # residuals.extend(r_lagr)
 
         return r0, r1, r2, r3
