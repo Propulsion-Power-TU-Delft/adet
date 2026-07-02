@@ -17,20 +17,6 @@ n0 = NodeVariables(0)
 n1 = NodeVariables(1)
 thrm = ThermoVariables()
 
-# class WorkCoefficientEstimate(EquationBase):
-#     def residual(
-#         self,
-#         tot_p0,
-#         tot_p1,
-#         kin_machU1,
-#         oth_workCoeff1,
-#         # oth_isEfficiency1,
-#         oth_gamma_pv1,
-#     ):
-#         lhs = (tot_p1 / tot_p0) ** ((oth_gamma_pv1 - 1) / oth_gamma_pv1)
-#         rhs = 1 + (oth_gamma_pv1 - 1) * oth_workCoeff1 * kin_machU1**2
-#         return lhs - rhs
-
 
 # TODO: This can be generalized instead of using the
 # ideal gas expressions with gamma(pv)
@@ -321,11 +307,11 @@ class MixingJohnstonDean(LossModel):
         self,
         v0: n0.kin.V_mag.Hint,
         alpha0: n0.kin.FlowAngleAbs.Hint,
-        min_wake0: n0.oth.MinWakeFrac.Hint,
-        max_wake0: n0.oth.MaxWakeFrac.Hint,
         cum_mf0: n0.oth.CumMassFlow.Hint,
         mf_choke0: n0.oth.ChokeMassflow.Hint,
         wake_frac0: n0.oth.WakeFrac.Hint,
+        min_wake0: n0.oth.MinWakeFrac.Hint,
+        max_wake0: n0.oth.MaxWakeFrac.Hint,
         dht_mix0: n0.loss.Dht_mixing.Hint,
     ):
         MF_THRES = 0.75
@@ -370,11 +356,40 @@ class DiskFricDailyNece(LossModel):
 
         cl_ratio = back_cl1 / hgt1
         f_df_lo = 3.700 * cl_ratio**0.1 / (Re1**0.5)
-        f_df_hi = 0.0102 * cl_ratio**0.1 / (Re1**0.2)
+        f_df_hi = 0.102 * cl_ratio**0.1 / (Re1**0.2)
 
         f_df = safe_if_else(Re1 <= 3e5, f_df_lo, f_df_hi)
 
         return dht_disk1 - 0.25 * (f_df * rho_mean * rr1**2 * u1**3) / cum_mf0
+
+
+class RecirculationCoppage(LossModel):
+    def residual(
+        self,
+        dht_recirc1: n1.loss.Dht_recirculation.Hint,
+        alpha: n1.kin.FlowAngleAbs.Hint,
+        ht0: n0.tot.Enthalpy.Hint,
+        ht1: n1.tot.Enthalpy.Hint,
+        rtip0: n0.geo.Rtip.Hint,
+        rmid1: n1.geo.Rmid.Hint,
+        u1: n1.kin.BladeSpeed.Hint,
+        w1: n1.kin.W_mag.Hint,
+        w_tip0: n0.kin.W_tip.Hint,
+        n_bl_eff1: n1.geo.NumBladesEff.Hint,
+        bl_coeff1: n1.oth.BlLoadingCoeff.Hint,
+    ):
+        w_ratio = w1 / w_tip0
+        work = ht1 - ht0
+        r_ratio = rtip0 / rmid1
+        diff_fact = (
+            1
+            - w_ratio
+            + bl_coeff1
+            * (work / u1**2)
+            * w_ratio
+            / (n_bl_eff1 / np.pi * (1 - r_ratio) + 2 * r_ratio)
+        )
+        return dht_recirc1 - 0.02 * np.tan(alpha) * (diff_fact * u1) ** 2
 
 
 class RecirculationOh(LossModel):
@@ -443,7 +458,7 @@ class LeakageAungier(LossModel):
 class LeakageLostWork(LossModel):
     def residual(
         self,
-        work_coeff1: n1.oth.WorkLossCoeff.Hint,
+        work_loss_coeff: n1.oth.WorkLossCoeff.Hint,
         ht0: n0.tot.Enthalpy.Hint,
         ht1: n1.tot.Enthalpy.Hint,
         cl0: n0.geo.TipClearance.Hint,
@@ -454,9 +469,26 @@ class LeakageLostWork(LossModel):
         work = ht1 - ht0
         clearance = (cl0 + cl1) / 2
 
-        dht_leakage_lost = work_coeff1 * work * clearance / hgt1
+        dht_leakage_lost = work_loss_coeff * work * clearance / hgt1
 
         return dht_lost1 - dht_leakage_lost
+
+
+class AungierChoking(LossModel):
+    def residual(
+        self,
+        area_chk: n0.geo.ChokeArea.Hint,
+        area_thr: n0.geo.ThroatArea.Hint,
+        Dht_chk: n1.loss.Dht_choking.Hint,
+        w0: n0.kin.W_mag.Hint,
+    ):
+        X = 11 - 10 * area_thr / area_chk
+        loss = safe_max(
+            0.0,
+            0.5 * (0.05 * X + X**7),
+        )
+
+        return Dht_chk - w0**2 * loss
 
 
 class AmiranteDiffuserMomentum(EquationBase):

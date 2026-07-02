@@ -9,7 +9,7 @@ import CoolProp as cp
 import numpy as np
 
 from adet.equations.base_equation import EquationBase, EquationConfig
-from adet.equations.utils import minmax_bound, safe_min, safe_abs
+from adet.equations.utils import minmax_bound, safe_min
 from adet.variables import NodeVariables, ThermoVariables
 from adet.varspec import VarSpec
 
@@ -226,3 +226,47 @@ class ThroatConditions(EquationBase):
         r3 = roth0 - roth_th
 
         return r0, r1, r2, r3
+
+
+class ChokingArea(EquationBase):
+    config = EquationConfig(
+        input_pair=cp.PT_INPUTS,
+        out_properties=(
+            _thrm.SpeedSound,
+            _thrm.Density,
+            _thrm.Entropy,
+            _thrm.Enthalpy,
+        ),
+    )
+
+    def residual(
+        self,
+        mf0: n0.oth.CumMassFlow.Hint,
+        htr0: n0.rlt.Enthalpy.Hint,
+        U0: n0.kin.BladeSpeed.Hint,
+        omega: n0.kin.Omega.Hint,
+        s0: n0.stc.Entropy.Hint,
+        rr_hub: n0.geo.Rhub.Hint,
+        rr_tip: n0.geo.Rtip.Hint,
+        # *** Throat quantities
+        A_chk: n0.geo.ChokeArea.Hint,
+        p_chk: n0.oth.ChkPressure.Hint,
+        T_chk: n0.oth.ChkTemperature.Hint,
+    ):
+
+        rr_chk = ((rr_hub**2 + rr_tip**2) / 2) ** 0.5
+        U_chk = omega * rr_chk
+        # ---
+
+        a_chk, rho_chk, s_chk, h_chk = self.eos(p_chk, T_chk)
+        w_chk = a_chk
+
+        roth0 = htr0 - U0**2 / 2
+        roth_chk = h_chk + w_chk**2 / 2 - U_chk**2 / 2
+
+        # Main residuals
+        r1 = mf0 - rho_chk * w_chk * A_chk
+        r2 = s0 - s_chk
+        r3 = roth0 - roth_chk
+
+        return r1, r2, r3

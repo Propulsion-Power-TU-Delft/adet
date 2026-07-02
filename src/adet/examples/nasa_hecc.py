@@ -12,7 +12,11 @@ from adet.components.blade_row import RowGeometry, VanelessDiffuser
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.base_equation import EquationConfig, LossApplier
-from adet.equations.control_volumes import OptimalIncidence, ThroatConditions
+from adet.equations.control_volumes import (
+    ChokingArea,
+    OptimalIncidence,
+    ThroatConditions,
+)
 from adet.equations.definitions import (
     EffectiveBladeNumber,
     IsentropicProperties,
@@ -29,16 +33,15 @@ from adet.losses.basic import (
     ZeroDeviation,
 )
 from adet.losses.compressors import (
+    AungierChoking,
     BackstromSlip,
     BladeLoadingCoppage,
-    ClearanceBrasz,
+    ClearanceJansen,
     DiskFricDailyNece,
     HydraulicQuantities,
     IncidenceGalvas,
-    LeakageAungier,
-    LeakageLostWork,
     MixingJohnstonDean,
-    RecirculationOh,
+    RecirculationCoppage,
     SkinFrictionJansen,
 )
 from adet.solution import solve_root_problem
@@ -64,11 +67,11 @@ setup_mpl(
     }
 )
 
-NUM_SPAN = 3
+NUM_SPAN = 1
 ENABLE_LOSSES = True
 RUN_MULTI = True
 RUN_SPEEDLINES = True
-SPDL_PTS = 50  # Number of speedline points
+SPDL_PTS = 140  # Number of speedline points
 #
 RUN_PLOTS = True  # plotting section
 SHOW_PLOTS = True  # non-interactive testing
@@ -118,10 +121,10 @@ class LossPicker(LossApplier):
         dht_clearance1: n1.loss.Dht_clearance.Hint,
         dht_mixing1: n1.loss.Dht_mixing.Hint,
         dht_incidence1: n1.loss.Dht_incidence.Hint,
-        dht_leakage1: n1.loss.Dht_leakage.Hint,
+        # dht_leakage1: n1.loss.Dht_leakage.Hint,
         dht_recirc1: n1.loss.Dht_recirculation.Hint,
         dht_disk1: n1.loss.Dht_disk.Hint,
-        dht_lost1: n1.loss.Dht_lost.Hint,
+        dht_choking1: n1.loss.Dht_choking.Hint,
         T_is1: n1.oth.Tis_tot.Hint,
         eta_tt3: n3.ndim.EtaTT.Hint,
         p2: n2.tot.Pressure.Hint,
@@ -132,13 +135,15 @@ class LossPicker(LossApplier):
             0.0
             + dht_skin1
             + dht_incidence1
-            + dht_clearance1
             + dht_mixing1
-            + dht_leakage1
             + dht_loading1
-            + dht_lost1
+            + dht_choking1
+            + dht_clearance1
+            + dht_recirc1
+            + dht_disk1
+            # + dht_lost1
         )
-        dht_ext = 0.0 + dht_leakage1 + dht_recirc1 + dht_disk1
+        dht_ext = 0.0  # + dht_leakage1   # + dht_disk1
 
         tot_hmass_is3 = self.eos(p3, s0)
 
@@ -166,7 +171,7 @@ inlet = Inlet(
 
 # +++ Shafts
 shaft = Shaft(
-    omega=Quantity(18000, 'rpm'),
+    omega=Quantity(21000, 'rpm'),
     is_constrained=True,
 )
 
@@ -184,17 +189,21 @@ EQS_WITH_LOSSES = {
     # *** SLIP
     BackstromSlip(): (0, 1),
     HydraulicQuantities(): (0, 1),
-    # *** LOSS MODELS
-    ClearanceBrasz(): (0, 1),
-    SkinFrictionJansen(): (0, 1),
-    BladeLoadingCoppage(): (0, 1),
+    # *** Auxiliary
     OptimalIncidence(): 0,
+    # *** LOSS MODELS
     IncidenceGalvas(): (0, 1),
+    BladeLoadingCoppage(): (0, 1),
+    SkinFrictionJansen(): (0, 1),
     MixingJohnstonDean(): 1,
-    RecirculationOh(): (0, 1),
-    LeakageAungier(): (0, 1),
-    LeakageLostWork(): (0, 1),
+    ClearanceJansen(): (0, 1),
     DiskFricDailyNece(): (0, 1),
+    RecirculationCoppage(): (0, 1),
+    AungierChoking(): (0, 1),
+    # ClearanceBrasz(): (0, 1),
+    # RecirculationOh(): (0, 1),
+    # LeakageAungier(): (0, 1),
+    # LeakageLostWork(): (0, 1),
 }
 
 # *** Speedline definitions
@@ -208,8 +217,8 @@ height = R_TIP - R_HUB
 SPEEDS = [21e3, 20e3, 19e3, 18e3]
 MASS_CHOKES = [5.5814, 5.5003, 5.4238, 5.3519]
 
-MIN_MASS = [4.1, 3.7, 3.5, 3.1]
-mass_limits = [(ms, mc + 0.0) for ms, mc in zip(MIN_MASS, MASS_CHOKES)]
+MIN_MASS = [4.0, 3.6, 3.4, 3.0]
+mass_limits = [(ms, mc + 0.2) for ms, mc in zip(MIN_MASS, MASS_CHOKES)]
 SPEED_LINES = dict(zip(SPEEDS, mass_limits))
 
 # *** Metal angle definition
@@ -270,16 +279,16 @@ impeller = BladeRow(
         n1.geo.NumBlades: NUM_BLADES,
         n1.geo.NumSplitters: NUM_BLADES,
         # > Loss coefficients contributors
-        n0.oth.IncCoeff: 0.5,  # Incidence
+        n0.oth.IncCoeff: 1.0,  # Incidence
         n1.geo.BackClearance: 0.001,
         n0.geo.TipClearance: Quantity(0.235, 'mm'),
         n1.geo.TipClearance: Quantity(0.304, 'mm'),
         n1.geo.AbsRoughness: Quantity(1.524, 'micron'),
-        n1.oth.SlipFactCoeff: 2.5,
+        n1.oth.SlipFactCoeff: 7,
         n1.oth.WorkLossCoeff: 0.3,
         n1.oth.BlLoadingCoeff: 0.75,
-        n1.oth.MinWakeFrac: 0.35,
-        n1.oth.MaxWakeFrac: 0.35,
+        n1.oth.MinWakeFrac: 0.3,
+        n1.oth.MaxWakeFrac: 0.3,
         n1.oth.WakeFrac: 0.3,
         n1.oth.ChokeMassflow: MASS_CHOKES[0],
     },
@@ -291,6 +300,7 @@ impeller = BladeRow(
         IsentropicProperties(): (0, 1),
         # *** Blockage (optional)
         ThroatConditions(): 0,
+        ChokingArea(): 0,
         # Definitions
         # WorkCoefficient(): (0, 1),
         **EQS_ISENTROPIC,
@@ -321,14 +331,11 @@ ntw_hecc = ComponentNetwork(
 
 # Overall efficiency
 ntw_hecc.system.add_equation(TotalTotalPressureRatio(), (0, 3))
+# ntw_hecc.system.add_equation(TotalTotalCompressionEfficiency(), (0, 3))
 ntw_hecc.system.add_spanwise_constants(n0.kin.V_mer, n0.geo.HDistr)
 impeller.set_spanwise_constant(n1.stc.Pressure)
 vaneless_diff.set_spanwise_constant(n1.stc.Pressure)
-
 ntw_hecc.build()
-
-mf_th = ntw_hecc.system.free_args_sym[n0.oth.ThrMassFlow]
-obj_func = 1 / mf_th
 
 
 x0 = ntw_hecc.system.get_scaled_guess(fallback=0.5)
@@ -411,8 +418,8 @@ if RUN_MULTI:
 
         # Remove fixed wake fraction -> Dynamic
         ntw_hecc.system.data.boun_cond.pop(n1.oth.WakeFrac)
-        # ntw_hecc.system.add_equation(LossPicker(), (0, 1, 2, 3))
-        ntw_hecc.system.add_equation(IsentropicLink(), (0, 1))
+        ntw_hecc.system.add_equation(LossPicker(), (0, 1, 2, 3))
+        # ntw_hecc.system.add_equation(IsentropicLink(), (0, 1))
         ntw_hecc.build()
 
         rootfinder_hecc_loss = ntw_hecc.system.make_rootfinder(
@@ -537,20 +544,22 @@ if RUN_MULTI:
         choke_scl = ntw_hecc.system.constraints_scaling[choke_idx]
 
         # Find indices for loss components (active ones from LossPicker)
-        loss_names = [
-            'oth_delta_hmass_skin1',
-            'oth_delta_hmass_incidence1',
-            'oth_delta_hmass_clearance1',
-            'oth_delta_hmass_mixing1',
-            'oth_delta_hmass_loading1',
+        loss_specs = [
+            # Int
+            n1.loss.Dht_skin,
+            n1.loss.Dht_incidence,
+            n1.loss.Dht_clearance,
+            n1.loss.Dht_mixing,
+            n1.loss.Dht_loading,
+            n1.loss.Dht_choking,
             # Ext
-            'oth_delta_hmass_disk1',
-            'oth_delta_hmass_recirc1',
-            'oth_delta_hmass_leakage1',
+            n1.loss.Dht_disk,
+            n1.loss.Dht_recirculation,
+            n1.loss.Dht_leakage,
         ]
         loss_indices = {}
         loss_scales = {}
-        for loss_name in loss_names:
+        for loss_name in loss_specs:
             try:
                 idx = ntw_hecc.system.data.free_args.index(loss_name)
                 loss_indices[loss_name] = idx
@@ -601,13 +610,13 @@ if RUN_MULTI:
                 try:
                     sol = solve_root_problem(rtfn_kin, sol, kn, suppress_output=False)
 
-                    sol_dict = ntw_hecc.system.solution_to_dict(sol)
+                    sol_dict = ntw_hecc.system.sol_to_dict(sol)
 
-                    pr = np.average(sol_dict['oth_pRatio_tt3'])
-                    eta = np.average(sol_dict['oth_eta_tt3'])
+                    pr = np.average(sol_dict[n3.ndim.PRatioTT])
+                    eta = np.average(sol_dict[n3.ndim.EtaTT])
 
                     if pr > 8 or eta > 1.0 or eta < 0.8:
-                        raise RuntimeError
+                        raise RuntimeError  # Discard fake solutions
 
                     pratios.append(pr)
                     etas.append(eta)
@@ -616,9 +625,9 @@ if RUN_MULTI:
                     all_converged_solutions.append((mf, pr, sol.copy()))
 
                     # Calculate specific work for normalization from nodes
-                    n0 = ntw_hecc.system.nodes[0]
-                    n1 = ntw_hecc.system.nodes[1]
-                    work = np.mean(n1.tot.hmass) - np.mean(n0.tot.hmass)
+                    work = np.mean(sol_dict[n1.tot.Enthalpy]) - np.mean(
+                        sol_dict[n0.tot.Enthalpy]
+                    )
 
                     # Extract loss values normalized by work
                     for loss_name, idx in loss_indices.items():
@@ -628,6 +637,7 @@ if RUN_MULTI:
 
                     converged_count += 1
                 except Exception:
+                    # raise e from e
                     logger.warning(
                         f'Convergence failed at mf={mf:.3f} kg/s, '
                         f'omega={omega * 60 / (2 * np.pi):.0f} RPM'
@@ -737,8 +747,9 @@ if RUN_MULTI:
                 massflows_21k_filtered = massflows_21k[converged_mask]
 
                 NAMES = {
-                    'recirc': 'Recirculation',
+                    'recirculation': 'Recirculation',
                     'incidence': 'Incidence',
+                    'chk': 'Choking',
                     'clearance': 'Tip clearance',
                     'mixing': 'Mixing',
                     'skin': 'Skin friction',
@@ -751,13 +762,13 @@ if RUN_MULTI:
                     loss_array_filtered = loss_array[converged_mask]
                     loss_array_scaled = loss_array_filtered
                     loss_values_21k.append(100 * loss_array_filtered)
-                    label = loss_name.replace('oth_delta_hmass_', '').replace('1', '')
+                    label = loss_name.symbol.replace('dht_', '').replace('1', '')
                     label = NAMES[label]
                     loss_labels_21k.append(label)
 
                 # Generate colors from colormap
                 try:
-                    colormap = plt.get_cmap('Dark2')
+                    colormap = plt.get_cmap('tab20')
                 except Exception:
                     colormap = plt.get_cmap('viridis')
 

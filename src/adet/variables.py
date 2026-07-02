@@ -97,6 +97,7 @@ class GeometricVariables(VariableEnum):
     Solidity = VarSpec('solidity', '', 1.0)
     NumBlades = VarSpec('n_blades', '', 50.0, scalar=True)
     NumBladesOpt = VarSpec('n_blades_opt', '', 50.0, scalar=True)
+    ChokeArea = VarSpec('A_choke', 'm**2', 0.1)  # TODO: scalar?
     ThroatArea = VarSpec('A_throat', 'm**2', 0.1)
     ThroatRadius = VarSpec('rr_throat', 'm', 0.01)
     EffSolidity = VarSpec('eff_solidity', '', 1.0)
@@ -153,6 +154,7 @@ class Losses(VariableEnum):
     Dht_skin = VarSpec('dht_skin', 'J / kg')
     Dht_incidence = VarSpec('dht_incidence', 'J / kg')
     Dht_mixing = VarSpec('dht_mixing', 'J / kg')
+    Dht_choking = VarSpec('dht_chk', 'J / kg')
     Dht_disk = VarSpec('dht_disk', 'J / kg')
     Dht_recirculation = VarSpec('dht_recirculation', 'J / kg')
     Dht_leakage = VarSpec('dht_leakage', 'J / kg')
@@ -188,8 +190,10 @@ class OtherVariables(VariableEnum):
     TgtMassFlow = VarSpec('tgt_mass', 'kg / s', 1.0)
     ChokeMassflow = VarSpec('massflow_choke', 'kg / s', guess=5.0, scalar=True)
     RltEnthalpyChoke = VarSpec('hrlt_choke', 'J / kg', guess=5e5)
+    ThrPressure = VarSpec('thr_prss', 'Pa', 5e5)  # Throat => Actual throat
     ThrTemperature = VarSpec('thr_temp', 'K', 500)
-    ThrPressure = VarSpec('thr_prss', 'Pa', 5e5)
+    ChkPressure = VarSpec('chk_prss', 'Pa', 5e5)  # Choking => Hypothetical crit area
+    ChkTemperature = VarSpec('chk_temp', 'K', 500)
     DispThickEW = VarSpec('disp_thick_ew', 'm', 2e-5, scalar=True)
     Enthalpy_Is = VarSpec('stc_hmass_is', 'J / kg', 6e5)
     ShockAngle = VarSpec('sh_angle', 'rad', 0.9, (0.0, 1.6))
