@@ -23,7 +23,8 @@ data_dir = (
 setup_mpl(
     {
         'font.family': 'serif',
-        'font.size': 10,
+        'text.usetex': True,
+        'font.size': 19,
     }
 )
 
@@ -98,7 +99,7 @@ def plot_comparison(exp_data, comp_data):
     rpms = sorted(set(exp_data.keys()) & set(comp_data.keys()), key=float)
 
     # Create figure 1: Pressure ratio comparison
-    fig1, ax = plt.subplots(figsize=(10, 5))
+    fig1, ax = plt.subplots(figsize=(10, 9))
     colors = plt.get_cmap('viridis')(np.linspace(0, 0.8, len(rpms)))
 
     for rpm, color in zip(rpms, colors):
@@ -109,7 +110,7 @@ def plot_comparison(exp_data, comp_data):
             exp['pratios'],
             'o',
             color=color,
-            label=f'{int(float(rpm) / 1000)}k rpm (exp.)',
+            label=f'{round(float(rpm) / 1000)}k rpm (exp.)',
             markersize=8,
             linewidth=2.5,
             alpha=0.7,
@@ -124,7 +125,7 @@ def plot_comparison(exp_data, comp_data):
                 comp_pr,
                 '-',
                 color=color,
-                label=f'{int(float(rpm) / 1000)}k rpm (comp.)',
+                label=f'{round(float(rpm) / 1000)}k rpm (comp.)',
                 linewidth=2.5,
                 alpha=0.7,
             )
@@ -139,22 +140,27 @@ def plot_comparison(exp_data, comp_data):
                 color=color,
                 alpha=0.2,
             )
-            ax.tick_params('both', labelsize=30)
+            ax.tick_params('both')
 
-    ax.set_xlabel(r'$\dot{m}$ [kg/s]')
-    ax.set_ylabel(r'$\beta_{tt}$ [−]')
+    ax.set_xlabel(r'$\dot{m}$ [$\mathrm{kg/s}$]', fontsize=24)
+    ax.set_ylabel(r'$\beta_{tt}$ [$\mathrm{−}$]', fontsize=24)
 
     ax.legend(loc='upper left')
-    ax.grid(True, alpha=0.5)
+    ax.grid(True, alpha=0.3)
     fig1.tight_layout()
     fig1.savefig(
         'C:\\Users\\fvaccari\\OneDrive - Delft University of Technology\\latex'
-        '\\gpps26_ADeT\\Images\\HECC_pratios.pdf'
+        '\\rebuttal_gpps26_ADeT\\Images\\HECC_pratios.pdf'
     )
 
     # Create figure 2: Efficiency comparison with separate subplot for each speedline
-    fig2, axs = plt.subplots(2, 2, figsize=(10, 8), sharey=True, sharex=True)
-    axs = axs.flatten()
+    num_speedlines = len(rpms)
+    num_cols = 2
+    num_rows = (num_speedlines + num_cols - 1) // num_cols
+    fig2, axs = plt.subplots(
+        num_rows, num_cols, figsize=(10, 4 * num_rows), sharey=True, sharex=True
+    )
+    axs = axs.flatten() if num_speedlines > 1 else [axs]
 
     for idx, rpm in enumerate(rpms):
         ax = axs[idx]
@@ -168,7 +174,7 @@ def plot_comparison(exp_data, comp_data):
             exp['etas'],
             'o',
             color=color,
-            label=f'{int(float(rpm) / 1000)}k rpm (exp.)',
+            label=f'{round(float(rpm) / 1000)}k rpm (exp.)',
             markersize=8,
             linewidth=2.5,
             alpha=0.8,
@@ -186,7 +192,7 @@ def plot_comparison(exp_data, comp_data):
                 comp_eta,
                 '-',
                 color=color,
-                label=f'{int(float(rpm) / 1000)}k rpm (comp.)',
+                label=f'{round(float(rpm) / 1000)}k rpm (comp.)',
                 linewidth=2.5,
                 alpha=0.8,
             )
@@ -203,59 +209,58 @@ def plot_comparison(exp_data, comp_data):
                 # label=r'$\pm$ 2% error',
             )
 
-        ax.set_ylim(75, 90)
+        ax.set_ylim(80, 95)
         ax.legend(loc='lower left')
-        ax.grid(True, alpha=0.5)
-        ax.tick_params('both', labelsize=30)
+        ax.grid(True, alpha=0.3)
+        ax.tick_params('both')
 
-    axs[2].set_xlabel(r'$\dot{m}$ [kg/s]')
-    axs[3].set_xlabel(r'$\dot{m}$ [kg/s]')
-    axs[0].set_ylabel(r'$\eta_{tt}$ [\%]')
-    axs[2].set_ylabel(r'$\eta_{tt}$ [\%]')
+    # Remove unused axes
+    for idx in range(num_speedlines, len(axs)):
+        fig2.delaxes(axs[idx])
+    axs = axs[:num_speedlines]
+
+    # Set x-labels on bottom row
+    for idx in range(max(0, num_speedlines - num_cols), num_speedlines):
+        axs[idx].set_xlabel(r'$\dot{m}$ [$\mathrm{kg/s}$]', fontsize=24)
+
+    for idx in range(0, len(axs), num_cols):
+        axs[idx].set_ylabel(r'$\eta_{tt}$ [$\mathrm{\%}$]', fontsize=24)
 
     fig2.tight_layout()
     fig2.savefig(
         'C:\\Users\\fvaccari\\OneDrive - Delft University of Technology\\latex'
-        '\\gpps26_ADeT\\Images\\HECC_efficiencies.pdf'
+        '\\rebuttal_gpps26_ADeT\\Images\\HECC_efficiencies.pdf'
     )
 
     # Create figure 3: Total temperature ratio comparison
-    fig3, axs = plt.subplots(2, 2, figsize=(10, 8), sharey=True, sharex=True)
-    axs = axs.flatten()
+    fig3, ax = plt.subplots(figsize=(10, 9))
 
-    for idx, rpm in enumerate(rpms):
-        ax = axs[idx]
+    for rpm, color in zip(rpms, colors):
         exp = exp_data[rpm]
         exp_mf = exp['massflows']
-        color = colors[idx]
-
-        # Plot experimental data
         ax.plot(
             exp_mf,
             exp['ttratio'],
             'o',
             color=color,
-            label=f'{int(float(rpm) / 1000)}k rpm (exp.)',
+            label=f'{round(float(rpm) / 1000)}k rpm (exp.)',
             markersize=8,
             linewidth=2.5,
-            alpha=0.8,
+            alpha=0.7,
         )
 
-        # Plot computed data with error bars
         if rpm in comp_data:
             comp = comp_data[rpm]
             comp_mf = np.array(comp['massflows'])
             comp_ttr = np.array(comp['ttratio'])
-
-            # Plot computed line
             ax.plot(
                 comp_mf,
                 comp_ttr,
                 '-',
                 color=color,
-                label=f'{int(float(rpm) / 1000)}k rpm (comp.)',
+                label=f'{round(float(rpm) / 1000)}k rpm (comp.)',
                 linewidth=2.5,
-                alpha=0.8,
+                alpha=0.7,
             )
 
             # Add ±2% error band
@@ -268,20 +273,17 @@ def plot_comparison(exp_data, comp_data):
                 color=color,
                 alpha=0.2,
             )
+            ax.tick_params('both')
 
-        ax.legend(loc='lower left')
-        ax.grid(True, alpha=0.5)
-        ax.tick_params('both', labelsize=30)
+    ax.set_xlabel(r'$\dot{m}$ [$\mathrm{kg/s}$]', fontsize=24)
+    ax.set_ylabel(r'$\tau_{tt}$ [$\mathrm{−}$]', fontsize=24)
 
-    axs[2].set_xlabel(r'$\dot{m}$ [kg/s]')
-    axs[3].set_xlabel(r'$\dot{m}$ [kg/s]')
-    axs[0].set_ylabel(r'$\tau_{tt}$ [−]')
-    axs[2].set_ylabel(r'$\tau_{tt}$ [−]')
-
+    ax.legend(loc='upper left')
+    ax.grid(True, alpha=0.3)
     fig3.tight_layout()
     fig3.savefig(
         'C:\\Users\\fvaccari\\OneDrive - Delft University of Technology\\latex'
-        '\\gpps26_ADeT\\Images\\HECC_temperature_ratios.pdf'
+        '\\rebuttal_gpps26_ADeT\\Images\\HECC_temperature_ratios.pdf'
     )
     return fig1, fig2, fig3
 
@@ -303,4 +305,3 @@ if __name__ == '__main__':
 
     # Create comparison plots
     fig1, fig2, fig3 = plot_comparison(exp_data, comp_data)
-    plt.show()

@@ -9,6 +9,7 @@ with open('./vaneless_short_data.csv', newline='\n') as data:
     curr_speedline_data = {k: [] for k in keys}
 
     for line in reader:
+        print(line)
         if not line:
             mean_speed = np.mean(curr_speedline_data[keys[0]])
             speedlines[round(mean_speed)] = curr_speedline_data
