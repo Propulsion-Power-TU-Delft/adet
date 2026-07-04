@@ -186,15 +186,15 @@ class HydraulicQuantities(EquationBase):
         hyd_diam1: n1.geo.HydDiam.Hint,
         hyd_len1: n1.geo.HydLen.Hint,
     ):
-        L_hyd = (
+        hyd_L = (
             np.pi
             / 8
-            * (2 * rr1 - rtip0 - rhub0 - hgt1 + 2 * chord_ax1)
+            * (2 * rr1 - (rtip0 - rhub0) - hgt1 + 2 * chord_ax1)
             * (4 / ((np.cos(metal_tip0) + np.cos(metal_hub0)) + 2 * np.cos(metal_ang1)))
         )
 
         metal_cos_sum = np.cos(metal_tip0) + np.cos(metal_hub0)
-        D_hyd = (
+        hyd_D = (
             2
             * rr1
             * (
@@ -211,8 +211,8 @@ class HydraulicQuantities(EquationBase):
             )
         )
 
-        r1 = hyd_len1 - L_hyd
-        r2 = hyd_diam1 - D_hyd
+        r1 = hyd_len1 - hyd_L
+        r2 = hyd_diam1 - hyd_D
 
         return r1, r2
 
@@ -255,9 +255,7 @@ class SkinFrictionJansen(LossModel):
 
 
 class IncidenceVDB(LossModel):
-    """
-    Van den Braembussche incidence model
-    """
+    """Van den Braembussche incidence model"""
 
     def residual(
         self,
@@ -518,8 +516,8 @@ class AmiranteDiffuserMomentum(EquationBase):
         visc1: n1.stc.Viscosity.Hint,
         wake_frac0: n0.oth.WakeFrac.Hint,
     ):
-        FRIC_CONST = 0.01
-        ETA_POLY = 0.9
+        FRIC_CONST = 0.02
+        ETA_POLY = 0.85
 
         delta_rad = safe_max(0.001 * rr0, rr1 - rr0)
         x_log = delta_rad / np.cos(alpha1)
@@ -535,5 +533,49 @@ class AmiranteDiffuserMomentum(EquationBase):
         exponent = (gamma - 1) / (ETA_POLY * gamma)
 
         r2 = T1 - T0 * (p_ratio) ** exponent
+
+        return r1, r2
+
+
+class JansenDiffuserLoss(LossModel):
+    config = EquationConfig(
+        manual_units=('dimensionless', 'J/kg'),
+    )
+
+    def residual(
+        self,
+        rr0: n0.geo.Rmid.Hint,
+        rr1: n1.geo.Rmid.Hint,
+        hh0: n0.geo.Height.Hint,
+        hh1: n1.geo.Height.Hint,
+        rho0: n0.stc.Density.Hint,
+        vt0: n0.kin.V_tan.Hint,
+        v0: n0.kin.V_mag.Hint,
+        alpha0: n0.kin.FlowAngleAbs.Hint,
+        vt1: n1.kin.V_tan.Hint,
+        cum_mf: n0.oth.CumMassFlow.Hint,
+        visc0: n0.stc.Viscosity.Hint,
+        visc1: n1.stc.Viscosity.Hint,
+        gas_const: n0.stc.GasConstant.Hint,
+        s0: n0.stc.Entropy.Hint,
+        s1: n1.stc.Entropy.Hint,
+    ):
+        h_mean = (hh0 + hh1) / 2
+        visc_mean = (visc0 + visc1) / 2
+        hyd_D = 2 * h_mean
+
+        Re = cum_mf / (visc_mean * hyd_D)
+        FRIC_CONST = 0.01
+        Cf = FRIC_CONST * (1.8e5 / Re) ** 0.2
+
+        r1 = (
+            vt0 / vt1
+            - rr1 / rr0
+            - (2 * np.pi * Cf * rho0 * vt0 * (rr1**2 - rr0 * rr1)) / cum_mf
+        )
+
+        loss = (Cf * (1 - (rr0 / rr1) ** 1.5) * v0**2) / (1.5 * hh0 * np.cos(alpha0))
+
+        r2 = s1 - (s0 + np.exp(-loss / gas_const))
 
         return r1, r2

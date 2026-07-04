@@ -30,7 +30,7 @@ from adet.equations.geometrical import (
 from adet.equations.special import GeometricalAdder
 from adet.geometry import BezierCurve, StraightLine
 from adet.losses.basic import IsentropicLink, ZeroDeviation
-from adet.losses.compressors import AmiranteDiffuserMomentum
+from adet.losses.compressors import AmiranteDiffuserMomentum, JansenDiffuserLoss
 from adet.losses.mixing import (
     DentonMixingLoss,
     MinimalChoke,
@@ -189,6 +189,7 @@ class VanelessDiffuser(BaseComponent):
         (ConstRelEnthalpy, (0, 1)),
         # (ConstantAngMomentum, (0, 1)),
         (AmiranteDiffuserMomentum, (0, 1)),
+        # (JansenDiffuserLoss, (0, 1)),
         (MassConservation, (0, 1)),
         # Meridional Geometry
         (MeridionalGeometry, 1),

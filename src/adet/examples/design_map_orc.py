@@ -35,7 +35,7 @@ from adet.equations.nondimensional import (
     WorkCoefficient,
 )
 from adet.fluid.settings import FluidModel, FluidSettings
-from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
+from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation, IsentropicLink
 from adet.losses.leakage import DentonTrapLeakage
 from adet.losses.mixing import DentonMixingLoss, SieverdingBasePressure
 from adet.losses.profile import DentonTrapProfile
@@ -76,7 +76,7 @@ CHORD_METHOD = 'dynamic'
 FLARE_MAX = 30  # deg - ONLY USED IN DYNAMIC !
 
 # Loss used at first pass (isentropic)
-INITIAL_LOSS = PercentageEntropyLoss(0.0)
+INITIAL_LOSS = IsentropicLink()
 
 
 # ================================================
@@ -471,6 +471,8 @@ stator.add_equation(AddAxialLosses(has_tip_gap=False), (0, 1))
 rotor.add_equation(AddAxialLosses(has_tip_gap=True), (0, 1))
 
 ntw.build()
+
+print('*** SOLVING WITH LOSSES ***')
 
 x0_loss = ntw.system.get_scaled_guess(sol_dict_is, fallback=0.5)
 kn_loss = ntw.system.get_scaled_constraints()

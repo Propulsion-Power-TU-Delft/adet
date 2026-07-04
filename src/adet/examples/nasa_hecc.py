@@ -43,6 +43,8 @@ from adet.losses.compressors import (
     MixingJohnstonDean,
     RecirculationCoppage,
     SkinFrictionJansen,
+    ClearanceBrasz,
+    RecirculationOh,
 )
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
@@ -71,7 +73,7 @@ NUM_SPAN = 1
 ENABLE_LOSSES = True
 RUN_MULTI = True
 RUN_SPEEDLINES = True
-SPDL_PTS = 140  # Number of speedline points
+SPDL_PTS = 40  # Number of speedline points
 #
 RUN_PLOTS = True  # plotting section
 SHOW_PLOTS = True  # non-interactive testing
@@ -126,9 +128,8 @@ class LossPicker(LossApplier):
         dht_disk1: n1.loss.Dht_disk.Hint,
         dht_choking1: n1.loss.Dht_choking.Hint,
         T_is1: n1.oth.Tis_tot.Hint,
-        eta_tt3: n3.ndim.EtaTT.Hint,
-        p2: n2.tot.Pressure.Hint,
-        p3: n3.tot.Pressure.Hint,
+        eta_tt1: n1.ndim.EtaTT.Hint,
+        pt1: n1.tot.Pressure.Hint,
     ):
         # Channel losses
         dht_int = (
@@ -143,9 +144,9 @@ class LossPicker(LossApplier):
             + dht_disk1
             # + dht_lost1
         )
-        dht_ext = 0.0  # + dht_leakage1   # + dht_disk1
+        dht_ext = 0.0  # + dht_disk1  # + dht_leakage1
 
-        tot_hmass_is3 = self.eos(p3, s0)
+        tot_hmass_is1 = self.eos(pt1, s0)
 
         delta_s = dht_int / T_is1
 
@@ -153,32 +154,13 @@ class LossPicker(LossApplier):
 
         # Residuals
         r1 = s1 - (s0 + delta_s)
-        r2 = (work + dht_ext) * eta_tt3 - (tot_hmass_is3 - ht0)
+        r2 = (work + dht_ext) * eta_tt1 - (tot_hmass_is1 - ht0)
 
         return r1, r2
 
 
 # +++ Boundary conditions
-inlet = Inlet(
-    boundary_conditions={
-        n0.tot.Pressure: 101352.9,
-        n0.tot.Temperature: 288.16,
-        n0.kin.FlowAngleAbs: Quantity(0.0, 'rad'),
-        n0.oth.CumMassFlow: 4.1,
-        # n0.kin.MachThroat: 1.0,
-    }
-)
 
-# +++ Shafts
-shaft = Shaft(
-    omega=Quantity(21000, 'rpm'),
-    is_constrained=True,
-)
-
-casing = Shaft(
-    omega=Quantity(0, 'rpm'),
-    is_constrained=True,
-)
 
 EQS_ISENTROPIC = {
     ZeroDeviation(): 1,  # No slip
@@ -207,18 +189,22 @@ EQS_WITH_LOSSES = {
 }
 
 # *** Speedline definitions
-RPM_DES = 21000
 R_HUB = 0.04064
 R_TIP = 0.1076833
 NUM_BLADES = 15
 height = R_TIP - R_HUB
 
-#
-SPEEDS = [21e3, 20e3, 19e3, 18e3]
-MASS_CHOKES = [5.5814, 5.5003, 5.4238, 5.3519]
+# *** OLD SPEEDLINES
+# SPEEDS = [21e3, 20e3, 19e3, 18e3]
+# MASS_CHOKES = [5.5814, 5.5003, 5.4238, 5.3519]
+# MIN_MASS = [4.0, 3.6, 3.4, 3.0]
 
-MIN_MASS = [4.0, 3.6, 3.4, 3.0]
-mass_limits = [(ms, mc + 0.2) for ms, mc in zip(MIN_MASS, MASS_CHOKES)]
+# *** NEW SPEEDLINES
+SPEEDS = [18730, 19811, 20945, 22062]
+MASS_CHOKES = [5.39766974, 5.47915652, 5.57050431, 5.66652345]
+MIN_MASS = [3.13, 3.51, 3.73, 4.08]
+
+mass_limits = [(ms, mc + 0.1) for ms, mc in zip(MIN_MASS, MASS_CHOKES)]
 SPEED_LINES = dict(zip(SPEEDS, mass_limits))
 
 # *** Metal angle definition
@@ -245,13 +231,34 @@ throat_area = (
     / NUM_SPAN
     * np.sum(2 * np.pi * rad_distr / NUM_BLADES * np.cos(angle_distr) - thick_distr)
 )
-
+throat_area = 0.0196
 
 if NUM_SPAN == 1:
     angle_distr = np.array(np.radians([-44]))
     thick_distr = np.array([0.001905])
 
-# +++ Components
+# +++ Inlet
+inlet = Inlet(
+    boundary_conditions={
+        n0.tot.Pressure: 101352.9,
+        n0.tot.Temperature: 288.16,
+        n0.kin.FlowAngleAbs: Quantity(0.0, 'rad'),
+        n0.oth.CumMassFlow: 5.0,
+        # n0.kin.MachThroat: 1.0,
+    }
+)
+# +++ Shafts
+shaft = Shaft(
+    omega=Quantity(SPEEDS[-1], 'rpm'),
+    is_constrained=True,
+)
+
+casing = Shaft(
+    omega=Quantity(0, 'rpm'),
+    is_constrained=True,
+)
+
+# +++ Flow Components
 impeller = BladeRow(
     name='rotor',
     shaft=shaft,
@@ -284,11 +291,11 @@ impeller = BladeRow(
         n0.geo.TipClearance: Quantity(0.235, 'mm'),
         n1.geo.TipClearance: Quantity(0.304, 'mm'),
         n1.geo.AbsRoughness: Quantity(1.524, 'micron'),
-        n1.oth.SlipFactCoeff: 7,
-        n1.oth.WorkLossCoeff: 0.3,
+        n1.oth.SlipFactCoeff: 2,
+        # n1.oth.WorkLossCoeff: 0.3,
         n1.oth.BlLoadingCoeff: 0.75,
         n1.oth.MinWakeFrac: 0.3,
-        n1.oth.MaxWakeFrac: 0.3,
+        n1.oth.MaxWakeFrac: 0.55,
         n1.oth.WakeFrac: 0.3,
         n1.oth.ChokeMassflow: MASS_CHOKES[0],
     },
@@ -330,7 +337,7 @@ ntw_hecc = ComponentNetwork(
 
 
 # Overall efficiency
-ntw_hecc.system.add_equation(TotalTotalPressureRatio(), (0, 3))
+ntw_hecc.system.add_equation(TotalTotalPressureRatio(), (0, 1))
 # ntw_hecc.system.add_equation(TotalTotalCompressionEfficiency(), (0, 3))
 ntw_hecc.system.add_spanwise_constants(n0.kin.V_mer, n0.geo.HDistr)
 impeller.set_spanwise_constant(n1.stc.Pressure)
@@ -367,7 +374,7 @@ solution_hecc_is = solve_root_problem(
 )
 # solution_hecc_is = solve_root_problem(rtfn_kin, solution_hecc_is, kn_hecc_is)
 sol_is_dict = ntw_hecc.system.sol_to_dict(solution_hecc_is)
-globals().update(residual_debugger(ThroatConditions(), [0], sol_is_dict))
+# globals().update(residual_debugger(OptimalIncidence(), [0], sol_is_dict))
 
 if RUN_MULTI:
     print('*** SOLVING MULTISPAN ISENTROPIC***')
@@ -418,7 +425,7 @@ if RUN_MULTI:
 
         # Remove fixed wake fraction -> Dynamic
         ntw_hecc.system.data.boun_cond.pop(n1.oth.WakeFrac)
-        ntw_hecc.system.add_equation(LossPicker(), (0, 1, 2, 3))
+        ntw_hecc.system.add_equation(LossPicker(), (0, 1))
         # ntw_hecc.system.add_equation(IsentropicLink(), (0, 1))
         ntw_hecc.build()
 
@@ -551,11 +558,11 @@ if RUN_MULTI:
             n1.loss.Dht_clearance,
             n1.loss.Dht_mixing,
             n1.loss.Dht_loading,
-            n1.loss.Dht_choking,
             # Ext
             n1.loss.Dht_disk,
             n1.loss.Dht_recirculation,
             n1.loss.Dht_leakage,
+            n1.loss.Dht_choking,
         ]
         loss_indices = {}
         loss_scales = {}
@@ -575,13 +582,14 @@ if RUN_MULTI:
 
         sol = ntw_hecc.system.get_scaled_guess(sol_loss_dict)
         kn = ntw_hecc.system.get_scaled_constraints()
-        for omega, massflows in speed_lines.items():
+        for idx, (omega, massflows) in enumerate(speed_lines.items()):
             pratios = []
             etas = []
+            ttratio = []
             losses_dict = {name: [] for name in loss_indices.keys()}
             converged_count = 0
             kn[omega_idx] = np.array([omega / omega_scl])
-            kn[choke_idx] = np.array([massflows[-1] / choke_scl])
+            kn[choke_idx] = np.array([MASS_CHOKES[idx] / choke_scl])
             for mf in massflows:
                 kn[mf_idx] = np.array([mf / mf_scl])
 
@@ -612,14 +620,19 @@ if RUN_MULTI:
 
                     sol_dict = ntw_hecc.system.sol_to_dict(sol)
 
-                    pr = np.average(sol_dict[n3.ndim.PRatioTT])
-                    eta = np.average(sol_dict[n3.ndim.EtaTT])
+                    pr = np.average(sol_dict[n1.ndim.PRatioTT])
+                    eta = np.average(sol_dict[n1.ndim.EtaTT])
+                    ttr = np.average(
+                        (sol_dict[n1.tot.Temperature] - sol_dict[n0.tot.Temperature])
+                        / sol_dict[n0.tot.Temperature]
+                    )
 
                     if pr > 8 or eta > 1.0 or eta < 0.8:
                         raise RuntimeError  # Discard fake solutions
 
                     pratios.append(pr)
                     etas.append(eta)
+                    ttratio.append(ttr)
 
                     # Store converged solution
                     all_converged_solutions.append((mf, pr, sol.copy()))
@@ -644,6 +657,7 @@ if RUN_MULTI:
                     )
                     pratios.append(np.nan)
                     etas.append(np.nan)
+                    ttratio.append(np.nan)
                     for loss_name in loss_indices.keys():
                         losses_dict[loss_name].append(np.nan)
 
@@ -663,18 +677,31 @@ if RUN_MULTI:
                 'losses': losses_dict,
             }
 
-            # Store computed speedline data for comparison
+            # Store only converged points in computed speedline data
+            converged_mask = [not np.isnan(pr) for pr in pratios]
+            converged_mf = [mf for mf, conv in zip(massflows, converged_mask) if conv]
+            converged_pr = [
+                float(pr) for pr, conv in zip(pratios, converged_mask) if conv
+            ]
+            converged_eta = [
+                float(eta) for eta, conv in zip(etas, converged_mask) if conv
+            ]
+            converged_ttr = [
+                float(ttr) for ttr, conv in zip(ttratio, converged_mask) if conv
+            ]
+
             computed_speedline_data[f'{rpm:.0f}'] = {
-                'massflows': massflows.tolist(),
-                'pratios': [float(pr) if not np.isnan(pr) else None for pr in pratios],
-                'etas': [float(eta) if not np.isnan(eta) else None for eta in etas],
+                'massflows': converged_mf,
+                'pratios': converged_pr,
+                'etas': converged_eta,
+                'ttratio': converged_ttr,
             }
 
             massflows_lbs = massflows * 2.2
             axs[0].plot(
                 massflows,
                 pratios,
-                label=f'{rpm / RPM_DES:.2f} N_des',
+                label=f'{rpm:.2f} N_des',
                 marker='o',
                 markersize=5,
                 linewidth=2,
@@ -682,7 +709,7 @@ if RUN_MULTI:
             axs[1].plot(
                 massflows,
                 etas,
-                label=f'{rpm / RPM_DES:.2f} N_des',
+                label=f'{rpm:.2f} N_des',
                 marker='s',
                 markersize=5,
                 linewidth=2,
@@ -719,7 +746,7 @@ if RUN_MULTI:
             plt.close(fig)
 
         # Create dedicated plot for 21k speedline (if converged)
-        design_rpm = RPM_DES
+        design_rpm = SPEEDS[-1]
         design_rpm_str = f'{design_rpm:.0f}'
 
         # Check if design speedline converged
