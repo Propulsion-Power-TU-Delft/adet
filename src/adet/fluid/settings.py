@@ -1,41 +1,19 @@
+import copy
 import logging
 from dataclasses import dataclass
-from typing import Generic, TypeVar
+from typing import Any
 
 from adet.constants import COOLPROP_NAMES_MAP
+from adet.fluid.ideal_eos import AnalyticalFluidState
 from adet.tools.coolprop_utils import pair_id_from_tuple
 from adet.varspec import VarSpec
 
 logger = logging.getLogger(__name__)
 
-E = TypeVar('E')  # External fluid object typevar
-
-
-@dataclass
-class FluidModel(Generic[E]):
-    eos_object: E
-
-    def __copy__(self):
-        cls = self.__class__
-        new_obj = cls.__new__(cls)
-        new_obj.eos_object = self.eos_object
-        return new_obj
-
-    def __deepcopy__(self, memo):
-        cls = self.__class__
-        new_obj = cls.__new__(cls)
-        memo[id(self)] = new_obj
-
-        # Just copy the same object because
-        # Abstract state has problems being deepcopied
-        new_obj.eos_object = self.eos_object
-
-        return new_obj
-
 
 @dataclass
 class FluidSettings:
-    model: FluidModel
+    fluid_state: Any | AnalyticalFluidState
     update_variables: tuple[VarSpec, ...] = ()
     update_length: int = 2
 
@@ -54,18 +32,31 @@ class FluidSettings:
         upd_pties = tuple(x.symbol for x in self.update_variables)
         return pair_id_from_tuple(upd_pties)
 
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        new_obj = cls.__new__(cls)
+        memo[id(self)] = new_obj
+
+        # Just copy the same object because
+        # Abstract state has problems being deepcopied
+        new_obj.fluid_state = self.fluid_state
+        new_obj.update_length = self.update_length
+        new_obj.update_variables = self.update_variables
+
+        return new_obj
+
 
 if __name__ == '__main__':
     from copy import deepcopy
 
-    import CoolProp as cp
+    from CoolProp import AbstractState
 
     from adet.variables import ThermoVariables
 
-    eos = cp.AbstractState('HEOS', 'R134a')
+    eos = AbstractState('HEOS', 'R134a')
 
     sett = FluidSettings(
-        FluidModel(eos),
+        eos,
         (
             ThermoVariables.Pressure,
             ThermoVariables.Temperature,
@@ -73,4 +64,5 @@ if __name__ == '__main__':
         2,
     )
 
-    new_sett = deepcopy(sett)
+    new_sett_dc = deepcopy(sett)
+    new_sett_cp = copy.copy(sett)

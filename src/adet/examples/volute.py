@@ -16,7 +16,7 @@ from adet.equations.fundamental import (
 from adet.equations.nondimensional import AbsoluteMachNumber
 from adet.equations.special import ThermoVarsAdder
 from adet.equations.utils import safe_abs, safe_if_else
-from adet.fluid.settings import FluidModel, FluidSettings
+from adet.fluid.settings import FluidSettings
 from adet.losses.basic import PercentageEntropyLoss
 from adet.registries import GuessRegistry, VariableBoundsRegistry
 from adet.solution import solve_root_problem
@@ -296,11 +296,12 @@ if __name__ == '__main__':
 
         system = CasadiSystem()
 
-        fluid_model = FluidModel(
-            DebugAbstractState('HEOS', 'MM'),
-        )
+        fluid_state = DebugAbstractState('HEOS', 'MM')
         thrm = ThermoVariables()
-        fluid_settings = FluidSettings(fluid_model, (thrm.Pressure, thrm.Temperature))
+        fluid_settings = FluidSettings(
+            fluid_state=fluid_state,
+            update_variables=(thrm.Pressure, thrm.Temperature),
+        )
         system.fluid_settings = fluid_settings
 
         for eq, pos in EQUATIONS.items():

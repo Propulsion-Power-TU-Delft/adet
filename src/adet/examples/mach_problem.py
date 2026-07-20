@@ -12,8 +12,8 @@ from adet.equations.fundamental import (
 from adet.equations.geometrical import AnnulusAreas
 from adet.equations.nondimensional import AbsoluteMachNumber, GammaIdeal
 from adet.equations.special import ThermoVarsAdder
-from adet.fluid.settings import FluidModel, FluidSettings
-from adet.fluid.symbolic_eos import IdealGasState
+from adet.fluid.settings import FluidSettings
+from adet.fluid.ideal_eos import IdealGasState
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
@@ -36,11 +36,14 @@ EQUATIONS = {
 
 system = CasadiSystem()
 # *** Fluid model
-model = FluidModel(DebugAbstractState('REFPROP', 'MM'))
-model = FluidModel(IdealGasState(1.4, 287, 2e-5))
+abs_state = DebugAbstractState('REFPROP', 'MM')
+ideal_state = IdealGasState(1.4, 287, 2e-5)
 # ***
 thrm = ThermoVariables()
-fluid_settings = FluidSettings(model, (thrm.Pressure, thrm.Temperature))
+fluid_settings = FluidSettings(
+    fluid_state=ideal_state,
+    update_variables=(thrm.Pressure, thrm.Temperature),
+)
 system.fluid_settings = fluid_settings
 
 for eq, pos in EQUATIONS.items():

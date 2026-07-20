@@ -34,7 +34,7 @@ from adet.equations.nondimensional import (
     VolumetricFlowRatio,
     WorkCoefficient,
 )
-from adet.fluid.settings import FluidModel, FluidSettings
+from adet.fluid.settings import FluidSettings
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation, IsentropicLink
 from adet.losses.leakage import DentonTrapLeakage
 from adet.losses.mixing import DentonMixingLoss, SieverdingBasePressure
@@ -227,14 +227,13 @@ DUTY_COEFFS = {
 PHI_SPAN = np.linspace(0.4, 1.5, MAP_POINTS)
 PSI_SPAN = np.linspace(3.0, 10.0, MAP_POINTS)
 
-real_model = FluidModel(abs_state)
 INLET_PRESSURE = 1.3 * abs_state.p_critical()
 INLET_TEMPERATURE = 1.045 * abs_state.T_critical()
 abs_state.update(cp.PT_INPUTS, INLET_PRESSURE, INLET_TEMPERATURE)
 
 thrm = ThermoVariables()
 fluid_settings = FluidSettings(
-    model=real_model,
+    fluid_state=abs_state,
     update_variables=(thrm.Pressure, thrm.Enthalpy),
     update_length=2,
 )
@@ -253,7 +252,7 @@ CUSTOM_BOUNDS = {
 }
 
 # Add Thermodynamic bounds
-if fluid_settings.model == real_model:
+if fluid_settings.fluid_state == abs_state:
     MAX_V = 250
     CUSTOM_BOUNDS.update(
         {

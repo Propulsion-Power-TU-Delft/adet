@@ -43,25 +43,6 @@ class TotalPressureLoss(LossApplier):
         return (rlt_p0 - rlt_p1) - (rlt_p0 - stc_p0) * self.loss_coeff
 
 
-class ThroatLossCoefficient(LossApplier):
-    def __init__(self, loss_coefficient: float = 0.0):
-        super().__init__()
-        self.loss_coeff = loss_coefficient
-
-    def residual(
-        self,
-        stc_p1: n1.stc.Pressure.Hint,
-        rlt_p1: n1.rlt.Pressure.Hint,
-        U0: n0.kin.BladeSpeed.Hint,
-        htr0: n0.rlt.Enthalpy.Hint,
-        s0: n0.stc.Entropy.Hint,
-    ):
-        htr1_is = roth0 - U0
-        ptr0 = self.eos(htr0, s0)
-
-        return (rlt_p1_is - rlt_p1) - (rlt_p1 - stc_p1) * self.loss_coeff
-
-
 class PlaceHolderLoss(LossApplier):
     """
     Use when defining efficiency through eta_tt for example instead of direct
@@ -105,16 +86,6 @@ class PercentageEntropyLoss(LossApplier):
         s1: n1.stc.Entropy.Hint,
     ):
         return s1 - s0 * (1 + self.entropy_gen)
-
-
-class FixedEnthalpyLoss(LossApplier):
-    def __init__(self, enthalpy_generated: float = 0.0):
-        super().__init__()
-        self.enth_gen = enthalpy_generated
-
-    def residual(self, tot_hmass0, oth_tot_hmass_is0, oth_delta_tot_hmass0):
-        # Actual enthalpy = outlet isentropic + generated
-        return tot_hmass0 - (oth_tot_hmass_is0 - oth_delta_tot_hmass0)
 
 
 class ZeroDeviation(DeviationModel):

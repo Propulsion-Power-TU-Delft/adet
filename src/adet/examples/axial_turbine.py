@@ -18,7 +18,7 @@ from adet.equations.nondimensional import (
     StaticTotalDegreeOfReaction,
     WorkCoefficient,
 )
-from adet.fluid.settings import FluidModel, FluidSettings
+from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
@@ -92,10 +92,9 @@ rotor.name = 'rotor'
 # ==
 
 
-fluid_model = FluidModel(abs_state)
 fluid_settings = FluidSettings(
-    fluid_model,
-    (n0.stc.Pressure, n0.stc.Temperature),
+    fluid_state=abs_state,
+    update_variables=(n0.stc.Pressure, n0.stc.Temperature),
 )
 
 ntw = ComponentNetwork(

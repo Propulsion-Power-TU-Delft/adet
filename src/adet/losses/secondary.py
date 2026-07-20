@@ -9,35 +9,6 @@ from adet.variables import NodeVariables, ThermoVariables
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)
 
-# - * - * - * - * FROM TURBOSIM - * - * - * - *
-# NOTE:
-# - computed with flow properties at midspan and spread along the blade span
-# - it includes endwall boundary layer losses'
-# CR = NP.cos(flow_angle_in) / NP.cos(
-#     flow_angle_out
-# )  # Convergence ratio (?): flow acceleration
-# H_c = H_Cax * NP.cos(blade_stagger)
-#
-# if H_c < 2.0:
-#     Y = (0.038 + 0.41 * NP.tanh(1.20 * self.delta_star_H)) / (
-#         NP.sqrt(NP.cos(blade_stagger))
-#         * CR
-#         * (H_c * NP.cos(flow_angle_out) / NP.cos(blade_stagger)) ** 0.55
-#     )
-# else:
-#     Y = (0.052 + 0.56 * NP.tanh(1.20 * self.delta_star_H)) / (
-#         NP.sqrt(NP.cos(blade_stagger))
-#         * CR
-#         * H_c
-#         * (NP.cos(flow_angle_out) / NP.cos(blade_stagger)) ** 0.55
-#     )
-#
-# Pt_out = (Pt_in + Y * P_out) / (Y + 1)
-#
-# self.flow.fluid.EoS.update(fld.CoolProp.HmassP_INPUTS, ht_out, Pt_out)
-# self.ds_secondary[flag_row, :] = self.flow.fluid.EoS.smass() - s_in
-# - * - * - * - * - * - * - * - * - * - * - * - *
-
 thrm = ThermoVariables()
 
 

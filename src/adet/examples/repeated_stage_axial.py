@@ -35,8 +35,8 @@ from adet.equations.nondimensional import (
     StaticTotalDegreeOfReaction,
     WorkCoefficient,
 )
-from adet.fluid.settings import FluidModel, FluidSettings
-from adet.fluid.symbolic_eos import IdealGasState
+from adet.fluid.settings import FluidSettings
+from adet.fluid.ideal_eos import IdealGasState
 from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation
 from adet.losses.profile import DentonTrapProfile
 from adet.registries import (
@@ -80,14 +80,11 @@ abs_state = DebugAbstractState('HEOS', 'Air')
 idl_state = IdealGasState(1.4, 287.0, 2e-5)
 abs_state.debug_print = False
 
-real_model = FluidModel(abs_state)
-ideal_model = FluidModel(idl_state)
-
 # Configure fluid settings with update variables
 # Update variables are used to solve for thermodynamic state
 # (p, T) chosen for stability
 settings = FluidSettings(
-    model=ideal_model,
+    fluid_state=idl_state,
     update_variables=('p', 'T'),
     update_length=2,
 )

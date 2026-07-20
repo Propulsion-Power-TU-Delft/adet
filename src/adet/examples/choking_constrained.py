@@ -15,7 +15,7 @@ from adet.equations.fundamental import (
     TotalStaticMatching,
 )
 from adet.equations.nondimensional import RelativeMachNumber, StaticTotalPressRatio
-from adet.fluid.settings import FluidModel, FluidSettings
+from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
@@ -97,11 +97,10 @@ BCS = {
 #     0     th    1    th    2
 
 abs_state = DebugAbstractState('HEOS', 'Air')
-fluid_model = FluidModel(abs_state)
 
 system.fluid_settings = FluidSettings(
-    fluid_model,
-    (n0.stc.Pressure.Glob, n0.stc.Temperature.Glob),
+    fluid_state=abs_state,
+    update_variables=(n0.stc.Pressure.Glob, n0.stc.Temperature.Glob),
 )
 
 

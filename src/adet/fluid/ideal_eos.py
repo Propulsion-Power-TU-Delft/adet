@@ -1,5 +1,5 @@
-import logging
 from abc import ABC, abstractmethod
+import logging
 from inspect import getfullargspec
 from typing import Any, Callable
 
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 UNSUPPORTED_PAIRS = [13, 17, 30, 32]
 
 
-class SymbolicAbstractState(ABC):
+class AnalyticalFluidState(ABC):
     solution_cache: dict[tuple[int, float, float], dict[str, Callable]] = {}
 
     def __init__(self, gamma, gas_constant, viscosity):
@@ -32,7 +32,7 @@ class SymbolicAbstractState(ABC):
 
     @abstractmethod
     def eos(self, *args):
-        raise NotImplementedError
+        pass
 
     @property
     def arguments(self):
@@ -123,7 +123,7 @@ class SymbolicAbstractState(ABC):
         return 0.0287
 
 
-class IdealGasState(SymbolicAbstractState):
+class IdealGasState(AnalyticalFluidState):
     def eos(self, p, T, rhomass, hmass, umass, smass, speed_sound):
         r1 = p - self._gas_constant * rhomass * T
         r2 = hmass - self._cpmass * T

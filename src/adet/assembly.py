@@ -6,8 +6,6 @@ data.
 Sometimes the CasADi api is slightly cryptic, sorry.
 """
 
-import ipdb
-
 import logging
 from abc import ABC, abstractmethod
 from copy import deepcopy
@@ -797,7 +795,7 @@ class SystemAssembler(ABC):
 
         # Extract fluid settings data
         fluid_settings = self.data.fluid_settings
-        abs_state = fluid_settings.model.eos_object
+        abs_state = fluid_settings.fluid_state
         input_pair = fluid_settings.input_pair
         # Global version of updated variables
         var0_glb = fluid_settings.update_variables[0].Glob
@@ -1007,7 +1005,7 @@ class CasadiSystem(SystemAssembler):
         if self.data.fluid_settings is None:
             return {}
 
-        fl_model = self.data.fluid_settings.model
+        fl_state = self.data.fluid_settings.fluid_state
 
         self._eos_callbacks = {
             n_idx: dict.fromkeys(
@@ -1017,7 +1015,7 @@ class CasadiSystem(SystemAssembler):
             for n_idx in range(self.first_node, self.last_node + 1)
         }
 
-        self._eos_factory = EosFactory(fl_model)
+        self._eos_factory = EosFactory(fl_state)
 
         # Add inter-node eos
         for eq in self.data.equations:

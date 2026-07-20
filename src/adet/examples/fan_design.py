@@ -8,7 +8,7 @@ from adet.assembly import CasadiSystem
 from adet.components.blade_row import BladeRow
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
-from adet.fluid.settings import FluidModel, FluidSettings
+from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation
 from adet.solution import solve_root_problem
 from adet.tools.loggers import setup_logger
@@ -71,9 +71,11 @@ fan_blade = BladeRow(
     constant_variables=['geo_rr_midspan'],
 )
 
-fluid_model = FluidModel(abs_state)
-
-settings = FluidSettings(fluid_model, ('p', 'T'), 2)
+settings = FluidSettings(
+    fluid_state=abs_state,
+    update_variables=('p', 'T'),
+    update_length=2,
+)
 
 ntw = ComponentNetwork(
     settings,

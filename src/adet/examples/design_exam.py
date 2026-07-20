@@ -15,8 +15,8 @@ from adet.equations.fundamental import (  # noqa: F401
     FreeVortexDistribution,
 )
 from adet.equations.utils import get_midspan_idx, safe_abs
-from adet.fluid.settings import FluidModel, FluidSettings
-from adet.fluid.symbolic_eos import IdealGasState
+from adet.fluid.settings import FluidSettings
+from adet.fluid.ideal_eos import IdealGasState
 from adet.losses.basic import IsentropicLink, ZeroDeviation
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
@@ -127,10 +127,9 @@ stator.set_spanwise_constant(n0.geo.HDistr)
 rotor.set_spanwise_constant(n1.geo.HDistr)
 
 # *** Network buildup
-fluid_model = FluidModel(abs_state)
 fluid_settings = FluidSettings(
-    fluid_model,
-    (n0.stc.Pressure, n0.stc.Temperature),
+    fluid_state=abs_state,
+    update_variables=(n0.stc.Pressure, n0.stc.Temperature),
 )
 
 ntw = ComponentNetwork(

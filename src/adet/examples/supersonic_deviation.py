@@ -16,7 +16,7 @@ from adet.components.blade_row import RowGeometry
 from adet.components.connections import Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.geometrical import MeridionalGeometry  # noqa: F401
-from adet.fluid.settings import FluidModel, FluidSettings
+from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation
 from adet.losses.mixing import (
     MixingMomentumBalances,
@@ -133,10 +133,9 @@ stat_blade.set_spanwise_constant(
 )
 
 # *** Network buildup
-fluid_model = FluidModel(abs_state)
 fluid_settings = FluidSettings(
-    fluid_model,
-    (n0.stc.Pressure, n0.stc.Temperature),
+    fluid_state=abs_state,
+    update_variables=(n0.stc.Pressure, n0.stc.Temperature),
 )
 
 ntw = ComponentNetwork(

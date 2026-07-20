@@ -18,7 +18,7 @@ from pint import Quantity
 
 from adet.assembly import CasadiSystem
 from adet.components import BladeRow
-from adet.components.blade_row import VanelessDiffuser, plot_from_nodes
+from adet.components.blade_row import VanelessDiffuser
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.definitions import EffectiveBladeNumber, IsentropicProperties
@@ -29,8 +29,8 @@ from adet.equations.nondimensional import (
     WorkCoefficient,
 )
 from adet.equations.utils import residual_debugger
-from adet.fluid.settings import FluidModel, FluidSettings
-from adet.fluid.symbolic_eos import IdealGasState
+from adet.fluid.settings import FluidSettings
+from adet.fluid.ideal_eos import IdealGasState
 from adet.losses.basic import (
     PercentageEntropyLoss,
     PercTotalPressureLoss,
@@ -93,16 +93,12 @@ casing = Shaft(
 )
 
 # +++ Fluid settings
-realgas_model = FluidModel(
-    DebugAbstractState('HEOS', 'Air'),  # This just counts the number of updates
-)
+realgas_state = DebugAbstractState('HEOS', 'Air')
 
-idealgas_model = FluidModel(
-    IdealGasState(1.4, 287, 1.8e-5),
-)
+idealgas_state = IdealGasState(1.4, 287, 1.8e-5)
 
 fluid_settings = FluidSettings(
-    model=idealgas_model,
+    fluid_state=idealgas_state,
     update_variables=('p', 'T'),  # Thermodynamic iteration variables
     update_length=2,  # Single phase => Two update vars
 )

@@ -1,4 +1,4 @@
-from adet.fluid.symbolic_eos import IdealGasState
+from adet.fluid.ideal_eos import IdealGasState
 import logging
 
 import matplotlib.pyplot as plt
@@ -17,7 +17,7 @@ from adet.equations.fundamental import (
     TotalStaticMatching,
 )
 from adet.equations.nondimensional import RelativeMachNumber
-from adet.fluid.settings import FluidModel, FluidSettings
+from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink
 from adet.solution import solve_optimization_problem
 from adet.tools.coolprop_utils import DebugAbstractState
@@ -94,11 +94,9 @@ BCS = {
 abs_state = DebugAbstractState('HEOS', 'Air')
 idl_state = IdealGasState(1.4, 287, 2e-5)
 
-fluid_model = FluidModel(abs_state)
-
 system.fluid_settings = FluidSettings(
-    fluid_model,
-    (n0.stc.Pressure.Glob, n0.stc.Temperature.Glob),
+    fluid_state=abs_state,
+    update_variables=(n0.stc.Pressure.Glob, n0.stc.Temperature.Glob),
 )
 
 
