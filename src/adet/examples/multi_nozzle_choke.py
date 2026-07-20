@@ -6,7 +6,7 @@ import numpy as np
 from matplotlib.colors import Normalize
 from pint import Quantity
 
-from adet.assembly import CasadiSystem
+from adet.assemblers import CasadiSystem
 from adet.equations.base_equation import EquationBase
 from adet.equations.fundamental import (
     ConstRelEnthalpy,

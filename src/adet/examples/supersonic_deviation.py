@@ -1,6 +1,4 @@
 # === IMPORTS
-from adet.equations.definitions import BoundaryLayerRatios
-from adet.equations.utils import residual_debugger
 import logging
 from copy import deepcopy
 from typing import Literal
@@ -10,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pint import Quantity
 
-from adet.assembly import CasadiSystem
+from adet.assemblers import CasadiSystem
 from adet.components import BladeRow, Inlet
 from adet.components.blade_row import RowGeometry
 from adet.components.connections import Shaft
@@ -19,9 +17,8 @@ from adet.equations.geometrical import MeridionalGeometry  # noqa: F401
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation
 from adet.losses.mixing import (
-    MixingMomentumBalances,
-    SieverdingBasePressure,
     AungierDeviationModel,
+    SieverdingBasePressure,
 )
 from adet.solution import solve_optimization_problem, solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
@@ -94,11 +91,11 @@ stat_blade.set_bc_from_dict(
         n1.kin.FlowAngleRel: Quantity(60, 'deg'),
     }
 )
-# stat_mix.set_bc_from_dict(
-#     {
-#         n1.oth.MassFlow: 20,
-#     }
-# )
+stat_mix.set_bc_from_dict(
+    {
+        n1.oth.MassFlow: 20,
+    }
+)
 
 # Remove isentropic
 stat_mix.remove_equation(IsentropicLink, (0, 1))

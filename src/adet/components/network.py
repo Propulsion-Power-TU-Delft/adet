@@ -3,7 +3,7 @@ from typing import Any, Generic, Literal, Sequence, TypeVar
 
 from numpy.typing import NDArray
 
-from adet.assembly import SystemAssembler, SystemSharedData
+from adet.assemblers import SystemAssembler, SystemSharedData
 from adet.components import BaseComponent
 from adet.components.blade_row import BladeRow
 from adet.components.connections import Inlet, Shaft

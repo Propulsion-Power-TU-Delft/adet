@@ -6,7 +6,7 @@ from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
 from pint import Quantity
 
-from adet.assembly import CasadiSystem
+from adet.assemblers import CasadiSystem
 from adet.equations.control_volumes import ObliqueShock
 from adet.equations.fundamental import (
     Kinematics,

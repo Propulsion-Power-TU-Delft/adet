@@ -8,7 +8,7 @@ import numpy as np
 from jax import Array
 from numpy.typing import NDArray
 
-from adet.assembly import CasadiSystem, JaxSystem, SystemAssembler
+from adet.assemblers import CasadiSystem, JaxSystem, SystemAssembler
 
 logger = logging.getLogger(__name__)
 

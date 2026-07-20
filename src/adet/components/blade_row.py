@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from matplotlib.lines import Line2D
 
-from adet.assembly import CasadiSystem
+from adet.assemblers import CasadiSystem
 from adet.components import BaseComponent, Shaft
 from adet.equations import EquationBase
 from adet.equations.control_volumes import ChokingCriterion, ObliqueShock

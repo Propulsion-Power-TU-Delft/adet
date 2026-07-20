@@ -3,7 +3,7 @@ import logging
 import matplotlib.pyplot as plt
 from pint import Quantity
 
-from adet.assembly import CasadiSystem
+from adet.assemblers import CasadiSystem
 from adet.equations.fundamental import (
     FreeVortexDistribution,
     Kinematics,
@@ -16,8 +16,8 @@ from adet.equations.geometrical import (
     EndwallProperties,
     MeridionalGeometry,
 )
-from adet.fluid.settings import FluidSettings
 from adet.fluid.ideal_eos import IdealGasState
+from adet.fluid.settings import FluidSettings
 from adet.solution import solve_root_problem
 from adet.tools.loggers import setup_logger
 from adet.tools.plotting import plot_velocity_triangles
@@ -25,9 +25,9 @@ from adet.variables import NodeVariables
 
 logger = logging.getLogger(__name__)
 setup_logger(logger)
+n0 = NodeVariables(0)
 
 system = CasadiSystem(num_span=3)
-n0 = NodeVariables(0)
 
 EQS = {
     # *** Node 0

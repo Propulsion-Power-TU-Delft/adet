@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pint import Quantity
 
-from adet.assembly import CasadiSystem
+from adet.assemblers import CasadiSystem
 from adet.components import BladeRow, Inlet
 from adet.components.connections import Shaft
 from adet.components.network import ComponentNetwork

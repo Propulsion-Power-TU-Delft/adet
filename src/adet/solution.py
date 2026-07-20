@@ -1,5 +1,5 @@
 from functools import partial
-from adet.assembly import CasadiSystem, IPOPT_DEFAULTS
+from adet.assemblers import CasadiSystem, IPOPT_DEFAULTS
 import logging
 from typing import Any, Callable
 

@@ -6,7 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 from pint import Quantity
 
-from adet.assembly import CasadiSystem
+from adet.assemblers import CasadiSystem
 from adet.components import BladeRow
 from adet.components.blade_row import RowGeometry, VanelessDiffuser
 from adet.components.connections import Inlet, Shaft

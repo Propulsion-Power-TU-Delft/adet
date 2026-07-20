@@ -4,7 +4,7 @@ from ambiance import Atmosphere
 from CoolProp import AbstractState
 from pint import Quantity
 
-from adet.assembly import CasadiSystem
+from adet.assemblers import CasadiSystem
 from adet.components.blade_row import BladeRow
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork

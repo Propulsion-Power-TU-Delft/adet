@@ -20,7 +20,7 @@ from copy import deepcopy
 import matplotlib.pyplot as plt
 from pint import Quantity
 
-from adet.assembly import CasadiSystem
+from adet.assemblers import CasadiSystem
 from adet.components import BladeRow, ComponentNetwork, Inlet, Shaft
 from adet.equations.base_equation import LossApplier
 from adet.equations.definitions import RepeatedStage

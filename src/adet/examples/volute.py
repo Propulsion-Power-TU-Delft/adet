@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pint import Quantity
 
-from adet.assembly import CasadiSystem
+from adet.assemblers import CasadiSystem
 from adet.equations import EquationBase
 from adet.equations.fundamental import (
     ConstRelEnthalpy,

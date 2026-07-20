@@ -3,7 +3,7 @@ import logging
 import matplotlib.pyplot as plt
 from pint import Quantity
 
-from adet.assembly import CasadiSystem
+from adet.assemblers import CasadiSystem
 from adet.components.blade_row import BladeRow, Interspace, ShockMixer
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork

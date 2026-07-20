@@ -4,7 +4,7 @@ import casadi as cs
 import numpy as np
 from pint import Quantity
 
-from adet.assembly import IPOPT_DEFAULTS, CasadiSystem
+from adet.assemblers import IPOPT_DEFAULTS, CasadiSystem
 from adet.equations.control_volumes import ThroatConditions
 from adet.equations.fundamental import (
     EulerEquation,

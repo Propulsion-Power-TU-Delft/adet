@@ -12,7 +12,7 @@ from adet.tools.iter import ensure_tuple
 from adet.varspec import VarSpec
 
 if TYPE_CHECKING:
-    from adet.assembly import CasadiSystem
+    from adet.assemblers import CasadiSystem
     from adet.components.network import ComponentNetwork
 
 BaseEquationsFormat: TypeAlias = list[
