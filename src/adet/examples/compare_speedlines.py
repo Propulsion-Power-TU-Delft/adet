@@ -20,6 +20,7 @@ data_dir = (
 )
 
 
+# plt.style.use('dark_background')
 setup_mpl(
     {
         'font.family': 'serif',
@@ -143,14 +144,14 @@ def plot_comparison(exp_data, comp_data):
             ax.tick_params('both')
 
     ax.set_xlabel(r'$\dot{m}$ [$\mathrm{kg/s}$]', fontsize=24)
-    ax.set_ylabel(r'$\beta_{tt}$ [$\mathrm{−}$]', fontsize=24)
+    ax.set_ylabel(r'$\Pi_{tt}$ [$\mathrm{−}$]', fontsize=24)
 
     ax.legend(loc='upper left')
     ax.grid(True, alpha=0.3)
     fig1.tight_layout()
     fig1.savefig(
-        'C:\\Users\\fvaccari\\OneDrive - Delft University of Technology\\latex'
-        '\\rebuttal_gpps26_ADeT\\Images\\HECC_pratios.pdf'
+        'C:\\Users\\fvaccari\\OneDrive - Delft University of Technology\\presentations'
+        '\\images\\HECC_pratios.svg'
     )
 
     # Create figure 2: Efficiency comparison with separate subplot for each speedline
@@ -228,8 +229,8 @@ def plot_comparison(exp_data, comp_data):
 
     fig2.tight_layout()
     fig2.savefig(
-        'C:\\Users\\fvaccari\\OneDrive - Delft University of Technology\\latex'
-        '\\rebuttal_gpps26_ADeT\\Images\\HECC_efficiencies.pdf'
+        'C:\\Users\\fvaccari\\OneDrive - Delft University of Technology\\'
+        '\\presentations\\images\\HECC_efficiencies.svg'
     )
 
     # Create figure 3: Total temperature ratio comparison
@@ -282,8 +283,8 @@ def plot_comparison(exp_data, comp_data):
     ax.grid(True, alpha=0.3)
     fig3.tight_layout()
     fig3.savefig(
-        'C:\\Users\\fvaccari\\OneDrive - Delft University of Technology\\latex'
-        '\\rebuttal_gpps26_ADeT\\Images\\HECC_temperature_ratios.pdf'
+        'C:\\Users\\fvaccari\\OneDrive - Delft University of Technology\\'
+        '\\presentations\\images\\HECC_temperature_ratios.svg'
     )
     return fig1, fig2, fig3
 

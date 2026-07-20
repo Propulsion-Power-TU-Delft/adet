@@ -60,6 +60,7 @@ n2 = NodeVariables(2)
 n3 = NodeVariables(3)
 
 
+plt.style.use('dark_background')
 setup_mpl(
     {
         'font.family': 'serif',
@@ -830,7 +831,7 @@ if RUN_MULTI:
                 fig_21k.tight_layout()
                 fig_21k.savefig(
                     'C:\\Users\\fvaccari\\OneDrive - Delft University of Technology\\'
-                    'latex\\rebuttal_gpps26_ADeT\\Images\\loss_breakdown_hecc.pdf'
+                    '\\presentations\\images\\loss_breakdown_hecc.svg'
                 )
                 if SHOW_PLOTS:
                     plt.show()
