@@ -28,7 +28,7 @@ Let's create a system to compute properties of a flow at a specified Mach number
 ### Step 1: Import and Setup
 
 ```python
-from adet.assembly import CasadiSystem
+from adet.assemblers import CasadiSystem
 from adet.equations.fundamental import (
     Kinematics,
     MassAreaRelation,
@@ -36,12 +36,11 @@ from adet.equations.fundamental import (
     ZeroBlockage,
 )
 from adet.equations.geometrical import AnnulusAreas
-from adet.equations.nondimensional import AbsoluteMachNumber, GammaIdeal
-from adet.equations.special import ThermoVarsAdder
-from adet.variables import NodeVariables, ThermoVariables
-from adet.fluid.settings import AnalyticalFluidModel, FluidSettings
-from adet.fluid.symbolic_eos import IdealGasState
+from adet.equations.nondimensional import AbsoluteMachNumber
+from adet.fluid.ideal_eos import IdealGasState
+from adet.fluid.settings import FluidSettings
 from adet.solution import solve_root_problem
+from adet.variables import NodeVariables, ThermoVariables
 from pint import Quantity
 
 # Create the system
@@ -54,16 +53,19 @@ Specify which thermodynamic model and update variables the system should use:
 
 ```python
 # Use ideal gas with gamma=1.4, R=287 J/(kg·K)
-model = AnalyticalFluidModel(IdealGasState(1.4, 287, 2e-5))
+ideal_state = IdealGasState(1.4, 287, 2e-5)
 
 # Define which variables to compute from the EOS
 thrm = ThermoVariables()
-fluid_settings = FluidSettings(model, (thrm.Pressure, thrm.Temperature))
+fluid_settings = FluidSettings(
+    fluid_state=ideal_state,
+    update_variables=(thrm.Pressure, thrm.Temperature),
+)
 
 system.fluid_settings = fluid_settings
 ```
 
-The `FluidSettings` tells ADeT which variables should be computed from the equation of state. In this case, we're computing pressure and temperature from enthalpy and entropy.
+The `FluidSettings` tells ADeT which thermodynamic variables should be used for state updates as . In this case, we're using pressure and temperature to update the thermodynamic state at each iteration; the rest of thermodynamic variables are then extracted to be plugged into the residual.
 
 ### Step 3: Define the Equations
 
@@ -71,14 +73,12 @@ Add the equations that govern your system. Each equation is represented as a res
 
 ```python
 EQUATIONS = {
-    TotalStaticMatching(): 0,      # Relate total and static properties
-    AnnulusAreas(): 0,             # Compute annulus areas from radii
-    MassAreaRelation(): 0,         # Mass flow continuity
-    AbsoluteMachNumber(): 0,       # Compute Mach number
-    ZeroBlockage(): 0,             # Area = Effective area
-    Kinematics(): 0,               # Velocity components
-    ThermoVarsAdder(): 0,          # Add secondary thermo properties
-    GammaIdeal(): 0,               # Heat capacity ratio
+    AnnulusAreas(): 0,             # A = 2 pi r H
+    MassAreaRelation(): 0,         # m_dot = rho V A
+    AbsoluteMachNumber(): 0,       # Define Mach number
+    TotalStaticMatching(): 0,      # Matches total and static state
+    ZeroBlockage(): 0,             # No blockage in passage
+    Kinematics(): 0,               # Defines angles velocity
 }
 
 for eq, pos in EQUATIONS.items():
@@ -137,9 +137,9 @@ ADeT supports multiple solvers. The `'kinsol'` solver is a Newton-Krylov method:
 ```python
 rtfn = system.make_rootfinder('kinsol')
 
-# Get a scaled guess for unknowns and known constraint values
-x0 = system.get_scaled_guess()
-kn = system.get_scaled_constraints()
+# Get a guess for unknowns and boundary condition values
+x0 = system.get_guess()
+kn = system.get_boundary_conds()
 ```
 
 ### Step 7: Solve the System
@@ -166,12 +166,19 @@ for var_spec, value in sol_dict.items():
 
 The `sol_dict` contains all variables (both solved and computed from the EOS), indexed by their `VarSpec` objects.
 
-## Full Example
-
-Here's the complete working example:
+Single variables can also be added using the node object
 
 ```python
-from adet.assembly import CasadiSystem
+>>> sol_dict[node_0.kin.V_mag] # velocity magnitude
+array([25.15642531])
+```
+
+## Full Example
+
+Here's the complete working example, (also found in `examples/mach_problem.py`):
+
+```python
+from adet.assemblers import CasadiSystem
 from adet.equations.fundamental import (
     Kinematics,
     MassAreaRelation,
@@ -179,30 +186,30 @@ from adet.equations.fundamental import (
     ZeroBlockage,
 )
 from adet.equations.geometrical import AnnulusAreas
-from adet.equations.nondimensional import AbsoluteMachNumber, GammaIdeal
-from adet.equations.special import ThermoVarsAdder
-from adet.variables import NodeVariables, ThermoVariables
-from adet.fluid.settings import AnalyticalFluidModel, FluidSettings
-from adet.fluid.symbolic_eos import IdealGasState
+from adet.equations.nondimensional import AbsoluteMachNumber
+from adet.fluid.ideal_eos import IdealGasState
+from adet.fluid.settings import FluidSettings
 from adet.solution import solve_root_problem
+from adet.variables import NodeVariables, ThermoVariables
 from pint import Quantity
 
 system = CasadiSystem()
 
-model = AnalyticalFluidModel(IdealGasState(1.4, 287, 2e-5))
+ideal_state = IdealGasState(1.4, 287, 2e-5)
 thrm = ThermoVariables()
-fluid_settings = FluidSettings(model, (thrm.Pressure, thrm.Temperature))
+fluid_settings = FluidSettings(
+    fluid_state=ideal_state,
+    update_variables=(thrm.Pressure, thrm.Temperature),
+)
 system.fluid_settings = fluid_settings
 
 EQUATIONS = {
-    TotalStaticMatching(): 0,
     AnnulusAreas(): 0,
     MassAreaRelation(): 0,
     AbsoluteMachNumber(): 0,
+    TotalStaticMatching(): 0,
     ZeroBlockage(): 0,
     Kinematics(): 0,
-    ThermoVarsAdder(): 0,
-    GammaIdeal(): 0,
 }
 
 for eq, pos in EQUATIONS.items():
@@ -223,8 +230,8 @@ system.add_boundary_conditions(BC)
 system.build()
 
 rtfn = system.make_rootfinder('kinsol')
-x0 = system.get_scaled_guess()
-kn = system.get_scaled_constraints()
+x0 = system.get_guess()
+kn = system.get_boundary_conds()
 
 sol = solve_root_problem(rtfn, x0, kn)
 sol_dict = system.sol_to_dict(sol)

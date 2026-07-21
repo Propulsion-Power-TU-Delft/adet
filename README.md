@@ -1,19 +1,19 @@
 # ADeT
 **A**utodiff **De**signer for **T**urbomachinery
 
-A Python library for equation-oriented design and analysis of turbomachinery components using automatic differentiation (CasADi, JAX) and real gas thermodynamics (CoolProp).
+A Python library for equation-oriented modeling, with a focus on turbomachinery problems.
+Backend for automatic differentiation provided by CasaDi and real gas thermodynamics with CoolProp.
 
 ## Features
 
-- **Equation-oriented modeling**: Define physics symbolically, solve systems automatically
-- **Multiple solver backends**: CasADi (symbolic, C-code generation) and JAX (autodiff)
+- **Equation-oriented modeling**: Define physics symbolically as residual equations
 - **Real gas thermodynamics**: CoolProp integration with REFPROP support
 - **Automatic differentiation**: Jacobians computed automatically
 - **Unit-aware**: Pint integration for automatic unit checking and conversion
 
 ## Getting Started
 
-This project uses [uv](https://docs.astral.sh/uv) for packaging.
+This project uses [uv](https://docs.astral.sh/uv) for packaging and dependency management.
 
 ### Installation
 
@@ -25,15 +25,15 @@ This project uses [uv](https://docs.astral.sh/uv) for packaging.
    uv sync                    # Install base dependencies
    uv sync --all-groups       # Install dev and docs dependencies
    ```
+> **Note**: To access [REFPROP](https://www.nist.gov/srd/refprop) through CoolProp, see the [integration guide](https://coolprop.org/coolprop/REFPROP.html).
 
 ### Quick Start
 
 Run the one of the examples:
 ```bash
-uv run src/adet/examples/air_supply_compressor_design.py
+uv run src/adet/examples/nasa_hecc.py
 ```
-
-> **Note**: To access [REFPROP](https://www.nist.gov/srd/refprop) through CoolProp, see the [integration guide](https://coolprop.org/coolprop/REFPROP.html).
+Check out the **[DOCUMENTATION]()**
 
 ## Development
 
@@ -42,29 +42,5 @@ uv run src/adet/examples/air_supply_compressor_design.py
 - **[Ruff](https://docs.astral.sh/ruff)**: Linting and formatting
 - **[ty](https://github.com/bnemetis/ty)**: Static type checking
 
-These tools can be used via CLI or integrated directly into your IDE:
-- **VS Code**: Install the [Ruff](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff) extension
-- **PyCharm**: Configure Ruff as an external tool
-- **Other IDEs**: Most modern Python IDEs support these tools via plugins or external tool configuration
-
-### Development Commands
-
-```bash
-# Linting and formatting (CLI)
-ruff check src/            # Check for linting issues
-ruff format src/           # Auto-format code
-
-# Type checking (CLI)
-ty                         # Run type checker
-```
-
-### Code Style
-
-- **Line length**: 88 characters
-- **Quotes**: Single quotes for strings
-- **Type hints**: Basic type checking enabled; add hints for new code (except for polymorphic functions)
-- **Linting rules**: E (pycodestyle errors), W (warnings), F (pyflakes), ARG (unused arguments), C4 (comprehensions)
-
-### Contributing
-
-Ensure your IDE is configured to use Ruff and ty for the best development experience. Type hints are recommended for new code, but optional for functions with intentional polymorphism (e.g., equation residuals).
+Rules are included in `pyproject.toml` and should be read automatically. 
+These tools can be used via CLI or integrated directly into your IDE.

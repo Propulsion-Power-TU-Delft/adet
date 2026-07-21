@@ -2,29 +2,22 @@
 
 Learn how to use ADeT by working through practical examples. These tutorials cover the core concepts of the equation-based modeling system, from defining simple equations to building complex thermodynamic systems.
 
-## Starting Out
+## Quickstart
 
 ```{toctree}
-:maxdepth: 2
+:maxdepth: 1
 
-01_quickstart
+01_quickstart_system
+02_simple_stage
 ```
 
 ## Core Concepts
 
 ```{toctree}
-:maxdepth: 2
+:maxdepth: 1
 
-02_equations_and_variables
-03_solving_systems
-04_fluid_models
+03_equations_and_variables
+04_using_nodes
+05_fluid_models
 ```
 
-## Advanced Topics
-
-```{toctree}
-:maxdepth: 2
-
-05_custom_equations
-06_component_networks
-```
