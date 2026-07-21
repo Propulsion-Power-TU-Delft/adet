@@ -48,7 +48,7 @@ def get_mean_radius(sol_dict):
     """Extract mean radius from solution dict for nondimensionalization."""
     radii = []
     for node_idx in [0, 1, 2, 3]:
-        rr = sol_dict.get(node.geo.RDistr._at_node(node_idx))
+        rr = sol_dict.get(node.geo.RDistr.at_node(node_idx))
         if rr is not None:
             val = rr[0] if hasattr(rr, '__len__') else rr
             radii.append(val)
@@ -257,11 +257,11 @@ def plot_profile_at_point(
         colors = ['steelblue', 'coral']
 
         for pair_idx, (node_in, node_out) in enumerate(node_pairs):
-            rr_in = sol_dict.get(node.geo.RDistr._at_node(node_in), None)
-            height_in = sol_dict.get(node.geo.Height._at_node(node_in), None)
-            chord_ax_out = sol_dict.get(node.geo.ChordAx._at_node(node_out), None)
-            rr_out = sol_dict.get(node.geo.RDistr._at_node(node_out), None)
-            height_out = sol_dict.get(node.geo.Height._at_node(node_out), None)
+            rr_in = sol_dict.get(node.geo.RDistr.at_node(node_in), None)
+            height_in = sol_dict.get(node.geo.Height.at_node(node_in), None)
+            chord_ax_out = sol_dict.get(node.geo.ChordAx.at_node(node_out), None)
+            rr_out = sol_dict.get(node.geo.RDistr.at_node(node_out), None)
+            height_out = sol_dict.get(node.geo.Height.at_node(node_out), None)
 
             if (
                 rr_in is None
@@ -350,10 +350,10 @@ def plot_profile_at_point(
         colors_blade = ['steelblue', 'coral']
 
         for pair_idx, (node_in, node_out) in enumerate(node_pairs):
-            metal_angle_in = sol_dict.get(node.geo.MetalAngle._at_node(node_in), None)
-            metal_angle_out = sol_dict.get(node.geo.MetalAngle._at_node(node_out), None)
-            chord_ax = sol_dict.get(node.geo.ChordAx._at_node(node_out), None)
-            pitch = sol_dict.get(node.geo.Pitch._at_node(node_out), None)
+            metal_angle_in = sol_dict.get(node.geo.MetalAngle.at_node(node_in), None)
+            metal_angle_out = sol_dict.get(node.geo.MetalAngle.at_node(node_out), None)
+            chord_ax = sol_dict.get(node.geo.ChordAx.at_node(node_out), None)
+            pitch = sol_dict.get(node.geo.Pitch.at_node(node_out), None)
 
             if (
                 metal_angle_in is None
@@ -505,7 +505,7 @@ for phi_idx, psi_idx, row, col in corner_defs:
     pair_offsets = []
     offset = 0.0
     for _, node_out in node_pairs:
-        chord_ax_out = sol_dict.get(node.geo.ChordAx._at_node(node_out))
+        chord_ax_out = sol_dict.get(node.geo.ChordAx.at_node(node_out))
         if chord_ax_out is None:
             pair_offsets.append(None)
             continue
@@ -527,11 +527,11 @@ for phi_idx, psi_idx, row, col in corner_defs:
         if pair_offsets[pair_idx] is None:
             continue
         try:
-            rr_in = sol_dict.get(node.geo.RDistr._at_node(node_in))
-            height_in = sol_dict.get(node.geo.Height._at_node(node_in))
-            chord_ax_out = sol_dict.get(node.geo.ChordAx._at_node(node_out))
-            rr_out = sol_dict.get(node.geo.RDistr._at_node(node_out))
-            height_out = sol_dict.get(node.geo.Height._at_node(node_out))
+            rr_in = sol_dict.get(node.geo.RDistr.at_node(node_in))
+            height_in = sol_dict.get(node.geo.Height.at_node(node_in))
+            chord_ax_out = sol_dict.get(node.geo.ChordAx.at_node(node_out))
+            rr_out = sol_dict.get(node.geo.RDistr.at_node(node_out))
+            height_out = sol_dict.get(node.geo.Height.at_node(node_out))
             if any(
                 v is None for v in (rr_in, height_in, chord_ax_out, rr_out, height_out)
             ):
@@ -594,10 +594,10 @@ for phi_idx, psi_idx, row, col in corner_defs:
         if pair_offsets[pair_idx] is None:
             continue
         try:
-            ma_in = sol_dict.get(node.geo.MetalAngle._at_node(node_in))
-            ma_out = sol_dict.get(node.geo.MetalAngle._at_node(node_out))
-            chord_ax = sol_dict.get(node.geo.ChordAx._at_node(node_out))
-            pitch = sol_dict.get(node.geo.Pitch._at_node(node_out))
+            ma_in = sol_dict.get(node.geo.MetalAngle.at_node(node_in))
+            ma_out = sol_dict.get(node.geo.MetalAngle.at_node(node_out))
+            chord_ax = sol_dict.get(node.geo.ChordAx.at_node(node_out))
+            pitch = sol_dict.get(node.geo.Pitch.at_node(node_out))
             if any(v is None for v in (ma_in, ma_out, chord_ax, pitch)):
                 continue
             ma_in_v = ma_in[0] if hasattr(ma_in, '__len__') else ma_in

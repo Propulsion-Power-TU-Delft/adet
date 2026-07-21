@@ -366,12 +366,12 @@ class BaseComponent(ABC):
 
             for system in self._attached_systems:
                 abs_idx = self.system_maps[system][spec.node]
-                system.data.boun_cond[spec._at_node(abs_idx)] = value
+                system.data.boun_cond[spec.at_node(abs_idx)] = value
         else:
             self._boundary_conditions.pop(spec)
             for system in self._attached_systems:
                 abs_idx = self.system_maps[system][spec.node]
-                system.data.boun_cond.pop(spec._at_node(abs_idx))
+                system.data.boun_cond.pop(spec.at_node(abs_idx))
 
     def _equalities_helper(
         self, mode: Literal['const', 'prev', 'next'], *arguments: VarSpec
@@ -389,19 +389,19 @@ class BaseComponent(ABC):
             for system in self._attached_systems:
                 if mode == 'const':
                     equality = tuple(
-                        spec._at_node(i) for i in self.system_maps[system].values()
+                        spec.at_node(i) for i in self.system_maps[system].values()
                     )
                 elif mode == 'prev':
                     inl_idx = min(self.system_maps[system].values())
                     equality = (
-                        spec._at_node(inl_idx - 1),  # outlet of prev
-                        spec._at_node(inl_idx),  # inlet of self
+                        spec.at_node(inl_idx - 1),  # outlet of prev
+                        spec.at_node(inl_idx),  # inlet of self
                     )
                 elif mode == 'next':
                     out_idx = max(self.system_maps[system].values())
                     equality = (
-                        spec._at_node(out_idx),  # outlet of self
-                        spec._at_node(out_idx + 1),  # inlet of next
+                        spec.at_node(out_idx),  # outlet of self
+                        spec.at_node(out_idx + 1),  # inlet of next
                     )
 
                 system.add_equalities(equality)
@@ -412,5 +412,5 @@ class BaseComponent(ABC):
                 continue
             self._spanwise_constants.add(spec)
             for system in self._attached_systems:
-                abs_spec = spec._at_node(self.system_maps[system][spec.node])
+                abs_spec = spec.at_node(self.system_maps[system][spec.node])
                 system.add_spanwise_constants(abs_spec)

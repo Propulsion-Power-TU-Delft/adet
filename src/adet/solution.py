@@ -115,7 +115,10 @@ def solve_root_problem(
         else:
             guess_cat = guess
 
-        knowns_cat = np.concatenate(knowns)
+        if knowns:
+            knowns_cat = np.concatenate(knowns)
+        else:
+            knowns_cat = []
 
         if perturbate_guess:
             if rootfinder.n_in() < 2:

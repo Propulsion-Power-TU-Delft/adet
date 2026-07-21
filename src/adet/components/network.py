@@ -107,20 +107,20 @@ class ComponentNetwork(Generic[T]):
             mapped_bcond = {}
             for spec, val in comp._boundary_conditions.items():
                 abs_node = comp.system_maps[self.system][spec.node]
-                mapped_bcond[spec._at_node(abs_node)] = val
+                mapped_bcond[spec.at_node(abs_node)] = val
             self.system.add_boundary_conditions(mapped_bcond)
 
             # Write equalities (constant variables)
             for spec in comp._const_variables:
                 equality = (
-                    spec._at_node(inl_idx),
-                    spec._at_node(out_idx),
+                    spec.at_node(inl_idx),
+                    spec.at_node(out_idx),
                 )
                 self.system.add_equalities(equality)
 
             for spec in comp._spanwise_constants:
                 abs_idx = inl_idx if spec.node == 0 else out_idx
-                abs_spec = spec._at_node(abs_idx)
+                abs_spec = spec.at_node(abs_idx)
                 self.system.add_spanwise_constants(abs_spec)
 
     def _add_single_node_eqs(self, comp_stack_length: int):
@@ -166,7 +166,7 @@ class ComponentNetwork(Generic[T]):
                 )
             for spec in variables:
                 self.system.add_equalities(
-                    (spec._at_node(left_idx), spec._at_node(right_idx))
+                    (spec.at_node(left_idx), spec.at_node(right_idx))
                 )
 
     def _link_shafts(self):
@@ -193,7 +193,7 @@ class ComponentNetwork(Generic[T]):
 
         for nodes in shafts_outnodes.values():
             omega_genspec = KinematicVariables(DEF_NODE).Omega
-            linked_omegas = tuple(omega_genspec._at_node(n) for n in nodes)
+            linked_omegas = tuple(omega_genspec.at_node(n) for n in nodes)
             if len(linked_omegas) > 1:
                 self.system.add_equalities(linked_omegas)
 

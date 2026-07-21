@@ -228,6 +228,6 @@ def residual_debugger(
     out = {'self': equation, **vars(module)}
     for name, spec in zip(equation.arg_names, equation.arg_specs):
         glob_idx = node_map[spec.node]
-        out[name] = data[spec._at_node(glob_idx)]
+        out[name] = data[spec.at_node(glob_idx)]
 
     return out

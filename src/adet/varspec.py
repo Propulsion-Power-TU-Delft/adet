@@ -41,7 +41,7 @@ class VarSpec:
     def _with_state(self, state: NodeStates | None):
         return replace(self, state=state)
 
-    def _at_node(self, node: int):
+    def at_node(self, node: int):
         return replace(self, node=node)
 
     def _with_bounds(self, bounds: tuple[float, float] | None):

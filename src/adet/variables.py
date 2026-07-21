@@ -14,7 +14,7 @@ class BaseEnum:
     def __getattribute__(self, name: str):
         attr = super().__getattribute__(name)
         if isinstance(attr, VarSpec):
-            return attr._with_state(self._state)._at_node(self._node)
+            return attr._with_state(self._state).at_node(self._node)
         else:
             return attr
 

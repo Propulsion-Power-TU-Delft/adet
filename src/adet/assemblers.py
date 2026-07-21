@@ -176,7 +176,7 @@ class EquationRegistry:
         for eq in self.data.equations:
             for arg in eq.arg_specs:
                 abs_node = self.data._arg_maps[eq][arg.node]
-                abs_arg = arg._at_node(abs_node)
+                abs_arg = arg.at_node(abs_node)
                 decl_args.append(abs_arg)
 
         return tuple(decl_args)
@@ -369,7 +369,7 @@ class ArgumentResolver:
 
         for node in range(first_node, last_node + 1):
             for st in NodeStates:
-                upd_args = [v._at_node(node)._with_state(st) for v in prescr_upd_vars]
+                upd_args = [v.at_node(node)._with_state(st) for v in prescr_upd_vars]
                 self.data.thermo_updt_args.extend(upd_args)
 
         return set(self.data.thermo_updt_args + nonthermo_args).difference(
@@ -805,8 +805,8 @@ class SystemAssembler(ABC):
         for spec in TO_WRITE:
             for state in NodeStates:
                 for node in range(self.last_node + 1):
-                    upd_var0 = var0_glb._at_node(node)._with_state(state)
-                    upd_var1 = var1_glb._at_node(node)._with_state(state)
+                    upd_var0 = var0_glb.at_node(node)._with_state(state)
+                    upd_var1 = var1_glb.at_node(node)._with_state(state)
 
                     v0_values = sol_data[upd_var0]
                     v1_values = sol_data[upd_var1]
@@ -817,7 +817,7 @@ class SystemAssembler(ABC):
                         pty_meth = getattr(abs_state, spec.symbol)
                         pty_arr.append(pty_meth())
 
-                    spec = spec._at_node(node)._with_state(state)
+                    spec = spec.at_node(node)._with_state(state)
                     thrm_data[spec] = np.array(pty_arr)
 
         return thrm_data
@@ -1061,7 +1061,7 @@ class CasadiSystem(SystemAssembler):
                 self._eos_callbacks[node_idx][state] = eos_caller
 
                 upd_specs = [
-                    spec._with_state(state)._at_node(node_idx)
+                    spec._with_state(state).at_node(node_idx)
                     for spec in self.data.fluid_settings.update_variables
                 ]
 
@@ -1164,7 +1164,7 @@ class CasadiSystem(SystemAssembler):
             # Transpose to absolute node indices
             for spec in eq.arg_specs:
                 arg_map = self.data._arg_maps[eq]
-                abs_arg = spec._at_node(arg_map[spec.node])
+                abs_arg = spec.at_node(arg_map[spec.node])
                 args.append(self._all_symbols[abs_arg])
 
             res_syms = eq.residual(*args)
