@@ -352,7 +352,7 @@ stator = BladeRow(
         INITIAL_LOSS: (0, 1),
     },
 )
-stator.set_component_constants(n0.geo.Rmid.Glob)
+stator.set_constants(n0.geo.Rmid.Glob)
 
 # ============ Modify rotor
 rotor = deepcopy(stator)  # Reuse the stator as template
@@ -429,14 +429,14 @@ rootfinder_is = ntw.system.make_rootfinder(
 
 rtfn_kinsol = ntw.system.make_rootfinder('kinsol')
 
-x0_is = ntw.system.get_scaled_guess(
+x0_is = ntw.system.get_guess(
     manual_values=MANUAL_GUESSES,
     fallback=0.5,
 )
-kn_is = ntw.system.get_scaled_constraints()
+kn_is = ntw.system.get_boundary_conds()
 custom_bounds_is = CUSTOM_BOUNDS.copy()
 custom_bounds_is[n0.kin.FlowAngleAbs] = (-0.7, 0.7)
-bnd_is = ntw.system.get_arguments_bounds(custom_bounds=custom_bounds_is)
+bnd_is = ntw.system.get_bounds(custom_bounds=custom_bounds_is)
 solution = solve_root_problem(
     rootfinder_is,
     x0_is,
@@ -473,9 +473,9 @@ ntw.build()
 
 print('*** SOLVING WITH LOSSES ***')
 
-x0_loss = ntw.system.get_scaled_guess(sol_dict_is, fallback=0.5)
-kn_loss = ntw.system.get_scaled_constraints()
-bnd_loss = ntw.system.get_arguments_bounds(custom_bounds=CUSTOM_BOUNDS)
+x0_loss = ntw.system.get_guess(sol_dict_is, fallback=0.5)
+kn_loss = ntw.system.get_boundary_conds()
+bnd_loss = ntw.system.get_bounds(custom_bounds=CUSTOM_BOUNDS)
 
 rootfinder_loss = ntw.system.make_rootfinder(
     'ipopt',

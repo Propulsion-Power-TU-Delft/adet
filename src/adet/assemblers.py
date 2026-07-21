@@ -433,16 +433,16 @@ class UnitScalingManager:
     def __init__(self, data: SystemSharedData):
         self.data = data
 
-    def check_equations_units(self):
+    def _check_all_eqs_units(self):
         self.data.equations_units = {}
 
         """Check units for all equations"""
         for eq in self.data.equations:
-            self.data.equations_units[eq] = self._test_eq_units(eq)
+            self.data.equations_units[eq] = self._test_singl_eq_units(eq)
 
         logger.debug('Units for the residual equations successfully verified')
 
-    def _test_eq_units(self, equation: EquationBase) -> tuple[str, ...]:
+    def _test_singl_eq_units(self, equation: EquationBase) -> tuple[str, ...]:
         probe_args = []
         if equation.config.manual_units:
             return equation.config.manual_units
@@ -628,7 +628,7 @@ class SystemAssembler(ABC):
         for attr, value in data_dict.items():
             setattr(self.data, attr, value)
 
-    def add_boundary_conditions(self, bnd_cond: dict):
+    def add_boundary_conditions(self, bnd_cond: dict[VarSpec, Any]):
         """Delegate to constraint manager"""
         self._constraint_manager.add_boundary_conditions(bnd_cond)
 
@@ -714,7 +714,7 @@ class SystemAssembler(ABC):
         self._constraint_manager.check_constraints_effectiveness()
 
         # Check the equations units and build their scaling factors
-        self._scaling_manager.check_equations_units()
+        self._scaling_manager._check_all_eqs_units()
 
         self.data.built = True
         logger.info('Parent system assembled successfully')
@@ -822,11 +822,11 @@ class SystemAssembler(ABC):
 
         return thrm_data
 
-    def get_arguments_bounds(self, custom_bounds={}):
+    def get_bounds(self, custom_bounds={}):
         self._check_built()
         self._scaling_manager.get_arguments_bounds(custom_bounds)
 
-    def get_scaled_constraints(self) -> list[NDArray]:
+    def get_boundary_conds(self) -> list[NDArray]:
         self._check_built()
         dimensional_constr = self._constraint_manager.get_array_boun_conds()
         return jax.tree.map(
@@ -835,7 +835,7 @@ class SystemAssembler(ABC):
             self.constraints_scaling,
         )
 
-    def get_scaled_guess(
+    def get_guess(
         self,
         manual_values: Mapping[VarSpec, AdetArray] = {},
         fallback: float | None = None,
@@ -1369,7 +1369,7 @@ class CasadiSystem(SystemAssembler):
             )
         return rootfinder
 
-    def get_arguments_bounds(
+    def get_bounds(
         self,
         custom_bounds: dict[VarSpec, tuple[float, float]] = {},
         ignore_defaults: bool = False,

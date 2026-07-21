@@ -219,9 +219,9 @@ ntw_ass = ComponentNetwork(
 
 ntw_ass.build()
 
-x0_is = ntw_ass.system.get_scaled_guess()
-kn_ass = ntw_ass.system.get_scaled_constraints()
-bnd_ass_is = ntw_ass.system.get_arguments_bounds()
+x0_is = ntw_ass.system.get_guess()
+kn_ass = ntw_ass.system.get_boundary_conds()
+bnd_ass_is = ntw_ass.system.get_bounds()
 
 # IPOPT is very robust, KINSOL faster but fails more easily
 rootfinder_des_is = ntw_ass.system.make_rootfinder(
@@ -259,8 +259,8 @@ if __name__ == '__main__':
     ntw_ass.build()  # Rebuild
 
     # Get
-    x0_loss = ntw_ass.system.get_scaled_guess(sol_is_dict)
-    bnd_loss = ntw_ass.system.get_arguments_bounds()
+    x0_loss = ntw_ass.system.get_guess(sol_is_dict)
+    bnd_loss = ntw_ass.system.get_bounds()
     rootfinder_loss = ntw_ass.system.make_rootfinder(
         'ipopt',
         opts={
@@ -284,7 +284,7 @@ if __name__ == '__main__':
 
     fig, axs = plt.subplots(2, 2, figsize=(8, 15))
     for cmp_idx, cmp in enumerate(ntw_ass.components):
-        arg_map = cmp.network_maps[ntw_ass]
+        arg_map = cmp.system_maps[ntw_ass]
         inl_node = ntw_ass.system.nodes[arg_map[0]]
         out_node = ntw_ass.system.nodes[arg_map[1]]
 

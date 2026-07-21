@@ -40,8 +40,6 @@ _SINGLE_NODE_EQUATIONS = [
     TotalMassFlow,
     AbsoluteMachNumber,
     RelativeMachNumber,
-    # *** Spezial
-    # ThermoVarsAdder,
 ]
 
 
@@ -75,6 +73,12 @@ class ComponentNetwork(Generic[T]):
         # First write step, for manipulation before building
         self._write_to_system(inlet, components)
 
+    def _get_abs_indices(self, component: BaseComponent):
+        comp_idx = self.components.index(component)
+        inlet_node_idx = 2 * comp_idx
+        outlet_node_idx = 2 * comp_idx + 1
+        return inlet_node_idx, outlet_node_idx
+
     def _write_to_system(
         self,
         inlet: Inlet,
@@ -90,13 +94,19 @@ class ComponentNetwork(Generic[T]):
 
     def _dispatch_components(self, components: Sequence[BaseComponent]):
         for comp in components:
-            comp.attach_network(self)
+            comp.attach_system(self.system)
             inl_idx, out_idx = self._get_abs_indices(comp)
 
-            # Mape
+            # Add equations
+            for equation, node_pos in comp._equations.items():
+                node_pos = ensure_tuple(node_pos)
+                traslated_pos = [inl_idx + pos for pos in node_pos]
+                self.system.add_equation(equation, traslated_pos)
+
+            # Map boundary conditions to their absolute nodes
             mapped_bcond = {}
             for spec, val in comp._boundary_conditions.items():
-                abs_node = comp.network_maps[self][spec.node]
+                abs_node = comp.system_maps[self.system][spec.node]
                 mapped_bcond[spec._at_node(abs_node)] = val
             self.system.add_boundary_conditions(mapped_bcond)
 
@@ -112,11 +122,6 @@ class ComponentNetwork(Generic[T]):
                 abs_idx = inl_idx if spec.node == 0 else out_idx
                 abs_spec = spec._at_node(abs_idx)
                 self.system.add_spanwise_constants(abs_spec)
-
-            for equation, node_pos in comp._equations.items():
-                node_pos = ensure_tuple(node_pos)
-                traslated_pos = [inl_idx + pos for pos in node_pos]
-                self.system.add_equation(equation, traslated_pos)
 
     def _add_single_node_eqs(self, comp_stack_length: int):
         for node_idx in range(2 * comp_stack_length):
@@ -164,19 +169,13 @@ class ComponentNetwork(Generic[T]):
                     (spec._at_node(left_idx), spec._at_node(right_idx))
                 )
 
-    def _get_abs_indices(self, component: BaseComponent):
-        comp_idx = self.components.index(component)
-        inlet_node_idx = 2 * comp_idx
-        outlet_node_idx = 2 * comp_idx + 1
-        return inlet_node_idx, outlet_node_idx
-
     def _link_shafts(self):
         """Link all of the outlet omegas that belong to the same shaft"""
         #     ._____.    ._____.    ._____.    ._____.
         #     |     |    |     |    |     |    |     |
         #     |  S  |    |  R  |    |  S  |    |  R  |
         #  ___|_____|____|_____|____|_____|____|_____|___
-        #     N-----N    N-----N    N-----N    N-----N <- Linked by component
+        #     N-----N    N-----N    N-----N    N-----N <- Linked by blade row
         #       =0             |      =0             |
         #                      +---------------------+ <- Linked by this method
 
@@ -187,7 +186,8 @@ class ComponentNetwork(Generic[T]):
             if isinstance(comp, BladeRow):
                 if comp.shaft is None:
                     raise AttributeError('Missing shaft')
-                # Constrained ones are enfored as omega constraints
+                # Constrained ones are enfored as omega constraints: they
+                # are already enforced for each row that belongs to that shaft
                 if not comp.shaft.is_constrained:
                     shafts_outnodes[comp.shaft].append(out_idx)
 
@@ -200,25 +200,25 @@ class ComponentNetwork(Generic[T]):
     def build(self, scaled: bool = True):
         self.system.build(scaled)
 
-    def get_scaled_guess(
+    def get_guess(
         self, manual_values: dict[VarSpec, AdetArray] | None = None
     ) -> list[NDArray]:
         """Simple passthrough"""
-        return self.system.get_scaled_guess(manual_values or {})
+        return self.system.get_guess(manual_values or {})
 
-    def get_scaled_constraints(self) -> list[NDArray]:
+    def get_boundary_cond(self) -> list[NDArray]:
         """Simple passthrough"""
-        return self.system.get_scaled_constraints()
+        return self.system.get_boundary_conds()
 
     @property
     def data(self) -> SystemSharedData:
         """Convenience access method"""
         return self.system.data
 
-    def get_arguments_bounds(
+    def get_bounds(
         self, custom_bounds: dict[VarSpec, tuple[float, float]] | None = None
     ) -> tuple[Any, Any]:
-        return self.system.get_arguments_bounds(custom_bounds or {})
+        return self.system.get_bounds(custom_bounds or {})
 
     def print_structure(self):
         component_repr = '@ = node\n\nInlet == @0'

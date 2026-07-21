@@ -217,9 +217,9 @@ input('Press enter to continue...')
 obj_func = 1 / system.free_args_sym[nodes[1].oth.MassFlow]
 # ***
 
-x0 = system.get_scaled_guess(fallback=0.01)
-kn = system.get_scaled_constraints()
-bnd = system.get_arguments_bounds(
+x0 = system.get_guess(fallback=0.01)
+kn = system.get_boundary_conds()
+bnd = system.get_bounds(
     {
         # Node limiters
         n0.stc.Pressure.Glob: (1, 1e7),
@@ -337,9 +337,9 @@ if SWEEP_STAGES:
 
             # Solve
             obj_func_sweep = 1 / system_sweep.free_args_sym[nodes[1].oth.MassFlow]
-            x0_sweep = system_sweep.get_scaled_guess(fallback=0.01)
-            kn_sweep = system_sweep.get_scaled_constraints()
-            bnd_sweep = system_sweep.get_arguments_bounds(
+            x0_sweep = system_sweep.get_guess(fallback=0.01)
+            kn_sweep = system_sweep.get_boundary_conds()
+            bnd_sweep = system_sweep.get_bounds(
                 {
                     n0.stc.Pressure.Glob: (1, 1e7),
                     n0.stc.Temperature.Glob: (110, 1e4),

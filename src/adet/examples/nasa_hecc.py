@@ -72,7 +72,7 @@ setup_mpl(
 NUM_SPAN = 1
 ENABLE_LOSSES = True
 RUN_MULTI = True
-RUN_SPEEDLINES = True
+RUN_SPEEDLINES = False
 SPDL_PTS = 150  # Number of speedline points
 #
 RUN_PLOTS = True  # plotting section
@@ -337,9 +337,9 @@ vaneless_diff.set_spanwise_constant(n1.stc.Pressure)
 ntw_hecc.build()
 
 
-x0 = ntw_hecc.system.get_scaled_guess(fallback=0.5)
-kn_hecc_is = ntw_hecc.system.get_scaled_constraints()
-bnd_hecc_is = ntw_hecc.system.get_arguments_bounds(
+x0 = ntw_hecc.system.get_guess(fallback=0.5)
+kn_hecc_is = ntw_hecc.system.get_boundary_conds()
+bnd_hecc_is = ntw_hecc.system.get_bounds(
     custom_bounds=BOUNDS,
     ignore_defaults=False,
 )
@@ -386,9 +386,9 @@ if RUN_MULTI:
         },
     )
     rtfn_kin = ntw_hecc.system.make_rootfinder('kinsol')
-    x0_multi = ntw_hecc.system.get_scaled_guess(sol_is_dict)
-    kn_hecc_multi = ntw_hecc.system.get_scaled_constraints()
-    bnd_hecc_multi = ntw_hecc.system.get_arguments_bounds()
+    x0_multi = ntw_hecc.system.get_guess(sol_is_dict)
+    kn_hecc_multi = ntw_hecc.system.get_boundary_conds()
+    bnd_hecc_multi = ntw_hecc.system.get_bounds()
     solution_hecc_multi = solve_root_problem(
         rootfinder_hecc_multi,
         x0_multi,
@@ -427,9 +427,9 @@ if RUN_MULTI:
         )
         rtfn_kin = ntw_hecc.system.make_rootfinder('kinsol')
         rtfn_ip = ntw_hecc.system.make_rootfinder('ipopt')
-        x0_loss = ntw_hecc.system.get_scaled_guess(sol_multi_dict, fallback=0.9)
-        kn_loss = ntw_hecc.system.get_scaled_constraints()
-        bnd_loss = ntw_hecc.system.get_arguments_bounds(custom_bounds=BOUNDS)
+        x0_loss = ntw_hecc.system.get_guess(sol_multi_dict, fallback=0.9)
+        kn_loss = ntw_hecc.system.get_boundary_conds()
+        bnd_loss = ntw_hecc.system.get_bounds(custom_bounds=BOUNDS)
         solution_loss = solve_root_problem(
             rootfinder_hecc_loss,
             x0_loss,
@@ -572,8 +572,8 @@ if RUN_MULTI:
         computed_speedline_data = {}  # Store computed results for comparison
         all_converged_solutions = []  # Store all converged solutions
 
-        sol = ntw_hecc.system.get_scaled_guess(sol_loss_dict)
-        kn = ntw_hecc.system.get_scaled_constraints()
+        sol = ntw_hecc.system.get_guess(sol_loss_dict)
+        kn = ntw_hecc.system.get_boundary_conds()
         for idx, (omega, massflows) in enumerate(speed_lines.items()):
             pratios = []
             etas = []

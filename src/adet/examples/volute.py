@@ -348,9 +348,9 @@ if __name__ == '__main__':
             },
         )
 
-        x0 = system.get_scaled_guess()
-        kn = system.get_scaled_constraints()
-        bnd = system.get_arguments_bounds()
+        x0 = system.get_guess()
+        kn = system.get_boundary_conds()
+        bnd = system.get_bounds()
 
         sol = solve_root_problem(
             rootfinder,

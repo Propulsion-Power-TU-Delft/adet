@@ -103,12 +103,6 @@ interspace = Interspace(
     },
 )
 
-shock_mix = ShockMixer(
-    'st_shock',
-    bound_cond={
-        n1.oth.ShockAngle: Quantity(90, 'deg'),
-    },
-)
 
 rotor = BladeRow(
     'impeller',
@@ -160,9 +154,9 @@ rtfn = ntw.system.make_rootfinder(
     'ipopt',
     opts={'error_on_fail': False},
 )
-x0 = ntw.system.get_scaled_guess(fallback=0.5)
-kn = ntw.system.get_scaled_constraints()
-bnd = ntw.system.get_arguments_bounds(
+x0 = ntw.system.get_guess(fallback=0.5)
+kn = ntw.system.get_boundary_conds()
+bnd = ntw.system.get_bounds(
     {
         # WARN: Force the supersonic solution w/ bounds
         # n1.kin.Mach: (1.1, 4.0),

@@ -107,7 +107,6 @@ class BladeRow(BaseComponent):
         # *** Common definitions (OPTIONAL)
         (EndwallProperties, 0),
         (EndwallProperties, 1),
-        (MeridionalVelocityRatio, (0, 1)),
     ]
 
     from_previous_node = ABSOLUTE_LINK + GEOM_LINK
@@ -128,8 +127,8 @@ class BladeRow(BaseComponent):
             EquationBase,
             int | tuple[int, ...],
         ] = {},
-        from_previous_node: list[VarSpec] = [],
         constant_variables: list[VarSpec] = [],
+        from_prev_node: list[VarSpec] = [],
     ):
         """
         Class that represents a blade row, compressor/turbine,
@@ -142,8 +141,8 @@ class BladeRow(BaseComponent):
             name,
             bound_cond,
             extra_equations,
-            from_previous_node,
             constant_variables,
+            from_prev_node,
         )
         self._shaft = None
         # This uses the setter logic
@@ -251,188 +250,6 @@ class Interspace(BaseComponent):
         self._boundary_conditions[n1.kin.Omega] = 0
         # NOTE: Null axial chord => exactly radial diffuser
         self._boundary_conditions[n1.geo.ChordAx] = 0
-
-
-class IncidenceVolume(BaseComponent):
-    base_equations = [
-        # *** Fundamental
-        (MassConservation, (0, 1)),
-        (ConstRelEnthalpy, (0, 1)),
-        (IsentropicLink, (0, 1)),
-        (OptimalIncidence, (0, 1)),
-        (MeridionalGeometry, 0),
-        (GeometricalAdder, 1),
-        # *** Blockage
-        (ZeroBlockage, 0),  # No blockage at the inlet
-        (BladeBlockage, 1),  # Blade + b.l. blockage
-        (ZeroDeviation, 1),  # Align flow with blade
-    ]
-
-    # TODO: Restore for blade rows
-    from_next_node = [
-        # Copy the relevant geometry
-        _geo.BldThick,
-        _oth.DispThick,
-        _geo.NumBlades,
-        _geo.MetalAngle,
-        # Stay in the same MRF as blade row
-        _kin.Omega,
-        _geo.HDistr,
-        _geo.RDistr,
-    ]
-
-    constant_variables = GEOM_LINK + [
-        # Keep reference frame alive
-        _kin.Omega,
-    ]
-
-    def _post_init(self):
-        pass
-
-
-class ShockMixer(BaseComponent):
-    base_equations = [
-        # *** Fundamental
-        (ObliqueShock, (0, 1)),
-        # (MassConservation, (0, 1)),
-        # *** Blockage
-        (BladePitch, 0),  # Only needed at the inlet
-        (BladeBlockage, 0),  # Blade + b.l. blockage
-        (ZeroBlockage, 1),  # No blockage mixed out
-        # *** Special adders - Forward the geometry
-        (GeometricalAdder, 0),
-        (GeometricalAdder, 1),
-    ]
-
-    # Keep the absolute triangle
-    # energy, meridional geometry
-    from_previous_node = (
-        ABSOLUTE_LINK
-        + GEOM_LINK
-        + [
-            # Stay in the same MRF as blade row
-            _kin.Omega,
-            # Copy the relevant geometry
-            _geo.HDistr,
-            _geo.RDistr,
-            _geo.NumBlades,
-            _geo.MetalAngle,
-            _kin.W_choke,  # Get row choking
-            _oth.PBase,  # Base pressure
-            # Boundary layer and blade thicknesses
-            _geo.BldThick,
-            _oth.DispThick,
-            _oth.MomThick,
-        ]
-    )
-
-    constant_variables = GEOM_LINK + [
-        # Keep reference frame alive
-        _kin.Omega,
-        # Keep the span geometry constant
-        _geo.HDistr,
-        _geo.RDistr,
-    ]
-
-    def _post_init(self):
-        pass
-
-
-class DownstreamMixer(BaseComponent):
-    base_equations = [
-        # *** Fundamental
-        (MassConservation, (0, 1)),
-        (ConstRelEnthalpy, (0, 1)),
-        (MixingMomentumBalances, (0, 1)),
-        # *** Blockage
-        (BladePitch, 0),  # Only needed at the inlet
-        (BladeBlockage, 0),  # Blade + b.l. blockage
-        (ZeroBlockage, 1),  # No blockage mixed out
-        # *** Special adders - Forward the geometry
-        (GeometricalAdder, 0),
-        (GeometricalAdder, 1),
-        (ZeroDeviation, 1),  # Creates a metal angle for plots
-    ]
-
-    # Keep the absolute triangle
-    # energy, meridional geometry
-    from_previous_node = (
-        ABSOLUTE_LINK
-        + GEOM_LINK
-        + [
-            # Copy the relevant geometry
-            _geo.HDistr,
-            _geo.RDistr,
-            _geo.NumBlades,
-            _geo.MetalAngle,
-            _kin.W_choke,  # Get row choking
-            _oth.PBase,  # Base pressure
-            # Stay in the same MRF as blade row
-            _kin.Omega,
-            # Boundary layer and blade thicknesses
-            _geo.BldThick,
-            _oth.DispThick,
-            _oth.MomThick,
-        ]
-    )
-
-    constant_variables = GEOM_LINK + [
-        # Keep reference frame alive
-        _kin.Omega,
-        # Keep the span geometry constant
-        _geo.HDistr,
-        _geo.RDistr,
-    ]
-
-    def _post_init(self):
-        pass
-
-    def attach_network(self, network: 'ComponentNetwork[CasadiSystem]'):
-        super().attach_network(network)
-
-        # Add base pressure and choking criterion
-        # to preceding row
-        row_position = network.components.index(self) - 1
-        row = network.components[row_position]
-        row_inl = row.network_maps[network][0]
-        row_out = row.network_maps[network][1]
-
-        TO_ADD = [ChokingCriterion, SieverdingBasePressure]
-        abs_position = (row_inl, row_out)
-
-        logger.debug(
-            f'{self} requested to add choking criterion and '
-            f'base pressure correlation to {row}'
-        )
-
-        for eq in TO_ADD:
-            if network.system.contains_eq(eq, abs_position):
-                logger.debug('Equation {eq} already in system, skipping')
-                continue
-            else:
-                # Add both to row and system
-                row.add_equation(eq(), (0, 1))
-
-
-class SimpleMixer(DownstreamMixer):
-    base_equations = [
-        # *** Fundamental
-        (MassConservation, (0, 1)),
-        (ConstRelEnthalpy, (0, 1)),
-        (DentonMixingLoss, (0, 1)),
-        (MinimalChoke, (0, 1)),
-        # *** Blockage
-        (BladePitch, 0),  # Only needed at the inlet
-        (BladeBlockage, 0),  # Blade + b.l. blockage
-        (ZeroBlockage, 1),  # No blockage mixed out
-        # Special adders - Mainly for plotting
-        (GeometricalAdder, 0),
-        (GeometricalAdder, 1),
-        (ZeroDeviation, 1),  # Creates a dummy metal angle (for plots)
-    ]
-
-    def _post_init(self):
-        pass
 
 
 @dataclass

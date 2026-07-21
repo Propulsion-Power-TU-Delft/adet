@@ -67,9 +67,9 @@ system.add_boundary_conditions(BCS)
 
 system.build()
 
-x0 = system.get_scaled_guess(fallback=0.01)
-kn = system.get_scaled_constraints()
-bnd = system.get_arguments_bounds(
+x0 = system.get_guess(fallback=0.01)
+kn = system.get_boundary_conds()
+bnd = system.get_bounds(
     {
         # Node limiters
         n0.stc.Pressure.Glob: (1, 1e7),

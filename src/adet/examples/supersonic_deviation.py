@@ -156,9 +156,9 @@ ntw.build()
 input('Continue?')
 
 # *** Solution
-x0 = ntw.system.get_scaled_guess(fallback=0.8)
-kn = ntw.system.get_scaled_constraints()
-bnd = ntw.system.get_arguments_bounds(
+x0 = ntw.system.get_guess(fallback=0.8)
+kn = ntw.system.get_boundary_conds()
+bnd = ntw.system.get_bounds(
     {
         n0.kin.RelMach: (0.0, 1.0),
         # n1.kin.RelMach: (0.0, 1.0),

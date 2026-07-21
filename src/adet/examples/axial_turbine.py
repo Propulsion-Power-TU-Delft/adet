@@ -83,7 +83,7 @@ stator = BladeRow(
         ModifiedZweifel(): (0, 1),
     },
 )
-stator.set_component_constants(n0.geo.Rmid.Glob)
+stator.set_constants(n0.geo.Rmid.Glob)
 
 # ============ Modify rotor
 rotor = deepcopy(stator)  # Reuse the stator as template
@@ -142,9 +142,9 @@ ntw.build()
 input('Continue?')
 
 
-x0 = ntw.system.get_scaled_guess(fallback=0.8)
-kn = ntw.system.get_scaled_constraints()
-bnd = ntw.system.get_arguments_bounds(
+x0 = ntw.system.get_guess(fallback=0.8)
+kn = ntw.system.get_boundary_conds()
+bnd = ntw.system.get_bounds(
     {
         # n1.geo.NumBlades.Glob: (20.0, 1e5),
         n0.geo.Chord.Glob: (0.0, 1e5),

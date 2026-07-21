@@ -88,8 +88,8 @@ ntw.build()
 
 rtfn = ntw.system.make_rootfinder('ipopt')
 
-x0 = ntw.system.get_scaled_guess()
-kn = ntw.system.get_scaled_constraints()
+x0 = ntw.system.get_guess()
+kn = ntw.system.get_boundary_conds()
 
 solution = solve_root_problem(rtfn, x0, kn)
 

@@ -134,9 +134,9 @@ input('Press enter to continue...')
 obj_func = 1 / system.free_args_sym[n1.oth.MassFlow]
 # ***
 
-x0 = system.get_scaled_guess()
-kn = system.get_scaled_constraints()
-bnd = system.get_arguments_bounds(
+x0 = system.get_guess()
+kn = system.get_boundary_conds()
+bnd = system.get_bounds(
     {
         # Node limiters
         n0.stc.Pressure.Glob: (1, 1e7),

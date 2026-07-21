@@ -148,10 +148,10 @@ optimizer = cs.nlpsol(
 )
 
 x0 = np.concatenate(
-    (system.get_scaled_guess(), np.ones(lamb.shape)),
+    (system.get_guess(), np.ones(lamb.shape)),
 )
-kn = np.concatenate(system.get_scaled_constraints())
-bnd = system.get_arguments_bounds(
+kn = np.concatenate(system.get_boundary_conds())
+bnd = system.get_bounds(
     {
         # Node limiters
         n0.stc.Pressure.Glob: (1, 1e7),

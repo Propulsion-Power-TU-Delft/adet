@@ -1,19 +1,16 @@
 import inspect
 import logging
 from abc import ABC
-from typing import TYPE_CHECKING, ClassVar, Literal, Mapping, Type, TypeAlias
+from typing import ClassVar, Literal, Mapping, Type, TypeAlias
 
 from pint.facets.plain import PlainQuantity
 
+from adet.assemblers import SystemAssembler
 from adet.constants import AdetArray
 from adet.equations import EquationBase, UniqueEquation
 from adet.equations.base_equation import LossApplier
 from adet.tools.iter import ensure_tuple
 from adet.varspec import VarSpec
-
-if TYPE_CHECKING:
-    from adet.assemblers import CasadiSystem
-    from adet.components.network import ComponentNetwork
 
 BaseEquationsFormat: TypeAlias = list[
     tuple[
@@ -58,22 +55,22 @@ class BaseComponent(ABC):
             EquationBase,
             int | tuple[int, ...],
         ] = {},
-        from_previous_node: list[VarSpec] = [],
         constant_variables: list[VarSpec] = [],
+        from_prev_node: list[VarSpec] = [],
         from_next_node: list[VarSpec] = [],
     ):
         self.name = name
 
         # === Network syncronization
-        self._attached_networks: set['ComponentNetwork[CasadiSystem]'] = set()
-        self._network_maps: dict['ComponentNetwork', dict[int, int]] = {}
+        self._attached_systems: set[SystemAssembler] = set()
+        self._systems_maps: dict[SystemAssembler, dict[int, int]] = {}
 
         # === Store
         self._spanwise_constants: set[VarSpec] = set()
 
         # === Get all the variables to copy from previous node
         self._from_prev_node: set[VarSpec] = set(
-            self.__class__.from_previous_node + from_previous_node
+            self.__class__.from_previous_node + from_prev_node
         )
         # === Get all the variables to copy from previous node
         self._from_next_node: set[VarSpec] = set(
@@ -112,9 +109,9 @@ class BaseComponent(ABC):
 
         cls._verify_base_equation_format()
 
-    def attach_network(self, network: 'ComponentNetwork'):
-        logger.debug(f'Attached network {network} to {self}')
-        self._attached_networks.add(network)
+    def attach_system(self, system: SystemAssembler):
+        logger.debug(f'Attached network {system} to {self}')
+        self._attached_systems.add(system)
 
     @property
     def inlet_bc(self) -> list[VarSpec]:
@@ -125,34 +122,31 @@ class BaseComponent(ABC):
         return [spec for spec in self._boundary_conditions if spec.node == 1]
 
     @property
-    def network_maps(self) -> dict['ComponentNetwork', dict[int, int]]:
+    def system_maps(self) -> dict[SystemAssembler, dict[int, int]]:
         """{0: ABS_IN, 1: ABS_OUT}"""
-        if not self._attached_networks.issubset(self._network_maps):
+        if not self._attached_systems.issubset(self._systems_maps):
             self._build_network_maps()
-        return self._network_maps
+        return self._systems_maps
 
-    def _check_attached_network(self, *, strict: bool = True):
-        if not self._attached_networks:
+    def _check_attached_system(self, *, strict: bool = True):
+        if not self._attached_systems:
             message = f'Modifying {self}, `{self.name}` with no networks attached'
             if strict:
                 raise AttributeError(message)
             logger.warning(message)
 
-    def get_absolute_eq_position(
-        self, equation: EquationBase, network: 'ComponentNetwork'
-    ):
+    def get_absolute_eq_position(self, equation: EquationBase, system: SystemAssembler):
         rel_position = self._equations[equation]
         rel_position = ensure_tuple(rel_position)
 
-        inl_idx, out_idx = network._get_abs_indices(self)
-        index_map = {0: inl_idx, 1: out_idx}
+        index_map = self.system_maps[system]
         return tuple(index_map[idx] for idx in rel_position)
 
     def _build_network_maps(self):
-        for ntw in self._attached_networks:
+        for system in self._attached_systems:
             seen_couples: set[tuple[int, ...]] = set()
             for eq in self._equations:
-                abs_pos = self.get_absolute_eq_position(eq, ntw)
+                abs_pos = system.data.equations[eq]
                 # Find a two node equation and use it for mapping
                 if len(abs_pos) == 2:
                     rel_pos = ensure_tuple(self._equations[eq])
@@ -162,15 +156,15 @@ class BaseComponent(ABC):
             if not seen_couples:
                 raise RuntimeError(
                     f'No two-node equation found in {self} '
-                    f'to build network map for {ntw}'
+                    f'to build network map for {system}'
                 )
 
             elif len(seen_couples) > 1:
                 raise RuntimeError(
-                    f'Multiple incompatible equation positions for {ntw} in {self}'
+                    f'Multiple incompatible equation positions for {system} in {self}'
                 )
 
-            self._network_maps[ntw] = ntw_map
+            self._systems_maps[system] = ntw_map
 
     def _equation_checks(self):
         # 1. This checks that the user has not defined multiple
@@ -291,15 +285,15 @@ class BaseComponent(ABC):
         self._equations[equation] = rel_position
         self._equation_checks()
         # Add to attached networks
-        self._check_attached_network(strict=False)
-        for ntw in self._attached_networks:
-            abs_position = self.get_absolute_eq_position(equation, ntw)
+        self._check_attached_system(strict=False)
+        for system in self._attached_systems:
+            abs_position = self.get_absolute_eq_position(equation, system)
             logger.debug(
                 f'Adding {equation} in position {abs_position} '
-                f'to network {ntw} attached to {self} '
+                f'to system {system} attached to {self} '
             )
             # TODO: Use merge logic here?
-            ntw.system.add_equation(equation, abs_position)
+            system.add_equation(equation, abs_position)
 
     def equations_from_dict(self, equations: dict[EquationBase, int | tuple[int, ...]]):
         """Simple method for multiple equations"""
@@ -322,13 +316,13 @@ class BaseComponent(ABC):
 
         if equation_found is not None:
             # Remove it to all attached networks
-            for ntw in self._attached_networks:
-                abs_position = self.get_absolute_eq_position(equation_found, ntw)
+            for system in self._attached_systems:
+                abs_position = self.get_absolute_eq_position(equation_found, system)
                 logger.debug(
                     f'Removing {equation_found} in position {abs_position} '
-                    f'from network {ntw} attached to {self} '
+                    f'from network {system} attached to {self} '
                 )
-                ntw.system.remove_equation(equation_class, abs_position)
+                system.remove_equation(equation_class, abs_position)
             # Remove it from the component itself as a final step
             self._equations.pop(equation_found)
         else:
@@ -350,7 +344,7 @@ class BaseComponent(ABC):
     def copy_from_next(self, *arguments: VarSpec):
         self._equalities_helper('next', *arguments)
 
-    def set_component_constants(self, *arguments: VarSpec):
+    def set_constants(self, *arguments: VarSpec):
         self._equalities_helper('const', *arguments)
 
     def set_bc_from_dict(
@@ -370,14 +364,14 @@ class BaseComponent(ABC):
                 raise ValueError(f'Missing value to set {spec}')
             self._boundary_conditions[spec] = value
 
-            for ntw in self._attached_networks:
-                abs_idx = self.network_maps[ntw][spec.node]
-                ntw.system.data.boun_cond[spec._at_node(abs_idx)] = value
+            for system in self._attached_systems:
+                abs_idx = self.system_maps[system][spec.node]
+                system.data.boun_cond[spec._at_node(abs_idx)] = value
         else:
             self._boundary_conditions.pop(spec)
-            for ntw in self._attached_networks:
-                abs_idx = self.network_maps[ntw][spec.node]
-                ntw.system.data.boun_cond.pop(spec._at_node(abs_idx))
+            for system in self._attached_systems:
+                abs_idx = self.system_maps[system][spec.node]
+                system.data.boun_cond.pop(spec._at_node(abs_idx))
 
     def _equalities_helper(
         self, mode: Literal['const', 'prev', 'next'], *arguments: VarSpec
@@ -392,31 +386,31 @@ class BaseComponent(ABC):
                 self._from_next_node.add(spec)
 
             # Add to networks
-            for ntw in self._attached_networks:
+            for system in self._attached_systems:
                 if mode == 'const':
                     equality = tuple(
-                        spec._at_node(i) for i in self.network_maps[ntw].values()
+                        spec._at_node(i) for i in self.system_maps[system].values()
                     )
                 elif mode == 'prev':
-                    inl_idx = min(self.network_maps[ntw].values())
+                    inl_idx = min(self.system_maps[system].values())
                     equality = (
                         spec._at_node(inl_idx - 1),  # outlet of prev
                         spec._at_node(inl_idx),  # inlet of self
                     )
                 elif mode == 'next':
-                    out_idx = max(self.network_maps[ntw].values())
+                    out_idx = max(self.system_maps[system].values())
                     equality = (
                         spec._at_node(out_idx),  # outlet of self
                         spec._at_node(out_idx + 1),  # inlet of next
                     )
 
-                ntw.system.add_equalities(equality)
+                system.add_equalities(equality)
 
     def set_spanwise_constant(self, *arguments: VarSpec):
         for spec in arguments:
             if spec in self._boundary_conditions:
                 continue
             self._spanwise_constants.add(spec)
-            for ntw in self._attached_networks:
-                abs_spec = spec._at_node(self.network_maps[ntw][spec.node])
-                ntw.system.add_spanwise_constants(abs_spec)
+            for system in self._attached_systems:
+                abs_spec = spec._at_node(self.system_maps[system][spec.node])
+                system.add_spanwise_constants(abs_spec)

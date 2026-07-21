@@ -65,8 +65,8 @@ system.build()
 
 rtfn = system.make_rootfinder('kinsol')
 
-x0 = system.get_scaled_guess()
-kn = system.get_scaled_constraints()
+x0 = system.get_guess()
+kn = system.get_boundary_conds()
 
 sol = solve_root_problem(rtfn, x0, kn)
 

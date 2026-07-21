@@ -146,9 +146,9 @@ ntw.build()
 input('Continue?')
 
 # *** Solution
-x0 = ntw.system.get_scaled_guess(fallback=0.8)
-kn = ntw.system.get_scaled_constraints()
-bnd = ntw.system.get_arguments_bounds(
+x0 = ntw.system.get_guess(fallback=0.8)
+kn = ntw.system.get_boundary_conds()
+bnd = ntw.system.get_bounds(
     {
         # n0.geo.Chord.Glob: (0.0, 1e5),
         n0.stc.Pressure.Glob: (10.0, 1.3 * INLET_PTOT),

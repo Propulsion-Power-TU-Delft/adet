@@ -109,9 +109,9 @@ rtfn = system.make_rootfinder(
     },
 )
 
-x0 = system.get_scaled_guess()
-kn = system.get_scaled_constraints()
-bnd = system.get_arguments_bounds(
+x0 = system.get_guess()
+kn = system.get_boundary_conds()
+bnd = system.get_bounds(
     {
         n0.stc.Temperature.Glob: (100, 600),
         n0.stc.Pressure.Glob: (1e2, 1e9),
@@ -156,10 +156,10 @@ if RUN_SWEEP:
             else:
                 precursor = sol_data
 
-            x0 = system.get_scaled_guess(precursor)
-            kn = system.get_scaled_constraints()
+            x0 = system.get_guess(precursor)
+            kn = system.get_boundary_conds()
 
-            bnd = system.get_arguments_bounds(
+            bnd = system.get_bounds(
                 {
                     n0.stc.Temperature.Glob: (100, 630),
                     n0.stc.Pressure.Glob: (1e2, 1e9),
