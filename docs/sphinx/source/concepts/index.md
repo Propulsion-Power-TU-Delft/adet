@@ -1,6 +1,6 @@
-# Concepts
+# Core Concepts
 
-Learn the core concepts which make up ADeT's architecture.
+Learn the core concepts which make up the architecture of ADeT.
 
 ```{toctree}
 :maxdepth: 1

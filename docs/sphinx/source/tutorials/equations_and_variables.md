@@ -114,7 +114,7 @@ solution = solve_root_problem(rootfinder, guess, knowns)
 
 ### Full Example
 
-Here's the complete script:
+Here's the complete script (also found in `src/adet/tutorials/simple_parabola.py`):
 
 ```python
 from adet.assemblers import CasadiSystem

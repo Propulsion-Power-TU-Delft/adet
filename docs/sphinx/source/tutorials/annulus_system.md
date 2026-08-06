@@ -17,7 +17,7 @@ Let's create a system that represents a fundamental set of equations for turboma
 
 - We will use both a stationary and rotating frame with rotational speed $\Omega$. 
 - The total quantities at this station $p_t$ and $T_t$ are chosen by the user
-- The annulus is defined by its height $\Delta h$ and midspan radius $r$
+- The annulus is defined by its height $\Delta H$ and midspan radius $r$
 
 ```{figure} ../../images/basic_annulus.svg
 :align: center
@@ -27,7 +27,7 @@ Annulus problem definition. $\mathbf{V}$ is the velocity in the absolute frame o
 The full system of equations that defines this problem is reported below. Let us translate this into `ADeT`. 
 
 ```{note}
-Equation blocks are already provided. To learn how to define equations see [Equations and Variables](02_equations_and_variables.md).
+Equation blocks are already provided. To learn how to define equations see [Equations and Variables](equations_and_variables.md).
 ```
 
 $$
@@ -199,7 +199,7 @@ array([25.15642531])
 
 ## Full Example
 
-Here's the complete working example, (also found in `examples/mach_problem.py`):
+Here's the complete working example, (also found in `src/adet/tutorials/annulus_flow.py`):
 
 ```python
 from adet.assemblers import CasadiSystem

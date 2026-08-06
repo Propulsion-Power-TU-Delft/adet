@@ -12,7 +12,6 @@ If you're new to ADeT, start here.
 
 ```{toctree}
 :maxdepth: 2
-<!-- :caption: Getting started -->
 
 tutorials/index
 concepts/index
