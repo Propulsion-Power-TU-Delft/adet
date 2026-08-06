@@ -13,6 +13,8 @@ Backend for automatic differentiation provided by CasaDi and real gas thermodyna
 
 ## Getting Started
 
+Check out the **[DOCUMENTATION](https://fvaccari1.bitbucket.io/index.html)**
+
 This project uses [uv](https://docs.astral.sh/uv) for packaging and dependency management.
 
 ### Installation
@@ -26,14 +28,6 @@ This project uses [uv](https://docs.astral.sh/uv) for packaging and dependency m
    uv sync --all-groups       # Install dev and docs dependencies
    ```
 > **Note**: To access [REFPROP](https://www.nist.gov/srd/refprop) through CoolProp, see the [integration guide](https://coolprop.org/coolprop/REFPROP.html).
-
-### Quick Start
-
-Run the one of the examples:
-```bash
-uv run src/adet/examples/nasa_hecc.py
-```
-Check out the **[DOCUMENTATION](https://fvaccari1.bitbucket.io/index.html)**
 
 ## Development
 

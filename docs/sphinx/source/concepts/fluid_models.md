@@ -331,5 +331,3 @@ for name, model in models_to_test:
 
 ## Next Steps
 
-- [Custom Equations](05_custom_equations.md) — Extend ADeT with custom equations for specialized physics
-- Back to [Solving Systems](03_solving_systems.md) — Strategies for challenging problems

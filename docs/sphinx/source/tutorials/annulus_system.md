@@ -1,4 +1,4 @@
-# Quickstart: Setting Up Your First System
+# Solving an Annulus Flow
 
 In this tutorial, we'll create a minimal but complete example of using ADeT's equation-based modeling system. We'll define a simple thermodynamic system, add equations, specify boundary conditions, and solve for the unknowns.
 
@@ -10,20 +10,42 @@ In this tutorial, we'll create a minimal but complete example of using ADeT's eq
 - How to set boundary conditions
 - How to build and solve the system
 
-## Prerequisites
 
-You should have ADeT installed. If not, run:
+## Computing the Flow Across an Annulus
 
-```bash
-uv sync
+Let's create a system that represents a fundamental set of equations for turbomachinery modeling: the average flow on an annulus. We will refer to the position of this annulus section as *node 0*. A node is a collection of lumped quantities at a point in the flow.
+
+- We will use both a stationary and rotating frame with rotational speed $\Omega$. 
+- The total quantities at this station $p_t$ and $T_t$ are chosen by the user
+- The annulus is defined by its height $\Delta h$ and midspan radius $r$
+
+```{figure} ../../images/basic_annulus.svg
+:align: center
+:width: 400px
+Annulus problem definition. $\mathbf{V}$ is the velocity in the absolute frame of reference, $\mathbf{W}$ in the relative frame of reference, $\mathbf{U}$ is the peripheral velocity. 
+```
+The full system of equations that defines this problem is reported below. Let us translate this into `ADeT`. 
+
+```{note}
+Equation blocks are already provided. To learn how to define equations see [Equations and Variables](02_equations_and_variables.md).
 ```
 
-## Creating a Simple Mach Number System
-
-Let's create a system to compute properties of a flow at a specified Mach number. We'll need:
-
-1. A flow state with known pressure, temperature, and Mach number
-2. Equations to relate the properties (kinematics, total-static relations, ideal gas relations)
+$$
+\begin{gather}
+    \begin{cases}
+        V_{\theta} - (W_{\theta} + U) = 0 \\
+        W_m - V_m = 0 \\
+        \alpha - \arctan(V_{\theta} / V_m) = 0 \\
+        \beta - \arctan(W_{\theta} / W_m) = 0 \\
+        U - \Omega r = 0 \\ \\
+        2 \pi r \Delta H - A_{geo} = 0 \\
+        \rho V_m A_{eff} - \dot{m} = 0 \\
+        A_{eff} - A_{geo} = 0 \ \text{(No blockage)} \\ \\
+        h_{t,r} - (h + W^2/2) = 0 \\
+        h_t - (h + V^2/2) = 0  \\
+    \end{cases}
+\end{gather}
+$$
 
 ### Step 1: Import and Setup
 
@@ -73,35 +95,37 @@ Add the equations that govern your system. Each equation is represented as a res
 
 ```python
 EQUATIONS = {
-    AnnulusAreas(): 0,             # A = 2 pi r H
-    MassAreaRelation(): 0,         # m_dot = rho V A
+    AnnulusAreas(): 0,             # A_geo = 2 pi r H
+    MassAreaRelation(): 0,         # m_dot = rho V A_geo
     AbsoluteMachNumber(): 0,       # Define Mach number
     TotalStaticMatching(): 0,      # Matches total and static state
-    ZeroBlockage(): 0,             # No blockage in passage
-    Kinematics(): 0,               # Defines angles velocity
+    ZeroBlockage(): 0,             # No blockage (A_eff = A_geo)
+    Kinematics(): 0,               # Defines velocity triangles
 }
 
 for eq, pos in EQUATIONS.items():
     system.add_equation(eq, pos)
 ```
 
-The second parameter (`pos`) specifies the position in the equation ordering. A value of `0` means it can be placed anywhere.
+The second parameter (`pos`) specifies the position in the equation ordering. A value of `0` means it can be placed anywhere. **It does not represent the right hand side of the equation**.
 
 ### Step 4: Set Boundary Conditions
 
 Specify the known values at your nodes:
 
+In this case $\alpha = 0$ (axial flow).
+
 ```python
-n0 = NodeVariables(0)
+node0 = NodeVariables(0)
 
 BC = {
-    n0.kin.Omega: 0.0,                          # No rotation
-    n0.kin.FlowAngleAbs: Quantity(0, 'deg'),    # Axial flow
-    n0.oth.MassFlow: 0.132,                     # kg/s
-    n0.geo.RDistr: 0.038,                       # Radius distribution
-    n0.geo.HDistr: 0.002,                       # Height distribution
-    n0.tot.Pressure: 18.1e5,                    # Total pressure, Pa
-    n0.tot.Temperature: 573.15,                 # Total temperature, K
+    node0.kin.Omega: 1000.0,                       # Rotational speed, rad/s
+    node0.kin.FlowAngleAbs: Quantity(0, 'deg'),    # Axial flow
+    node0.oth.MassFlow: 100.0,                     # kg/s
+    node0.geo.RDistr: 0.1,                         # Radius distribution
+    node0.geo.HDistr: 0.1,                         # Height distribution
+    node0.tot.Pressure: 18.1e5,                    # Total pressure, Pa
+    node0.tot.Temperature: 573.15,                 # Total temperature, K
 }
 
 system.add_boundary_conditions(BC)
@@ -132,7 +156,7 @@ Understanding this architecture is important for debugging (see [Solving Systems
 
 ### Step 6: Create a Root Finder
 
-ADeT supports multiple solvers. The `'kinsol'` solver is a Newton-Krylov method:
+ADeT accesses optimizers and rootfinders through `CasADi`. The `'kinsol'` solver is a Newton-Krylov method:
 
 ```python
 rtfn = system.make_rootfinder('kinsol')
@@ -150,7 +174,7 @@ Use the root solving utility to find the solution:
 sol = solve_root_problem(rtfn, x0, kn)
 ```
 
-The solver iterates until the residuals converge to zero (or reaches max iterations).
+The solver iterates until the residuals converge to approximaetly zero (or reaches other stopping conditions).
 
 ### Step 8: Extract Results
 
@@ -169,7 +193,7 @@ The `sol_dict` contains all variables (both solved and computed from the EOS), i
 Single variables can also be added using the node object
 
 ```python
->>> sol_dict[node_0.kin.V_mag] # velocity magnitude
+>>> sol_dict[node0.kin.V_mag] # velocity magnitude
 array([25.15642531])
 ```
 
@@ -215,33 +239,29 @@ EQUATIONS = {
 for eq, pos in EQUATIONS.items():
     system.add_equation(eq, pos)
 
-n0 = NodeVariables(0)
+node0 = NodeVariables(0)
 BC = {
-    n0.kin.Omega: 0.0,
-    n0.kin.FlowAngleAbs: Quantity(0, 'deg'),
-    n0.oth.MassFlow: 0.132,
-    n0.geo.RDistr: 0.038,
-    n0.geo.HDistr: 0.002,
-    n0.tot.Pressure: 18.1e5,
-    n0.tot.Temperature: 573.15,
+    node0.kin.Omega: 1000.0,
+    node0.kin.FlowAngleAbs: Quantity(0, 'deg'),
+    node0.oth.MassFlow: 100.0,
+    node0.geo.RDistr: 0.1,
+    node0.geo.HDistr: 0.1,
+    node0.tot.Pressure: 18.1e5,
+    node0.tot.Temperature: 573.15,
 }
 
 system.add_boundary_conditions(BC)
 system.build()
 
 rtfn = system.make_rootfinder('kinsol')
+
 x0 = system.get_guess()
 kn = system.get_boundary_conds()
 
 sol = solve_root_problem(rtfn, x0, kn)
-sol_dict = system.sol_to_dict(sol)
 
-for var_spec, value in sol_dict.items():
-    print(f"{var_spec}: {value}")
+sol_dict = system.sol_to_dict(sol)
 ```
 
 ## What's Next?
 
-- [Equations and Variables](02_equations_and_variables.md) — Learn about how equations are structured and how to work with variables
-- [Solving Systems](03_solving_systems.md) — Explore different solving strategies and debugging techniques
-- [Fluid Models](04_fluid_models.md) — Understand thermodynamic models and equation of state selection

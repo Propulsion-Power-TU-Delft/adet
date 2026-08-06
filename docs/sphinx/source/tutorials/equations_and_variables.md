@@ -1,4 +1,4 @@
-# Equations and Variables
+# Custom Equations and Variables
 
 This tutorial covers the core abstractions in ADeT: how to define equations, specify variables with units and bounds, and assemble them into a solvable system. We'll learn by breaking down a concrete example.
 
@@ -40,8 +40,8 @@ Let's solve this simple system of nonlinear equation by writing it in `ADeT`
 
 $$
 \begin{cases}
-3 x^2 - 2 x - p = 0 \\
-\sin(x) + y = 0
+    3 x^2 - 2 x - p = 0 \\
+    \sin(x) + y = 0
 \end{cases}
 $$
 
@@ -64,6 +64,8 @@ The `.Hint` attribute tells ADeT to pass the value of that variable into this pa
 
 Within an equation the variables nodes should always be numbered increasing from 0, and they represent the **relative** position of the variables involved in the equation.
 
+The `residual` method can either return a single residual or a `tuple` of residuals.
+
 ### Step 4: Create the System
 
 Instantiate a `CasadiSystem` and add your equation:
@@ -78,7 +80,7 @@ The second argument `0` specifies the **absolute** node position in which we are
 
 ### Step 5: Add Boundary Conditions
 
-Specify which variables are known (constrained):
+Specify which variables are known (boundary conditions):
 
 ```python
 system.add_boundary_conditions({my_p: 5})
