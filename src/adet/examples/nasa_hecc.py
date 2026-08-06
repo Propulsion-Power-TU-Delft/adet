@@ -292,7 +292,6 @@ impeller = BladeRow(
         n1.oth.ChokeMassflow: MASS_CHOKES[0],
     },
     extra_equations={
-        # ZeroDeviation(): 1,
         MinimalCamberLine(): (0, 1),
         EffectiveBladeNumber(): 1,
         # *** Enthalpy based Losses
@@ -355,8 +354,8 @@ rootfinder_hecc_is = ntw_hecc.system.make_rootfinder(
     },
 )
 
-rtfn_kin = ntw_hecc.system.make_rootfinder('kinsol')
 print('*** SOLVING SINGLE SPAN ISENTROPIC***')
+rtfn_kin = ntw_hecc.system.make_rootfinder('kinsol')
 solution_hecc_is = solve_root_problem(
     rootfinder_hecc_is,
     x0,

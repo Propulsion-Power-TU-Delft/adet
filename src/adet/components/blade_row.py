@@ -1,3 +1,4 @@
+from adet.equations.definitions import BoundaryLayerRatios
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -5,18 +6,15 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from matplotlib.lines import Line2D
 
-from adet.assemblers import CasadiSystem
 from adet.components import BaseComponent, Shaft
 from adet.equations import EquationBase
-from adet.equations.control_volumes import ChokingCriterion, ObliqueShock
-from adet.equations.definitions import MeridionalVelocityRatio, OptimalIncidence
 from adet.equations.fundamental import (
-    BladeBlockage,
     ConstantAngMomentum,
     ConstRelEnthalpy,
     EulerEquation,
     MassConservation,
     ZeroBlockage,
+    BladeBlockage,
 )
 from adet.equations.geometrical import (
     BladePitch,
@@ -27,16 +25,9 @@ from adet.equations.geometrical import (
     MinimalCamberLine,
     RadialGeometry,
 )
-from adet.equations.special import GeometricalAdder
 from adet.geometry import BezierCurve, StraightLine
-from adet.losses.basic import IsentropicLink, ZeroDeviation
-from adet.losses.compressors import AmiranteDiffuserMomentum, JansenDiffuserLoss
-from adet.losses.mixing import (
-    DentonMixingLoss,
-    MinimalChoke,
-    MixingMomentumBalances,
-    SieverdingBasePressure,
-)
+from adet.losses.basic import ZeroDeviation
+from adet.losses.compressors import AmiranteDiffuserMomentum
 from adet.variables import (
     GeometricVariables,
     KinematicVariables,
@@ -47,7 +38,7 @@ from adet.variables import (
 from adet.varspec import DEF_NODE, NodeStates, VarSpec
 
 if TYPE_CHECKING:
-    from adet.components.network import ComponentNetwork
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +49,7 @@ _oth = OtherVariables(node=DEF_NODE)
 _thrm_tot = ThermoVariables(node=DEF_NODE, state=NodeStates.TOTAL)
 _thrm_stc = ThermoVariables(node=DEF_NODE, state=NodeStates.STATIC)
 
+n0 = NodeVariables(0)
 n1 = NodeVariables(1)
 
 ABSOLUTE_LINK = [
@@ -103,6 +95,8 @@ class BladeRow(BaseComponent):
         (BladePitch, 1),
         (BladeRatios, 0),
         (BladeRatios, 1),
+        (BoundaryLayerRatios, 0),
+        (BoundaryLayerRatios, 1),
         (MinimalCamberLine, (0, 1)),
         # *** Common definitions (OPTIONAL)
         (EndwallProperties, 0),
@@ -145,11 +139,30 @@ class BladeRow(BaseComponent):
             from_prev_node,
         )
         self._shaft = None
-        # This uses the setter logic
-        self.shaft = shaft
+        self.shaft = shaft  # This uses the setter logic
 
     def _post_init(self):
-        pass
+        # Set sensible defaults for thicknesses
+        self._boundary_conditions = {
+            **{
+                # Do not account for thickness by def
+                n0.geo.ThickByPitch: 0,
+                n1.geo.ThickByPitch: 0,
+                # *** Boundary layer inlet
+                n0.oth.MomByBld: 0,
+                n0.oth.DispByMom: 1,
+                n0.oth.DispByHgt: 0,
+                # *** Boundary layer outlet
+                n1.oth.MomByBld: 0.075,
+                n1.oth.DispByMom: 2,
+                n1.oth.DispByHgt: 0.05,
+                # *** Profile losses params
+                n1.oth.CdProfile: 0.002,
+                n1.oth.XiCambLenA: 0.375,
+                n1.oth.XiCambLenB: 0.675,
+            },
+            **self._boundary_conditions,
+        }
 
     @property
     def shaft(self) -> Shaft | None:

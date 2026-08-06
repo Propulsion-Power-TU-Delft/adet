@@ -97,6 +97,8 @@ class ZeroBlockage(MeridAreaBlockage):
 
 
 class BladeBlockage(MeridAreaBlockage):
+    """Account for blade thicknesses in passage areas"""
+
     def residual(
         self,
         hh0: n0.geo.HDistr.Hint,

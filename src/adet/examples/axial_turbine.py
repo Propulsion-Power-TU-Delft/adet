@@ -58,23 +58,11 @@ stator = BladeRow(
     name='stator',
     shaft=casing,
     bound_cond={
-        n0.geo.ThickByPitch: 0.04,
         n1.geo.MeridionalAngle: Quantity(0, 'deg'),
-        n1.geo.ThickByPitch: 0.02,
         n1.geo.AspectRatio: 3.0,
-        # n1.geo.FlareAngle: Quantity(30, 'deg'),
         n1.geo.ClearanceByHeight: 0.01,
-        n1.geo.NumBlades: 40,  # Dummy input
-        n1.geo.ZweifelCoeff: 0.9,
-        # *** Boundary layer
-        n1.oth.MomByBld: 0.075,
-        n1.oth.DispByMom: 2,
-        n1.oth.DispByHgt: 0.05,
-        # *** Losses
-        n1.oth.CdProfile: 0.002,
-        n1.oth.XiCambLenA: 0.375,
-        n1.oth.XiCambLenB: 0.675,
-        n1.oth.DischCoeff: 0.35,
+        n1.geo.NumBlades: 40,  # Number of blades
+        n1.geo.ZweifelCoeff: 0.9,  # Theoretical n_bl,opt
     },
     extra_equations={
         ZeroDeviation(): 0,  # No incidence (design)
@@ -82,8 +70,8 @@ stator = BladeRow(
         IsentropicLink(): (0, 1),
         ModifiedZweifel(): (0, 1),
     },
+    constant_variables=[n0.geo.Rmid],
 )
-stator.set_constants(n0.geo.Rmid.Glob)
 
 # ============ Modify rotor
 rotor = deepcopy(stator)  # Reuse the stator as template
@@ -104,8 +92,6 @@ ntw = ComponentNetwork(
     [stator, rotor],
 )
 
-# Throat system
-
 ntw.system.add_equation(FlowCoefficient(), (0, 3))
 ntw.system.add_equation(WorkCoefficient(), (0, 3))
 ntw.system.add_equation(RepeatedStage(), (0, 1, 2, 3))
@@ -114,10 +100,10 @@ ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, 2, 3))
 
 rotor.set_spanwise_constant(n1.geo.ChordAx)
 stator.set_spanwise_constant(
-    # Uniform inlet
+    # Uniform velocity and streamtubes
     n0.kin.V_mer,
     n0.geo.HDistr,
-    # Uniform chords along the span
+    # Uniform axial chords along the span
     n1.geo.ChordAx,
 )
 
@@ -159,11 +145,11 @@ bnd = ntw.system.get_bounds(
 try:
     # Unbounded
     rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': True})
-    sol = solve_root_problem(rtfn, x0, kn, suppress_output=True)
+    sol = solve_root_problem(rtfn, x0, kn, suppress_output=False)
 except RuntimeError:
     # Bounded
     rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': False})
-    sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=True)
+    sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=False)
 
 
 # Kinsol
