@@ -33,7 +33,7 @@ Run the one of the examples:
 ```bash
 uv run src/adet/examples/nasa_hecc.py
 ```
-Check out the **[DOCUMENTATION]()**
+Check out the **[DOCUMENTATION](https://fvaccari1.bitbucket.io/index.html)**
 
 ## Development
 
