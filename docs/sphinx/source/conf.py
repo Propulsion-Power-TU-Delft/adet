@@ -13,6 +13,8 @@ release = '0.0.1'
 extensions = [
     'myst_parser',
     'sphinx_inline_tabs',
+    'sphinx.ext.autodoc',
+    'sphinx.ext.napoleon',
 ]
 
 templates_path = ['_templates']
@@ -24,7 +26,20 @@ myst_enable_extensions = [
     'dollarmath',
 ]
 
+# Autodoc configuration
+autodoc_default_options = {
+    'members': True,
+    'undoc-members': True,
+    'show-inheritance': True,
+}
+
 # -- HTML output
 html_theme = 'pydata_sphinx_theme'
 html_static_path = ['_static']
-html_theme_options = {}
+html_logo = '../images/adet_logo.svg'
+html_theme_options = {
+    'logo': {
+        'image_light': '../images/adet_logo.svg',
+        'image_dark': '../images/adet_logo.svg',
+    }
+}
