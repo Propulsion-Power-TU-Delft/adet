@@ -8,7 +8,7 @@ from adet.components import BaseComponent
 from adet.components.blade_row import BladeRow
 from adet.components.connections import Inlet, Shaft
 from adet.constants import AdetArray
-from adet.equations.base_equation import EquationBase
+from adet.equations.base_equation import MeridionalGeom
 from adet.equations.fundamental import (
     Kinematics,
     MassAreaRelation,
@@ -20,7 +20,7 @@ from adet.equations.geometrical import AnnulusAreas
 from adet.equations.nondimensional import AbsoluteMachNumber, RelativeMachNumber
 from adet.fluid.settings import FluidSettings
 from adet.tools.iter import ensure_tuple
-from adet.variables import KinematicVariables
+from adet.variables import GeometricVariables, KinematicVariables
 from adet.varspec import DEF_NODE, VarSpec
 
 T = TypeVar('T', bound=SystemAssembler)
@@ -41,6 +41,8 @@ _SINGLE_NODE_EQUATIONS = [
     AbsoluteMachNumber,
     RelativeMachNumber,
 ]
+
+_geo = GeometricVariables(0)
 
 
 # NOTE: I use composition and not inheritance
@@ -66,11 +68,7 @@ class ComponentNetwork(Generic[T]):
         self.system = backend
         self.system.fluid_settings = fluid_settings
 
-        self._frozen_equations: dict[EquationBase, tuple[int, ...]] = {}
-
         self._add_single_node_eqs(self.num_components)
-
-        # First write step, for manipulation before building
         self._write_to_system(inlet, components)
 
     def _get_abs_indices(self, component: BaseComponent):
@@ -90,27 +88,35 @@ class ComponentNetwork(Generic[T]):
         self._dispatch_components(components)
         self._link_components()
         self._link_shafts()
-        self._frozen_equations = self.system.data.equations.copy()
 
     def _dispatch_components(self, components: Sequence[BaseComponent]):
         for comp in components:
             comp.attach_system(self.system)
             inl_idx, out_idx = self._get_abs_indices(comp)
 
-            # Add equations
-            for equation, node_pos in comp._equations.items():
+            # 1. Add equations
+            for equation, node_pos in comp._equations.copy().items():
                 node_pos = ensure_tuple(node_pos)
                 traslated_pos = [inl_idx + pos for pos in node_pos]
+
+                # 1.1 Remove duplicate meridional geom equations,
+                # copy it from previous component
+                if isinstance(equation, MeridionalGeom):
+                    if components.index(comp) >= 1 and node_pos == (0,):
+                        comp._equations.pop(equation)
+                        comp._from_prev_node.update((_geo.RDistr, _geo.HDistr))
+                        continue
+
                 self.system.add_equation(equation, traslated_pos)
 
-            # Map boundary conditions to their absolute nodes
+            # 2. Map boundary conditions to their absolute nodes
             mapped_bcond = {}
             for spec, val in comp._boundary_conditions.items():
                 abs_node = comp.system_maps[self.system][spec.node]
                 mapped_bcond[spec.at_node(abs_node)] = val
             self.system.add_boundary_conditions(mapped_bcond)
 
-            # Write equalities (constant variables)
+            # 3. Write equalities (constant variables)
             for spec in comp._const_variables:
                 equality = (
                     spec.at_node(inl_idx),
@@ -118,6 +124,7 @@ class ComponentNetwork(Generic[T]):
                 )
                 self.system.add_equalities(equality)
 
+            # 4. Write spanwise constants
             for spec in comp._spanwise_constants:
                 abs_idx = inl_idx if spec.node == 0 else out_idx
                 abs_spec = spec.at_node(abs_idx)

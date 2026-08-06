@@ -1,4 +1,3 @@
-from adet.equations.definitions import BoundaryLayerRatios
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -9,12 +8,12 @@ from matplotlib.lines import Line2D
 from adet.components import BaseComponent, Shaft
 from adet.equations import EquationBase
 from adet.equations.fundamental import (
+    BladeBlockage,
     ConstantAngMomentum,
     ConstRelEnthalpy,
     EulerEquation,
     MassConservation,
     ZeroBlockage,
-    BladeBlockage,
 )
 from adet.equations.geometrical import (
     BladePitch,
@@ -95,8 +94,6 @@ class BladeRow(BaseComponent):
         (BladePitch, 1),
         (BladeRatios, 0),
         (BladeRatios, 1),
-        (BoundaryLayerRatios, 0),
-        (BoundaryLayerRatios, 1),
         (MinimalCamberLine, (0, 1)),
         # *** Common definitions (OPTIONAL)
         (EndwallProperties, 0),
@@ -142,20 +139,16 @@ class BladeRow(BaseComponent):
         self.shaft = shaft  # This uses the setter logic
 
     def _post_init(self):
-        # Set sensible defaults for thicknesses
+        # Set zero thickness if not specified
+        for node in [n0, n1]:
+            if (
+                node.geo.BldThick not in self._boundary_conditions
+                and node.geo.ThickByPitch not in self._boundary_conditions
+            ):
+                self._boundary_conditions[node.geo.BldThick] = 0
+
         self._boundary_conditions = {
             **{
-                # Do not account for thickness by def
-                n0.geo.ThickByPitch: 0,
-                n1.geo.ThickByPitch: 0,
-                # *** Boundary layer inlet
-                n0.oth.MomByBld: 0,
-                n0.oth.DispByMom: 1,
-                n0.oth.DispByHgt: 0,
-                # *** Boundary layer outlet
-                n1.oth.MomByBld: 0.075,
-                n1.oth.DispByMom: 2,
-                n1.oth.DispByHgt: 0.05,
                 # *** Profile losses params
                 n1.oth.CdProfile: 0.002,
                 n1.oth.XiCambLenA: 0.375,

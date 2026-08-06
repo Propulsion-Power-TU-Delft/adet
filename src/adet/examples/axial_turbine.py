@@ -39,7 +39,7 @@ abs_state = DebugAbstractState('HEOS', 'Air')
 inlet = Inlet(
     boundary_conditions={
         # *** Inlet geometry
-        n0.kin.V_mer: 100.0,
+        n0.kin.V_mer: 50.0,
         n0.geo.Rmid: 0.1,
         n0.geo.HubTipRatio: 0.65,
         n0.geo.MeridionalAngle: Quantity(0, 'deg'),
@@ -52,7 +52,6 @@ inlet = Inlet(
 
 casing = Shaft(0, is_constrained=True)
 shaft = Shaft(0, is_constrained=False)
-
 
 stator = BladeRow(
     name='stator',
@@ -107,21 +106,11 @@ stator.set_spanwise_constant(
     n1.geo.ChordAx,
 )
 
-# Copy meridional geometry from previous node instead of computing
-rotor.copy_from_previous(n0.geo.HDistr, n0.geo.RDistr)
-rotor.remove_equation(MeridionalGeometry, 0)
-
-stator.set_bc_from_dict(
-    {
-        # n0.kin.RelMach: 1.2,
-    },
-)
-
 rotor.set_bc_from_dict(
     {
-        n1.ndim.FlowCoeff: 0.6,
-        n1.ndim.WorkCoeff: -1.0,
-        n1.ndim.DegreeOfReactionTS: 0.3,
+        n1.ndim.FlowCoeff: 0.3,
+        n1.ndim.WorkCoeff: -1.1,
+        n1.ndim.DegreeOfReactionTS: 0.4,
     }
 )
 ntw.build()
