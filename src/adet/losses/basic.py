@@ -19,7 +19,11 @@ class PercTotalPressureLoss(LossApplier):
         super().__init__(scaling_factor)
         self.loss_coeff = loss_coefficient
 
-    def residual(self, rlt_p0, rlt_p1):
+    def residual(
+        self,
+        rlt_p0: n0.rlt.Pressure.Hint,
+        rlt_p1: n1.rlt.Pressure.Hint,
+    ):
         return rlt_p1 - rlt_p0 * (1 - self.loss_coeff)
 
 

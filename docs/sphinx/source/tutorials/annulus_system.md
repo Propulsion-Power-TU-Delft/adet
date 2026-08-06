@@ -17,7 +17,7 @@ Let's create a system that represents a fundamental set of equations for turboma
 
 - We will use both a stationary and rotating frame with rotational speed $\Omega$. 
 - The total quantities at this station $p_t$ and $T_t$ are chosen by the user
-- The annulus is defined by its height $\Delta H$ and midspan radius $r$
+- The annulus is defined by its height $b$ and midspan radius $r$
 
 ```{figure} ../../images/basic_annulus.svg
 :align: center
@@ -38,7 +38,7 @@ $$
         \alpha - \arctan(V_{\theta} / V_m) = 0 \\
         \beta - \arctan(W_{\theta} / W_m) = 0 \\
         U - \Omega r = 0 \\ \\
-        2 \pi r \Delta H - A_{geo} = 0 \\
+        2 \pi r b - A_{geo} = 0 \\
         \rho V_m A_{eff} - \dot{m} = 0 \\
         A_{eff} - A_{geo} = 0 \ \text{(No blockage)} \\ \\
         h_{t,r} - (h + W^2/2) = 0 \\

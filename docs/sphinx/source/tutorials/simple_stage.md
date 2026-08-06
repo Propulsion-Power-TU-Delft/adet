@@ -31,14 +31,15 @@ from adet.components.blade_row import RowGeometry
 from adet.components.connections import Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.definitions import RepeatedStage
-from adet.equations.geometrical import MeridionalGeometry, ModifiedZweifel
+from adet.equations.geometrical import ModifiedZweifel
 from adet.equations.nondimensional import (
     FlowCoefficient,
     StaticTotalDegreeOfReaction,
     WorkCoefficient,
+    TotalTotalExpansionEfficiency,
 )
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import IsentropicLink, ZeroDeviation
+from adet.losses.basic import TotalPressureLoss, ZeroDeviation
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.plotting import plot_camberline, plot_velocity_triangles
@@ -97,6 +98,15 @@ inlet = Inlet(
 )
 ```
 
+The `MeridionalAngle` $\varphi$ is defined in the figure below, and it is null across the stage (purely axial).
+
+
+```{figure} ../../images/meridional_angle.svg
+:align: center
+:width: 300px
+Definition of the meridional angle $\varphi$ and channel height $H$.
+```
+
 
 ### Step 4: Create Shafts and Blade Rows
 
@@ -106,6 +116,12 @@ Create a stationary casing shaft and a rotating shaft. The rotational speed of t
 casing = Shaft(0, is_constrained=True) # Fixed (null) rotational speed
 shaft = Shaft(-1, is_constrained=False) # Free rotational speed (value is unused)
 ```
+
+The pressure loss coefficient $Y$, defined below, is set to 0.9.
+
+$$Y = \frac{p_{t,in}^{r} - p_{t,out}^{r}}{p_{t,in}^{r} - p_{in}}$$
+
+$p_{t}^{r}$ is relative total pressure and $p$ the static pressure. 
 
 Define the stator blade row:
 
@@ -122,11 +138,11 @@ stator = BladeRow(
     extra_equations={
         ZeroDeviation(): 0,  # Geometric angle = Flow angle (No incidence)
         ZeroDeviation(): 1,  # Geometric angle = Flow angle (No deviation)
-        IsentropicLink(): (0, 1),
+        TotalPressureLoss(0.9): (0, 1),  # Loss coefficient Y = 0.9
         ModifiedZweifel(): (0, 1),  # Zweifel criterion for optimal blades
     },
-    constant_variables=[n0.geo.Rmid],
-    spanwise_constants=[n1.geo.ChordAx],
+    constant_variables=[n0.geo.Rmid], # Constant midspan radius
+    spanwise_constants=[n1.geo.ChordAx], # No taper
 )
 ```
 
@@ -165,7 +181,8 @@ $$
     \phi_3 = V_{m, 0} / U_3 \\
     \psi_3 = (h_{t,3} - h_{t,0}) / U_3^2 \\
     R_3 = | \Delta h_{ROT} / \Delta h_t | \\
-    V_m = \mathrm{const}  \qquad  \alpha_0 = \alpha_3 \\
+    V_m = \mathrm{const}  \qquad  \alpha_0 = \alpha_3
+    \eta_{tt,3} = \frac{h_{t,0} - h_{t,3}}{h_{t,0} - h_{t,3ss}} \\
 \end{gather}
 $$
 
@@ -174,6 +191,7 @@ ntw.system.add_equation(FlowCoefficient(), (0, 3))
 ntw.system.add_equation(WorkCoefficient(), (0, 3))
 ntw.system.add_equation(RepeatedStage(), (0, 1, 2, 3))
 ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, 2, 3))
+ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
 ```
 ```{Important}
 By convention the value of coefficients or properties which do not strictly belong to a position in the flow are assigned to the **largest node**.
@@ -184,15 +202,13 @@ By convention the value of coefficients or properties which do not strictly belo
 Specify which variables are constant along the blade span.
 
 ```python
-rotor.set_spanwise_constant(n1.geo.ChordAx)
 stator.set_spanwise_constant(
     n0.kin.V_mer,
     n0.geo.HDistr,
-    n1.geo.ChordAx,
 )
 ```
 
-The $V_m$ and $\Delta H$ conditions specify the inlet as a uniform distribution of equal streamtubes with constant velocity. The condition on the axial chord implies that the blade has no taper.
+The $V_m$ and $\Delta H$ conditions specify the inlet as a uniform distribution of equal streamtubes with constant velocity. 
 
 ### Step 8: Set Design Constraints
 
@@ -298,9 +314,10 @@ from adet.equations.nondimensional import (
     FlowCoefficient,
     StaticTotalDegreeOfReaction,
     WorkCoefficient,
+    TotalTotalExpansionEfficiency,
 )
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import IsentropicLink, ZeroDeviation
+from adet.losses.basic import TotalPressureLoss, ZeroDeviation
 from adet.solution import solve_root_problem
 from adet.tools.plotting import plot_velocity_triangles
 from adet.variables import NodeVariables
@@ -342,7 +359,7 @@ stator = BladeRow(
     extra_equations={
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
-        IsentropicLink(): (0, 1),
+        TotalPressureLoss(0.9): (0, 1),  # Loss coefficient Y = 0.9
         ModifiedZweifel(): (0, 1),
     },
     constant_variables=[n0.geo.Rmid],
@@ -364,6 +381,7 @@ ntw.system.add_equation(FlowCoefficient(), (0, 3))
 ntw.system.add_equation(WorkCoefficient(), (0, 3))
 ntw.system.add_equation(RepeatedStage(), (0, 1, 2, 3))
 ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, 2, 3))
+ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
 
 rotor.set_spanwise_constant(n1.geo.ChordAx)
 stator.set_spanwise_constant(
@@ -405,6 +423,16 @@ sol = solve_root_problem(rtfn, sol, kn)
 
 data = ntw.system.sol_to_dict(sol)
 ```
+
+## Multiple Spanwise stations
+
+```{figure} ../../images/flow_station.svg
+:align: center
+:width: 300px
+Definition of the meridional geometry on a node. $r_i$ (`RDistr`) and $b_i$ (`HDistr`) are streamtube radii and heights distributions respectively. $\varphi$ is the meridional angle.
+```
+
+When a single spanwise station is used, a single average streamtube covers the whole channel. Therefore $b_0 = H$ and $r_0 = r_{mid}$.
 
 ## What's Next?
 

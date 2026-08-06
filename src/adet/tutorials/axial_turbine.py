@@ -17,10 +17,14 @@ from adet.equations.geometrical import ModifiedZweifel
 from adet.equations.nondimensional import (
     FlowCoefficient,
     StaticTotalDegreeOfReaction,
+    TotalTotalExpansionEfficiency,
     WorkCoefficient,
 )
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import IsentropicLink, ZeroDeviation
+from adet.losses.basic import (
+    TotalPressureLoss,
+    ZeroDeviation,
+)
 from adet.solution import solve_root_problem
 from adet.tools.loggers import setup_logger
 from adet.tools.plotting import plot_camberline, plot_velocity_triangles, setup_mpl
@@ -66,7 +70,7 @@ stator = BladeRow(
     extra_equations={
         ZeroDeviation(): 0,  # No incidence (design)
         ZeroDeviation(): 1,  # No deviation
-        IsentropicLink(): (0, 1),
+        TotalPressureLoss(0.9): (0, 1),  # Loss coefficient
         ModifiedZweifel(): (0, 1),
     },
     constant_variables=[n0.geo.Rmid],
@@ -95,7 +99,7 @@ ntw.system.add_equation(FlowCoefficient(), (0, 3))
 ntw.system.add_equation(WorkCoefficient(), (0, 3))
 ntw.system.add_equation(RepeatedStage(), (0, 1, 2, 3))
 ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, 2, 3))
-# ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
+ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))  # eta_tt
 
 stator.set_spanwise_constant(
     # Uniform inlet velocity and streamtubes
@@ -141,7 +145,7 @@ except RuntimeError:
 rtfn = ntw.system.make_rootfinder('kinsol')
 sol = solve_root_problem(rtfn, sol, kn)
 
-data = ntw.system.sol_to_dict(sol)
+sol_dict = ntw.system.sol_to_dict(sol)
 
 # globals().update(residual_debugger(ModifiedZweifel(), [0, 1], data))
 
@@ -154,10 +158,10 @@ if PLOTS:
     for ax, node in zip(axs.flatten(), [n0, n1, n2, n3]):
         ax.set_aspect('equal')
         plot_velocity_triangles(
-            data[node.kin.V_tan],
-            data[node.kin.V_mer],
-            data[node.kin.BladeSpeed],
-            data[node.geo.RDistr],
+            sol_dict[node.kin.V_tan],
+            sol_dict[node.kin.V_mer],
+            sol_dict[node.kin.BladeSpeed],
+            sol_dict[node.geo.RDistr],
             ax,
         )
 
@@ -165,7 +169,7 @@ if PLOTS:
     fig_cbl, ax_cbl = plt.subplots()
 
     # Setup axes
-    ax_mer.set_ylim(0.0, 1.01 * data[n3.geo.Rtip])
+    ax_mer.set_ylim(0.0, 1.01 * sol_dict[n3.geo.Rtip])
     ax_mer.set_aspect('equal')
     ax_cbl.set_aspect('equal')
     ax_mer.grid(alpha=0.4)
@@ -174,30 +178,33 @@ if PLOTS:
     offset = 0
     for nodes in [(n0, n1), (n2, n3)]:
         geom = RowGeometry(
-            data[nodes[0].geo.Rmid][0],
-            data[nodes[0].geo.Rmid][0],
-            data[nodes[0].geo.Height][0],
-            data[nodes[1].geo.Height][0],
-            data[nodes[0].geo.MeridionalAngle][0],
-            data[nodes[1].geo.MeridionalAngle][0],
-            data[nodes[1].geo.ChordAx][0],
+            sol_dict[nodes[0].geo.Rmid][0],
+            sol_dict[nodes[0].geo.Rmid][0],
+            sol_dict[nodes[0].geo.Height][0],
+            sol_dict[nodes[1].geo.Height][0],
+            sol_dict[nodes[0].geo.MeridionalAngle][0],
+            sol_dict[nodes[1].geo.MeridionalAngle][0],
+            sol_dict[nodes[1].geo.ChordAx][0],
             axial_offset=offset,
         )
         plot_camberline(
-            data[nodes[0].geo.MetalAngle],
-            data[nodes[1].geo.MetalAngle],
-            data[nodes[1].geo.ChordAx],
+            sol_dict[nodes[0].geo.MetalAngle],
+            sol_dict[nodes[1].geo.MetalAngle],
+            sol_dict[nodes[1].geo.ChordAx],
             ax=ax_cbl,
             color='k',
             axial_offset=offset,
         )
         opt_pitch = (
-            2 * np.pi * data[nodes[1].geo.Rmid] / data[nodes[1].geo.NumBladesOpt]
+            2
+            * np.pi
+            * sol_dict[nodes[1].geo.Rmid]
+            / sol_dict[nodes[1].geo.NumBladesOpt]
         )
         plot_camberline(
-            data[nodes[0].geo.MetalAngle],
-            data[nodes[1].geo.MetalAngle],
-            data[nodes[1].geo.ChordAx],
+            sol_dict[nodes[0].geo.MetalAngle],
+            sol_dict[nodes[1].geo.MetalAngle],
+            sol_dict[nodes[1].geo.ChordAx],
             ax=ax_cbl,
             color='k',
             axial_offset=offset,
@@ -205,7 +212,7 @@ if PLOTS:
         )
         geom.plot_meridional_profile(ax=ax_mer, color='k')
         # Add offset
-        offset += data[nodes[1].geo.ChordAx][0]
+        offset += sol_dict[nodes[1].geo.ChordAx][0]
 
     # *** Camber lines
 
