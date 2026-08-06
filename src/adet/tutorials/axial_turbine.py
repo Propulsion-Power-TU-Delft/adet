@@ -4,6 +4,7 @@ from copy import deepcopy
 
 import matplotlib.pyplot as plt
 import numpy as np
+from CoolProp import AbstractState
 from pint import Quantity
 
 from adet.assemblers import CasadiSystem
@@ -12,7 +13,7 @@ from adet.components.blade_row import RowGeometry
 from adet.components.connections import Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.definitions import RepeatedStage
-from adet.equations.geometrical import MeridionalGeometry, ModifiedZweifel
+from adet.equations.geometrical import ModifiedZweifel
 from adet.equations.nondimensional import (
     FlowCoefficient,
     StaticTotalDegreeOfReaction,
@@ -21,7 +22,6 @@ from adet.equations.nondimensional import (
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation
 from adet.solution import solve_root_problem
-from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 from adet.tools.plotting import plot_camberline, plot_velocity_triangles, setup_mpl
 from adet.variables import NodeVariables
@@ -30,10 +30,11 @@ n0 = NodeVariables(0)
 n1 = NodeVariables(1)
 n2 = NodeVariables(2)
 n3 = NodeVariables(3)
+
 logger = logging.getLogger(__name__)
 setup_logger(logger)
 
-abs_state = DebugAbstractState('HEOS', 'Air')
+abs_state = AbstractState('HEOS', 'Air')
 
 # *** Inlet conditions
 inlet = Inlet(
@@ -51,7 +52,7 @@ inlet = Inlet(
 
 
 casing = Shaft(0, is_constrained=True)
-shaft = Shaft(0, is_constrained=False)
+shaft = Shaft(-1, is_constrained=False)
 
 stator = BladeRow(
     name='stator',
@@ -59,7 +60,6 @@ stator = BladeRow(
     bound_cond={
         n1.geo.MeridionalAngle: Quantity(0, 'deg'),
         n1.geo.AspectRatio: 3.0,
-        n1.geo.ClearanceByHeight: 0.01,
         n1.geo.NumBlades: 40,  # Number of blades
         n1.geo.ZweifelCoeff: 0.9,  # Theoretical n_bl,opt
     },
@@ -70,13 +70,13 @@ stator = BladeRow(
         ModifiedZweifel(): (0, 1),
     },
     constant_variables=[n0.geo.Rmid],
+    spanwise_constants=[n1.geo.ChordAx],
 )
 
-# ============ Modify rotor
+# > Modify the rotor
 rotor = deepcopy(stator)  # Reuse the stator as template
 rotor.shaft = shaft  # Assign the rotating shaft
 rotor.name = 'rotor'
-# ==
 
 
 fluid_settings = FluidSettings(
@@ -87,7 +87,7 @@ fluid_settings = FluidSettings(
 ntw = ComponentNetwork(
     fluid_settings,
     inlet,
-    CasadiSystem(1),
+    CasadiSystem(num_span=1),
     [stator, rotor],
 )
 
@@ -97,13 +97,10 @@ ntw.system.add_equation(RepeatedStage(), (0, 1, 2, 3))
 ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, 2, 3))
 # ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
 
-rotor.set_spanwise_constant(n1.geo.ChordAx)
 stator.set_spanwise_constant(
-    # Uniform velocity and streamtubes
+    # Uniform inlet velocity and streamtubes
     n0.kin.V_mer,
     n0.geo.HDistr,
-    # Uniform axial chords along the span
-    n1.geo.ChordAx,
 )
 
 rotor.set_bc_from_dict(
@@ -114,7 +111,6 @@ rotor.set_bc_from_dict(
     }
 )
 ntw.build()
-input('Continue?')
 
 
 x0 = ntw.system.get_guess(fallback=0.8)

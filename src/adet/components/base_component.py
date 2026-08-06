@@ -56,6 +56,7 @@ class BaseComponent(ABC):
             int | tuple[int, ...],
         ] = {},
         constant_variables: list[VarSpec] = [],
+        spanwise_constants: list[VarSpec] = [],
         from_prev_node: list[VarSpec] = [],
         from_next_node: list[VarSpec] = [],
     ):
@@ -66,7 +67,7 @@ class BaseComponent(ABC):
         self._systems_maps: dict[SystemAssembler, dict[int, int]] = {}
 
         # === Store
-        self._spanwise_constants: set[VarSpec] = set()
+        self._spanwise_constants: set[VarSpec] = set(spanwise_constants)
 
         # === Get all the variables to copy from previous node
         self._from_prev_node: set[VarSpec] = set(

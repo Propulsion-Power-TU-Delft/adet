@@ -22,10 +22,10 @@ setup_logger(logger)
 
 EQUATIONS = {
     AnnulusAreas(): 0,  # A_geo = 2 pi r H
-    MassAreaRelation(): 0,  # m_dot = rho V A_geo
+    ZeroBlockage(): 0,  # No blockage (A_eff = A_geo)
+    MassAreaRelation(): 0,  # m_dot = rho V A_eff
     AbsoluteMachNumber(): 0,  # Define Mach number
     TotalStaticMatching(): 0,  # Matches total and static state
-    ZeroBlockage(): 0,  # No blockage (A_eff = A_geo)
     Kinematics(): 0,  # Defines velocity triangles
 }
 

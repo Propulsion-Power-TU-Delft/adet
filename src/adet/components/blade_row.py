@@ -119,6 +119,7 @@ class BladeRow(BaseComponent):
             int | tuple[int, ...],
         ] = {},
         constant_variables: list[VarSpec] = [],
+        spanwise_constants: list[VarSpec] = [],
         from_prev_node: list[VarSpec] = [],
     ):
         """
@@ -133,6 +134,7 @@ class BladeRow(BaseComponent):
             bound_cond,
             extra_equations,
             constant_variables,
+            spanwise_constants,
             from_prev_node,
         )
         self._shaft = None
