@@ -14,8 +14,9 @@ In this tutorial, we'll create a minimal but complete example of using ADeT's eq
 
 ## Computing the Flow Across an Annulus
 
-Let's create a system that represents a fundamental set of equations for turbomachinery modeling: the average flow on a **circular** annulus. We will refer to the position of this annulus section as *node 0*. 
+Let's create a system that represents a fundamental set of equations for turbomachinery modeling: the average flow across a **circular** annulus. We will refer to the position of this annulus section as *node 0*. 
 
+- Consider uniform and axisymmetric velocities passing through the annulus
 - We will use both a stationary and rotating frame with rotational speed $\Omega$. 
 - The total quantities at this station $p_t$ and $T_t$ are chosen by the user
 - The annulus is defined by its height $H$, its midpoint radius $r_{mid}$ and its angle w.r.t. the vertical $\varphi$ (meridional angle)

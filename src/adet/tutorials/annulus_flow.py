@@ -60,10 +60,7 @@ BC = {
 }
 
 system.add_boundary_conditions(BC)
-system.add_spanwise_constants(node0.geo.HDistr)
-
-system.data.boun_cond.pop(node0.oth.TotMassFlow)
-system.add_boundary_conditions({node0.kin.V_mer: 50})
+system.add_spanwise_constants(node0.kin.V_mer, node0.geo.HDistr)
 
 system.build()
 
