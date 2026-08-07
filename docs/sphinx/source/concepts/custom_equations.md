@@ -408,6 +408,3 @@ system.add_equation(loss_eq, 0)
 
 ## Next Steps
 
-- Back to [Quickstart](01_quickstart.md) — Apply custom equations to a complete system
-- [Solving Systems](03_solving_systems.md) — Debugging strategies for complex systems
-- Check `src/adet/equations/` in the repository for more examples

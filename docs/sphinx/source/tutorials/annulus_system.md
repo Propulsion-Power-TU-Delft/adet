@@ -13,7 +13,7 @@ In this tutorial, we'll create a minimal but complete example of using ADeT's eq
 
 ## Computing the Flow Across an Annulus
 
-Let's create a system that represents a fundamental set of equations for turbomachinery modeling: the average flow on an annulus. We will refer to the position of this annulus section as *node 0*. A node is a collection of lumped quantities at a point in the flow.
+Let's create a system that represents a fundamental set of equations for turbomachinery modeling: the average flow on an annulus. We will refer to the position of this annulus section as *node 0*. 
 
 - We will use both a stationary and rotating frame with rotational speed $\Omega$. 
 - The total quantities at this station $p_t$ and $T_t$ are chosen by the user
@@ -91,7 +91,8 @@ The `FluidSettings` tells ADeT which thermodynamic variables should be used for 
 
 ### Step 3: Define the Equations
 
-Add the equations that govern your system. Each equation is represented as a residual that should equal zero:
+Add the equations that govern your system, these are already implemented in ADeT.
+For learning how to define an equation check out [](equations_and_variables).
 
 ```python
 EQUATIONS = {
@@ -107,7 +108,10 @@ for eq, pos in EQUATIONS.items():
     system.add_equation(eq, pos)
 ```
 
-The second parameter (`pos`) specifies the position in the equation ordering. A value of `0` means it can be placed anywhere. **It does not represent the right hand side of the equation**.
+```{Warning}
+The second parameter (`pos`) specifies the node position of the equation. **It does not represent the right hand side of the equation**. In this case all equations are referred to the same average flow in position 0.
+```
+
 
 ### Step 4: Set Boundary Conditions
 
