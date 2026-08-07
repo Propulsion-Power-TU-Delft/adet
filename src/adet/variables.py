@@ -135,6 +135,8 @@ class Nondimensional(VariableEnum):
     RhoRatio = VarSpec('rhoRatio', '')
     WorkCoeff = VarSpec('work_coeff', '')
     FlowCoeff = VarSpec('flow_coeff', '', 0.8)
+    WorkCoeffMid = VarSpec('work_coeff_mid', '', scalar=True)
+    FlowCoeffMid = VarSpec('flow_coeff_mid', '', 0.8, scalar=True)
     HdropCoeff = VarSpec('hdropCoeff', '')
     TSLoadCoeff = VarSpec('ts_loadCoeff', '', scalar=True)
     CamberCoeff = VarSpec('camberCoeff', '')

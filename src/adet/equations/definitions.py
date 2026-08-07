@@ -3,6 +3,8 @@ Simple quantity defintions, for defining differences or ratios rather than
 the single quantities
 """
 
+from adet.equations.utils import get_midspan_idx
+
 import CoolProp as cp
 import numpy as np
 
@@ -74,9 +76,11 @@ class RepeatedStage(EquationBase):
         vm2: n2.kin.V_mer.Hint,
         vm3: n3.kin.V_mer.Hint,
     ):
-        r1 = alpha0 - alpha3
-        r2 = vm3 - vm2
-        r3 = vm1 - vm0
+        midspan = get_midspan_idx(vm0)
+
+        r1 = alpha0[midspan] - alpha3[midspan]
+        r2 = vm3[midspan] - vm2[midspan]
+        r3 = vm1[midspan] - vm0[midspan]
 
         return r1, r2, r3
 

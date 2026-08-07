@@ -319,7 +319,7 @@ vaneless_diff = VanelessDiffuser(
 ntw_hecc = ComponentNetwork(
     fluid_settings=fluid_settings,
     inlet=inlet,
-    backend=CasadiSystem(num_span=1, scale_suffix='<|'),
+    backend=CasadiSystem(num_span=1),
     components=[
         impeller,
         # vaneless_diff,

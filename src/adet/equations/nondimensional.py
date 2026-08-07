@@ -192,6 +192,22 @@ class FlowCoefficient(EquationBase):
         u1: n1.kin.BladeSpeed.Hint,
         flow_coeff1: n1.ndim.FlowCoeff.Hint,
     ):
+
+        return safe_abs(u1) * flow_coeff1 - vm0
+
+
+class FlowCoefficientMid(EquationBase):
+    """
+    .. math::
+        \\phi = \\frac{V_{m0}}{U_{0}}
+    """
+
+    def residual(
+        self,
+        vm0: n0.kin.V_mer.Hint,
+        u1: n1.kin.BladeSpeed.Hint,
+        flow_coeff1: n1.ndim.FlowCoeffMid.Hint,
+    ):
         midspan = get_midspan_idx(vm0)
 
         return safe_abs(u1[midspan]) * flow_coeff1 - vm0[midspan]
@@ -213,6 +229,27 @@ class WorkCoefficient(EquationBase):
         h1_tot: n1.tot.Enthalpy.Hint,
         u1: n1.kin.BladeSpeed.Hint,
         work_coeff1: n1.ndim.WorkCoeff.Hint,
+    ):
+
+        return u1**2 * work_coeff1 - (h1_tot - h0_tot)
+
+
+class WorkCoefficientMid(EquationBase):
+    """
+    .. math::
+        \\psi = \\frac{\\Delta h_t}{U_1^2}
+
+    Note
+    ----
+    In some literature the denominator is :math:`2U_0V_{t0}`
+    """
+
+    def residual(
+        self,
+        h0_tot: n0.tot.Enthalpy.Hint,
+        h1_tot: n1.tot.Enthalpy.Hint,
+        u1: n1.kin.BladeSpeed.Hint,
+        work_coeff1: n1.ndim.WorkCoeffMid.Hint,
     ):
         midspan = get_midspan_idx(h0_tot)
 

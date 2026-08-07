@@ -1,4 +1,5 @@
 # === IMPORTS
+from adet.equations.fundamental import FreeVortexDistribution
 import logging
 from copy import deepcopy
 
@@ -19,6 +20,8 @@ from adet.equations.nondimensional import (
     StaticTotalDegreeOfReaction,
     TotalTotalExpansionEfficiency,
     WorkCoefficient,
+    FlowCoefficientMid,
+    WorkCoefficientMid,
 )
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import (
@@ -89,14 +92,14 @@ fluid_settings = FluidSettings(
 )
 
 ntw = ComponentNetwork(
-    fluid_settings,
-    inlet,
-    CasadiSystem(num_span=1),
-    [stator, rotor],
+    fluid_settings=fluid_settings,
+    inlet=inlet,
+    backend=CasadiSystem(num_span=1),
+    components=[stator, rotor],
 )
 
-ntw.system.add_equation(FlowCoefficient(), (0, 3))
-ntw.system.add_equation(WorkCoefficient(), (0, 3))
+ntw.system.add_equation(FlowCoefficientMid(), (0, 3))
+ntw.system.add_equation(WorkCoefficientMid(), (0, 3))
 ntw.system.add_equation(RepeatedStage(), (0, 1, 2, 3))
 ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, 2, 3))
 ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))  # eta_tt
@@ -107,13 +110,21 @@ stator.set_spanwise_constant(
     n0.geo.HDistr,
 )
 
+
 rotor.set_bc_from_dict(
     {
-        n1.ndim.FlowCoeff: 0.3,
-        n1.ndim.WorkCoeff: -1.1,
-        n1.ndim.DegreeOfReactionTS: 0.4,
+        n1.ndim.FlowCoeffMid: 0.4,
+        n1.ndim.WorkCoeffMid: -1.1,
+        n1.ndim.DegreeOfReactionTS: 0.6,
     }
 )
+
+# Free vortex + Radial Equilibrium
+# stator.add_equation(FreeVortexDistribution(), 1)
+# rotor.add_equation(FreeVortexDistribution(), 1)
+# stator.set_spanwise_constant(n1.kin.V_mer)
+# rotor.set_spanwise_constant(n1.kin.V_mer)
+
 ntw.build()
 
 
@@ -121,7 +132,6 @@ x0 = ntw.system.get_guess(fallback=0.8)
 kn = ntw.system.get_boundary_conds()
 bnd = ntw.system.get_bounds(
     {
-        # n1.geo.NumBlades.Glob: (20.0, 1e5),
         n0.geo.Chord.Glob: (0.0, 1e5),
         n0.stc.Pressure.Glob: (10.0, 13e5),
         n0.stc.Temperature.Glob: (60.0, 500),
@@ -129,6 +139,9 @@ bnd = ntw.system.get_bounds(
     ignore_defaults=False,
 )
 
+# check
+# rtfn = ntw.system.make_rootfinder('kinsol')
+# sol = solve_root_problem(rtfn, x0, kn)
 
 # Ipopt
 try:
@@ -146,8 +159,6 @@ rtfn = ntw.system.make_rootfinder('kinsol')
 sol = solve_root_problem(rtfn, sol, kn)
 
 sol_dict = ntw.system.sol_to_dict(sol)
-
-# globals().update(residual_debugger(ModifiedZweifel(), [0, 1], data))
 
 PLOTS = True
 if PLOTS:
@@ -186,6 +197,7 @@ if PLOTS:
             sol_dict[nodes[1].geo.MeridionalAngle][0],
             sol_dict[nodes[1].geo.ChordAx][0],
             axial_offset=offset,
+            force_straight=True,
         )
         plot_camberline(
             sol_dict[nodes[0].geo.MetalAngle],
