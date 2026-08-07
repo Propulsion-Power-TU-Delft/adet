@@ -86,7 +86,7 @@ class MixingMomentumBalances(EquationBase):
         pitch0: n0.geo.Pitch.Hint,
         beta0: n0.kin.FlowAngleRel.Hint,
         beta1: n1.kin.FlowAngleRel.Hint,
-        mf: n0.oth.MassFlow.Hint,
+        mf: n0.oth.StreamMassFlow.Hint,
         s0: n0.stc.Entropy.Hint,
         s1: n1.stc.Entropy.Hint,
         mach0: n0.kin.RelMach.Hint,

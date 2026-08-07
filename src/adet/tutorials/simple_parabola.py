@@ -25,7 +25,7 @@ class MyParabola(EquationBase):
         return residual_1, residual_2
 
 
-system = CasadiSystem()
+system = CasadiSystem(num_span=1)
 
 system.add_equation(MyParabola(), 0)
 system.add_boundary_conditions({my_p: 5})

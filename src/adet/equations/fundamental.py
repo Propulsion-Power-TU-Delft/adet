@@ -46,22 +46,26 @@ class ConstRelEnthalpy(EquationBase):
 
 
 class MassConservation(EquationBase):
-    def residual(self, mf0: n0.oth.MassFlow.Hint, mf1: n1.oth.MassFlow.Hint):
+    def residual(
+        self, mf0: n0.oth.StreamMassFlow.Hint, mf1: n1.oth.StreamMassFlow.Hint
+    ):
         return mf0 - mf1
 
 
 class TotalMassFlow(EquationBase):
     """Cumulative massflow"""
 
-    def residual(self, cum_mf0: n0.oth.CumMassFlow.Hint, mf0: n0.oth.MassFlow.Hint):
+    def residual(
+        self, cum_mf0: n0.oth.TotMassFlow.Hint, mf0: n0.oth.StreamMassFlow.Hint
+    ):
         return cum_mf0 - safe_sum(mf0)
 
 
 class LimitedMassflow(EquationBase):
     def residual(
         self,
-        mf_target: n0.oth.TgtMassFlow.Hint,
-        mf_actual: n0.oth.MassFlow.Hint,
+        mf_target: n0.oth.TargMassFlow.Hint,
+        mf_actual: n0.oth.StreamMassFlow.Hint,
         mf_choke: n0.oth.ChokeMassflow.Hint,
     ):
 
@@ -84,7 +88,7 @@ class MassAreaRelation(EquationBase):
         vm0: n0.kin.V_mer.Hint,
         a_eff0: n0.geo.EffArea.Hint,
         rho0: n0.stc.Density.Hint,
-        mf0: n0.oth.MassFlow.Hint,
+        mf0: n0.oth.StreamMassFlow.Hint,
     ):
         return mf0 - rho0 * vm0 * a_eff0
 

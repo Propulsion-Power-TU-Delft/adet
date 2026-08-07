@@ -59,7 +59,7 @@ system.fluid_settings = FluidSettings(
     fluid_state=idl_state,
     update_variables=(n0.stc.Pressure.Glob, n0.stc.Temperature.Glob),
 )
-system.add_spanwise_constants(n0.oth.MassFlow)
+system.add_spanwise_constants(n0.oth.StreamMassFlow)
 
 
 [system.add_equation(eq, pos) for eq, pos in EQS.items()]

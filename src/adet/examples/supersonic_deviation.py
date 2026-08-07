@@ -93,7 +93,7 @@ stat_blade.set_bc_from_dict(
 )
 stat_mix.set_bc_from_dict(
     {
-        n1.oth.MassFlow: 20,
+        n1.oth.StreamMassFlow: 20,
     }
 )
 

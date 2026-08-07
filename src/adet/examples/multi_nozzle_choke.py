@@ -214,7 +214,7 @@ system.build()
 input('Press enter to continue...')
 
 # *** Optimizer formulation
-obj_func = 1 / system.free_args_sym[nodes[1].oth.MassFlow]
+obj_func = 1 / system.free_args_sym[nodes[1].oth.StreamMassFlow]
 # ***
 
 x0 = system.get_guess(fallback=0.01)
@@ -336,7 +336,7 @@ if SWEEP_STAGES:
             system_sweep.build()
 
             # Solve
-            obj_func_sweep = 1 / system_sweep.free_args_sym[nodes[1].oth.MassFlow]
+            obj_func_sweep = 1 / system_sweep.free_args_sym[nodes[1].oth.StreamMassFlow]
             x0_sweep = system_sweep.get_guess(fallback=0.01)
             kn_sweep = system_sweep.get_boundary_conds()
             bnd_sweep = system_sweep.get_bounds(

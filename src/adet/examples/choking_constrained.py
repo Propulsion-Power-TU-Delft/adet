@@ -131,7 +131,7 @@ system.build()
 input('Press enter to continue...')
 
 # *** Optimizer formulation
-obj_func = 1 / system.free_args_sym[n1.oth.MassFlow]
+obj_func = 1 / system.free_args_sym[n1.oth.StreamMassFlow]
 # ***
 
 x0 = system.get_guess()
@@ -177,7 +177,7 @@ if True:
         x0 = solution['x'].toarray()
         solution = optimizer(x0, kn)
         data = system.sol_to_dict(solution['x'].toarray().flatten())
-        massflows.append(data[n0.oth.MassFlow])
+        massflows.append(data[n0.oth.StreamMassFlow])
         p_ratios.append(data[n3.stc.Pressure] / data[n0.tot.Pressure])
         out_machs.append(data[n3.kin.RelMach])
         mervels.append(data[n3.kin.V_mer])

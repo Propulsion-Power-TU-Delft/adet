@@ -39,7 +39,7 @@ inl = Inlet(
         n0.tot.Pressure: Quantity(18.1, 'bar'),
         n0.tot.Temperature: Quantity(300, 'degC'),
         # ***
-        n0.oth.CumMassFlow: 0.132,
+        n0.oth.TotMassFlow: 0.132,
         n0.kin.FlowAngleRel: Quantity(65, 'deg'),
         # *** Geometrical
         n0.geo.Height: Quantity(2, 'mm'),

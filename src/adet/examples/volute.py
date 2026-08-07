@@ -41,7 +41,7 @@ class VoluteDesignFister(EquationBase):
         self,
         rr1: n1.geo.RDistr.Hint,
         vt1: n1.kin.V_tan.Hint,
-        mf1: n1.oth.MassFlow.Hint,
+        mf1: n1.oth.StreamMassFlow.Hint,
         rho1: n1.stc.Density.Hint,
         rr_vol0: R_volute.Hint,
     ):
@@ -58,7 +58,7 @@ class VoluteDesignFister(EquationBase):
 class VoluteDesignStepanoff(EquationBase):
     def residual(
         self,
-        mf1: n1.oth.MassFlow.Hint,
+        mf1: n1.oth.StreamMassFlow.Hint,
         rho1: n1.stc.Density.Hint,
         vt1: n1.kin.V_tan.Hint,
         rr_vol0: R_volute.Hint,
@@ -334,7 +334,7 @@ if __name__ == '__main__':
             # n1.geo.RadiusRatio: 1.8,  # Uncomment if needed
             F1Coeff: 0.8,
             F2Coeff: 0.8,
-            n1.oth.MassFlow: 0.132,
+            n1.oth.StreamMassFlow: 0.132,
         }
 
         system.add_boundary_conditions(INLET)

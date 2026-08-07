@@ -186,7 +186,7 @@ class ThroatConditions(EquationBase):
 
     def residual(
         self,
-        mf0: n0.oth.CumMassFlow.Hint,
+        mf0: n0.oth.TotMassFlow.Hint,
         htr0: n0.rlt.Enthalpy.Hint,
         U0: n0.kin.BladeSpeed.Hint,
         s0: n0.stc.Entropy.Hint,
@@ -241,7 +241,7 @@ class ChokingArea(EquationBase):
 
     def residual(
         self,
-        mf0: n0.oth.CumMassFlow.Hint,
+        mf0: n0.oth.TotMassFlow.Hint,
         htr0: n0.rlt.Enthalpy.Hint,
         U0: n0.kin.BladeSpeed.Hint,
         omega: n0.kin.Omega.Hint,

@@ -281,7 +281,7 @@ class SwallowingCapacity(EquationBase):
         rr1: n1.geo.RDistr.Hint,
         rho0_tot: n0.tot.Density.Hint,
         swll_cap0: n0.ndim.SwallowingCap.Hint,
-        mf0: n0.oth.MassFlow.Hint,
+        mf0: n0.oth.StreamMassFlow.Hint,
     ):
         return swll_cap0 - mf0 / (rho0_tot * u1 * (2 * rr1) ** 2)
 
@@ -291,7 +291,7 @@ class SpecificSpeed(EquationBase):
         self,
         spec_speed1: n1.ndim.SpecificSpeed.Hint,
         omega1: n1.kin.Omega.Hint,
-        mf1: n1.oth.MassFlow.Hint,
+        mf1: n1.oth.StreamMassFlow.Hint,
         rho1: n1.stc.Density.Hint,
         h0_tot: n0.tot.Enthalpy.Hint,
         h1: n1.stc.Enthalpy.Hint,
@@ -303,7 +303,7 @@ class SizeParameter(EquationBase):
     def residual(
         self,
         size_param1: n1.ndim.SizeParameter.Hint,
-        mf1: n1.oth.MassFlow.Hint,
+        mf1: n1.oth.StreamMassFlow.Hint,
         rho1: n1.stc.Density.Hint,
         h0_tot: n0.tot.Enthalpy.Hint,
         h1: n1.stc.Enthalpy.Hint,

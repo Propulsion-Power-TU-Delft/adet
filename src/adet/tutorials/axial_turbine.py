@@ -45,7 +45,7 @@ abs_state = AbstractState('HEOS', 'Air')
 inlet = Inlet(
     boundary_conditions={
         # *** Inlet geometry
-        n0.oth.CumMassFlow: 10.0,
+        n0.oth.TotMassFlow: 10.0,
         n0.geo.Rmid: 0.1,
         n0.geo.HubTipRatio: 0.65,
         n0.geo.MeridionalAngle: Quantity(0, 'deg'),

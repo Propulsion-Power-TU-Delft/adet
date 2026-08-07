@@ -123,7 +123,7 @@ res_expr = res_func(
 )
 
 # Manual Lagrangian choking formulation
-mf = system.free_args_sym[n1.oth.MassFlow]
+mf = system.free_args_sym[n1.oth.StreamMassFlow]
 lamb = cs.MX.sym('lambda', max(res_expr.shape))
 
 # Objective function is massflow

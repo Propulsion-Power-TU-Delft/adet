@@ -235,7 +235,7 @@ inlet = Inlet(
         n0.tot.Pressure: 101352.9,
         n0.tot.Temperature: 288.16,
         n0.kin.FlowAngleAbs: Quantity(0.0, 'rad'),
-        n0.oth.CumMassFlow: 4.3,
+        n0.oth.TotMassFlow: 4.3,
         # n0.kin.MachThroat: 1.0,
     }
 )
