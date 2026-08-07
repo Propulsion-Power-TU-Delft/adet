@@ -5,7 +5,7 @@ Learn how to use ADeT by working through practical examples. These tutorials cov
 ```{toctree}
 :maxdepth: 1
 
-annulus_system
 equations_and_variables
+annulus_system
 simple_stage
 ```

@@ -47,21 +47,8 @@ from adet.tools.plotting import plot_camberline, plot_velocity_triangles
 from adet.variables import NodeVariables
 ```
 
-Create node variables for each station in the flow. `NodeVariables` are convenience enums for accessing pre-defined variables (`VarSpec`).
-
-For example:
-
-```{python}
->>> node4 = NodeVariables(4)
->>> node4.tot.Pressure # Total pressure
-VarSpec: p, node=4, state=tot
->>> node4.kin.V_tan
-VarSpec: Vt, node=4 # Tangential velocity
-```
-
-The laout of the axial stage that we want to design is shown below.
-
-```{figure} ../../images/simple_stage.svg
+Create node variables for each station in the flow. 
+```{figure} ../../images/stage_layout.svg
 :align: center
 :width: 400px
 Schematic of the node layout for the stage. 0s, 1s, 0r, 1r, are the relative node indices of stator and rotor respectively.
@@ -93,11 +80,6 @@ fluid_settings = FluidSettings(
     update_variables=(n0.stc.Pressure, n0.stc.Temperature),
 )
 ```
-
-```{Tip}
-The node index and state of the variables declared for the updates is irrelevant. The same variables are used for updates across all states (total, static, relative total) and nodes.
-```
-
 
 ### Step 3: Create the Inlet
 
@@ -308,7 +290,7 @@ bnd = ntw.system.get_bounds(
 
 `ipopt` is first used for an unbounded solve attempt then bounds are enforced if the first approach fails. 
 
-`kinsol` is then used to refine the root or escape local minima which `ipopt` might have converged to instead of the actual root. 
+`kinsol` is then used to refine the root or escape unfeasible solutions which `ipopt` might have converged to. If all these approaches fail either the problem admits no solution, or a better initial guess and/or bounds are needed.
 
 
 ```python 
@@ -504,12 +486,12 @@ To expand the design to multiple spanwise stations (it must be an **odd** number
 ntw = ComponentNetwork(
     fluid_settings=fluid_settings,
     inlet=inlet,
-    backend=CasadiSystem(num_span=1),  # Use 3 spanwise stations
+    backend=CasadiSystem(num_span=3),  # Use 3 spanwise stations
     components=[stator, rotor],
 )
 ```
 
-When `num_span > 1`, the system solves for radial equilibrium conditions at the stator and rotor outlets. To properly model the spanwise flow distribution, add the `FreeVortexDistribution` equation to both blade rows:
+When `num_span > 1`, the system solves for radial equilibrium conditions at the stator and rotor outlets. To design the blade angle along the span, use the `FreeVortexDistribution` equation on the outlet of both blade rows.
 
 ```python
 if ntw.system.num_span > 1:
@@ -517,6 +499,6 @@ if ntw.system.num_span > 1:
     rotor.add_equation(FreeVortexDistribution(), 1)
 ```
 
-The `FreeVortexDistribution` equation enforces $rV_{\theta}(r)= \mathrm{const}$ across the span. By enforcing radiual equilibrium this also results in constant spanwise meridional velocity $V_m(r)$.
+The `FreeVortexDistribution` equation enforces $rV_{\theta}(r)= \mathrm{const}$ across the span. By respecting radiual equilibrium this also results in constant spanwise meridional velocity $V_m(r)$.
 
 ## What's Next?
