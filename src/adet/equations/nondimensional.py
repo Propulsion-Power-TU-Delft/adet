@@ -139,7 +139,6 @@ class StaticTotalDegreeOfReaction(EquationBase):
     """
     0 - [Stator] - 1 === 2 - [Rotor] - 3
     This assumes the stator is on nodes 0,1 and the stator on 2,3 is the rotor.
-    The degree of reaction is an `oth` property of node 3
     """
 
     def residual(

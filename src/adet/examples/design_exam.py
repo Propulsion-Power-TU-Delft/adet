@@ -79,9 +79,6 @@ rotor = BladeRow(
     shaft=shaft,
     bound_cond={
         n1.geo.MeridionalAngle: Quantity(0, 'deg'),
-        # Blade thickness
-        n0.geo.BldThick: 0.0,
-        n1.geo.BldThick: 0.0,
         n1.geo.NumBlades: 10.0,
         # Blade chord
         n1.geo.ChordAx: 0.05,
@@ -106,8 +103,6 @@ stator = BladeRow(
     bound_cond={
         n1.geo.MeridionalAngle: Quantity(0, 'deg'),
         # Blade thickness
-        n0.geo.BldThick: 0.0,
-        n1.geo.BldThick: 0.0,
         n1.geo.NumBlades: 10.0,
         # Blade chord
         n1.geo.ChordAx: 0.05,
@@ -124,7 +119,6 @@ stator = BladeRow(
 
 
 stator.set_spanwise_constant(n0.geo.HDistr)
-rotor.set_spanwise_constant(n1.geo.HDistr)
 
 # *** Network buildup
 fluid_settings = FluidSettings(

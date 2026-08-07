@@ -78,7 +78,7 @@ class RepeatedStage(EquationBase):
     ):
         midspan = get_midspan_idx(vm0)
 
-        r1 = alpha0[midspan] - alpha3[midspan]
+        r1 = alpha0 - alpha3
         r2 = vm3[midspan] - vm2[midspan]
         r3 = vm1[midspan] - vm0[midspan]
 
