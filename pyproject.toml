@@ -40,7 +40,8 @@ docs = [
     "myst-parser>=4.0.1",
     "pydata-sphinx-theme>=0.16.1",
     "sphinx>=8.2.3",
-    "sphinx-inline-tabs>=2023.4.21",
+    "sphinx-design>=0.7.0",
+    "sphinx-togglebutton>=0.4.5",
 ]
 
 [tool.pyright]

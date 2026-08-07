@@ -32,10 +32,11 @@ from adet.components.connections import Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.definitions import RepeatedStage
 from adet.equations.geometrical import ModifiedZweifel
+from adet.equations.fundamental import FreeVortexDistribution
 from adet.equations.nondimensional import (
-    FlowCoefficient,
+    FlowCoefficientMid,
     StaticTotalDegreeOfReaction,
-    WorkCoefficient,
+    WorkCoefficientMid,
     TotalTotalExpansionEfficiency,
 )
 from adet.fluid.settings import FluidSettings
@@ -85,7 +86,7 @@ Nodes 1 and 2 are conceptually the *same physical point* in the flow. This respe
 Set up the thermodynamic model. 
 
 ```python
-abs_state = DebugAbstractState('HEOS', 'Air')
+abs_state = AbstractState('HEOS', 'Air')
 
 fluid_settings = FluidSettings(
     fluid_state=abs_state,
@@ -105,12 +106,12 @@ Define boundary conditions at the inlet (total pressure, temperature, geometry):
 ```python
 inlet = Inlet(
     boundary_conditions={
-        n0.kin.V_mer: 50.0,
-        n0.geo.Rmid: 0.1,
+        n0.oth.CumMassFlow: 10.0, # Total massflow
+        n0.geo.Rmid: 0.1, # Midspan radius
         n0.geo.HubTipRatio: 0.65,
         n0.geo.MeridionalAngle: Quantity(0, 'deg'),
-        n0.tot.Pressure: 10e5,
-        n0.tot.Temperature: 500,
+        n0.tot.Pressure: 10e5, # Total pressure
+        n0.tot.Temperature: 500, # Total temperature
     }
 )
 ```
@@ -135,7 +136,7 @@ Create a stationary casing shaft and a rotating shaft. The rotational speed of t
 
 ```python
 casing = Shaft(0, is_constrained=True) # Fixed (null) rotational speed
-shaft = Shaft(-1, is_constrained=False) # Free rotational speed (value is unused)
+shaft = Shaft(-1, is_constrained=False) # Free rotational speed
 ```
 
 The (relative) total pressure loss coefficient $Y$, defined below, is set to 0.9.
@@ -183,28 +184,44 @@ rotor.shaft = shaft
 rotor.name = 'rotor'
 ```
 
+### Step 5: Set Spanwise Distributions
 
-### Step 5: Build the Component Network
+Specify spanwise-constant variables at the inlet of the stage:
 
-Assemble all components into a network of components. A `ComponentNetwork` is a convenience class that assembles your components into a system (specified by `backend`).
+```python
+stator.set_spanwise_constant(
+    n0.kin.V_mer,
+    n0.geo.HDistr,
+)
+```
+
+The $\Delta H$ (`HDistr`) condition specifies the inlet as a uniform distribution of equal streamtubes. The condition on $V_m$ (`V_mer`) implies an inlet with uniform meridional velocity.
+
+```{Warning}
+Specifying the spanwise constants before creating the rotor will overconstrain the problem. When copying the stator to create the rotor, these conditions would also transfer to the rotor inlet.
+```
+
+### Step 6: Build the Component Network
+
+Assemble all components into a network of components. A `ComponentNetwork` is a convenience class that assembles your components into a system of equations (specified by `backend`). To learn how to interact with the system directly check out [](annulus_system.md)
 
 ```python
 ntw = ComponentNetwork(
     fluid_settings=fluid_settings,
     inlet=inlet,
-    backend=CasadiSystem(num_span=1),
+    backend=CasadiSystem(num_span=1), 
     components=[stator, rotor],
 )
 ```
 
-### Step 6: Cross-component Equations
+### Step 7: Cross-component Equations
 
-We also want to add cross-component equations that define nondimensional coefficients and repeated stage conditions.
+We also want to add cross-component equations that define nondimensional coefficients and repeated stage conditions. When multiple spanwise stations are used, we specify the coefficients at the midspan location:
 
 $$
 \begin{gather}
-    \phi_3 = V_{m, 0} / U_3 \\
-    \psi_3 = (h_{t,3} - h_{t,0}) / U_3^2 \\
+    \phi_{mid,3} = V_{m, 0} / U_{m,3} \\
+    \psi_{mid,3} = (h_{t,3} - h_{t,0}) / U_{m,3}^2 \\
     R_3 = | \Delta h_{ROT} / \Delta h_t | \\
     V_m = \mathrm{const}  \qquad  \alpha_0 = \alpha_3 \\
     \eta_{tt,3} = \frac{h_{t,0} - h_{t,3}}{h_{t,0} - h_{t,3ss}}
@@ -214,64 +231,60 @@ $$
 These are added accessing directly the system's API:
 
 ```python
-ntw.system.add_equation(FlowCoefficient(), (0, 3))
-ntw.system.add_equation(WorkCoefficient(), (0, 3))
+ntw.system.add_equation(FlowCoefficientMid(), (0, 3))
+ntw.system.add_equation(WorkCoefficientMid(), (0, 3))
 ntw.system.add_equation(RepeatedStage(), (0, 1, 2, 3))
 ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, 2, 3))
-ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
+ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3)) # compute eta_tt
 ```
 
 ```{Hint}
 By convention the value of coefficients or properties which do not strictly belong to a position in the flow are assigned to the **largest node**.
 ```
 
-### Step 7: Set Spanwise Distributions
-
-Specify which variables are constant along the blade span.
-
-```python
-stator.set_spanwise_constant(
-    n0.kin.V_mer,
-    n0.geo.HDistr,
-)
-```
-
-The $V_m$ and $\Delta H$ conditions specify the inlet as a uniform distribution of equal streamtubes with constant velocity. 
-
-```{Warning}
-Specifying the spanwise constants before creating the rotor will overconstrain the problem. When copying the stator to create the rotor, these conditions would also transfer to the rotor inlet.
-```
-
 ### Step 8: Set Design Constraints
 
-Specify design parameters via nondimensional coefficients. Here you can see the mapping between absolute and relative indices at play. The outlet relative index of the rotor is 1, but the absolute index we are acting on is index 3. 
+Now that their equations have been added, we can specify the nondimensional design parameters as boundary conditions. 
+
+There are two equivalent ways to specify these constraints, which showcase the mapping between absolute and relative indices. The outlet relative index of the rotor is 1, but the absolute index we are acting on is index 3. 
+
+::::{tab-set}
+:::{tab-item} Component API
+:sync: component-api
+
+Use the `BladeRow` API to set boundary conditions on the component directly. This uses relative node indices:
 
 ```python
 rotor.set_bc_from_dict(
     {
-        n1.ndim.FlowCoeff: 0.4,
-        n1.ndim.WorkCoeff: -1.1, # Negative = Work extraction
+        n1.ndim.FlowCoeffMid: 0.4,
+        n1.ndim.WorkCoeffMid: -1.1,  # Negative = Work extraction
         n1.ndim.DegreeOfReactionTS: 0.6,
     }
 )
 ```
+:::
+:::{tab-item} System API
+:sync: system-api
 
-You can also use the system's API directly, the code above is **equivalent** to:
+Alternatively, use the system's API directly with absolute node indices:
 
 ```python
 ntw.system.add_boundary_conditions(
     {
-        n3.ndim.FlowCoeff: 0.4,
-        n3.ndim.WorkCoeff: -1.1,
+        n3.ndim.FlowCoeffMid: 0.4,
+        n3.ndim.WorkCoeffMid: -1.1,  # Negative = Work extraction
         n3.ndim.DegreeOfReactionTS: 0.6,
     },
 )
 ```
+:::
+::::
 
 
 ### Step 9: Build and Solve
 
-Compile the system. Get the initial guess, using 0.8 as a fallback values for quantities with no guess. We fetch variable bounds, using custom values to avoid negative chords and enforcing reasonable thermodynamic bounds. 
+Compile the system. Get the initial guess, using 0.8 as a fallback values for quantities with no guess. We fetch variable bounds, using custom values to avoid negative chords and enforcing reasonable thermodynamic and velocity magnitude bounds.
 
 ```{Hint}
 If the bound is specified with the `Glob` attribute it is applied to all variable of that type (of all thermodynamic states). Otherwise it is applied only on the specified node.
@@ -285,6 +298,7 @@ kn = ntw.system.get_boundary_conds()
 bnd = ntw.system.get_bounds(
     {
         n0.geo.Chord.Glob: (0.0, 1e5),
+        n0.kin.V_mag.Glob: (0.0, 400.0),
         n0.stc.Pressure.Glob: (10.0, 13e5),
         n0.stc.Temperature.Glob: (60.0, 500),
     },
@@ -298,13 +312,13 @@ bnd = ntw.system.get_bounds(
 
 
 ```python 
-# Unbounded solve with IPOPT
 try:
-    rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': True})
+    # Unbounded solve with IPOPT
+    rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': True, 'ipopt.max_wall_time': 5})
     sol = solve_root_problem(rtfn, x0, kn, suppress_output=False)
 except RuntimeError:
     # Bounded solve if unbounded fails
-    rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': False})
+    rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': True})
     sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=False)
 
 # Refine with Kinsol
@@ -315,7 +329,8 @@ data = ntw.system.sol_to_dict(sol)
 ```
 
 ```{Note}
-`kinsol` also fails with rank deficient Jacobians, which `ipopt` still solves without warning. A system where the number of variables and equations is equal can still have a rank deficient Jacobian. 
+:class: dropdown
+`kinsol` also fails upon finding rank-deficient Jacobians, which `ipopt` still solves without warning. A system where the number of variables and equations is equal can still have a rank deficient Jacobian. 
 
 This is usually a symptom of an ill-defined problem (e.g., redundant equation definitions with missing boundary conditions). 
 ```
@@ -358,10 +373,11 @@ from adet.components.connections import Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.definitions import RepeatedStage
 from adet.equations.geometrical import ModifiedZweifel
+from adet.equations.fundamental import FreeVortexDistribution
 from adet.equations.nondimensional import (
-    FlowCoefficient,
+    FlowCoefficientMid,
     StaticTotalDegreeOfReaction,
-    WorkCoefficient,
+    WorkCoefficientMid,
     TotalTotalExpansionEfficiency,
 )
 from adet.fluid.settings import FluidSettings
@@ -383,7 +399,7 @@ fluid_settings = FluidSettings(
 
 inlet = Inlet(
     boundary_conditions={
-        n0.kin.V_mer: 50.0,
+        n0.oth.CumMassFlow: 10.0,
         n0.geo.Rmid: 0.1,
         n0.geo.HubTipRatio: 0.65,
         n0.geo.MeridionalAngle: Quantity(0, 'deg'),
@@ -393,7 +409,7 @@ inlet = Inlet(
 )
 
 casing = Shaft(0, is_constrained=True)
-shaft = Shaft(0, is_constrained=False)
+shaft = Shaft(-1, is_constrained=False)
 
 stator = BladeRow(
     name='stator',
@@ -401,13 +417,13 @@ stator = BladeRow(
     bound_cond={
         n1.geo.MeridionalAngle: Quantity(0, 'deg'),
         n1.geo.AspectRatio: 3.0,
-        n1.geo.NumBlades: 40,  # Actual number of blades
-        n1.geo.ZweifelCoeff: 0.9,  # Theoretical optimal num blades
+        n1.geo.NumBlades: 40,
+        n1.geo.ZweifelCoeff: 0.9,
     },
     extra_equations={
         ZeroDeviation(): 0,
         ZeroDeviation(): 1,
-        TotalPressureLoss(0.9): (0, 1),  # Loss coefficient Y = 0.9
+        TotalPressureLoss(0.9): (0, 1),
         ModifiedZweifel(): (0, 1),
     },
     constant_variables=[n0.geo.Rmid],
@@ -419,30 +435,29 @@ rotor.shaft = shaft
 rotor.name = 'rotor'
 
 ntw = ComponentNetwork(
-    fluid_settings,
-    inlet,
-    CasadiSystem(1),
-    [stator, rotor],
+    fluid_settings=fluid_settings,
+    inlet=inlet,
+    backend=CasadiSystem(num_span=1),
+    components=[stator, rotor],
 )
 
-ntw.system.add_equation(FlowCoefficient(), (0, 3))
-ntw.system.add_equation(WorkCoefficient(), (0, 3))
+stator.set_spanwise_constant(
+    n0.kin.V_mer,
+    n0.geo.HDistr,
+)
+
+ntw.system.add_equation(FlowCoefficientMid(), (0, 3))
+ntw.system.add_equation(WorkCoefficientMid(), (0, 3))
 ntw.system.add_equation(RepeatedStage(), (0, 1, 2, 3))
 ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, 2, 3))
 ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))
 
-rotor.set_spanwise_constant(n1.geo.ChordAx)
-stator.set_spanwise_constant(
-    n0.kin.V_mer,
-    n0.geo.HDistr,
-    n1.geo.ChordAx,
-)
 
 rotor.set_bc_from_dict(
     {
-        n1.ndim.FlowCoeff: 0.3,
-        n1.ndim.WorkCoeff: -1.1,
-        n1.ndim.DegreeOfReactionTS: 0.4,
+        n1.ndim.FlowCoeffMid: 0.4,
+        n1.ndim.WorkCoeffMid: -1.1,
+        n1.ndim.DegreeOfReactionTS: 0.6,
     }
 )
 
@@ -453,6 +468,7 @@ kn = ntw.system.get_boundary_conds()
 bnd = ntw.system.get_bounds(
     {
         n0.geo.Chord.Glob: (0.0, 1e5),
+        n0.kin.V_mag.Glob: (0.0, 400.0),
         n0.stc.Pressure.Glob: (10.0, 13e5),
         n0.stc.Temperature.Glob: (60.0, 500),
     },
@@ -460,10 +476,10 @@ bnd = ntw.system.get_bounds(
 )
 
 try:
-    rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': True})
+    rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': True, 'ipopt.max_wall_time': 5})
     sol = solve_root_problem(rtfn, x0, kn, suppress_output=False)
 except RuntimeError:
-    rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': False})
+    rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': True})
     sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=False)
 
 rtfn = ntw.system.make_rootfinder('kinsol')
@@ -472,7 +488,7 @@ sol = solve_root_problem(rtfn, sol, kn)
 data = ntw.system.sol_to_dict(sol)
 ```
 
-## Multiple Spanwise stations
+## Multiple Spanwise Stations
 
 ```{figure} ../../images/flow_station.svg
 :align: center
@@ -481,5 +497,26 @@ Definition of the meridional geometry on a node. $r_i$ (`RDistr`) and $b_i$ (`HD
 ```
 
 When a single spanwise station is used, a single average streamtube covers the whole channel. Therefore $b_0 = H$ and $r_0 = r_{mid}$.
+
+To expand the design to multiple spanwise stations (it must be an **odd** number), you can modify the backend initialization:
+
+```python
+ntw = ComponentNetwork(
+    fluid_settings=fluid_settings,
+    inlet=inlet,
+    backend=CasadiSystem(num_span=1),  # Use 3 spanwise stations
+    components=[stator, rotor],
+)
+```
+
+When `num_span > 1`, the system solves for radial equilibrium conditions at the stator and rotor outlets. To properly model the spanwise flow distribution, add the `FreeVortexDistribution` equation to both blade rows:
+
+```python
+if ntw.system.num_span > 1:
+    stator.add_equation(FreeVortexDistribution(), 1)
+    rotor.add_equation(FreeVortexDistribution(), 1)
+```
+
+The `FreeVortexDistribution` equation enforces $rV_{\theta}(r)= \mathrm{const}$ across the span. By enforcing radiual equilibrium this also results in constant spanwise meridional velocity $V_m(r)$.
 
 ## What's Next?

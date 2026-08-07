@@ -580,5 +580,3 @@ sol_dict = system.sol_to_dict(solution)
 
 ## Next Steps
 
-- [Solving Systems](03_solving_systems.md) — Learn strategies for solving complex systems and debugging failures
-- [Fluid Models](04_fluid_models.md) — Understand how to work with different fluid models and EOS backends

@@ -156,8 +156,6 @@ Behind the scenes, the system:
 
 This **big residual function** is what solvers use: they find **x** such that `r(x, p) = 0`.
 
-Understanding this architecture is important for debugging (see [Solving Systems](03_solving_systems.md) for details on the residual debugger).
-
 ### Step 6: Create a Root Finder
 
 ADeT accesses optimizers and rootfinders through `CasADi`. The `'kinsol'` solver is a Newton-Krylov method:

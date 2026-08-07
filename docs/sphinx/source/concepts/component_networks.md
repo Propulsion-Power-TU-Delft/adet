@@ -382,6 +382,3 @@ print(f"Final temperature: {T_out:.1f} K")
 
 ## Next Steps
 
-- [Quickstart](01_quickstart.md) — Review low-level equation API basics
-- [Equations and Variables](02_equations_and_variables.md) — Custom equations for specialized components
-- Check `src/adet/components/` in the repository for component implementations

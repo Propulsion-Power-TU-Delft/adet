@@ -12,9 +12,10 @@ release = '0.0.1'
 # -- General configuration
 extensions = [
     'myst_parser',
-    'sphinx_inline_tabs',
     'sphinx.ext.autodoc',
     'sphinx.ext.napoleon',
+    'sphinx_togglebutton',
+    'sphinx_design',
 ]
 
 templates_path = ['_templates']

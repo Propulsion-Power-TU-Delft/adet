@@ -601,7 +601,4 @@ except RuntimeError as e:
     print("IPOPT succeeded!")
 ```
 
-## Next Steps
 
-- [Fluid Models](04_fluid_models.md) — Customize fluid models and explore different EOS backends
-- [Custom Equations](05_custom_equations.md) — Write your own equations for specialized physics
