@@ -1,11 +1,15 @@
+from adet.fluid.ideal_eos import IdealGasState
+from adet.equations.utils import residual_debugger
+from adet.equations.control_volumes import SimpleThroat
 import logging
 
 import casadi as cs
+import CoolProp as cp
 import numpy as np
 from pint import Quantity
 
 from adet.assemblers import IPOPT_DEFAULTS, CasadiSystem
-from adet.equations.control_volumes import ThroatConditions
+from adet.equations.base_equation import EquationBase, EquationConfig
 from adet.equations.fundamental import (
     EulerEquation,
     Kinematics,
@@ -28,20 +32,14 @@ system = CasadiSystem(1)
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)
 n2 = NodeVariables(2)
-n3 = NodeVariables(3)
-n4 = NodeVariables(4)
-n5 = NodeVariables(5)
-n6 = NodeVariables(6)
-n7 = NodeVariables(7)
-n8 = NodeVariables(8)
 
 
 def add_node(idx: int):
-    return {  # *** Node 1
+    return {
         Kinematics(): idx,
         MassAreaRelation(): idx,
         TotalStaticMatching(): idx,
-        ThroatConditions(): idx - 1,
+        SimpleThroat(): idx - 1,
         RelativeMachNumber(): idx,
         # --- 0 -> 1
         EulerEquation(): (idx - 1, idx),
@@ -61,22 +59,20 @@ EQS = {
 }
 
 BCS = {
-    # n0.oth.ChokeMassflow: 108.2,
-    # n0.oth.TgtMassFlow: 109,
     n0.tot.Pressure: 20e5,
-    n0.tot.Temperature: 500,
+    n0.tot.Temperature: 700,
+    # *** Constants
     n0.kin.FlowAngleAbs: Quantity(0, 'deg'),
-    # n1.kin.FlowAngleRel: Quantity(-20, 'deg'),
-    # n0.oth.MassFlow: 10.0,
     n0.kin.Omega: 0,
     n0.geo.RDistr: 0.1,
-    # Areas
+    n0.geo.ThroatRadius: 0.1,
+    n1.geo.ThroatRadius: 0.1,
+    # ***
+    # Area distribution
     n0.geo.EffArea: 0.1,
     n0.geo.ThroatArea: 0.05,
-    n0.geo.ThroatRadius: 0.1,
     n1.geo.EffArea: 0.08,
     n1.geo.ThroatArea: 0.03,
-    n1.geo.ThroatRadius: 0.1,
     n2.geo.EffArea: 0.07,
 }
 
@@ -107,7 +103,7 @@ system.add_equalities(
 system.add_boundary_conditions(BCS)
 
 system.build()
-input('Press enter to continue...')
+input('[Expect 1 DoF] Press enter to continue...')
 
 res_func = system.make_residual_function()
 
@@ -160,8 +156,8 @@ bnd = system.get_bounds(
         n0.oth.ThrPressure.Glob: (1, 1e7),
         n0.oth.ThrTemperature.Glob: (150, 1e4),
         # Inlet Mach limit
-        # n0.kin.MachThroat.Glob: (0.0, 1.01),
-        n0.kin.RelMach: (0.0, 1.0),
+        n0.kin.MachThroat.Glob: (0.0, 1.01),
+        n0.kin.RelMach.Glob: (0.0, 0.9),
     },
     ignore_defaults=True,
 )
@@ -179,9 +175,22 @@ kwargs = {
     ),
 }
 
+
 solution = optimizer(x0=x0, p=kn, **kwargs)
 
 rtfn = cs.rootfinder('rtfn', 'kinsol', opt_problem)
-rtfn(x0=solution['x'], p=kn)
+solution = rtfn(x0=solution['x'], p=kn)
 
 sol_data = system.sol_to_dict(solution['x'].toarray().flatten())
+
+print(f'>>> Choking massflow is {sol_data[n0.oth.StreamMassFlow]} kg/s')
+
+globals().update(
+    residual_debugger(
+        SimpleThroat(),
+        [
+            0,
+        ],
+        sol_data,
+    )
+)

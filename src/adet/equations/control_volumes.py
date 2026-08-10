@@ -173,7 +173,7 @@ class ObliqueShock(EquationBase):
         )
 
 
-class ThroatConditions(EquationBase):
+class LeadingEdgeThroat(EquationBase):
     config = EquationConfig(
         input_pair=cp.PT_INPUTS,
         out_properties=(
@@ -212,6 +212,50 @@ class ThroatConditions(EquationBase):
         rr_th = ((rr_hub**2 + rr_tip**2) / 2) ** 0.5
         U_th = omega * rr_th
         # ---
+
+        a_th, rho_th, s_th, h_th = self.eos(p_th, T_th)
+        w_th = mach_th * a_th
+        r0 = mf_th - rho_th * w_th * A_th  # Throat massflow
+
+        roth0 = htr0 - U0**2 / 2
+        roth_th = h_th + w_th**2 / 2 - U_th**2 / 2
+
+        # Main residuals
+        r1 = mf0 - mf_th
+        r2 = s0 - s_th
+        r3 = roth0 - roth_th
+
+        return r0, r1, r2, r3
+
+
+class SimpleThroat(EquationBase):
+    config = EquationConfig(
+        input_pair=cp.PT_INPUTS,
+        out_properties=(
+            _thrm.SpeedSound,
+            _thrm.Density,
+            _thrm.Entropy,
+            _thrm.Enthalpy,
+        ),
+    )
+
+    def residual(
+        self,
+        mf0: n0.oth.StreamMassFlow.Hint,
+        htr0: n0.rlt.Enthalpy.Hint,
+        U0: n0.kin.BladeSpeed.Hint,
+        omega: n0.kin.Omega.Hint,
+        s0: n0.stc.Entropy.Hint,
+        # *** Throat quantities
+        A_th: n0.geo.ThroatArea.Hint,
+        p_th: n0.oth.ThrPressure.Hint,
+        rr_th: n0.geo.ThroatRadius.Hint,
+        mf_th: n0.oth.ThrMassFlow.Hint,
+        mach_th: n0.kin.MachThroat.Hint,
+        T_th: n0.oth.ThrTemperature.Hint,
+    ):
+
+        U_th = omega * rr_th
 
         a_th, rho_th, s_th, h_th = self.eos(p_th, T_th)
         w_th = mach_th * a_th

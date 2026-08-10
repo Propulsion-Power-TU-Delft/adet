@@ -1018,14 +1018,15 @@ class CasadiSystem(SystemAssembler):
         self._eos_factory = EosFactory(fl_state)
 
         # Add inter-node eos
-        for eq in self.data.equations:
+        for eq, eq_pos in self.data.equations.items():
             eq_conf = eq.config
+            pos_str = '-'.join(str(p) for p in eq_pos)
             if eq_conf.input_pair:
                 eq.eos = self._eos_factory.make_eos(
                     eq_conf.input_pair,
                     eq_conf.out_properties,
                     self.num_span,
-                    f'multi_{eq.__class__.__name__}',
+                    f'multi_{eq.__class__.__name__}_{pos_str}',
                 )
 
         discarded_vars = self._argument_resolver.get_discarded_thermo_args()

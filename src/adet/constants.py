@@ -2,7 +2,7 @@ from enum import Enum
 from typing import Union
 
 import CoolProp as cp
-from numpy.typing import NDArray, ArrayLike
+from numpy.typing import NDArray
 
 
 class CoolProperties(Enum):

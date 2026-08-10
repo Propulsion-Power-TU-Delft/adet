@@ -1,12 +1,10 @@
-from adet.solution import solve_optimization_problem
 import logging
 
-import casadi as cs
 import matplotlib.pyplot as plt
 import numpy as np
 from pint import Quantity
 
-from adet.assemblers import IPOPT_DEFAULTS, CasadiSystem
+from adet.assemblers import CasadiSystem
 from adet.equations.fundamental import (
     EulerEquation,
     Kinematics,
@@ -17,6 +15,7 @@ from adet.equations.fundamental import (
 from adet.equations.nondimensional import RelativeMachNumber, StaticTotalPressRatio
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink
+from adet.solution import solve_optimization_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 from adet.tools.plotting import setup_mpl

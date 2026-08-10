@@ -15,7 +15,7 @@ from adet.equations.base_equation import EquationConfig, LossApplier
 from adet.equations.control_volumes import (
     ChokingArea,
     OptimalIncidence,
-    ThroatConditions,
+    LeadingEdgeThroat,
 )
 from adet.equations.definitions import (
     EffectiveBladeNumber,
@@ -297,7 +297,7 @@ impeller = BladeRow(
         # *** Enthalpy based Losses
         IsentropicProperties(): (0, 1),
         # *** Blockage (optional)
-        ThroatConditions(): 0,
+        LeadingEdgeThroat(): 0,
         ChokingArea(): 0,
         # Definitions
         # WorkCoefficient(): (0, 1),
