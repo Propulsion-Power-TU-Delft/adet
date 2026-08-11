@@ -14,11 +14,9 @@ from adet.equations.fundamental import (
     TotalStaticMatching,
 )
 from adet.equations.nondimensional import AbsoluteMachNumber
-from adet.equations.special import ThermoVarsAdder
 from adet.equations.utils import safe_abs, safe_if_else
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import PercentageEntropyLoss
-from adet.registries import GuessRegistry, VariableBoundsRegistry
+from adet.losses.basic import IsentropicLink
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
@@ -31,9 +29,9 @@ setup_logger(logger)
 # Commons
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)
-R_volute = VarSpec('r_vol', 'm', node=0, guess=1.0)
-F1Coeff = VarSpec('f1_coeff', '', node=1, guess=0.8)
-F2Coeff = VarSpec('f2_coeff', '', node=1, guess=0.8)
+R_volute = VarSpec('r_vol', 'm', node=0, bounds=(0.0, 100.0), guess=1.0)
+F1CoeffLoss = VarSpec('f1_coeff', 'dimensionless', node=1, guess=0.8)
+F2CoeffLoss = VarSpec('f2_coeff', 'dimensionless', node=1, guess=0.8)
 
 
 class VoluteDesignFister(EquationBase):
@@ -55,19 +53,6 @@ class VoluteDesignFister(EquationBase):
         return rr_vol0 - radius_fister
 
 
-class VoluteDesignStepanoff(EquationBase):
-    def residual(
-        self,
-        mf1: n1.oth.StreamMassFlow.Hint,
-        rho1: n1.stc.Density.Hint,
-        vt1: n1.kin.V_tan.Hint,
-        rr_vol0: R_volute.Hint,
-    ):
-        volume_flow_rate = mf1 / rho1
-        area_stepanoff = volume_flow_rate / vt1
-        return rr_vol0 - np.sqrt(area_stepanoff / np.pi)
-
-
 class ConstantTangVelocity(EquationBase):
     def residual(
         self,
@@ -75,6 +60,17 @@ class ConstantTangVelocity(EquationBase):
         vt1: n1.kin.V_tan.Hint,
     ):
         return v0 - vt1
+
+
+class ConstantAngMomentum(EquationBase):
+    def residual(
+        self,
+        v0: n0.kin.V_mag.Hint,
+        rr0: n0.geo.RDistr.Hint,
+        vt1: n1.kin.V_tan.Hint,
+        rr1: n1.geo.RDistr.Hint,
+    ):
+        return rr0 * v0 - safe_abs(rr1 * vt1)
 
 
 class VoluteAreas(EquationBase):
@@ -89,17 +85,16 @@ class VoluteAreas(EquationBase):
     ):
         r1 = a_eff0 - np.pi * rr_vol0**2
         r2 = a_eff1 - 2 * np.pi * rr1 * h1
-        r3 = rr0 / rr1 - (rr1 + rr_vol0) / rr1
-        r4 = rr0 - (rr1 + rr_vol0)
+        r3 = rr0 - (rr1 + rr_vol0)
 
-        return r1, r2, r3, r4
+        return r1, r2, r3
 
 
-class VoluteLoss(EquationBase):
+class VoluteLossWhitfield(EquationBase):
     def residual(
         self,
-        f1: F1Coeff.Hint,
-        f2: F2Coeff.Hint,
+        f1: F1CoeffLoss.Hint,
+        f2: F2CoeffLoss.Hint,
         a_eff0: n0.geo.EffArea.Hint,
         a_eff1: n1.geo.EffArea.Hint,
         vt1: n1.kin.V_tan.Hint,
@@ -137,7 +132,7 @@ def plot_volute(designs_dict, num_points=1000):
 
     stator_radius = None
     for design_name, (sol_dict, rr1) in designs_dict.items():
-        inlet_radius = sol_dict[R_volute.full_symbol(True)]
+        inlet_radius = sol_dict[R_volute]
         stator_radius = rr1
 
         theta_distribution = np.linspace(0, 2 * np.pi, num_points)
@@ -198,10 +193,10 @@ def plot_volute_area_trend(designs_dict, num_points=1000):
         designs_dict: Dictionary with design names as keys and (sol_dict, rr1) tuples
         num_points: Number of points for area distribution
     """
-    fig, ax = plt.subplots(figsize=(12, 8), dpi=150)
+    _, ax = plt.subplots(figsize=(12, 8), dpi=150)
 
-    for design_name, (sol_dict, rr1) in designs_dict.items():
-        inlet_radius = sol_dict[R_volute.full_symbol(True)]
+    for design_name, (sol_dict, _) in designs_dict.items():
+        inlet_radius = sol_dict[R_volute]
         theta_distribution = np.linspace(0, 2 * np.pi, num_points)
         inlet_area = np.pi * inlet_radius**2
         area_distribution = np.linspace(0, inlet_area, num_points)
@@ -249,17 +244,6 @@ def plot_volute_area_trend(designs_dict, num_points=1000):
     # fig.show()
 
 
-class ConstantAngMomentum(EquationBase):
-    def residual(
-        self,
-        v0: n0.kin.V_mag.Hint,
-        rr0: n0.geo.RDistr.Hint,
-        vt1: n1.kin.V_tan.Hint,
-        rr1: n1.geo.RDistr.Hint,
-    ):
-        return rr0 * v0 - safe_abs(rr1 * vt1)
-
-
 # Basic equations
 EQUATIONS = {
     Kinematics(): 0,
@@ -267,8 +251,6 @@ EQUATIONS = {
     VoluteAreas(): (0, 1),
     MassAreaRelation(): 0,
     MassAreaRelation(): 1,
-    ThermoVarsAdder(): 0,
-    ThermoVarsAdder(): 1,
     TotalStaticMatching(): 0,
     TotalStaticMatching(): 1,
     AbsoluteMachNumber(): 0,
@@ -279,13 +261,8 @@ EQUATIONS = {
 
 
 if __name__ == '__main__':
-    VariableBoundsRegistry().reset()
-    VariableBoundsRegistry().set('mach', (0, 1.0))
-    GuessRegistry().reset()
-    GuessRegistry().set_fallback_value(0.8)
-
     design_methods = [
-        # 'whitfield',
+        'whitfield',
         'stepanoff',
         'fister',
     ]
@@ -309,36 +286,35 @@ if __name__ == '__main__':
 
         match DESIGN_METHOD:
             case 'whitfield':
-                system.add_equation(VoluteLoss(), (0, 1))
+                system.add_equation(VoluteLossWhitfield(), (0, 1))
                 system.add_equation(ConstantAngMomentum(), (0, 1))
             case 'fister':
                 system.add_equation(VoluteDesignFister(), (0, 1))
-                system.add_equation(PercentageEntropyLoss(), (0, 1))
+                # system.add_equation(ConstantAngMomentum(), (0, 1))
+                system.add_equation(IsentropicLink(), (0, 1))
             case 'stepanoff':
-                system.add_equation(VoluteDesignStepanoff(), (0, 1))
-                system.add_equation(PercentageEntropyLoss(), (0, 1))
+                system.add_equation(ConstantTangVelocity(), (0, 1))
+                system.add_equation(IsentropicLink(), (0, 1))
 
-        INLET = {
+        INLET_BC = {
             n0.kin.Omega: 0.0,
             n0.kin.FlowAngleAbs: 0.0,
-            # n0.geo.RDistr: 0.02,  # Uncomment if needed
         }
 
-        OUTLET = {
+        OUTLET_BC = {
             n1.tot.Pressure: Quantity(18.1, 'bar'),
             n1.tot.Temperature: Quantity(300, 'degC'),
             n1.kin.FlowAngleAbs: Quantity(65, 'deg'),
-            n1.kin.Omega: 0.0,
-            n1.geo.Height: 0.002,
-            n1.geo.RDistr: Quantity(37.5, 'mm'),
-            # n1.geo.RadiusRatio: 1.8,  # Uncomment if needed
-            F1Coeff: 0.8,
-            F2Coeff: 0.8,
             n1.oth.StreamMassFlow: 0.132,
+            n1.kin.Omega: 0.0,
+            n1.geo.HDistr: 0.002,
+            n1.geo.RDistr: Quantity(37.5, 'mm'),
+            F1CoeffLoss: 0.8,
+            F2CoeffLoss: 0.8,
         }
 
-        system.add_boundary_conditions(INLET)
-        system.add_boundary_conditions(OUTLET)
+        system.add_boundary_conditions(INLET_BC)
+        system.add_boundary_conditions(OUTLET_BC)
         system.build()
 
         rootfinder = system.make_rootfinder(
@@ -348,9 +324,15 @@ if __name__ == '__main__':
             },
         )
 
-        x0 = system.get_guess()
+        x0 = system.get_guess(fallback=0.8)
         kn = system.get_boundary_conds()
-        bnd = system.get_bounds()
+        bnd = system.get_bounds(
+            {
+                # n0.stc.Pressure.Glob: (100, 1e10),
+                n0.stc.Temperature.Glob: (300, 580),
+                n0.kin.Mach.Glob: (0, 0.8),
+            }
+        )
 
         sol = solve_root_problem(
             rootfinder,
@@ -360,25 +342,14 @@ if __name__ == '__main__':
             suppress_output=False,
         )
 
-        sol_dict = {
-            a.full_symbol(True): v
-            for a, v in zip(
-                system.data.free_args, sol.flatten() * system.free_args_scaling
-            )
-        }
+        sol_dict = system.sol_to_dict(sol)
 
         rr1 = float(system.data.boun_cond[n1.geo.RDistr])
         results[DESIGN_METHOD] = (sol_dict, rr1)
 
-        print(
-            f'Volute inlet section radius is '
-            f'{sol_dict[R_volute.full_symbol(True)] * 1000:.3f} mm'
-        )
+        print(f'Volute inlet section radius is {sol_dict[R_volute]} mm')
         print(f'Volute outlet radius is {rr1 * 1000:.3f} mm')
-        print(
-            f'Volute outlet velocity is '
-            f'{sol_dict[n1.kin.V_mag.full_symbol(True)]:.3f} m/s'
-        )
+        print(f'Volute outlet velocity is {sol_dict[n1.kin.V_mag]} m/s')
 
     # Plot all designs
     plot_volute(results)

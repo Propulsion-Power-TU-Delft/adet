@@ -60,16 +60,15 @@ n2 = NodeVariables(2)
 n3 = NodeVariables(3)
 
 
-plt.style.use('dark_background')
 setup_mpl(
     {
         'font.family': 'serif',
         'font.size': 19,
-        'text.usetex': True,
+        # 'text.usetex': True,
     }
 )
 
-NUM_SPAN = 1
+NUM_SPAN = 5
 ENABLE_LOSSES = True
 RUN_MULTI = True
 RUN_SPEEDLINES = False
@@ -863,7 +862,10 @@ if RUN_MULTI:
         fig, axs = plt.subplots(2, 2, figsize=(8, 20))
 
         # Node pairs: (inlet, outlet) for each component
-        node_pairs = [(n0, n1), (n1, n2)]
+        node_pairs = [
+            (n0, n1),
+            # (n1, n2),
+        ]
         for plot_idx, (inlet_n, outlet_n) in enumerate(node_pairs):
             for node_idx, n in enumerate([inlet_n, outlet_n]):
                 ax = axs[plot_idx][node_idx]
