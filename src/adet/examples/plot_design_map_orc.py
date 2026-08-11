@@ -1,5 +1,5 @@
 """
-Regenerate meridional channel plots from saved design map data
+This is just a plotting script for the design map in the paper. To be deleted
 """
 
 import pathlib

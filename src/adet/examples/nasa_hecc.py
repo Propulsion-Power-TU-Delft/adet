@@ -1,3 +1,5 @@
+"""Performance validation of NASA's High Efficiency centrifugal compressor"""
+
 import logging
 
 import CoolProp as cp

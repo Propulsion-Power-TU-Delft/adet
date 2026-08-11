@@ -153,7 +153,7 @@ class ObliqueShock(EquationBase):
         # Link flow angles (no effect on shock)
         r5 = beta1 - (beta0 + defl_angle)
 
-        # Flow angle expression - FIX the shock angle
+        # Flow angle expression - FIX the shock angle based on mach
         one_by_mach = safe_min(1 / mach0, 0.99)
         _r6 = shock_angle - (
             np.arcsin(one_by_mach)  # ty:ignore

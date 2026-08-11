@@ -1,15 +1,21 @@
-from adet.fluid.ideal_eos import IdealGasState
-from adet.equations.utils import residual_debugger
-from adet.equations.control_volumes import SimpleThroat
+"""
+Choking massflow identification as a root problem, using
+lagrange multipliers on the full set of unknowns.
+
+The lagrangian setup is done manually and on all variables,
+doubling the size of the problem.
+
+This mirrors the setup of `choking_constrained.py`
+"""
+
 import logging
 
 import casadi as cs
-import CoolProp as cp
 import numpy as np
 from pint import Quantity
 
 from adet.assemblers import IPOPT_DEFAULTS, CasadiSystem
-from adet.equations.base_equation import EquationBase, EquationConfig
+from adet.equations.control_volumes import SimpleThroat
 from adet.equations.fundamental import (
     EulerEquation,
     Kinematics,
@@ -18,6 +24,7 @@ from adet.equations.fundamental import (
     TotalStaticMatching,
 )
 from adet.equations.nondimensional import RelativeMachNumber
+from adet.equations.utils import residual_debugger
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink
 from adet.tools.coolprop_utils import DebugAbstractState

@@ -1,3 +1,13 @@
+"""
+System of equation for computing shock properties upstream and
+
+State:
+------
+- This is a work in progress and is particularly unstable numerically
+"""
+
+# WARN: This is a work in progress and is particularly unstable numerically
+
 import logging
 
 import matplotlib.pyplot as plt
@@ -22,7 +32,6 @@ from adet.equations.nondimensional import (
 )
 from adet.equations.utils import residual_debugger
 from adet.fluid.settings import FluidSettings
-from adet.fluid.ideal_eos import IdealGasState
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
@@ -64,7 +73,6 @@ n1 = NodeVariables(1)
 system = CasadiSystem()
 
 # *** Fluid model
-ideal_state = IdealGasState(1.4, 287, 2e-5)
 abs_state = DebugAbstractState('REFPROP', 'MM')
 
 thrm = ThermoVariables()
@@ -86,16 +94,13 @@ BC = {
     n0.tot.Pressure: 18.1e5,
     n0.tot.Temperature: 573.15,
     n0.kin.FlowAngleAbs: Quantity(0, 'deg'),
-    n0.kin.Mach: 2.2,  # Placeholder, will be updated
+    n0.kin.Mach: 1.5,  # Placeholder, updated in sweep
     # *** OUTLET
     n1.kin.Omega: 0.0,
     n1.geo.RDistr: 0.1,
     n1.geo.HDistr: 0.1,
-    n1.oth.ShockAngle: Quantity(70, 'deg'),  # Placeholder, will be updated
+    n1.oth.ShockAngle: Quantity(90, 'deg'),  # Placeholder, updated in sweep
 }
-
-# NOTE:
-# - mach0=2 with shock angle of 60 deg => mach1=1.2
 
 system.add_boundary_conditions(BC)
 system.build()
@@ -109,7 +114,7 @@ rtfn = system.make_rootfinder(
     },
 )
 
-x0 = system.get_guess()
+x0 = system.get_guess(fallback=1.0)
 kn = system.get_boundary_conds()
 bnd = system.get_bounds(
     {
@@ -121,7 +126,7 @@ bnd = system.get_bounds(
 
 sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=False)
 rtfn = system.make_rootfinder('kinsol')
-# sol = solve_root_problem(rtfn, sol, kn, suppress_output=False)
+sol = solve_root_problem(rtfn, sol, kn, suppress_output=False)
 
 sol_data = system.sol_to_dict(sol)
 
@@ -129,8 +134,8 @@ globals().update(residual_debugger(ObliqueShock(), [0, 1], sol_data))
 
 if RUN_SWEEP:
     # Parametric sweep ranges
-    mach_values = np.linspace(1.5, 3.0, 10)
-    shock_angle_values = np.linspace(90, 30, 30)
+    mach_values = np.linspace(1.5, 2.0, 6)
+    shock_angle_values = np.linspace(90, 30, 20)
     results = {}
     for mach in mach_values:
         results[mach] = {
@@ -140,53 +145,60 @@ if RUN_SWEEP:
             'entropy_prod': [],
         }
 
-    sol_data = {}
-    sol_dict_nrm_shk = {}
+    prev_sol = sol_data
+    sol_dict_nrm_shk = sol_data
     for mach_idx, mach in enumerate(mach_values):
         print(f'Mach = {mach:.2f}  [{mach_idx + 1}/{len(mach_values)}]')
 
-        for idx, angle in enumerate(shock_angle_values):
+        for angle_idx, angle in enumerate(shock_angle_values):
             # Update Mach in system.data
             system.data.boun_cond[n0.kin.Mach] = mach
             # Update shock angle in system.data (convert to radians)
             system.data.boun_cond[n1.oth.ShockAngle] = np.radians(angle)
 
-            if idx == 0:
-                precursor = sol_dict_nrm_shk
+            if angle_idx == 0:
+                # Normal shock solution
+                rtfn = system.make_rootfinder(
+                    'ipopt',
+                    opts={
+                        'error_on_fail': True,
+                        'ipopt.max_wall_time': 2.5,
+                        'ipopt.print_level': 0,
+                    },
+                )
+                x0 = system.get_guess(sol_data, fallback=1.0)
+                kn = system.get_boundary_conds()
+                bnd = system.get_bounds(
+                    {
+                        n0.stc.Temperature.Glob: (100, 630),
+                        n0.stc.Pressure.Glob: (1e2, 1e9),
+                        n1.kin.Mach: (0.0, 1.0),
+                    },
+                    ignore_defaults=True,
+                )
+                sol_nrm = solve_root_problem(rtfn, x0, kn, bnd)
+                precursor = system.sol_to_dict(sol_nrm)
             else:
-                precursor = sol_data
+                precursor = prev_sol
 
-            x0 = system.get_guess(precursor)
+            x0 = system.get_guess(precursor, fallback=0.1)
+
             kn = system.get_boundary_conds()
-
             bnd = system.get_bounds(
                 {
                     n0.stc.Temperature.Glob: (100, 630),
                     n0.stc.Pressure.Glob: (1e2, 1e9),
-                    n1.loss.Ds_shock: (0.0, 1e5),
-                }
-            )
-
-            rtfn = system.make_rootfinder(
-                'ipopt',
-                opts={
-                    'error_on_fail': False,
-                    'ipopt.max_wall_time': 2.5,
-                    'ipopt.print_level': 0,
                 },
+                ignore_defaults=True,
             )
-            sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=True)
-
-            rtfn = system.make_rootfinder('kinsol')
+            rtfn_kin = system.make_rootfinder('kinsol')
 
             try:
-                sol = solve_root_problem(rtfn, sol, kn, suppress_output=True)
-                sol_data = system.sol_to_dict(sol)
-                print(f'Outlet mach is {sol_data[n1.kin.Mach]}')
-                if idx == 0:
-                    sol_dict_nrm_shk = sol_data
+                sol = solve_root_problem(rtfn_kin, x0, kn, suppress_output=True)
+                prev_sol = system.sol_to_dict(sol)
+                print(f'Outlet mach is {prev_sol[n1.kin.Mach]}')
                 # Extract deflection angle (convert from radians to degrees)
-                deflection_val = sol_data[n1.oth.ShockDeflection]
+                deflection_val = prev_sol[n1.oth.ShockDeflection]
                 deflection_rad = float(np.atleast_1d(deflection_val)[0])
 
                 # Normalize angle to  to handle periodic convergence
@@ -195,10 +207,10 @@ if RUN_SWEEP:
                 )
                 deflection_deg = deflection_rad * 180 / np.pi
 
-                results[mach]['shock_angles'].append(sol_data[n1.oth.ShockAngle])
+                results[mach]['shock_angles'].append(prev_sol[n1.oth.ShockAngle])
                 results[mach]['deflections'].append(deflection_deg)
-                results[mach]['outlet_machs'].append(sol_data[n1.kin.Mach])
-                results[mach]['entropy_prod'].append(sol_data[n1.loss.Ds_shock])
+                results[mach]['outlet_machs'].append(prev_sol[n1.kin.Mach])
+                results[mach]['entropy_prod'].append(prev_sol[n1.loss.Ds_shock])
             except (RuntimeError, ValueError) as e:
                 err_msg = str(e)[:50]
                 print(
@@ -210,12 +222,7 @@ if RUN_SWEEP:
         print(f'  Completed {len(shock_angle_values)} points')
 
     # *** PLOTS
-    setup_mpl(
-        {
-            'font.family': 'EB Garamond',
-            'font.size': '20',
-        }
-    )
+    setup_mpl({'font.size': '20'})
     cmap = plt.get_cmap('plasma')
 
     fig, ax = plt.subplots(figsize=(10, 8))
@@ -234,7 +241,7 @@ if RUN_SWEEP:
             markersize=6,
         )
 
-    ax.set_xlabel(r'$\beta$ / [deg]')
+    ax.set_xlabel(r'$\beta \ / \mathrm{[deg]}$')
     ax.set_ylabel(r'$\Delta s$ / $\mathrm{[Jkg^{-1}K^{-1}]}$')
     ax.grid(True, alpha=0.5)
 

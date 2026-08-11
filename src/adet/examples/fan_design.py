@@ -1,3 +1,11 @@
+"""
+Fan design example using the node interface.
+
+Demonstrates a simple axial fan blade row with isentropic flow
+and zero deviation. Inlet conditions are set at 10km altitude with
+Mach 0.6, and the blade row produces a pressure rise of 20%.
+"""
+
 import logging
 
 from ambiance import Atmosphere
@@ -12,9 +20,13 @@ from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation
 from adet.solution import solve_root_problem
 from adet.tools.loggers import setup_logger
+from adet.variables import NodeVariables
 
 logger = logging.getLogger(__name__)
 setup_logger(logger)
+
+n0 = NodeVariables(0)
+n1 = NodeVariables(1)
 
 std_atm = Atmosphere(10e3)
 abs_state = AbstractState('HEOS', 'air')
@@ -25,56 +37,36 @@ shaft = Shaft(
 )
 
 inlet = Inlet(
-    {
-        'stc': {
-            'p': std_atm.pressure,
-            'T': std_atm.temperature,
-        },
-        'kin': {
-            'mach': 0.6,
-            'alpha': 0.0,
-        },
-        'oth': {
-            'massflow': 80,
-        },
+    boundary_conditions={
+        n0.stc.Pressure: std_atm.pressure,
+        n0.stc.Temperature: std_atm.temperature,
+        n0.kin.Mach: 0.6,
+        n0.kin.FlowAngleAbs: Quantity(0.0, 'deg'),
+        n0.oth.TotMassFlow: 80,
     }
 )
 
 fan_blade = BladeRow(
-    'fan',
-    shaft,
-    'rotor',
-    in_constraints={
-        'geo': {
-            'meridional_angle': 0.0,
-            'thick_by_pitch': 0.0,
-        },
-    },
-    out_constraints={
-        'stc': {
-            'p': 1.2 * std_atm.pressure,
-        },
-        'geo': {
-            'hubtipRatio': 0.3,
-            'heightRatio': 1.0,  # Assume constant channel height
-            'meridional_angle': 0.0,
-            # Irrelevant
-            'bld_thick': 1,
-            'num_blades': 1,
-            'chord_ax': 1,
-        },
+    name='fan',
+    shaft=shaft,
+    bound_cond={
+        n0.geo.MeridionalAngle: Quantity(0.0, 'deg'),
+        n0.geo.ThickByPitch: 0.0,
+        n1.stc.Pressure: 1.2 * std_atm.pressure,
+        n1.geo.HubTipRatio: 0.3,
+        n1.geo.HeightRatio: 1.0,
+        n1.geo.MeridionalAngle: Quantity(0.0, 'deg'),
     },
     extra_equations={
         ZeroDeviation(): 0,
         IsentropicLink(): (0, 1),
     },
-    constant_variables=['geo_rr_midspan'],
+    constant_variables=[n0.geo.Rmid],
 )
 
 settings = FluidSettings(
     fluid_state=abs_state,
-    update_variables=('p', 'T'),
-    update_length=2,
+    update_variables=(n0.stc.Pressure, n0.stc.Temperature),
 )
 
 ntw = ComponentNetwork(
@@ -88,12 +80,9 @@ ntw.build()
 
 rtfn = ntw.system.make_rootfinder('ipopt')
 
-x0 = ntw.system.get_guess()
+x0 = ntw.system.get_guess(fallback=0.5)
 kn = ntw.system.get_boundary_conds()
 
 solution = solve_root_problem(rtfn, x0, kn)
 
-ntw.system.write_solution_to_nodes(solution)
-
-n0 = ntw.system.nodes[0]
-n1 = ntw.system.nodes[1]
+sol_dict = ntw.system.sol_to_dict(solution)

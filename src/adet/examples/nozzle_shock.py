@@ -1,3 +1,8 @@
+"""
+Modeling of a convergent-divergent nozzle with a normal shock in
+its divergent section, swept along exit pressure
+"""
+
 from adet.fluid.ideal_eos import IdealGasState
 import logging
 
@@ -19,7 +24,7 @@ from adet.equations.fundamental import (
 from adet.equations.nondimensional import RelativeMachNumber
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink
-from adet.solution import solve_optimization_problem
+from adet.solution import solve_optimization_problem, solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 from adet.tools.plotting import setup_mpl
@@ -153,7 +158,6 @@ system.add_equalities(
 system.add_boundary_conditions(BCS)
 
 system.build()
-input('Press enter to continue...')
 
 # *** Optimizer formulation
 obj_func = 1 / system.free_args_sym[n1.oth.StreamMassFlow]
@@ -192,13 +196,12 @@ data = system.sol_to_dict(sol)
 # * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
 setup_mpl(
     {
-        'font.family': 'EB Garamond',
         'font.size': 20,
     }
 )
 SWEEP = True
 if SWEEP:
-    N_PTS = 50
+    N_PTS = 20
     massflows = []
     out_machs = []
     p_ratios = []
@@ -206,7 +209,7 @@ if SWEEP:
     mervels = []
     tanvels = []
 
-    fig_m, ax_m = plt.subplots(figsize=(8, 8))
+    fig_m, ax_m = plt.subplots(figsize=(13, 8))
     SPACE = np.linspace(P_ISE, P_SUBS, N_PTS)
 
     cmap = plt.get_cmap('plasma')
@@ -255,16 +258,17 @@ if SWEEP:
     cb.set_label(r'$p_{\mathrm{e}} / p_{t,0}$')
 
     fig_m.show()
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 10), sharex=True)
 
-    ax1.plot(SPACE, massflows, linewidth=2, color='#8800bb')
-    ax1.grid(alpha=0.4)
-    ax1.set_ylabel(r'$\dot{m} / \mathrm{[kgs^{-1}]}$')
-
-    ax2.plot(p_ratios, out_machs, linewidth=2, color='#880022')
-    ax2.grid(alpha=0.4)
-    ax2.set_xlabel(r'$p_3 / \mathrm{[Pa]}$')
-    ax2.set_ylabel(r'$M_3$')
+    # fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 10), sharex=True)
+    #
+    # ax1.plot(SPACE, massflows, linewidth=2, color='#8800bb')
+    # ax1.grid(alpha=0.4)
+    # ax1.set_ylabel(r'$\dot{m} / \mathrm{[kgs^{-1}]}$')
+    #
+    # ax2.plot(p_ratios, out_machs, linewidth=2, color='#880022')
+    # ax2.grid(alpha=0.4)
+    # ax2.set_xlabel(r'$p_3 / \mathrm{[Pa]}$')
+    # ax2.set_ylabel(r'$M_3$')
 
     # fig, ax = plt.subplots(figsize=(8, 3))
     # ax.set_xlim(0.0, np.max(mervels))

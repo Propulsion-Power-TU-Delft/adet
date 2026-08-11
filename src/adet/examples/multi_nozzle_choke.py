@@ -1,9 +1,14 @@
-from typing import Literal
+"""
+Choking prediction by massflow maximisation of multiple impulse rotors.
+This is modeled manually using the system API.
+The example is reproducing the choking prediction from doi.org/10.1115/1.4037097
+"""
+
 import logging
+from typing import Literal
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.colors import Normalize
 from pint import Quantity
 
 from adet.assemblers import CasadiSystem
@@ -16,8 +21,8 @@ from adet.equations.fundamental import (
     TotalStaticMatching,
 )
 from adet.equations.nondimensional import RelativeMachNumber
-from adet.fluid.settings import FluidSettings
 from adet.fluid.ideal_eos import IdealGasState
+from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink
 from adet.solution import solve_optimization_problem
 from adet.tools.coolprop_utils import DebugAbstractState
@@ -211,7 +216,7 @@ system.add_equalities(
 system.add_boundary_conditions(BCS)
 
 system.build()
-input('Press enter to continue...')
+input('[Expected 1 DoF] Press enter to continue...')
 
 # *** Optimizer formulation
 obj_func = 1 / system.free_args_sym[nodes[1].oth.StreamMassFlow]
@@ -246,7 +251,6 @@ pressure_ratio = data[nodes[last_node_idx].stc.Pressure] / data[n0.tot.Pressure]
 # * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
 setup_mpl(
     {
-        'font.family': 'EB Garamond',
         'font.size': 20,
     }
 )
@@ -314,7 +318,7 @@ if SWEEP_STAGES:
                     BCS_sweep[node.geo.EffArea] = effective_area
 
             system_sweep.fluid_settings = FluidSettings(
-                fluid_model,
+                abs_state,
                 (n0.stc.Pressure.Glob, n0.stc.Temperature.Glob),
             )
 

@@ -1,3 +1,8 @@
+"""
+Turbomachinery course 2026 resit exercise.
+Free vortex design given the midspan deflection.
+"""
+
 # === IMPORTS
 import logging
 
@@ -137,7 +142,6 @@ ntw = ComponentNetwork(
 )
 
 ntw.build()
-input('Continue?')
 
 # *** Solution
 x0 = ntw.system.get_guess(fallback=0.8)
@@ -172,7 +176,7 @@ data = ntw.system.sol_to_dict(sol)
 #  #  #  #  #  #  #  Plots and prints #  #  #  #  #  #  #
 print(f'Effective HTR {data[n1.geo.RDistr][0] / data[n1.geo.RDistr][-1]}')
 
-setup_mpl({'font.family': 'EB Garamond', 'font.size': 20})
+setup_mpl({'font.size': 20})
 
 fig, axs = plt.subplots(1, 3, figsize=(16, 8))
 fig.tight_layout()

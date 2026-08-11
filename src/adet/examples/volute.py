@@ -1,3 +1,8 @@
+"""
+Volute design methods for a supersonic ORC (ORCHID) turbine.
+Area distribution is assumed linear
+"""
+
 import logging
 
 import matplotlib.pyplot as plt
@@ -27,9 +32,13 @@ logger = logging.getLogger(__name__)
 setup_logger(logger)
 
 # Commons
-n0 = NodeVariables(0)
-n1 = NodeVariables(1)
+n0 = NodeVariables(0)  # Volute inlet
+n1 = NodeVariables(1)  # Volute outlet (stator inlet)
+
+# Volute inlet cross-section radius
 R_volute = VarSpec('r_vol', 'm', node=0, bounds=(0.0, 100.0), guess=1.0)
+
+# Whitfield volute loss coefficients
 F1CoeffLoss = VarSpec('f1_coeff', 'dimensionless', node=1, guess=0.8)
 F2CoeffLoss = VarSpec('f2_coeff', 'dimensionless', node=1, guess=0.8)
 

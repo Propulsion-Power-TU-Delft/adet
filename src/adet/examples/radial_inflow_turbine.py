@@ -1,10 +1,21 @@
+"""
+Supersonic ORC Radial Inflow turbine (ORCHID, TU Delft) design
+
+State:
+------
+- Stator basic setup is working
+- Most losses are missing
+- Missing stator-rotor row gap
+- Volute not integrated
+"""
+
 import logging
 
 import matplotlib.pyplot as plt
 from pint import Quantity
 
 from adet.assemblers import CasadiSystem
-from adet.components.blade_row import BladeRow, Interspace, ShockMixer
+from adet.components.blade_row import BladeRow, Interspace
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
@@ -159,8 +170,7 @@ kn = ntw.system.get_boundary_conds()
 bnd = ntw.system.get_bounds(
     {
         # WARN: Force the supersonic solution w/ bounds
-        # n1.kin.Mach: (1.1, 4.0),
-        # n1.oth.ShockDeflection: (0.1, 1.5),
+        n1.kin.Mach: (1.01, 4.0),
         # NOTE: Thermo bounding stabilizes a lot
         n0.stc.Temperature.Glob: (300, 580),
         n0.stc.Pressure.Glob: (1e3, 1e9),
@@ -171,11 +181,9 @@ sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=False)
 
 # Kinsol pass
 rtfn = ntw.system.make_rootfinder('kinsol')
-sol = solve_root_problem(rtfn, sol, kn)
+sol = solve_root_problem(rtfn, sol, kn, bnd)
 
-# Merge boundary conditions and solution
 sol_data = ntw.system.sol_to_dict(sol)
-# pprint.pprint(sol_data)
 
 if PLOTS:
     # Plotting

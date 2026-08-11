@@ -1,4 +1,11 @@
+"""
+Single flow station free vortex distribution.
+Direct manipulation of the system's API.
+This shows how to fully define a spanwise annular problem.
+"""
+
 import logging
+
 
 import matplotlib.pyplot as plt
 from pint import Quantity
@@ -10,6 +17,7 @@ from adet.equations.fundamental import (
     MassAreaRelation,
     TotalStaticMatching,
     ZeroBlockage,
+    TotalMassFlow,
 )
 from adet.equations.geometrical import (
     AnnulusAreas,
@@ -27,7 +35,7 @@ logger = logging.getLogger(__name__)
 setup_logger(logger)
 n0 = NodeVariables(0)
 
-system = CasadiSystem(num_span=3)
+system = CasadiSystem(num_span=11)
 
 EQS = {
     # *** Node 0
@@ -39,6 +47,7 @@ EQS = {
     MassAreaRelation(): 0,
     AnnulusAreas(): 0,
     ZeroBlockage(): 0,
+    TotalMassFlow(): 0,
 }
 
 BCS = {
@@ -46,7 +55,8 @@ BCS = {
     n0.tot.Temperature: 500,
     # Kine
     n0.kin.Omega: 500,
-    n0.kin.V_mer: 30,
+    # n0.kin.V_mer: 30,
+    n0.oth.TotMassFlow: 10,
     n0.kin.Beta_mid: Quantity(0, 'deg'),
     # Geometry
     n0.geo.Rmid: 0.1,
@@ -59,7 +69,7 @@ system.fluid_settings = FluidSettings(
     fluid_state=idl_state,
     update_variables=(n0.stc.Pressure.Glob, n0.stc.Temperature.Glob),
 )
-system.add_spanwise_constants(n0.oth.StreamMassFlow)
+system.add_spanwise_constants(n0.geo.HDistr)
 
 
 [system.add_equation(eq, pos) for eq, pos in EQS.items()]

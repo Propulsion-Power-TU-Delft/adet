@@ -18,9 +18,9 @@ n1 = NodeVariables(1)
 thrm = ThermoVariables()
 
 
-# TODO: This can be generalized instead of using the
-# ideal gas expressions with gamma(pv)
 class CaseyRushInletFunc(EquationBase):
+    # TODO: This can be generalized instead of using the
+    # ideal gas expressions with gamma(pv)
     def residual(
         self,
         m_tip0: n0.kin.RelMach_tip.Hint,

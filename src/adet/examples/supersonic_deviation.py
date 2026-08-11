@@ -1,3 +1,8 @@
+"""
+Work in progress example of an equation-oriented formulation of
+subsonic to supersonic treatment of deviation downstream of an axial blade row
+"""
+
 # === IMPORTS
 import logging
 from copy import deepcopy
@@ -153,7 +158,7 @@ if MODE == 'root':
     ntw.system.add_boundary_conditions({n3.stc.Pressure: 8e5})
 
 ntw.build()
-input('Continue?')
+# input('Continue?')
 
 # *** Solution
 x0 = ntw.system.get_guess(fallback=0.8)
@@ -200,7 +205,7 @@ elif MODE == 'root':
 data = ntw.system.sol_to_dict(sol)
 
 
-setup_mpl({'font.family': 'EB Garamond', 'font.size': 20})
+setup_mpl({'font.size': 20})
 SWEEP = False
 if SWEEP:
     N_PTS = 60

@@ -1,5 +1,6 @@
 """
 Compare experimental speedline data with computed results from nasa_hecc.py
+This is just a plotting script for the design map in the paper. To be deleted
 """
 
 from adet.tools.plotting import setup_mpl

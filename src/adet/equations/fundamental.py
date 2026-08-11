@@ -247,12 +247,12 @@ class FreeVortexDistribution(EquationBase):
             raise RuntimeError(f'{self} is undefined for single span')
 
         rVt_mid = rr0[midspan] * vt0[midspan]
-        Vm_mid = Vm0[midspan]
+        vm_mid = Vm0[midspan]
 
         r1 = rr0[:midspan] * vt0[:midspan] - rVt_mid
         r2 = rr0[midspan + 1 :] * vt0[midspan + 1 :] - rVt_mid
-        r3 = Vm0[:midspan] - Vm_mid
-        r4 = Vm0[midspan + 1 :] - Vm_mid
+        r3 = Vm0[:midspan] - vm_mid
+        r4 = Vm0[midspan + 1 :] - vm_mid
         return r1, r2, r3, r4
 
 

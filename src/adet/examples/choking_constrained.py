@@ -1,3 +1,14 @@
+"""
+Choking massflow prediction as a massflow maximisation problem. This
+should mirror the lagrangian example formulation.
+
+Note:
+-----
+The massflow across the non choked sections can collapse to
+either the subsonic or supersonic brach. This does not influence
+the choking massflow.
+"""
+
 import logging
 
 import matplotlib.pyplot as plt
@@ -127,7 +138,6 @@ system.add_equalities(
 system.add_boundary_conditions(BCS)
 
 system.build()
-input('Press enter to continue...')
 
 # *** Optimizer formulation
 obj_func = 1 / system.free_args_sym[n1.oth.StreamMassFlow]
@@ -189,7 +199,6 @@ if True:
 
     setup_mpl(
         {
-            'font.family': 'EB Garamond',
             'font.size': 20,
         }
     )

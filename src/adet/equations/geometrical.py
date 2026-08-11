@@ -273,7 +273,7 @@ class EndwallProperties(EquationBase):
         return r1, r2, r3, r4, r5, r6, r7, r8, r9, r10
 
 
-class LaxByOutradius(EquationBase):
+class ChordAxbyOutradius(EquationBase):
     def residual(
         self,
         rr_mid0: n0.geo.Rmid.Hint,
