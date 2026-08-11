@@ -241,19 +241,20 @@ class FreeVortexDistribution(EquationBase):
         rr0: n0.geo.RDistr.Hint,
         vt0: n0.kin.V_tan.Hint,
         Vm0: n0.kin.V_mer.Hint,
+        vm_mid: n0.kin.V_merMid.Hint,
     ):
         midspan = get_midspan_idx(rr0)
         if midspan == 0:
             raise RuntimeError(f'{self} is undefined for single span')
 
         rVt_mid = rr0[midspan] * vt0[midspan]
-        vm_mid = Vm0[midspan]
 
         r1 = rr0[:midspan] * vt0[:midspan] - rVt_mid
         r2 = rr0[midspan + 1 :] * vt0[midspan + 1 :] - rVt_mid
         r3 = Vm0[:midspan] - vm_mid
         r4 = Vm0[midspan + 1 :] - vm_mid
-        return r1, r2, r3, r4
+        r5 = vm_mid - Vm0[midspan]
+        return r1, r2, r3, r4, r5
 
 
 class ForcedVortexDistribution(EquationBase):

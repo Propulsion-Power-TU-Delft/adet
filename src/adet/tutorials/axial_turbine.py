@@ -128,7 +128,7 @@ kn = ntw.system.get_boundary_conds()
 bnd = ntw.system.get_bounds(
     {
         n0.geo.Chord.Glob: (0.0, 1e5),
-        n0.kin.V_mag.Glob: (0.0, 400.0),
+        n0.kin.V_mag.Glob: (0.0, 500.0),
         n0.stc.Pressure.Glob: (10.0, 13e5),
         n0.stc.Temperature.Glob: (60.0, 500),
     },
@@ -141,16 +141,16 @@ try:
     rtfn = ntw.system.make_rootfinder(
         'ipopt', {'error_on_fail': True, 'ipopt.max_wall_time': 5}
     )
-    sol = solve_root_problem(rtfn, x0, kn, suppress_output=False)
+    sol = solve_root_problem(rtfn, x0, kn, suppress_output=True)
 except RuntimeError:
     # Bounded
-    rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': True})
+    rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': False})
     sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=False)
 
 
 # Kinsol
-# rtfn = ntw.system.make_rootfinder('kinsol')
-# sol = solve_root_problem(rtfn, sol, kn)
+rtfn = ntw.system.make_rootfinder('kinsol')
+sol = solve_root_problem(rtfn, sol, kn)
 
 sol_dict = ntw.system.sol_to_dict(sol)
 

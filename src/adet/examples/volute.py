@@ -136,7 +136,7 @@ def plot_volute(designs_dict, num_points=1000):
         designs_dict: Dictionary with design names as keys and (sol_dict, rr1) tuples
         num_points: Number of points for radius distribution
     """
-    fig = plt.figure(figsize=(13, 13), dpi=150)
+    fig = plt.figure(figsize=(10, 10))
     ax = fig.add_subplot(111, projection='polar')
 
     stator_radius = None
@@ -250,7 +250,7 @@ def plot_volute_area_trend(designs_dict, num_points=1000):
     # )
     plt.tight_layout()
 
-    # fig.show()
+    plt.show()
 
 
 # Basic equations

@@ -53,6 +53,7 @@ class KinematicVariables(VariableEnum):
     Omega = VarSpec('omega', 'rad / s', 0.5, scalar=True)
     V_mag = VarSpec('V', 'm / s', 0.5, (0.0, 2e3))
     V_mer = VarSpec('Vm', 'm / s', 0.5, (0.0, 2e3))
+    V_merMid = VarSpec('Vm_mid', 'm / s', 0.5, scalar=True)
     V_tan = VarSpec('Vt', 'm / s', 0.5)
     W_hub = VarSpec('W_hub', 'm / s', scalar=True)
     W_mag = VarSpec('W', 'm / s', 0.5, (0.0, 2e3))

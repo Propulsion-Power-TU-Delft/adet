@@ -89,14 +89,13 @@ rotor = BladeRow(
         n1.geo.ChordAx: 0.05,
         DeflectionMidspan: Quantity(60, 'deg'),
         n1.kin.Beta_mid: Quantity(0, 'deg'),
-        n1.kin.V_mer: MERIDIONAL_VEL,
+        n1.kin.V_merMid: MERIDIONAL_VEL,
     },
     extra_equations={
         ZeroDeviation(): 0,  # No incidence (design)
         ZeroDeviation(): 1,  # Flow angle = Metal angle
         IsentropicLink(): (0, 1),
         MidspanDeflection(): (0, 1),
-        # ForcedVortexDistribution(): 1,
         FreeVortexDistribution(): 1,
     },
     constant_variables=[n0.geo.Rmid],  # Constant mean radius

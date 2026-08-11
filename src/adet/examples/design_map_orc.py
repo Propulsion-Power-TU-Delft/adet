@@ -1,3 +1,8 @@
+"""
+Compute the design map of a repeated stage axial turbine for ORC
+applications. Uses physics-based loss modeling.
+"""
+
 # === IMPORTS
 import logging
 import pathlib
@@ -25,6 +30,7 @@ from adet.equations.geometrical import (
     MeridionalRatios,
     ModifiedZweifel,
     ParabolicCamberline,
+    OptNumBlades,
 )
 from adet.equations.nondimensional import (
     FlowCoefficient,
@@ -35,7 +41,7 @@ from adet.equations.nondimensional import (
     WorkCoefficient,
 )
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import PercentageEntropyLoss, ZeroDeviation, IsentropicLink
+from adet.losses.basic import ZeroDeviation, IsentropicLink  # noqa: F401
 from adet.losses.leakage import DentonTrapLeakage
 from adet.losses.mixing import DentonMixingLoss, SieverdingBasePressure
 from adet.losses.profile import DentonTrapProfile
@@ -102,7 +108,6 @@ class AddAxialLosses(LossApplier):
         ds_main1: n1.loss.Ds_main.Hint,
     ):
         main_loss = ds_mixing1 + ds_profile1 + ds_secondary1
-
         leak_loss = ds_leakage1
 
         r1 = ds_main1 - main_loss
@@ -116,12 +121,12 @@ class AddAxialLosses(LossApplier):
 
 
 def compute_design_map(
-    ntw,
+    ntw: ComponentNetwork[CasadiSystem],
     first_sol,
     n_points,
     starter_keys=None,
     starter_solutions=None,
-    custom_bounds=None,
+    custom_bounds={},
 ):
     rtfn_kin = ntw.system.make_rootfinder('kinsol')
     rtfn_ip = ntw.system.make_rootfinder(
@@ -140,8 +145,8 @@ def compute_design_map(
     # Store solution dicts for each point
     solution_dicts = []
 
-    kn = ntw.system.get_scaled_constraints()
-    bnd = ntw.system.get_arguments_bounds(custom_bounds=custom_bounds)
+    kn = ntw.system.get_boundary_conds()
+    bnd = ntw.system.get_bounds(custom_bounds=custom_bounds)
 
     curr_index = 0
     boun_cond_keys = list(ntw.system.data.boun_cond.keys())
@@ -153,7 +158,7 @@ def compute_design_map(
             if starter_keys is not None and starter_solutions is not None:
                 distances = np.linalg.norm(curr_key - starter_keys, axis=1, ord=2)
                 idx = np.argmin(distances)
-                x0 = ntw.system.get_scaled_guess(starter_solutions[idx])
+                x0 = ntw.system.get_guess(starter_solutions[idx])
             else:
                 distances = np.linalg.norm(curr_key - keys, axis=1, ord=np.inf)
                 idx = np.argmin(distances)
@@ -190,7 +195,7 @@ def compute_design_map(
                 # solution = np.full(solution.shape, np.nan)
 
             keys[curr_index, :] = curr_key
-            solutions[curr_index, :] = solution.flatten()
+            solutions[curr_index, :] = np.array(solution).flatten()
 
             # Store the full solution dict
             if not np.isnan(solution).any():
@@ -310,6 +315,7 @@ LOSS_MODELS: dict[
     BoundaryLayerRatios: 1,
     SieverdingBasePressure: (0, 1),
     ModifiedZweifel: (0, 1),
+    OptNumBlades: 1,
 }
 
 # ================================================

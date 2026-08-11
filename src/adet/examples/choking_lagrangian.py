@@ -162,7 +162,7 @@ bnd = system.get_bounds(
         # Throat limiters
         n0.oth.ThrPressure.Glob: (1, 1e7),
         n0.oth.ThrTemperature.Glob: (150, 1e4),
-        # Inlet Mach limit
+        # Mach limit
         n0.kin.MachThroat.Glob: (0.0, 1.01),
         n0.kin.RelMach.Glob: (0.0, 0.9),
     },

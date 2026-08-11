@@ -322,6 +322,11 @@ class ModifiedZweifel(EquationBase):
         return n_bl_opt - num_blades_opt
 
 
+class OptNumBlades(EquationBase):
+    def residual(self, n_bl_opt: n0.geo.NumBladesOpt.Hint, n_bl: n0.geo.NumBlades.Hint):
+        return n_bl - n_bl_opt
+
+
 class MinimalCamberLine(CamberLineGeom):
     """
     Minimal camberline. Consider stagger as average
