@@ -3,26 +3,34 @@ Fluid Models
 
 Thermodynamic models and equation of state.
 
-Fluid Settings and Models
---------------------------
+Fluid Settings
+--------------
 
 .. automodule:: adet.fluid.settings
    :members:
    :undoc-members:
    :show-inheritance:
 
-Equation of State
------------------
+EOS Factory
+-----------
 
-.. automodule:: adet.fluid.eos
+.. automodule:: adet.fluid.eos_factory
    :members:
    :undoc-members:
    :show-inheritance:
 
-Gas Properties
---------------
+CasADi EOS
+----------
 
-.. automodule:: adet.fluid.properties
+.. automodule:: adet.fluid.casadi_eos
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Ideal Gas EOS
+-------------
+
+.. automodule:: adet.fluid.ideal_eos
    :members:
    :undoc-members:
    :show-inheritance:

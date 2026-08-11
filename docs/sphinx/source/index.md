@@ -4,17 +4,13 @@
 
 ## Getting Started
 
-If you're new to ADeT, start here.
-
-- Define and solve systems of equations
-- Work with variables and fluid models
-- Implement custom physics
+If you're new to ADeT, start here. 
+Some beginner-friendly tutorials take you through the basics of ADeT
 
 ```{toctree}
 :maxdepth: 2
 
 tutorials/index
-concepts/index
 ```
 
 ## API Reference

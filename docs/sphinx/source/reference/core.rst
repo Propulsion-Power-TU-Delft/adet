@@ -3,18 +3,10 @@ Core Classes
 
 Core system classes for ADeT equation-based modeling.
 
-FlowNode
---------
-
-.. automodule:: adet.node
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 System Assembly
 ---------------
 
-.. automodule:: adet.assembly
+.. automodule:: adet.assemblers
    :members:
    :undoc-members:
    :show-inheritance:
