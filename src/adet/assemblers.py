@@ -463,6 +463,10 @@ class UnitScalingManager:
         if not isinstance(residuals, (tuple, list)):
             residuals = (residuals,)
 
+        for r in residuals:
+            if r is None:
+                raise ValueError(f'No residuals return found for equation {equation}')
+
         return tuple(res.to_base_units().units.__str__() for res in residuals)
 
     def get_free_args_scaling(self):
@@ -815,7 +819,10 @@ class SystemAssembler(ABC):
                     for v0, v1 in zip(v0_values, v1_values):
                         abs_state.update(input_pair, v0, v1)
                         pty_meth = getattr(abs_state, spec.symbol)
-                        pty_arr.append(pty_meth())
+                        try:
+                            pty_arr.append(pty_meth())
+                        except Exception:  # Catch property extraction failure
+                            pty_arr.append(np.nan)
 
                     spec = spec.at_node(node)._with_state(state)
                     thrm_data[spec] = np.array(pty_arr)
@@ -1020,7 +1027,7 @@ class CasadiSystem(SystemAssembler):
         # Add inter-node eos
         for eq, eq_pos in self.data.equations.items():
             eq_conf = eq.config
-            pos_str = '-'.join(str(p) for p in eq_pos)
+            pos_str = '_'.join(str(p) for p in eq_pos)
             if eq_conf.input_pair:
                 eq.eos = self._eos_factory.make_eos(
                     eq_conf.input_pair,
