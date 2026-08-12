@@ -1,12 +1,10 @@
 """
-Choking massflow prediction as a massflow maximisation problem. This
-should mirror the lagrangian example formulation.
+Choking massflow prediction as a massflow maximisation problem.
 
 Note:
 -----
 The massflow across the non choked sections can collapse to
-either the subsonic or supersonic brach. This does not influence
-the choking massflow.
+either the subsonic or supersonic brach. This does not influence the choking massflow.
 """
 
 from adet.equations.control_volumes import SimpleThroat

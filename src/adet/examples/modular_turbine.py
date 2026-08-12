@@ -98,7 +98,7 @@ for _ in range(NUM_STAGES - 1):
 rotor.set_bc_from_dict(
     {
         n1.ndim.FlowCoeffMid: 0.4,
-        n1.ndim.DegreeOfReactionTS: 0.3,
+        n1.ndim.DegreeOfReactionTS: 0.6,
     }
 )
 
