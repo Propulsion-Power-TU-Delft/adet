@@ -1,3 +1,4 @@
+from pprint import pprint
 from adet.assemblers import CasadiSystem
 from adet.equations.base_equation import EquationBase
 from adet.solution import solve_root_problem
@@ -37,3 +38,6 @@ guess = system.get_guess()
 knowns = system.get_boundary_conds()
 solution = solve_root_problem(rootfinder, guess, knowns)
 sol_dict = system.sol_to_dict(solution)
+
+print('The solution is:\n')
+pprint(sol_dict)
