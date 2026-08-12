@@ -323,7 +323,11 @@ class ModifiedZweifel(EquationBase):
 
 
 class OptNumBlades(EquationBase):
-    def residual(self, n_bl_opt: n0.geo.NumBladesOpt.Hint, n_bl: n0.geo.NumBlades.Hint):
+    def residual(
+        self,
+        n_bl: n0.geo.NumBlades.Hint,
+        n_bl_opt: n0.geo.NumBladesOpt.Hint,
+    ):
         return n_bl - n_bl_opt
 
 

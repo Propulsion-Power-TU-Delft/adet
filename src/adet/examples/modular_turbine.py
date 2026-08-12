@@ -21,15 +21,20 @@ from adet.equations.nondimensional import (
     TotalTotalExpansionEfficiency,
     WorkCoefficientMid,
 )
+from adet.fluid.ideal_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import (
     TotalPressureLoss,
     ZeroDeviation,
 )
 from adet.solution import solve_root_problem
+from adet.tools.iter import grouper
 from adet.tools.loggers import setup_logger
 from adet.tools.plotting import plot_camberline, plot_velocity_triangles, setup_mpl
 from adet.variables import NodeVariables
+
+NUM_STAGES = 4
+NUM_SPAN = 3
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)
@@ -40,14 +45,15 @@ logger = logging.getLogger(__name__)
 setup_logger(logger)
 
 abs_state = AbstractState('HEOS', 'Air')
+idl_state = IdealGasState(1.4, 287, 2e-5)
 
 # *** Inlet conditions
 inlet = Inlet(
     boundary_conditions={
         # *** Inlet geometry
-        n0.oth.TotMassFlow: 10.0,
+        n0.kin.V_mer: 50.0,  # Inlet meridional velocity
         n0.geo.Rmid: 0.1,
-        n0.geo.HubTipRatio: 0.65,
+        n0.geo.HubTipRatio: 0.7,
         n0.geo.MeridionalAngle: Quantity(0, 'deg'),
         # *** Inlet total conditions
         n0.tot.Pressure: 10e5,
@@ -83,43 +89,60 @@ rotor = deepcopy(stator)  # Reuse the stator as template
 rotor.shaft = shaft  # Assign the rotating shaft
 rotor.name = 'rotor'
 
+component_stack = [stator, rotor]
+for _ in range(NUM_STAGES - 1):
+    component_stack.append(deepcopy(stator))
+    component_stack.append(deepcopy(rotor))
+
+
+rotor.set_bc_from_dict(
+    {
+        n1.ndim.FlowCoeffMid: 0.4,
+        n1.ndim.DegreeOfReactionTS: 0.3,
+    }
+)
+
 stator.set_spanwise_constant(
-    # Uniform inlet meridional velocity and streamtubes heights
-    n0.kin.V_mer,
+    # Uniform inlet streamtubes heights
     n0.geo.HDistr,
 )
 
+
 fluid_settings = FluidSettings(
-    fluid_state=abs_state,
+    fluid_state=idl_state,
     update_variables=(n0.stc.Pressure, n0.stc.Temperature),
 )
 
 ntw = ComponentNetwork(
     fluid_settings=fluid_settings,
     inlet=inlet,
-    backend=CasadiSystem(num_span=1),
-    components=[stator, rotor],
+    backend=CasadiSystem(NUM_SPAN),
+    components=component_stack,
 )
 
-ntw.system.add_equation(FlowCoefficientMid(), (0, 3))
-ntw.system.add_equation(WorkCoefficientMid(), (0, 3))
-ntw.system.add_equation(RepeatedStage(), (0, 1, 2, 3))
-ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, 2, 3))
-ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))  # eta_tt
+# Modular network assembly
+for nodes in grouper(range(2 * ntw.num_components), 4, incomplete='ignore'):
+    node_couple = (nodes[0], nodes[-1])
+    ntw.system.add_equation(FlowCoefficientMid(), node_couple)
+    ntw.system.add_equation(WorkCoefficientMid(), node_couple)
+    ntw.system.add_equation(TotalTotalExpansionEfficiency(), node_couple)  # eta_tt
+    ntw.system.add_equation(RepeatedStage(), nodes)
+    ntw.system.add_equation(StaticTotalDegreeOfReaction(), nodes)
 
-
-rotor.set_bc_from_dict(
-    {
-        n1.ndim.FlowCoeffMid: 0.4,
-        n1.ndim.WorkCoeffMid: -1.1,
-        n1.ndim.DegreeOfReactionTS: 0.6,
-    }
-)
+for comp_idx, comp in enumerate(ntw.components):
+    if comp_idx % 2 != 0:
+        comp.set_bc_from_dict({n1.ndim.WorkCoeffMid: -1.1})
 
 # Free vortex radial equilibrium
 if ntw.system.num_span > 1:
-    stator.add_equation(FreeVortexDistribution(), 1)
     rotor.add_equation(FreeVortexDistribution(), 1)
+    for comp_idx, comp in enumerate(ntw.components):
+        if comp_idx % 2 == 0:
+            # Stators
+            comp.add_equation(FreeVortexDistribution(), 1)
+        elif comp_idx > 1:
+            # Rotors (after the first)
+            comp.set_spanwise_constant(n1.kin.V_mer)
 
 ntw.build()
 
@@ -131,19 +154,20 @@ bnd = ntw.system.get_bounds(
         n0.kin.V_mag.Glob: (0.0, 500.0),
         n0.stc.Pressure.Glob: (10.0, 13e5),
         n0.stc.Temperature.Glob: (60.0, 500),
+        # n1.geo.NumBladesOpt.Glob: (2.0, 1e5),
     },
     ignore_defaults=False,
 )
 
 # Ipopt
 try:
-    # Unbounded
     rtfn = ntw.system.make_rootfinder(
         'ipopt', {'error_on_fail': True, 'ipopt.max_wall_time': 5}
     )
     sol = solve_root_problem(rtfn, x0, kn, suppress_output=True)
 except RuntimeError:
     # Bounded
+    logger.warning('Failed unbounded IPOPT solution, trying bounded')
     rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': False})
     sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=False)
 
@@ -151,8 +175,10 @@ except RuntimeError:
 # Kinsol
 rtfn = ntw.system.make_rootfinder('kinsol')
 sol = solve_root_problem(rtfn, sol, kn)
+logger.info('Solution converged')
 
 sol_dict = ntw.system.sol_to_dict(sol)
+ntw.print_structure()
 
 PLOTS = True
 if PLOTS:
@@ -174,14 +200,15 @@ if PLOTS:
     fig_cbl, ax_cbl = plt.subplots()
 
     # Setup axes
-    ax_mer.set_ylim(0.0, 1.01 * sol_dict[n3.geo.Rtip])
+    ax_mer.set_ylim(0.0, 1.05 * sol_dict[n3.geo.Rtip])
     ax_mer.set_aspect('equal')
     ax_cbl.set_aspect('equal')
     ax_mer.grid(alpha=0.4)
     ax_cbl.grid(alpha=0.4)
 
     offset = 0
-    for nodes in [(n0, n1), (n2, n3)]:
+    for node_indices in grouper(range(2 * ntw.num_components), 2, incomplete='strict'):
+        nodes = tuple(NodeVariables(i) for i in node_indices)
         geom = RowGeometry(
             sol_dict[nodes[0].geo.Rmid][0],
             sol_dict[nodes[0].geo.Rmid][0],
@@ -217,8 +244,8 @@ if PLOTS:
             tangential_offset=opt_pitch,
         )
         geom.plot_meridional_profile(ax=ax_mer, color='k')
-        # Add offset
-        offset += sol_dict[nodes[1].geo.ChordAx][0]
+        # Add 10% offset for plotting
+        offset += 1.1 * sol_dict[nodes[1].geo.ChordAx][0]
 
     # *** Camber lines
 

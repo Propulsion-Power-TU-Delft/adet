@@ -2,6 +2,7 @@ from collections import defaultdict
 from typing import Any, Generic, Literal, Sequence, TypeVar
 
 from numpy.typing import NDArray
+from tabulate import tabulate
 
 from adet.assemblers import SystemAssembler, SystemSharedData
 from adet.components import BaseComponent
@@ -228,11 +229,10 @@ class ComponentNetwork(Generic[T]):
         return self.system.get_bounds(custom_bounds or {})
 
     def print_structure(self):
-        component_repr = '@ = node\n\nInlet == @0'
-
+        rows = [['Inlet', '0']]
         for comp in self.components:
             inl_idx, out_idx = self._get_abs_indices(comp)
-            comp_name = comp.name
-            component_repr += f'\n== @{inl_idx}--|[ {comp_name} ]|--@{out_idx} =='
-
-        print(component_repr)
+            rows.append([comp.name, f'{inl_idx} → {out_idx}'])
+        print(
+            tabulate(rows, headers=['Component', 'Nodes'], tablefmt='grid'),
+        )

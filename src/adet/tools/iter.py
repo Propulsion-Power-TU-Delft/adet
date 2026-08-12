@@ -20,7 +20,7 @@ def chain_mixed(*args: T | Iterable[T]) -> Iterable[T]:
             yield item
 
 
-# fill mode — fillvalue is required
+# fill mode with dynamic n — fillvalue is required
 @overload
 def grouper(
     iterable: Iterable[T],
@@ -31,38 +31,46 @@ def grouper(
 ) -> Iterator[tuple[T | F, ...]]: ...
 
 
-# strict or ignore modes — no fillvalue semantics
+# strict/ignore modes with fixed n — returns exact tuple lengths
 @overload
-# Length 2 case
 def grouper(
     iterable: Iterable[T],
     n: Literal[2],
     *,
     incomplete: Literal['strict', 'ignore'],
-    fillvalue: Any = ...,
+    fillvalue: Any = None,
 ) -> Iterator[tuple[T, T]]: ...
 
 
-# Length 3 case
 @overload
 def grouper(
     iterable: Iterable[T],
     n: Literal[3],
     *,
     incomplete: Literal['strict', 'ignore'],
-    fillvalue: Any = ...,
+    fillvalue: Any = None,
 ) -> Iterator[tuple[T, T, T]]: ...
 
 
-# Length 3 case
 @overload
 def grouper(
     iterable: Iterable[T],
     n: Literal[4],
     *,
     incomplete: Literal['strict', 'ignore'],
-    fillvalue: Any = ...,
+    fillvalue: Any = None,
 ) -> Iterator[tuple[T, T, T, T]]: ...
+
+
+# strict/ignore modes with dynamic n — tuple length not precise
+@overload
+def grouper(
+    iterable: Iterable[T],
+    n: int,
+    *,
+    incomplete: Literal['strict', 'ignore'],
+    fillvalue: Any = None,
+) -> Iterator[tuple[T, ...]]: ...
 
 
 def grouper(
@@ -94,8 +102,8 @@ def grouper(
 
 
 def ensure_tuple(x: int | Iterable[int]) -> tuple[int, ...]:
-    if isinstance(x, Iterable):
-        return tuple(x)  # ty:ignore
+    if isinstance(x, Iterable) and not isinstance(x, (str, bytes)):
+        return tuple(x)
     else:
         return (x,)
 
