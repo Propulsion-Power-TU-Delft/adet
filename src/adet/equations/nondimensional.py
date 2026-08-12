@@ -35,8 +35,10 @@ class TotalTotalPressureRatio(EquationBase):
 
 class StaticTotalPressRatio(EquationBase):
     """
+    Static-to-total pressure ratio (stagnation pressure to static pressure)
+
     .. math::
-        \\beta_{tt} = \\frac{p_{t1}}{p_{t,0}}
+        \\frac{p_1}{p_{t0}} = \\text{PRatioTS}
     """
 
     def residual(
@@ -50,8 +52,10 @@ class StaticTotalPressRatio(EquationBase):
 
 class VolumetricFlowRatio(EquationBase):
     """
+    Volumetric flow ratio at midspan (density ratio)
+
     .. math::
-        \\beta_{tt} = \\frac{p_{t1}}{p_{t,0}}
+        \\text{VolflowRatio} = \\frac{\\rho_{t0}}{\\rho_1} \\bigg|_{\\text{mid}}
     """
 
     def residual(

@@ -8,7 +8,6 @@ from matplotlib.lines import Line2D
 from adet.components import BaseComponent, Shaft
 from adet.equations import EquationBase
 from adet.equations.fundamental import (
-    BladeBlockage,
     ConstantAngMomentum,
     ConstRelEnthalpy,
     EulerEquation,

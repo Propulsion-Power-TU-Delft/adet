@@ -506,4 +506,4 @@ if ntw.system.num_span > 1:
 
 The `FreeVortexDistribution` equation enforces $rV_{\theta}(r)= \mathrm{const}$ across the span. By respecting radiual equilibrium this also results in constant spanwise meridional velocity $V_m(r)$.
 
-## What's Next?
+This example is also extended into a modular repeated-stage setup in `src/adet/examples/modular_turbine.py`

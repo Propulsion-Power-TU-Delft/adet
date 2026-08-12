@@ -267,14 +267,6 @@ class ForcedVortexDistribution(EquationBase):
         return r1, r2
 
 
-class GeneralWhirl(EquationBase):
-    # TODO : Implement/translate this
-    def residual(self, geo_rr0, kin_Vt0, gen_whirl_a, gen_whirl_b, gen_whirl_n):
-        free_vortex_term = kin_Vt0 * geo_rr0
-        frcd_vortex_term = kin_Vt0 / geo_rr0
-        return kin_Vt0 - gen_whirl_a * geo_rr0**gen_whirl_n + gen_whirl_b / geo_rr0
-
-
 class AxialMomentumBalance(EquationBase):
     def residual(
         self,

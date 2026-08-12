@@ -10,13 +10,15 @@ class PercTotalPressureLoss(LossApplier):
     """
     .. math::
 
-        \\mathrm{Y} = \\frac{p_{t1}^{r}- p_{t0}^{r}}{p_{t0}^{r} - p_0}
+        p_{t1,r} = p_{t0,r} (1 - \\mathrm{C})
+
+    Parameters
+    ----------
+    loss_coefficient: float
+        Loss coefficient as defined above
     """
 
-    def __init__(
-        self, loss_coefficient: float = 0.0, scaling_factor: list[float] | None = None
-    ):
-        super().__init__(scaling_factor)
+    def __init__(self, loss_coefficient: float = 0.0):
         self.loss_coeff = loss_coefficient
 
     def residual(
@@ -47,17 +49,6 @@ class TotalPressureLoss(LossApplier):
         return (rlt_p0 - rlt_p1) - (rlt_p0 - stc_p0) * self.loss_coeff
 
 
-class PlaceHolderLoss(LossApplier):
-    """
-    Use when defining efficiency through eta_tt for example instead of direct
-    row-based loss coefficients. This is because I made components raise
-    errors when they are missing loss models, since I always forget them
-    """
-
-    def residual(self, stc_smass0, stc_smass1):
-        return ()
-
-
 class IsentropicLink(LossApplier):
     def residual(
         self,
@@ -71,13 +62,14 @@ class PercentageEntropyLoss(LossApplier):
     """
     Percentage increase of entropy w.r.t. the inlet conditions
 
+    .. math::
+        s_{1} = s_{0} \\cdot (1 + \\mathrm{C})
+
     Parameters
     ----------
     entropy_generation: float = 0.05
         Relative increase of entropy (e.g. 0.05 -> 5% entropy increase)
 
-    .. math::
-        s_{1} = s_{0} \\cdot (1 + \\mathrm{C})
     """
 
     def __init__(self, entropy_generation: float = 0.0, scaling_factor=None):

@@ -98,22 +98,18 @@ class MeridionalVelocityRatio(EquationBase):
 class MidspanVelocities(EquationBase):
     def residual(
         self,
-        kin_V0,
-        kin_Vm0,
-        kin_Vt0,
-        kin_V_midspan0,
-        kin_Vm_midspan0,
-        kin_Vt_midspan0,
+        v0: n0.kin.V_mag.Hint,
+        vm0: n0.kin.V_mer.Hint,
+        vt0: n0.kin.V_tan.Hint,
+        v_mid0: n0.kin.V_mid.Hint,
+        vm_mid0: n0.kin.V_merMid.Hint,
+        vt_mid0: n0.kin.V_tanMid.Hint,
     ):
-        num_span = max(kin_V0.shape)
-        if num_span == 1:
-            midspan = 0
-        else:
-            midspan = num_span // 2
+        midspan = get_midspan_idx(v0)
 
-        r1 = kin_V_midspan0 - kin_V0[midspan]
-        r2 = kin_Vm_midspan0 - kin_Vm0[midspan]
-        r3 = kin_Vt_midspan0 - kin_Vt0[midspan]
+        r1 = v_mid0 - v0[midspan]
+        r2 = vm_mid0 - vm0[midspan]
+        r3 = vt_mid0 - vt0[midspan]
 
         return r1, r2, r3
 

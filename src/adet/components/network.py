@@ -36,7 +36,7 @@ _SINGLE_NODE_EQUATIONS = [
     TotalStaticMatching,
     # *** Courtesy definitions
     # -> the system is well posed w/o them
-    # if they are not mentioned in other equations
+    # if they are not mentioned in other equations/bound conds
     TotalArea,
     TotalMassFlow,
     AbsoluteMachNumber,
