@@ -37,10 +37,10 @@ autodoc_default_options = {
 # -- HTML output
 html_theme = 'pydata_sphinx_theme'
 html_static_path = ['_static']
-html_logo = '../images/adet_logo.svg'
+html_logo = '../images/adet_logo.png'
 html_theme_options = {
     'logo': {
-        'image_light': '../images/adet_logo.svg',
-        'image_dark': '../images/adet_logo.svg',
+        'image_light': '../images/adet_logo_light.png',
+        'image_dark': '../images/adet_logo.png',
     }
 }

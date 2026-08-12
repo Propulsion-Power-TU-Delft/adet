@@ -6,10 +6,12 @@ Backend for automatic differentiation provided by CasaDi and real gas thermodyna
 
 ## Features
 
-- **Equation-oriented modeling**: Define physics symbolically as residual equations
-- **Real gas thermodynamics**: CoolProp integration with REFPROP support
-- **Automatic differentiation**: Jacobians computed automatically
+- **Flexible**: Model turbines and compressors of axial, mixed-flow or radial type 
+- **Equation-oriented**: Define physics symbolically as residual equations
+- **CoolProp**: Integration of real gas properties
+- **Automatic differentiation**: Fully differentiable formulation, through CasaDi
 - **Unit-aware**: Pint integration for automatic unit checking and conversion
+- **Modular**: Define your own components and assemble them at will
 
 ## Getting Started
 
@@ -31,7 +33,7 @@ This project uses [uv](https://docs.astral.sh/uv) for packaging and dependency m
 
 ## Development
 
-### Code Quality Tools
+We use the following development tools:
 
 - **[Ruff](https://docs.astral.sh/ruff)**: Linting and formatting
 - **[ty](https://github.com/bnemetis/ty)**: Static type checking

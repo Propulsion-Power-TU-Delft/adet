@@ -19,10 +19,12 @@ We'll solve a nondimensional design problem by specifying the flow coefficient, 
 Start by importing the necessary components and utilities:
 
 ```python
+import logging
 from copy import deepcopy
 
 import matplotlib.pyplot as plt
 import numpy as np
+from CoolProp import AbstractState
 from pint import Quantity
 
 from adet.assemblers import CasadiSystem
@@ -31,19 +33,22 @@ from adet.components.blade_row import RowGeometry
 from adet.components.connections import Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.definitions import RepeatedStage
-from adet.equations.geometrical import ModifiedZweifel
 from adet.equations.fundamental import FreeVortexDistribution
+from adet.equations.geometrical import ModifiedZweifel
 from adet.equations.nondimensional import (
     FlowCoefficientMid,
     StaticTotalDegreeOfReaction,
-    WorkCoefficientMid,
     TotalTotalExpansionEfficiency,
+    WorkCoefficientMid,
 )
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import TotalPressureLoss, ZeroDeviation
+from adet.losses.basic import (
+    TotalPressureLoss,
+    ZeroDeviation,
+)
 from adet.solution import solve_root_problem
-from adet.tools.coolprop_utils import DebugAbstractState
-from adet.tools.plotting import plot_camberline, plot_velocity_triangles
+from adet.tools.loggers import setup_logger
+from adet.tools.plotting import plot_camberline, plot_velocity_triangles, setup_mpl
 from adet.variables import NodeVariables
 ```
 
@@ -88,7 +93,7 @@ Define boundary conditions at the inlet (total pressure, temperature, geometry):
 ```python
 inlet = Inlet(
     boundary_conditions={
-        n0.oth.CumMassFlow: 10.0, # Total massflow
+        n0.oth.TotMassFlow: 10.0, # Total massflow
         n0.geo.Rmid: 0.1, # Midspan radius
         n0.geo.HubTipRatio: 0.65,
         n0.geo.MeridionalAngle: Quantity(0, 'deg'),
@@ -280,7 +285,7 @@ kn = ntw.system.get_boundary_conds()
 bnd = ntw.system.get_bounds(
     {
         n0.geo.Chord.Glob: (0.0, 1e5),
-        n0.kin.V_mag.Glob: (0.0, 400.0),
+        n0.kin.V_mag.Glob: (0.0, 500.0),
         n0.stc.Pressure.Glob: (10.0, 13e5),
         n0.stc.Temperature.Glob: (60.0, 500),
     },
@@ -297,10 +302,10 @@ bnd = ntw.system.get_bounds(
 try:
     # Unbounded solve with IPOPT
     rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': True, 'ipopt.max_wall_time': 5})
-    sol = solve_root_problem(rtfn, x0, kn, suppress_output=False)
+    sol = solve_root_problem(rtfn, x0, kn, suppress_output=True)
 except RuntimeError:
     # Bounded solve if unbounded fails
-    rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': True})
+    rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': False})
     sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=False)
 
 # Refine with Kinsol
@@ -381,7 +386,7 @@ fluid_settings = FluidSettings(
 
 inlet = Inlet(
     boundary_conditions={
-        n0.oth.CumMassFlow: 10.0,
+        n0.oth.TotMassFlow: 10.0,
         n0.geo.Rmid: 0.1,
         n0.geo.HubTipRatio: 0.65,
         n0.geo.MeridionalAngle: Quantity(0, 'deg'),
@@ -450,7 +455,7 @@ kn = ntw.system.get_boundary_conds()
 bnd = ntw.system.get_bounds(
     {
         n0.geo.Chord.Glob: (0.0, 1e5),
-        n0.kin.V_mag.Glob: (0.0, 400.0),
+        n0.kin.V_mag.Glob: (0.0, 500.0),
         n0.stc.Pressure.Glob: (10.0, 13e5),
         n0.stc.Temperature.Glob: (60.0, 500),
     },
@@ -459,9 +464,9 @@ bnd = ntw.system.get_bounds(
 
 try:
     rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': True, 'ipopt.max_wall_time': 5})
-    sol = solve_root_problem(rtfn, x0, kn, suppress_output=False)
+    sol = solve_root_problem(rtfn, x0, kn, suppress_output=True)
 except RuntimeError:
-    rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': True})
+    rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': False})
     sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=False)
 
 rtfn = ntw.system.make_rootfinder('kinsol')
