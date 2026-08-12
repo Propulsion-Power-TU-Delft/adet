@@ -2,24 +2,28 @@
 **A**utodiff **De**signer for **T**urbomachinery
 
 A Python library for equation-oriented modeling, with a focus on turbomachinery problems.
-Backend for automatic differentiation provided by CasaDi and real gas thermodynamics with CoolProp.
+
+<p align="center">
+    <img src="docs/sphinx/images/repeated_meridional.svg"  style="width: 65%">
+</p>
 
 ## Features
 
 - **Flexible**: Model turbines and compressors of axial, mixed-flow or radial type 
-- **Equation-oriented**: Define physics symbolically as residual equations
+- **Equation-oriented**: Define physics symbolically with residual equations
 - **CoolProp**: Integration of real gas properties
-- **Automatic differentiation**: Fully differentiable formulation, through CasaDi
-- **Unit-aware**: Pint integration for automatic unit checking and conversion
-- **Modular**: Define your own components and assemble them at will
+- **Automatic differentiation**: Fully differentiable formulation through [CasaDi](https://web.casadi.org/)
+- **Unit-aware**: [Pint](https://github.com/hgrecco/pint) integration for automatic unit checking and conversion
+- **Modular**: Define your own components and assemble them
+
 
 ## Getting Started
 
 Check out the **[DOCUMENTATION](https://fvaccari1.bitbucket.io/index.html)**
 
-This project uses [uv](https://docs.astral.sh/uv) for packaging and dependency management.
 
 ### Installation
+This project uses [uv](https://docs.astral.sh/uv) for packaging and dependency management.
 
 1. Clone this repository
 2. [Install `uv`](https://docs.astral.sh/uv/getting-started/installation/)

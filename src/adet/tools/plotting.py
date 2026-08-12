@@ -1,5 +1,6 @@
 from adet.equations.utils import safe_min_clip
 import logging
+from pathlib import Path
 from typing import Any
 
 import matplotlib as mpl
@@ -20,14 +21,9 @@ def setup_mpl(fontdict: dict[str, Any] = {}):
     add fonts from system directories
     """
     try:
-        fm.fontManager.addfont(
-            path='C:/Users/fvaccari/AppData/Local/Microsoft/Windows/'
-            'Fonts/EBGaramond-Regular.ttf',
-        )
-        fm.fontManager.addfont(
-            path='C:/Users/fvaccari/AppData/Local/Microsoft/Windows/'
-            'Fonts/OldStandardTT-Regular.ttf',
-        )
+        repo_root = Path(__file__).parent.parent.parent.parent
+        font_path = repo_root / 'fonts' / 'EBGaramond-Regular.ttf'
+        fm.fontManager.addfont(path=str(font_path))
     except FileNotFoundError:
         pass
 

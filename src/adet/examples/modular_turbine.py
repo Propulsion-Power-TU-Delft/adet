@@ -182,7 +182,7 @@ ntw.print_structure()
 
 PLOTS = True
 if PLOTS:
-    setup_mpl({'font.size': 15})
+    setup_mpl({'font.family': 'EB Garamond', 'font.size': 30})
 
     # *** Velocity triangles
     fig, axs = plt.subplots(2, 2, figsize=(10, 10))
@@ -196,19 +196,37 @@ if PLOTS:
             ax,
         )
 
-    fig_mer, ax_mer = plt.subplots()
-    fig_cbl, ax_cbl = plt.subplots()
+    fig_mer, ax_mer = plt.subplots(figsize=(9, 8))
+    fig_cbl, ax_cbl = plt.subplots(figsize=(8, 6))
+
+    ax_cbl.set_ylabel(r'$r\theta / \mathrm{[m]}$')
+    ax_cbl.set_xlabel(r'$z / \mathrm{[m]}$')
 
     # Setup axes
-    ax_mer.set_ylim(0.0, 1.05 * sol_dict[n3.geo.Rtip])
+    ax_mer.set_ylim(-0.005, 1.1 * sol_dict[n3.geo.Rtip])
     ax_mer.set_aspect('equal')
     ax_cbl.set_aspect('equal')
+    ax_mer.set_ylabel(r'$r / \mathrm{[m]}$')
+    ax_mer.set_xlabel(r'$z / \mathrm{[m]}$')
     ax_mer.grid(alpha=0.4)
     ax_cbl.grid(alpha=0.4)
 
+    ax_mer.tick_params(labelbottom=False, labelleft=False)
+    ax_cbl.tick_params(labelbottom=False, labelleft=False)
+
     offset = 0
+    comp_idx = 0
     for node_indices in grouper(range(2 * ntw.num_components), 2, incomplete='strict'):
         nodes = tuple(NodeVariables(i) for i in node_indices)
+
+        # Determine if stator or rotor: even indices are stators, odd are rotors
+        is_rotor = comp_idx % 2 != 0
+        base_color = 'darkred' if is_rotor else 'darkblue'
+
+        # Create colormap for this component (darker to lighter across span)
+        cmap = plt.get_cmap('Reds' if is_rotor else 'Blues')
+        num_span = len(sol_dict[nodes[0].geo.MetalAngle])
+
         geom = RowGeometry(
             sol_dict[nodes[0].geo.Rmid][0],
             sol_dict[nodes[0].geo.Rmid][0],
@@ -220,34 +238,61 @@ if PLOTS:
             axial_offset=offset,
             force_straight=True,
         )
-        plot_camberline(
-            sol_dict[nodes[0].geo.MetalAngle],
-            sol_dict[nodes[1].geo.MetalAngle],
-            sol_dict[nodes[1].geo.ChordAx],
-            ax=ax_cbl,
-            color='k',
-            axial_offset=offset,
+
+        # Get constant values (spanwise constant)
+        rmid_val = sol_dict[nodes[1].geo.Rmid]
+        rmid = rmid_val[0] if hasattr(rmid_val, '__len__') else rmid_val
+
+        num_blades_val = sol_dict[nodes[1].geo.NumBladesOpt]
+        num_blades_scalar = (
+            num_blades_val[0] if hasattr(num_blades_val, '__len__') else num_blades_val
         )
-        opt_pitch = (
-            2
-            * np.pi
-            * sol_dict[nodes[1].geo.Rmid]
-            / sol_dict[nodes[1].geo.NumBladesOpt]
+
+        # Plot camberlines with colormap (hub to tip: darker to lighter)
+        for span_idx in range(num_span):
+            color_val = cmap((span_idx + 1) / num_span)
+            inlet_angle = sol_dict[nodes[0].geo.MetalAngle][span_idx]
+            outlet_angle = sol_dict[nodes[1].geo.MetalAngle][span_idx]
+            chord_ax = sol_dict[nodes[1].geo.ChordAx][span_idx]
+            plot_camberline(
+                inlet_angle,
+                outlet_angle,
+                chord_ax,
+                ax=ax_cbl,
+                color=color_val,
+                axial_offset=offset,
+            )
+            opt_pitch = 2 * np.pi * rmid / num_blades_scalar
+            plot_camberline(
+                inlet_angle,
+                outlet_angle,
+                chord_ax,
+                ax=ax_cbl,
+                color=color_val,
+                axial_offset=offset,
+                tangential_offset=opt_pitch,
+            )
+
+        # Plot meridional profile with fill
+        geom.plot_meridional_profile(ax=ax_mer, color=base_color)
+        # Add fill to meridional profile
+        tip_x = geom._tip_curve.z_coords
+        tip_r = geom._tip_curve.r_coords
+        hub_x = geom._hub_curve.z_coords
+        hub_r = geom._hub_curve.r_coords
+        ax_mer.fill_between(
+            tip_x, hub_r[: len(tip_x)], tip_r, alpha=0.2, color=base_color
         )
-        plot_camberline(
-            sol_dict[nodes[0].geo.MetalAngle],
-            sol_dict[nodes[1].geo.MetalAngle],
-            sol_dict[nodes[1].geo.ChordAx],
-            ax=ax_cbl,
-            color='k',
-            axial_offset=offset,
-            tangential_offset=opt_pitch,
-        )
-        geom.plot_meridional_profile(ax=ax_mer, color='k')
+
         # Add 10% offset for plotting
         offset += 1.1 * sol_dict[nodes[1].geo.ChordAx][0]
+        comp_idx += 1
+
+    ax_mer.hlines(0.0, 0.0, offset, color='k', linestyles='-.')
 
     # *** Camber lines
+    fig_cbl.savefig('camber.svg')
+    fig_mer.savefig('meridional.svg')
 
-    plt.tight_layout()
+    # plt.tight_layout()
     plt.show()
