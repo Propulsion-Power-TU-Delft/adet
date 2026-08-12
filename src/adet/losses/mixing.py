@@ -136,7 +136,7 @@ class MixingMomentumBalances(EquationBase):
         r_dev = dev_angle1 - deviation
 
         r_choke = mach0 - 0.999
-        r_switcher = safe_if_else(p1 / rlt_p0 >= 0.5297, r_momy, r_choke)
+        r_switcher = safe_if_else(p1 / rlt_p0 >= 0.5297, r_momy, r_choke)  # noqa: F841
 
         # Entropy production for bounding
         r_ds = ds_mix1 - (s1 - s0)

@@ -1,4 +1,3 @@
-from functools import partial
 from adet.assemblers import CasadiSystem, IPOPT_DEFAULTS
 import logging
 from typing import Any, Callable

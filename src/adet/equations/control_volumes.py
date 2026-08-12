@@ -9,7 +9,7 @@ import CoolProp as cp
 import numpy as np
 
 from adet.equations.base_equation import EquationBase, EquationConfig
-from adet.equations.utils import minmax_bound, safe_min
+from adet.equations.utils import safe_min
 from adet.variables import NodeVariables, ThermoVariables
 from adet.varspec import VarSpec
 

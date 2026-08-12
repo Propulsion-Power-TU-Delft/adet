@@ -13,8 +13,6 @@ from adet.equations.control_volumes import SimpleThroat
 
 import logging
 
-import matplotlib.pyplot as plt
-import numpy as np
 from pint import Quantity
 
 from adet.assemblers import CasadiSystem
@@ -31,7 +29,6 @@ from adet.losses.basic import IsentropicLink
 from adet.solution import solve_optimization_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
-from adet.tools.plotting import setup_mpl
 from adet.variables import NodeVariables
 
 logger = logging.getLogger(__name__)

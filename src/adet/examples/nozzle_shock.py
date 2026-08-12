@@ -24,7 +24,7 @@ from adet.equations.fundamental import (
 from adet.equations.nondimensional import RelativeMachNumber
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink
-from adet.solution import solve_optimization_problem, solve_root_problem
+from adet.solution import solve_optimization_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 from adet.tools.plotting import setup_mpl

@@ -95,25 +95,6 @@ class MeridionalVelocityRatio(EquationBase):
         return vm0 * vm_ratio1 - vm1
 
 
-class MidspanVelocities(EquationBase):
-    def residual(
-        self,
-        v0: n0.kin.V_mag.Hint,
-        vm0: n0.kin.V_mer.Hint,
-        vt0: n0.kin.V_tan.Hint,
-        v_mid0: n0.kin.V_mid.Hint,
-        vm_mid0: n0.kin.V_merMid.Hint,
-        vt_mid0: n0.kin.V_tanMid.Hint,
-    ):
-        midspan = get_midspan_idx(v0)
-
-        r1 = v_mid0 - v0[midspan]
-        r2 = vm_mid0 - vm0[midspan]
-        r3 = vt_mid0 - vt0[midspan]
-
-        return r1, r2, r3
-
-
 class EffectiveBladeNumber(EquationBase):
     def residual(
         self,
