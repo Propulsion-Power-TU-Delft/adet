@@ -824,10 +824,7 @@ if RUN_MULTI:
                 ax_21k.tick_params(axis='both', labelsize=22)
 
                 fig_21k.tight_layout()
-                fig_21k.savefig(
-                    'C:\\Users\\fvaccari\\OneDrive - Delft University of Technology\\'
-                    '\\presentations\\images\\loss_breakdown_hecc.svg'
-                )
+
                 if SHOW_PLOTS:
                     plt.show()
                 else:

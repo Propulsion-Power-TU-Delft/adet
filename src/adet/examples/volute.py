@@ -244,10 +244,6 @@ def plot_volute_area_trend(designs_dict, num_points=1000):
     ax.tick_params(labelsize=17)
     ax.legend(fontsize=19)
     ax.grid(alpha=0.7)
-    # fig.savefig(
-    #     'C:\\Users\\fvaccari\\OneDrive - Delft University of Technology\\latex'
-    #     '\\gpps26_ORCHID\\Images\\volute_area_comparison.pdf'
-    # )
     plt.tight_layout()
 
     plt.show()
