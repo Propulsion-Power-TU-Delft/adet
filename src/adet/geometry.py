@@ -2,10 +2,48 @@ from abc import ABC, abstractmethod
 
 import matplotlib.pyplot as plt
 import numpy as np
-from bezier import Curve
 from matplotlib.lines import Line2D
 from numpy.typing import NDArray
 from scipy.interpolate import CubicSpline
+
+
+def evaluate_cubic_bezier(control_points: NDArray, t_values: NDArray) -> NDArray:
+    """Evaluate a cubic Bezier curve at multiple parameter values.
+
+    Computes points on a cubic Bezier curve given 4 control points and parameter values.
+
+    Parameters
+    ----------
+    control_points : NDArray
+        Array of shape (2, 4) or (3, 4) containing 4 control points.
+        Each column is a control point [x, y] or [x, y, z].
+    t_values : NDArray
+        1D array of parameter values in [0, 1] where to evaluate the curve.
+
+    Returns
+    -------
+    NDArray
+        Array of shape (2, n) or (3, n) containing points on the curve,
+        where n is the length of t_values.
+    """
+    t = t_values
+    mt = 1 - t
+
+    # Bernstein basis polynomials for cubic Bezier
+    b0 = mt**3
+    b1 = 3 * mt**2 * t
+    b2 = 3 * mt * t**2
+    b3 = t**3
+
+    # Weighted sum of control points
+    result = (
+        control_points[:, 0:1] * b0
+        + control_points[:, 1:2] * b1
+        + control_points[:, 2:3] * b2
+        + control_points[:, 3:4] * b3
+    )
+
+    return result
 
 
 class Point:
@@ -282,7 +320,6 @@ class BezierCurve(GenericCurve):
         inlet_line = Line(start_point, np.cos(self.angle_in), np.sin(self.angle_in))
         outlet_line = Line(end_point, np.cos(self.angle_out), np.sin(self.angle_out))
 
-        # TODO get length
         middle_point1 = inlet_line(chord_third)
         middle_point2 = outlet_line(-chord_third)
 
@@ -291,11 +328,10 @@ class BezierCurve(GenericCurve):
         self._z_cont_points = np.array([p.x for p in control_points]).flatten()
         self._r_cont_points = np.array([p.y for p in control_points]).flatten()
 
-        control_array = np.asfortranarray([self._z_cont_points, self._r_cont_points])
-        self.curve_instance = Curve(control_array, degree=3)
-        self.z_coords, self.r_coords = self.curve_instance.evaluate_multi(
-            np.linspace(0, 1, self.n_points)
-        )
+        control_array = np.array([self._z_cont_points, self._r_cont_points])
+        t_values = np.linspace(0, 1, self.n_points)
+        result = evaluate_cubic_bezier(control_array, t_values)
+        self.z_coords, self.r_coords = result
 
     def get_area(self):
         return np.trapezoid(self.r_coords, self.z_coords)
