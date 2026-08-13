@@ -182,7 +182,7 @@ ntw.print_structure()
 
 PLOTS = True
 if PLOTS:
-    setup_mpl({'font.family': 'EB Garamond', 'font.size': 30})
+    setup_mpl({'font.size': 15})
 
     # *** Velocity triangles
     fig, axs = plt.subplots(2, 2, figsize=(10, 10))
@@ -289,10 +289,6 @@ if PLOTS:
         comp_idx += 1
 
     ax_mer.hlines(0.0, 0.0, offset, color='k', linestyles='-.')
-
-    # *** Camber lines
-    fig_cbl.savefig('camber.svg')
-    fig_mer.savefig('meridional.svg')
 
     # plt.tight_layout()
     plt.show()

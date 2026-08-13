@@ -65,17 +65,15 @@ n3 = NodeVariables(3)
 setup_mpl(
     {
         'font.family': 'serif',
-        'font.size': 19,
-        # 'text.usetex': True,
+        'font.size': 13,
     }
 )
 
-NUM_SPAN = 5
+NUM_SPAN = 1
 ENABLE_LOSSES = True
 RUN_MULTI = True
 RUN_SPEEDLINES = True
-SPDL_PTS = 150  # Number of speedline points
-#
+SPDL_PTS = 50  # Number of speedline points
 RUN_PLOTS = True  # plotting section
 SHOW_PLOTS = True  # non-interactive testing
 BOUNDS = {
@@ -532,7 +530,7 @@ if RUN_MULTI:
         omega_idx = list(ntw_hecc.system.data.boun_cond.keys()).index(n1.kin.Omega)
         omega_scl = ntw_hecc.system.constraints_scaling[omega_idx]
 
-        mf_idx = list(ntw_hecc.system.data.boun_cond.keys()).index(n0.oth.CumMassFlow)
+        mf_idx = list(ntw_hecc.system.data.boun_cond.keys()).index(n0.oth.TotMassFlow)
         mf_scl = ntw_hecc.system.constraints_scaling[mf_idx]
 
         print('*** RUNNING SPEEDLINES ***')
@@ -845,7 +843,7 @@ if RUN_MULTI:
     if RUN_PLOTS and not RUN_SPEEDLINES:
         from adet.tools.plotting import plot_velocity_triangles
 
-        fig, axs = plt.subplots(2, 2, figsize=(8, 20))
+        fig, axs = plt.subplots(1, 2, figsize=(8, 20))
 
         # Node pairs: (inlet, outlet) for each component
         node_pairs = [
@@ -854,7 +852,7 @@ if RUN_MULTI:
         ]
         for plot_idx, (inlet_n, outlet_n) in enumerate(node_pairs):
             for node_idx, n in enumerate([inlet_n, outlet_n]):
-                ax = axs[plot_idx][node_idx]
+                ax = axs[node_idx]
                 ax.set_aspect('equal')
 
                 plot_velocity_triangles(

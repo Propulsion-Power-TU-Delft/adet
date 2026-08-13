@@ -4,7 +4,7 @@
 A Python library for equation-oriented modeling, with a focus on turbomachinery problems.
 
 <p align="center">
-    <img src="docs/sphinx/images/repeated_meridional.svg"  style="width: 65%">
+    <img src="docs/images/repeated_meridional.svg"  style="width: 65%">
 </p>
 
 ## Features
