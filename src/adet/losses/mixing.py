@@ -33,7 +33,7 @@ class SieverdingBasePressure(EquationBase):
     )
 
     def _get_base_pressure_interpolant(self, blade_type: Literal['conv', 'conv-div']):
-        data_folder = Path(__file__).parents[3] / 'data'
+        data_folder = Path(__file__).parent / 'data'
         x = np.load(data_folder / f'sieverding_{blade_type}_xq.npy')
         y = np.load(data_folder / f'sieverding_{blade_type}_yq.npy')
         data = np.load(data_folder / f'sieverding_{blade_type}_zq.npy')

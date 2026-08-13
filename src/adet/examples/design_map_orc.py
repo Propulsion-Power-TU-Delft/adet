@@ -5,8 +5,6 @@ applications. Uses physics-based loss modeling.
 
 # === IMPORTS
 import logging
-import pathlib
-import pickle
 from copy import deepcopy
 from typing import Literal, Type
 
@@ -29,8 +27,8 @@ from adet.equations.geometrical import (
     MeridionalGeometry,
     MeridionalRatios,
     ModifiedZweifel,
-    ParabolicCamberline,
     OptNumBlades,
+    ParabolicCamberline,
 )
 from adet.equations.nondimensional import (
     FlowCoefficient,
@@ -41,7 +39,7 @@ from adet.equations.nondimensional import (
     WorkCoefficient,
 )
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import ZeroDeviation, IsentropicLink  # noqa: F401
+from adet.losses.basic import IsentropicLink, ZeroDeviation  # noqa: F401
 from adet.losses.leakage import DentonTrapLeakage
 from adet.losses.mixing import DentonMixingLoss, SieverdingBasePressure
 from adet.losses.profile import DentonTrapProfile
@@ -510,9 +508,6 @@ keys_loss, solutions_loss, solution_dicts = compute_design_map(
 phi_vals = keys_loss[:, 0]
 psi_vals = keys_loss[:, 1]
 
-# Save complete design map data using pickle
-data_dir = pathlib.Path(__file__).parent.parent.parent.parent / 'outputs'
-data_dir.mkdir(parents=True, exist_ok=True)
 
 # Bundle all data into a single pickle file
 design_map_data = {
@@ -525,9 +520,3 @@ design_map_data = {
 
 vol_flow = DUTY_COEFFS[n1.ndim.VolflowRatio]
 react = DUTY_COEFFS[n1.ndim.DegreeOfReactionTS]
-
-filename = f'des_map_R{react}_vr{vol_flow}_{file_identifier}.pkl'
-with open(data_dir / filename, 'wb') as f:
-    pickle.dump(design_map_data, f)
-
-logger.info(f'Design map data saved to {data_dir / filename}')

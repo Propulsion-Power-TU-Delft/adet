@@ -21,7 +21,7 @@ def setup_mpl(fontdict: dict[str, Any] = {}):
     add fonts from system directories
     """
     try:
-        repo_root = Path(__file__).parent.parent.parent.parent
+        repo_root = Path(__file__).parents[4]
         font_path = repo_root / 'fonts' / 'EBGaramond-Regular.ttf'
         fm.fontManager.addfont(path=str(font_path))
     except FileNotFoundError:

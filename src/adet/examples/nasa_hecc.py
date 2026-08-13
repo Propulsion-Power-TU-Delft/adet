@@ -16,8 +16,8 @@ from adet.components.network import ComponentNetwork
 from adet.equations.base_equation import EquationConfig, LossApplier
 from adet.equations.control_volumes import (
     ChokingArea,
-    OptimalIncidence,
     LeadingEdgeThroat,
+    OptimalIncidence,
 )
 from adet.equations.definitions import (
     EffectiveBladeNumber,
@@ -28,8 +28,8 @@ from adet.equations.nondimensional import (
     TotalTotalPressureRatio,
 )
 from adet.equations.utils import residual_debugger
-from adet.fluid.settings import FluidSettings
 from adet.fluid.ideal_eos import IdealGasState
+from adet.fluid.settings import FluidSettings
 from adet.losses.basic import (
     IsentropicLink,
     ZeroDeviation,
@@ -73,7 +73,7 @@ setup_mpl(
 NUM_SPAN = 5
 ENABLE_LOSSES = True
 RUN_MULTI = True
-RUN_SPEEDLINES = False
+RUN_SPEEDLINES = True
 SPDL_PTS = 150  # Number of speedline points
 #
 RUN_PLOTS = True  # plotting section
@@ -840,22 +840,6 @@ if RUN_MULTI:
                     f'Design speedline ({design_rpm:.0f} RPM) did not converge'
                     f', skipping plot'
                 )
-
-        # Save computed speedline data for comparison with experimental data
-        import json
-        import pathlib
-
-        output_path = (
-            pathlib.Path(__file__).parent.parent.parent.parent
-            / 'data'
-            / 'opencases'
-            / 'nasa_hecc'
-            / 'computed_speedline_data.json'
-        )
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, 'w') as f:
-            json.dump(computed_speedline_data, f, indent=2)
-        print(f'Computed speedline data saved to {output_path}')
 
     # ---------------- PLOT ---------------------
     if RUN_PLOTS and not RUN_SPEEDLINES:

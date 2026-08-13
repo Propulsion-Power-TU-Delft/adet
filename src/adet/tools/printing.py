@@ -18,7 +18,7 @@ def print_header():
 
 
 def print_logo():
-    logo_file = Path(__file__).parents[3] / 'docs/logo/ascii_logo'
+    logo_file = Path(__file__).parent / 'ascii_logo.txt'
     with open(logo_file) as file:
         logo = file.read()
     print('\033[92m' + logo + '\033[0m')
