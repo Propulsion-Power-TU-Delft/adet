@@ -1,154 +1,99 @@
-from abc import ABC, abstractmethod
+import inspect
 import logging
-from inspect import getfullargspec
-from typing import Any, Callable
+from functools import wraps
+from inspect import Parameter, Signature
+from math import log
+from typing import Annotated
 
-import CoolProp as cp
-import sympy as sm
+from casadi import MX
+from pint import Quantity
 
-from adet.constants import COOLPROP_PAIRS
-from adet.tools.coolprop_utils import pair_tuple_from_id
+from adet.equations.base_equation import EquationBase
+from adet.variables import ThermoVariables
+from adet.varspec import NodeStates, VarSpec
 
 logger = logging.getLogger(__name__)
 
-UNSUPPORTED_PAIRS = [13, 17, 30, 32]
+trm = ThermoVariables(0)
 
 
-class AnalyticalFluidState(ABC):
-    solution_cache: dict[tuple[int, float, float], dict[str, Callable]] = {}
+def override_state_signature(func, state: NodeStates):
+    @wraps(func)
+    def with_state(*args, **kwargs):
+        return func(*args, **kwargs)
 
-    def __init__(self, gamma, gas_constant, viscosity):
-        # TODO: Add extra optional manual properties input, e.g. viscosity
-        # Move gamma and gas_constant to subclasses, make this general
-        self.current_state: dict[str, Any] = {}
+    sign = inspect.signature(func)
+    new_params = [Parameter('self', Parameter.POSITIONAL_ONLY)]
+    for name, param in sign.parameters.items():
+        # Extract the varspec metadata
+        spec: VarSpec = param.annotation.__metadata__[0]
+        # Apply state and node transformations
+        spec = spec._with_state(state)
+        spec = spec.at_node(0)
 
-        # Round otherwise sympy shits itself
-        self._gamma: float = round(gamma, 1)
-        self._gas_constant: float = round(gas_constant, 1)
+        new_param = Parameter(
+            name,
+            kind=param.kind,
+            annotation=Annotated[MX | Quantity, spec],
+        )
+        new_params.append(new_param)
 
-        self._viscosity = viscosity
-        self._cvmass = self._gas_constant / (self._gamma - 1)
-        self._cpmass = self._cvmass * self._gamma
+    with_state.__signature__ = Signature(new_params)  # ty: ignore
 
-    @abstractmethod
-    def eos(self, *args):
-        pass
+    return with_state
+
+
+class AnalyticalFluidState:
+    def __init__(self, eos, params):
+        self.params = params
+        self.eos = IdealGasState
 
     @property
-    def arguments(self):
-        return getfullargspec(self.eos).args[1:]
-
-    def update(self, input_pair: int, value0, value1):
-        if input_pair in UNSUPPORTED_PAIRS:
-            pair_name = COOLPROP_PAIRS[input_pair]
-            raise NotImplementedError(f'Unsupported pair {pair_name}')
-
-        input_vars = pair_tuple_from_id(input_pair)
-        other_vars = set(self.arguments).difference(input_vars)
-        logger.debug(f'Updating {self} with {input_vars}')
-
-        function_inputs = {
-            input_vars[0]: value0,
-            input_vars[1]: value1,
-        }
-
-        cache_key = (input_pair, self._gamma, self._gas_constant)
-        cache_hit = cache_key in self.solution_cache
-        key_name = f'{input_vars}, gamma{self._gamma}, gas_const{self._gas_constant}'
-
-        if cache_hit:
-            logger.debug(f'Cache hit for {key_name}')
-            solution_funcs = self.__class__.solution_cache[cache_key]
-        else:
-            logger.debug(f'Cache miss for {key_name}, building symbolic solution')
-            symbols = {arg: sm.Symbol(arg) for arg in self.arguments}
-            symbolic_func = self.eos(**symbols)
-            symbolic_solution = sm.solve(symbolic_func, other_vars)
-
-            if isinstance(symbolic_solution, list):
-                symbolic_solution = symbolic_solution[0]
-
-            for name in input_vars:
-                symbol = symbols[name]
-                symbolic_solution[symbol] = symbol
-
-            solution_funcs = {
-                symbol.name: sm.lambdify(input_vars, expr)
-                for symbol, expr in symbolic_solution.items()
-            }
-
-        self.current_state = {
-            sym: func(**function_inputs) for sym, func in solution_funcs.items()
-        }
-
-        self.__class__.solution_cache[cache_key] = solution_funcs
-
-    def p(self):
-        return self.current_state['p']
-
-    def T(self):
-        return self.current_state['T']
-
-    def rhomass(self):
-        return self.current_state['rhomass']
-
-    def hmass(self):
-        return self.current_state['hmass']
-
-    def smass(self):
-        return self.current_state['smass']
-
-    def cpmass(self):
-        return self._cpmass
-
-    def cvmass(self):
-        return self._cvmass
-
-    def viscosity(self):
-        return self._viscosity
-
-    def p_critical(self):
-        return 1
-
-    def T_critical(self):
-        return 1
-
-    def speed_sound(self):
-        return self.current_state['speed_sound']
-
-    def gas_constant(self):
-        return 8.31451
-
-    def molar_mass(self):
-        return 0.0287
+    def tot(self):
+        return self.eos(*self.params).residual
 
 
 class IdealGasState(AnalyticalFluidState):
-    def eos(self, p, T, rhomass, hmass, umass, smass, speed_sound):
-        r1 = p - self._gas_constant * rhomass * T
-        r2 = hmass - self._cpmass * T
-        r3 = umass - self._cvmass * T
-        r4 = speed_sound - (self._gamma * self._gas_constant * T) ** 0.5
-        r5 = smass - self._cpmass * sm.log(T) + self._gas_constant * sm.log(p)
+    def __init__(self, gamma, gas_constant, viscosity):
+        self._gamma: float = gamma
+        self.gas_constant: float = gas_constant
+
+        self.viscosity = viscosity
+        self.cvmass = self.gas_constant / (self._gamma - 1)
+        self.cpmass = self.cvmass * self._gamma
+
+
+class IdealEos(EquationBase):
+    def __init__(self, gamma, gas_constant, viscosity):
+        self._gamma: float = gamma
+        self.gas_constant: float = gas_constant
+
+        self.viscosity = viscosity
+        self.cvmass = self.gas_constant / (self._gamma - 1)
+        self.cpmass = self.cvmass * self._gamma
+
+    def residual(
+        self,
+        p: trm.Pressure.Hint,
+        T: trm.Temperature.Hint,
+        rhomass: trm.Density.Hint,
+        hmass: trm.Enthalpy.Hint,
+        umass: trm.IntEnergy.Hint,
+        smass: trm.Entropy.Hint,
+        speed_sound: trm.SpeedSound.Hint,
+    ):
+        """Docstring test"""
+        r1 = p - self.gas_constant * rhomass * T
+        r2 = hmass - self.cpmass * T
+        r3 = umass - self.cvmass * T
+        r4 = speed_sound - (self._gamma * self.gas_constant * T) ** 0.5
+        r5 = smass - self.cpmass * log(T) + self.gas_constant * log(p)
 
         return r1, r2, r3, r4, r5
 
 
 if __name__ == '__main__':
-    import casadi as cs
+    pass
+    id_eos = IdealEos(1.4, 287, 2e-5)
 
-    eos = IdealGasState(
-        gamma=1.4,
-        gas_constant=287.0,
-        viscosity=2e-5,
-    )
-
-    # Polymorphic!
-    eos.update(
-        cp.PT_INPUTS,
-        cs.MX.sym('p'),
-        cs.MX.sym('T'),
-    )
-
-    print(f'Hmass is {eos.hmass()}')
-    print(f'Smass is {eos.smass()}')
+    id_eos_overridden = override_state_signature(id_eos.residual, NodeStates.TOTAL)

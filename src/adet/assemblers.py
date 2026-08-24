@@ -6,6 +6,8 @@ data.
 Sometimes the CasADi api is slightly cryptic, sorry.
 """
 
+from adet.fluid.ideal_eos import AnalyticalFluidState
+
 import logging
 from abc import ABC, abstractmethod
 from copy import deepcopy
@@ -353,7 +355,10 @@ class ArgumentResolver:
         only two variables are effective (pure substance + phase),
         while the other two are followers
         """
-        if self.data.fluid_settings is None:
+        if (
+            self.data.fluid_settings is None
+            or self.data.fluid_settings.fluid_state is AnalyticalFluidState
+        ):
             return set(self.data.decl_args) - set(self.data.boun_cond)
 
         # Non thermodynamic arguments
