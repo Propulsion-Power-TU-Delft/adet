@@ -32,7 +32,7 @@ from adet.equations.nondimensional import (
     TotalTotalCompressionEfficiency,
     WorkCoefficient,
 )
-from adet.fluid.ideal_eos import IdealGasState
+from adet.fluid.ideal_eos import IdealEos
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import (
     IsentropicLink,
@@ -70,7 +70,7 @@ casing = Shaft(
 
 # +++ Fluid settings
 realgas_state = DebugAbstractState('HEOS', 'Air')
-idealgas_state = IdealGasState(1.4, 287, 1.8e-5)
+idealgas_state = IdealEos(1.4, 287, 1.8e-5)
 
 fluid_settings = FluidSettings(
     fluid_state=idealgas_state,

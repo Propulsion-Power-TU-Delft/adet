@@ -198,6 +198,14 @@ class EquationRegistry:
 
         return arg_maps
 
+    def _read_eos_arguments(self):
+        if self.data.fluid_settings:
+            state = self.data.fluid_settings.fluid_state
+            if isinstance(state, AnalyticalFluidState):
+                state.tot
+
+        self.data.equations
+
 
 class ConstraintManager:
     """Handles all forms of constraints and boundary conditions"""
@@ -1027,14 +1035,14 @@ class CasadiSystem(SystemAssembler):
             for n_idx in range(self.first_node, self.last_node + 1)
         }
 
-        self._eos_factory = EosFactory(fl_state)
+        eos_factory = EosFactory(fl_state)
 
         # Add inter-node eos
         for eq, eq_pos in self.data.equations.items():
             eq_conf = eq.config
             pos_str = '_'.join(str(p) for p in eq_pos)
             if eq_conf.input_pair:
-                eq.eos = self._eos_factory.make_eos(
+                eq.eos = eos_factory.make_eos(
                     eq_conf.input_pair,
                     eq_conf.out_properties,
                     self.num_span,
@@ -1063,7 +1071,7 @@ class CasadiSystem(SystemAssembler):
             for state, out_specs in sorted_discarded[node_idx].items():
                 pair_id = self.data.fluid_settings.input_pair
 
-                eos_caller = self._eos_factory.make_eos(
+                eos_caller = eos_factory.make_eos(
                     pair_id,
                     out_specs,
                     self.num_span,

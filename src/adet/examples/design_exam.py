@@ -21,7 +21,7 @@ from adet.equations.fundamental import (  # noqa: F401
 )
 from adet.equations.utils import get_midspan_idx, safe_abs
 from adet.fluid.settings import FluidSettings
-from adet.fluid.ideal_eos import IdealGasState
+from adet.fluid.ideal_eos import IdealEos
 from adet.losses.basic import IsentropicLink, ZeroDeviation
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 setup_logger(logger)
 
 abs_state = DebugAbstractState('HEOS', 'Air')
-abs_state = IdealGasState(1.4, 287, 2e-5)
+abs_state = IdealEos(1.4, 287, 2e-5)
 
 
 DeflectionMidspan = VarSpec('defl_mid', 'radians', node=1, scalar=True)

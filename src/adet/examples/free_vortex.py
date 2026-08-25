@@ -24,7 +24,7 @@ from adet.equations.geometrical import (
     EndwallProperties,
     MeridionalGeometry,
 )
-from adet.fluid.ideal_eos import IdealGasState
+from adet.fluid.ideal_eos import IdealEos
 from adet.fluid.settings import FluidSettings
 from adet.solution import solve_root_problem
 from adet.tools.loggers import setup_logger
@@ -63,7 +63,7 @@ BCS = {
     n0.geo.HubTipRatio: 0.7,
     n0.geo.MeridionalAngle: 0.0,
 }
-idl_state = IdealGasState(1.4, 287, 2e-5)
+idl_state = IdealEos(1.4, 287, 2e-5)
 
 system.fluid_settings = FluidSettings(
     fluid_state=idl_state,

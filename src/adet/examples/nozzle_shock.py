@@ -3,7 +3,7 @@ Modeling of a convergent-divergent nozzle with a normal shock in
 its divergent section, swept along exit pressure
 """
 
-from adet.fluid.ideal_eos import IdealGasState
+from adet.fluid.ideal_eos import IdealEos
 import logging
 
 import matplotlib.pyplot as plt
@@ -97,7 +97,7 @@ BCS = {
 #     0     1   2  3   4
 
 abs_state = DebugAbstractState('HEOS', 'Air')
-idl_state = IdealGasState(1.4, 287, 2e-5)
+idl_state = IdealEos(1.4, 287, 2e-5)
 
 system.fluid_settings = FluidSettings(
     fluid_state=abs_state,

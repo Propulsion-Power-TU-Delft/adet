@@ -1,3 +1,4 @@
+import copy
 import inspect
 import logging
 from functools import wraps
@@ -44,23 +45,15 @@ def override_state_signature(func, state: NodeStates):
 
 
 class AnalyticalFluidState:
-    def __init__(self, eos, params):
-        self.params = params
-        self.eos = IdealGasState
+    def __init__(self, eos_eq: EquationBase):
+        self.eos_eq = eos_eq
 
-    @property
-    def tot(self):
-        return self.eos(*self.params).residual
-
-
-class IdealGasState(AnalyticalFluidState):
-    def __init__(self, gamma, gas_constant, viscosity):
-        self._gamma: float = gamma
-        self.gas_constant: float = gas_constant
-
-        self.viscosity = viscosity
-        self.cvmass = self.gas_constant / (self._gamma - 1)
-        self.cpmass = self.cvmass * self._gamma
+    def _make_eq_with_state(self, state: NodeStates):
+        new_equation_obj = copy.deepcopy(self.eos_eq)
+        new_equation_obj.residual = override_state_signature(
+            self.eos_eq.residual, state
+        )
+        return new_equation_obj
 
 
 class IdealEos(EquationBase):
@@ -71,6 +64,7 @@ class IdealEos(EquationBase):
         self.viscosity = viscosity
         self.cvmass = self.gas_constant / (self._gamma - 1)
         self.cpmass = self.cvmass * self._gamma
+        super().__init__()
 
     def residual(
         self,
@@ -93,7 +87,4 @@ class IdealEos(EquationBase):
 
 
 if __name__ == '__main__':
-    pass
-    id_eos = IdealEos(1.4, 287, 2e-5)
-
-    id_eos_overridden = override_state_signature(id_eos.residual, NodeStates.TOTAL)
+    a = AnalyticalFluidState(IdealEos(1.4, 287, 2e-5))

@@ -21,7 +21,7 @@ from adet.equations.fundamental import (
     TotalStaticMatching,
 )
 from adet.equations.nondimensional import RelativeMachNumber
-from adet.fluid.ideal_eos import IdealGasState
+from adet.fluid.ideal_eos import IdealEos
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink
 from adet.solution import solve_optimization_problem
@@ -193,7 +193,7 @@ elif MODE == 'lin':
 #
 
 abs_state = DebugAbstractState('HEOS', 'Air')
-idl_state = IdealGasState(1.4, 287, 2e-5)
+idl_state = IdealEos(1.4, 287, 2e-5)
 
 system.fluid_settings = FluidSettings(
     fluid_state=abs_state,

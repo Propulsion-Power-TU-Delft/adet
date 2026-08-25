@@ -21,7 +21,7 @@ from adet.equations.nondimensional import (
     TotalTotalExpansionEfficiency,
     WorkCoefficientMid,
 )
-from adet.fluid.ideal_eos import IdealGasState
+from adet.fluid.ideal_eos import IdealEos
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import (
     TotalPressureLoss,
@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 setup_logger(logger)
 
 abs_state = AbstractState('HEOS', 'Air')
-idl_state = IdealGasState(1.4, 287, 2e-5)
+idl_state = IdealEos(1.4, 287, 2e-5)
 
 # *** Inlet conditions
 inlet = Inlet(

@@ -12,7 +12,7 @@ from adet.equations.fundamental import (
 )
 from adet.equations.geometrical import AnnulusAreas, MeridionalGeometry
 from adet.equations.nondimensional import AbsoluteMachNumber
-from adet.fluid.ideal_eos import IdealGasState
+from adet.fluid.ideal_eos import IdealEos
 from adet.fluid.settings import FluidSettings
 from adet.solution import solve_root_problem
 from adet.tools.loggers import setup_logger
@@ -37,7 +37,7 @@ system = CasadiSystem(num_span=1)
 node0 = NodeVariables(0)
 
 # *** Fluid model
-ideal_state = IdealGasState(1.4, 287, 2e-5)
+ideal_state = IdealEos(1.4, 287, 2e-5)
 # ***
 fluid_settings = FluidSettings(
     fluid_state=ideal_state,
