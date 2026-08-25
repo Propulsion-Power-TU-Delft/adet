@@ -16,6 +16,8 @@ class CoolProperties(Enum):
     Cvmass = 'cvmass'
     Pcrit = 'p_critical'
     Tcrit = 'T_critical'
+    Pref = 'p_ref'
+    Tref = 'T_ref'
     Quality = 'Q'
     SpeedSound = 'speed_sound'
     Viscosity = 'viscosity'

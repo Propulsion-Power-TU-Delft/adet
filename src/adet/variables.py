@@ -14,7 +14,7 @@ class BaseEnum:
     def __getattribute__(self, name: str):
         attr = super().__getattribute__(name)
         if isinstance(attr, VarSpec):
-            return attr._with_state(self._state).at_node(self._node)
+            return attr.with_state(self._state).at_node(self._node)
         else:
             return attr
 
@@ -46,6 +46,8 @@ class ThermoVariables(BaseEnum):
     GasConstant = VarSpec(CoolProperties.GasConstant.value, 'J / (mol * K)')
     CriticalTemp = VarSpec(CoolProperties.Tcrit.value, 'K')
     CriticalPressure = VarSpec(CoolProperties.Pcrit.value, 'Pa')
+    RefPress = VarSpec(CoolProperties.Pref.value, 'Pa')
+    RefTemp = VarSpec(CoolProperties.Tref.value, 'K')
 
 
 class KinematicVariables(VariableEnum):

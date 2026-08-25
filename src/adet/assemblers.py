@@ -120,10 +120,12 @@ class EquationRegistry:
 
         # Check that an equation of the same type does not exist at the same location
         if self.contains(equation.__class__, abs_position):
-            raise ExistingEquationError(
-                f'Duplicate equation entry for {equation.__class__.__name__}'
-                f' at position {abs_position}'
-            )
+            # Allow duplicates for equations of state
+            if not isinstance(equation, AnalyticalFluidState):
+                raise ExistingEquationError(
+                    f'Duplicate equation entry for {equation.__class__.__name__}'
+                    f' at position {abs_position}'
+                )
 
         self.data.equations[equation] = tuple(abs_position)
 
@@ -198,13 +200,23 @@ class EquationRegistry:
 
         return arg_maps
 
-    def _read_eos_arguments(self):
-        if self.data.fluid_settings:
-            state = self.data.fluid_settings.fluid_state
-            if isinstance(state, AnalyticalFluidState):
-                state.tot
+    def add_analytical_eos(self):
+        """Add analytical equations of state to each node"""
 
-        self.data.equations
+        if self.data.fluid_settings is not None:
+            fluid_state = self.data.fluid_settings.fluid_state
+            if isinstance(fluid_state, AnalyticalFluidState):
+                # Clear all existing eos's
+                self.remove_equation_type(AnalyticalFluidState)
+                # Find the maximum equation index
+                max_index = 0
+                for pos in self.data.equations.values():
+                    max_index = max(pos)
+
+                # Add static, total, reltot eos to each node
+                for node_idx in range(max_index + 1):
+                    for node_state in NodeStates:
+                        self.add_equation(fluid_state.get_eos(node_state), node_idx)
 
 
 class ConstraintManager:
@@ -230,7 +242,7 @@ class ConstraintManager:
         return flag_unused
 
     def add_boundary_conditions(
-        self, bnd_cond: dict[VarSpec, AdetArray | PlainQuantity]
+        self, bnd_cond: Mapping[VarSpec, AdetArray | PlainQuantity]
     ):
         """Add boundary conditions for a specific node"""
         for spec, val in bnd_cond.items():
@@ -340,6 +352,16 @@ class ConstraintManager:
 
         return plain_bcs
 
+    def add_eos_params(self):
+        for eq, eq_pos in self.data.equations.items():
+            if isinstance(eq, AnalyticalFluidState):
+                params = {
+                    var.at_node(eq_pos[0]).with_state(eq.state): val
+                    for var, val in eq.eos_params().items()
+                }
+
+                self.add_boundary_conditions(params)
+
 
 class ArgumentResolver:
     """Resolves free arguments vs followers, handles EoS logic"""
@@ -363,9 +385,8 @@ class ArgumentResolver:
         only two variables are effective (pure substance + phase),
         while the other two are followers
         """
-        if (
-            self.data.fluid_settings is None
-            or self.data.fluid_settings.fluid_state is AnalyticalFluidState
+        if self.data.fluid_settings is None or isinstance(
+            self.data.fluid_settings.fluid_state, AnalyticalFluidState
         ):
             return set(self.data.decl_args) - set(self.data.boun_cond)
 
@@ -382,7 +403,7 @@ class ArgumentResolver:
 
         for node in range(first_node, last_node + 1):
             for st in NodeStates:
-                upd_args = [v.at_node(node)._with_state(st) for v in prescr_upd_vars]
+                upd_args = [v.at_node(node).with_state(st) for v in prescr_upd_vars]
                 self.data.thermo_updt_args.extend(upd_args)
 
         return set(self.data.thermo_updt_args + nonthermo_args).difference(
@@ -720,6 +741,12 @@ class SystemAssembler(ABC):
             self.data.scaled = True
 
         # Delegate to managers
+
+        # Add analytical equations of state and their parameters
+        self._equation_registry.add_analytical_eos()  # Fill analytical eos's
+        self._constraint_manager.add_eos_params()
+
+        # Manage the arguments and map the indices
         self.data._arg_maps = self._equation_registry._build_argument_maps()
         self.data.decl_args = self._equation_registry._read_decl_args()
 
@@ -765,7 +792,7 @@ class SystemAssembler(ABC):
     def make_residual_function(self):
         self._check_built()
 
-    def sol_to_dict(self, solution: NDArray) -> dict[VarSpec, NDArray]:
+    def sol_to_dict(self, solution: NDArray) -> dict[VarSpec, Any]:
         sol_dict = {}
         curr_idx = 0
         scales = self.free_args_scaling
@@ -793,7 +820,9 @@ class SystemAssembler(ABC):
         self, sol_data: dict[VarSpec, NDArray]
     ) -> dict[VarSpec, NDArray]:
 
-        if self.data.fluid_settings is None:
+        if self.data.fluid_settings is None or isinstance(
+            self.data.fluid_settings.fluid_state, AnalyticalFluidState
+        ):
             return {}
 
         thrm_data = {}
@@ -822,8 +851,8 @@ class SystemAssembler(ABC):
         for spec in TO_WRITE:
             for state in NodeStates:
                 for node in range(self.last_node + 1):
-                    upd_var0 = var0_glb.at_node(node)._with_state(state)
-                    upd_var1 = var1_glb.at_node(node)._with_state(state)
+                    upd_var0 = var0_glb.at_node(node).with_state(state)
+                    upd_var1 = var1_glb.at_node(node).with_state(state)
 
                     v0_values = sol_data[upd_var0]
                     v1_values = sol_data[upd_var1]
@@ -837,7 +866,7 @@ class SystemAssembler(ABC):
                         except Exception:  # Catch property extraction failure
                             pty_arr.append(np.nan)
 
-                    spec = spec.at_node(node)._with_state(state)
+                    spec = spec.at_node(node).with_state(state)
                     thrm_data[spec] = np.array(pty_arr)
 
         return thrm_data
@@ -1021,11 +1050,13 @@ class CasadiSystem(SystemAssembler):
         self, all_args_products: dict[VarSpec, cs.MX]
     ) -> dict[VarSpec, cs.MX]:
 
-        # TODO: Refactor this whole method, it is quite messy
-        if self.data.fluid_settings is None:
+        # TODO: Refactor this method
+        if self.data.fluid_settings is None or isinstance(
+            self.data.fluid_settings.fluid_state, AnalyticalFluidState
+        ):
             return {}
 
-        fl_state = self.data.fluid_settings.fluid_state
+        ext_state = self.data.fluid_settings.fluid_state
 
         self._eos_callbacks = {
             n_idx: dict.fromkeys(
@@ -1035,7 +1066,7 @@ class CasadiSystem(SystemAssembler):
             for n_idx in range(self.first_node, self.last_node + 1)
         }
 
-        eos_factory = EosFactory(fl_state)
+        eos_factory = EosFactory(ext_state)
 
         # Add inter-node eos
         for eq, eq_pos in self.data.equations.items():
@@ -1082,7 +1113,7 @@ class CasadiSystem(SystemAssembler):
                 self._eos_callbacks[node_idx][state] = eos_caller
 
                 upd_specs = [
-                    spec._with_state(state).at_node(node_idx)
+                    spec.with_state(state).at_node(node_idx)
                     for spec in self.data.fluid_settings.update_variables
                 ]
 
@@ -1154,6 +1185,11 @@ class CasadiSystem(SystemAssembler):
         end up being part of the equations of state update
         variables
         """
+        if self.data.fluid_settings is None or isinstance(
+            self.data.fluid_settings.fluid_state, AnalyticalFluidState
+        ):
+            return []
+
         constraints_eqs = []
         for spec in self.data.boun_cond:
             if not spec.state:

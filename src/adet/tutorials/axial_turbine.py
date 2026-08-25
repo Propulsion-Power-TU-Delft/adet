@@ -1,4 +1,5 @@
 # === IMPORTS
+from adet.fluid.ideal_eos import IdealGasState
 import logging
 from copy import deepcopy
 
@@ -39,7 +40,8 @@ n3 = NodeVariables(3)
 logger = logging.getLogger(__name__)
 setup_logger(logger)
 
-abs_state = AbstractState('HEOS', 'Air')
+fluid_state = AbstractState('HEOS', 'Air')
+fluid_state = IdealGasState(1.4, 287, 2e-5)
 
 # *** Inlet conditions
 inlet = Inlet(
@@ -90,7 +92,7 @@ stator.set_spanwise_constant(
 )
 
 fluid_settings = FluidSettings(
-    fluid_state=abs_state,
+    fluid_state=fluid_state,
     update_variables=(n0.stc.Pressure, n0.stc.Temperature),
 )
 
@@ -105,7 +107,7 @@ ntw.system.add_equation(FlowCoefficientMid(), (0, 3))
 ntw.system.add_equation(WorkCoefficientMid(), (0, 3))
 ntw.system.add_equation(RepeatedStage(), (0, 1, 2, 3))
 ntw.system.add_equation(StaticTotalDegreeOfReaction(), (0, 1, 2, 3))
-ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))  # eta_tt
+# ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 3))  # eta_tt
 
 
 rotor.set_bc_from_dict(
@@ -141,7 +143,7 @@ try:
     rtfn = ntw.system.make_rootfinder(
         'ipopt', {'error_on_fail': True, 'ipopt.max_wall_time': 5}
     )
-    sol = solve_root_problem(rtfn, x0, kn, suppress_output=True)
+    sol = solve_root_problem(rtfn, x0, kn, suppress_output=False)
 except RuntimeError:
     # Bounded
     rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': False})

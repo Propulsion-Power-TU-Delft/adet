@@ -29,10 +29,9 @@ from adet.equations.definitions import EffectiveBladeNumber
 from adet.equations.geometrical import ChordAxbyOutradius
 from adet.equations.nondimensional import (
     SwallowingCapacity,
-    TotalTotalCompressionEfficiency,
     WorkCoefficient,
 )
-from adet.fluid.ideal_eos import IdealEos
+from adet.fluid.ideal_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import (
     IsentropicLink,
@@ -70,7 +69,7 @@ casing = Shaft(
 
 # +++ Fluid settings
 realgas_state = DebugAbstractState('HEOS', 'Air')
-idealgas_state = IdealEos(1.4, 287, 1.8e-5)
+idealgas_state = IdealGasState(1.4, 287, 1.8e-5)
 
 fluid_settings = FluidSettings(
     fluid_state=idealgas_state,
@@ -138,7 +137,7 @@ rotor = BladeRow(
         # *** Metal angle <-[link]-> Flow angle
         ZeroDeviation(): 0,  # Zero incidence
         # *** Enthalpy definitions
-        TotalTotalCompressionEfficiency(): (0, 1),
+        # TotalTotalCompressionEfficiency(): (0, 1),
         **EQS_ISENTROPIC,
     },
 )
@@ -163,7 +162,8 @@ ntw = ComponentNetwork(
 )
 
 
-ntw.build()
+ntw.build(debug_flag=False)
+input()
 
 x0_is = ntw.system.get_guess(fallback=0.6)
 kn_is = ntw.system.get_boundary_conds()
@@ -197,34 +197,35 @@ solution_is = solve_root_problem(rtfn, solution_is, kn_is)
 
 sol_loss_dict = ntw.system.sol_to_dict(solution_is)
 
+if False:
+    # Remove isentropic and add losses
+    for eq, pos in EQS_ISENTROPIC.items():
+        rotor.remove_equation(eq.__class__, pos)
+    for eq, pos in EQS_WITH_LOSSES.items():
+        rotor.add_equation(eq, pos)
 
-# Remove isentropic and add losses
-for eq, pos in EQS_ISENTROPIC.items():
-    rotor.remove_equation(eq.__class__, pos)
-for eq, pos in EQS_WITH_LOSSES.items():
-    rotor.add_equation(eq, pos)
+    ntw.build()  # Rebuild
+    # input()
 
-ntw.build()  # Rebuild
+    # Get
+    x0_loss = ntw.system.get_guess(sol_is_dict, fallback=0.8)
+    bnd_loss = ntw.system.get_bounds(BOUNDS)
+    rootfinder_loss = ntw.system.make_rootfinder(
+        'ipopt',
+        opts={
+            'error_on_fail': False,
+            'ipopt.tol': 1e-7,
+            'ipopt.print_level': 3,
+        },
+    )
 
-# Get
-x0_loss = ntw.system.get_guess(sol_is_dict, fallback=0.8)
-bnd_loss = ntw.system.get_bounds(BOUNDS)
-rootfinder_loss = ntw.system.make_rootfinder(
-    'ipopt',
-    opts={
-        'error_on_fail': False,
-        'ipopt.tol': 1e-7,
-        'ipopt.print_level': 3,
-    },
-)
-
-solution_loss = solve_root_problem(
-    rootfinder_loss,
-    x0_loss,
-    kn_is,
-    suppress_output=False,
-)
-sol_loss_dict = ntw.system.sol_to_dict(solution_loss)
+    solution_loss = solve_root_problem(
+        rootfinder_loss,
+        x0_loss,
+        kn_is,
+        suppress_output=False,
+    )
+    sol_loss_dict = ntw.system.sol_to_dict(solution_loss)
 
 fig, axs = plt.subplots(1, 2, figsize=(10, 5))
 

@@ -8,13 +8,13 @@ import numpy as np
 from jax import Array
 from numpy.typing import NDArray
 
-from adet.assemblers import CasadiSystem, JaxSystem, SystemAssembler
+from adet.assemblers import CasadiSystem, SystemAssembler
 
 logger = logging.getLogger(__name__)
 
 NumpyArrays: TypeAlias = Union[Array, NDArray]
 
-EquationBound = namedtuple(
+EquationSensitivities = namedtuple(
     'EquationSensitivities',
     [
         'equation_id',
@@ -50,7 +50,7 @@ class SystemDiagnostics(Generic[T]):
 
     def _build_casadi_functions(self, system: CasadiSystem):
         logger.debug('Building casadi functions')
-        args_sym = cs.vertcat(*system.free_args_sym)
+        args_sym = cs.vertcat(*system.free_args_sym.values())
         const_values = self.const_stack
         num_args = len(system.free_args_sym)
 
@@ -94,7 +94,7 @@ class SystemDiagnostics(Generic[T]):
         self._jac_func = jac_cas
         self._hes_func = hes_cas
 
-    def _build_jax_functions(self, system: JaxSystem):
+    def _build_jax_functions(self, system):
         res_func = system.make_residual_function()
 
         def res_flat_jax(x):
@@ -147,13 +147,15 @@ class SystemDiagnostics(Generic[T]):
         for idx in nonlin_arg_indices:
             nonlin_args.add(args[idx // self._num_span])
 
-        lin_args = sorted(set(args) - nonlin_args)
+        lin_args = sorted(set(args) - nonlin_args, key=lambda x: x.full_symbol(True))
 
         self._linear_arguments = tuple(lin_args)
-        self._nonlinear_arguments = tuple(sorted(nonlin_args))
+        self._nonlinear_arguments = tuple(
+            sorted(nonlin_args, key=lambda x: x.full_symbol(True))
+        )
 
-        logger.debug(f'Linear args are: {", ".join(self._linear_arguments)}')
-        logger.debug(f'Nonlinear args are: {", ".join(self._nonlinear_arguments)}')
+        # logger.debug(f'Linear args are: {", ".join(self._linear_arguments)}')
+        # logger.debug(f'Nonlinear args are: {", ".join(self._nonlinear_arguments)}')
 
         args = tuple(self._nonlinear_arguments + self._linear_arguments)
         arg_mapping = np.array([self._arguments.index(a) for a in args])

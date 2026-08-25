@@ -1,5 +1,10 @@
+from adet.varspec import NodeStates
+from adet.equations.utils import residual_debugger
+from adet.fluid.ideal_eos import IdealGasState
 import logging
+import casadi as cs
 
+import numpy as np
 from pint import Quantity
 
 from adet.assemblers import CasadiSystem
@@ -12,9 +17,9 @@ from adet.equations.fundamental import (
 )
 from adet.equations.geometrical import AnnulusAreas, MeridionalGeometry
 from adet.equations.nondimensional import AbsoluteMachNumber
-from adet.fluid.ideal_eos import IdealEos
 from adet.fluid.settings import FluidSettings
 from adet.solution import solve_root_problem
+from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 from adet.variables import NodeVariables
 
@@ -37,7 +42,9 @@ system = CasadiSystem(num_span=1)
 node0 = NodeVariables(0)
 
 # *** Fluid model
-ideal_state = IdealEos(1.4, 287, 2e-5)
+ideal_state = IdealGasState(1.4, 287.8, 2e-5)
+# ideal_state = DebugAbstractState('HEOS', 'air')
+
 # ***
 fluid_settings = FluidSettings(
     fluid_state=ideal_state,
@@ -64,11 +71,41 @@ system.add_spanwise_constants(node0.kin.V_mer, node0.geo.HDistr)
 
 system.build()
 
-rtfn = system.make_rootfinder('kinsol')
+rtfn = system.make_rootfinder(
+    'kinsol',
+    {
+        'error_on_fail': False,
+        # 'print_iteration': True,
+        'print_level': 2,
+    },
+)
 
-x0 = system.get_guess()
+x0 = system.get_guess(fallback=0.5)
 kn = system.get_boundary_conds()
+resfunc = system.make_residual_function()
 
-sol = solve_root_problem(rtfn, x0, kn)
+# newton iterations
+x = x0
+for _ in range(4):
+    func_val = resfunc(x, kn)
 
-sol_dict = system.sol_to_dict(sol)
+    if any(np.isnan(func_val)):
+        break
+
+    jac_val = resfunc.jacobian()(x, kn, func_val)
+    step = cs.inv(jac_val[0]) @ func_val
+    x -= 0.7 * step
+    hes_val = resfunc.jacobian().jacobian()(x, kn, func_val, *jac_val)
+
+    print(f'Function values are {func_val}\n')
+    print(f'Temperature {x[11]} \n')
+    print(f'Step is {step}\n')
+
+
+sol = solve_root_problem(rtfn, x, kn)
+
+sol_dict = system.sol_to_dict(x.toarray())
+
+globals().update(
+    residual_debugger(ideal_state.get_eos(NodeStates.STATIC), [0], sol_dict)
+)

@@ -28,7 +28,7 @@ from adet.equations.nondimensional import (
     TotalTotalPressureRatio,
 )
 from adet.equations.utils import residual_debugger
-from adet.fluid.ideal_eos import IdealEos
+from adet.fluid.ideal_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import (
     IsentropicLink,
@@ -89,7 +89,7 @@ BOUNDS = {
 # +++ Fluid settings
 thrm = ThermoVariables()
 
-ideal_state = IdealEos(1.4, 287, 2e-5)
+ideal_state = IdealGasState(1.4, 287, 2e-5)
 real_state = DebugAbstractState('HEOS', 'Air')
 
 fluid_settings = FluidSettings(

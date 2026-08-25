@@ -167,6 +167,8 @@ SCALING_FACTORS: dict[str, float] = {
     'N / m': 1000.0,
     'J / kg': 5e5,
     'J / kg / K': 1e3,  # Entropy
+    'J / mol / K': 8.314,  # Gas constant
+    'kg / mol': 0.03,  # Molar mass
     'J / kg / m': 5e5,  # Radial equilibrium
     '1 / s': 1e3,  # Forced vortex
     'kg / s': 5,

@@ -38,7 +38,7 @@ class VarSpec:
     def __hash__(self) -> int:
         return hash((self.symbol, self.state, self.node))
 
-    def _with_state(self, state: NodeStates | None):
+    def with_state(self, state: NodeStates | None):
         return replace(self, state=state)
 
     def at_node(self, node: int):

@@ -1,12 +1,13 @@
 import copy
 import inspect
 import logging
+from abc import ABC, abstractmethod
 from functools import wraps
 from inspect import Parameter, Signature
-from math import log
 from typing import Annotated
 
 from casadi import MX
+from numpy import log
 from pint import Quantity
 
 from adet.equations.base_equation import EquationBase
@@ -19,17 +20,20 @@ trm = ThermoVariables(0)
 
 
 def override_state_signature(func, state: NodeStates):
+    """Override the signature of a NON-STATIC method"""
+
     @wraps(func)
     def with_state(*args, **kwargs):
         return func(*args, **kwargs)
 
     sign = inspect.signature(func)
+    # WARN: Manually add the 'self' parameter
     new_params = [Parameter('self', Parameter.POSITIONAL_ONLY)]
     for name, param in sign.parameters.items():
         # Extract the varspec metadata
         spec: VarSpec = param.annotation.__metadata__[0]
         # Apply state and node transformations
-        spec = spec._with_state(state)
+        spec = spec.with_state(state)
         spec = spec.at_node(0)
 
         new_param = Parameter(
@@ -44,47 +48,78 @@ def override_state_signature(func, state: NodeStates):
     return with_state
 
 
-class AnalyticalFluidState:
-    def __init__(self, eos_eq: EquationBase):
-        self.eos_eq = eos_eq
+class AnalyticalFluidState(EquationBase, ABC):
+    def __init__(self):
+        self.state: None | NodeStates = None
+        super().__init__()
 
-    def _make_eq_with_state(self, state: NodeStates):
-        new_equation_obj = copy.deepcopy(self.eos_eq)
-        new_equation_obj.residual = override_state_signature(
-            self.eos_eq.residual, state
-        )
+    def get_eos(self, state: NodeStates):
+        new_equation_obj = copy.deepcopy(self)
+        new_equation_obj.residual = override_state_signature(self.residual, state)
+        new_equation_obj.state = state
         return new_equation_obj
 
+    @abstractmethod
+    def eos_params(self) -> dict[VarSpec, float]:
+        """
+        This must as varspecs all the parameters passed from the single equation object
+        as boundary conditions for the problem.
+        """
+        raise NotImplementedError
 
-class IdealEos(EquationBase):
-    def __init__(self, gamma, gas_constant, viscosity):
-        self._gamma: float = gamma
-        self.gas_constant: float = gas_constant
+
+class IdealGasState(AnalyticalFluidState):
+    def __init__(self, gamma, sp_gas_constant, viscosity):
+        self.gamma: float = gamma
+        self.gas_constant = sp_gas_constant
 
         self.viscosity = viscosity
-        self.cvmass = self.gas_constant / (self._gamma - 1)
-        self.cpmass = self.cvmass * self._gamma
+        self.cvmass = self.gas_constant / (self.gamma - 1)
+        self.cpmass = self.cvmass * self.gamma
+        self.molar_mass = 8.314462618153241 / sp_gas_constant
+
         super().__init__()
+
+    def eos_params(self) -> dict[VarSpec, float]:
+        return {
+            trm.Cp: self.cpmass,
+            trm.Cv: self.cvmass,
+            trm.Viscosity: self.viscosity,
+            trm.GasConstant: 8.31446261815324,
+            trm.MolarMass: self.molar_mass,
+            trm.RefPress: 1,
+            trm.RefTemp: 1,
+        }
 
     def residual(
         self,
         p: trm.Pressure.Hint,
         T: trm.Temperature.Hint,
+        p_ref: trm.RefPress.Hint,
+        T_ref: trm.RefTemp.Hint,
         rhomass: trm.Density.Hint,
         hmass: trm.Enthalpy.Hint,
         umass: trm.IntEnergy.Hint,
         smass: trm.Entropy.Hint,
         speed_sound: trm.SpeedSound.Hint,
+        gas_constant: trm.GasConstant.Hint,
+        molar_mass: trm.MolarMass.Hint,
+        cpmass: trm.Cp.Hint,
+        cvmass: trm.Cv.Hint,
     ):
         """Docstring test"""
-        r1 = p - self.gas_constant * rhomass * T
-        r2 = hmass - self.cpmass * T
-        r3 = umass - self.cvmass * T
-        r4 = speed_sound - (self._gamma * self.gas_constant * T) ** 0.5
-        r5 = smass - self.cpmass * log(T) + self.gas_constant * log(p)
+        gamma = cpmass / cvmass
+
+        specific_gas_const = gas_constant / molar_mass
+
+        r1 = p - specific_gas_const * rhomass * T
+        r2 = hmass - cpmass * T
+        r3 = umass - cvmass * T
+        r4 = speed_sound - (gamma * specific_gas_const * T) ** 0.5
+        r5 = smass - cpmass * log(T / T_ref) + specific_gas_const * log(p / p_ref)
 
         return r1, r2, r3, r4, r5
 
 
 if __name__ == '__main__':
-    a = AnalyticalFluidState(IdealEos(1.4, 287, 2e-5))
+    a = IdealGasState(1.4, 287, 2e-5)

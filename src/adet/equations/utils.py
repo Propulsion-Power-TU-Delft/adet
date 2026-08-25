@@ -6,7 +6,6 @@ import numpy as np
 from numpy.typing import NDArray
 from pint import Quantity
 from pint.facets.plain import PlainQuantity
-from sympy import Symbol
 
 from adet.equations.base_equation import EmbeddedEos, EquationBase
 from adet.fluid.casadi_eos import CasadiEos
@@ -117,8 +116,6 @@ def safe_min_clip(x, min_value):
     elif isinstance(x, PlainQuantity):
         x_sign = np.sign(x.magnitude)
         x = x_sign * np.clip(np.abs(x.magnitude), min_value, None) * x.units
-    elif isinstance(x, Symbol):
-        pass
     else:
         x_sign = np.sign(x)
         x = x_sign * np.clip(np.abs(x), min_value, None)
