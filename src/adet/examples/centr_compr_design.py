@@ -162,7 +162,7 @@ ntw = ComponentNetwork(
 )
 
 
-ntw.build(debug_flag=False)
+ntw.build()
 input()
 
 x0_is = ntw.system.get_guess(fallback=0.6)
@@ -174,9 +174,9 @@ rootfinder_des_is = ntw.system.make_rootfinder(
     'ipopt',
     opts={
         'error_on_fail': False,
-        'ipopt.tol': 1e-6,
-        'ipopt.max_iter': 300,
-        'ipopt.max_wall_time': 30,
+        # 'ipopt.tol': 1e-6,
+        # 'ipopt.max_iter': 300,
+        # 'ipopt.max_wall_time': 30,
         # 'ipopt.print_level': 3,
     },
 )

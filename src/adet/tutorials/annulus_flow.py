@@ -1,10 +1,8 @@
-from adet.varspec import NodeStates
-from adet.equations.utils import residual_debugger
-from adet.fluid.ideal_eos import IdealGasState
+from adet.diagnostics import SystemDiagnostics
+from adet.tools.coolprop_utils import DebugAbstractState
 import logging
-import casadi as cs
 
-import numpy as np
+import casadi as cs
 from pint import Quantity
 
 from adet.assemblers import CasadiSystem
@@ -17,11 +15,13 @@ from adet.equations.fundamental import (
 )
 from adet.equations.geometrical import AnnulusAreas, MeridionalGeometry
 from adet.equations.nondimensional import AbsoluteMachNumber
+from adet.equations.utils import residual_debugger
+from adet.fluid.ideal_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
 from adet.solution import solve_root_problem
-from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 from adet.variables import NodeVariables
+from adet.varspec import NodeStates
 
 logger = logging.getLogger(__name__)
 setup_logger(logger)
@@ -42,8 +42,8 @@ system = CasadiSystem(num_span=1)
 node0 = NodeVariables(0)
 
 # *** Fluid model
-ideal_state = IdealGasState(1.4, 287.8, 2e-5)
-# ideal_state = DebugAbstractState('HEOS', 'air')
+ideal_state = IdealGasState(1.4, 287.0, 2e-5)
+ideal_state = DebugAbstractState('HEOS', 'air')
 
 # ***
 fluid_settings = FluidSettings(
@@ -72,40 +72,36 @@ system.add_spanwise_constants(node0.kin.V_mer, node0.geo.HDistr)
 system.build()
 
 rtfn = system.make_rootfinder(
-    'kinsol',
+    'newton',
     {
         'error_on_fail': False,
-        # 'print_iteration': True,
-        'print_level': 2,
+        'print_iteration': True,
+        # 'print_level': 2,
     },
 )
 
-x0 = system.get_guess(fallback=0.5)
+x0 = system.get_guess(
+    manual_values={
+        node0.stc.Pressure.Glob: 15e5,
+        # node0.rlt.Pressure: 19e5,
+        # node0.kin.V_mag: 100,
+    },
+    fallback=0.5,
+)
 kn = system.get_boundary_conds()
 resfunc = system.make_residual_function()
 
-# newton iterations
-x = x0
-for _ in range(4):
-    func_val = resfunc(x, kn)
+diag = SystemDiagnostics(system, kn)
 
-    if any(np.isnan(func_val)):
-        break
+func_val = resfunc(x0, kn)
+jac_val = resfunc.jacobian()(x0, kn, func_val)
+first_step = cs.inv(jac_val[0]) @ func_val
 
-    jac_val = resfunc.jacobian()(x, kn, func_val)
-    step = cs.inv(jac_val[0]) @ func_val
-    x -= 0.7 * step
-    hes_val = resfunc.jacobian().jacobian()(x, kn, func_val, *jac_val)
-
-    print(f'Function values are {func_val}\n')
-    print(f'Temperature {x[11]} \n')
-    print(f'Step is {step}\n')
+sol = solve_root_problem(rtfn, x0, kn)
+sol_dict = system.sol_to_dict(sol)
 
 
-sol = solve_root_problem(rtfn, x, kn)
-
-sol_dict = system.sol_to_dict(x.toarray())
-
-globals().update(
-    residual_debugger(ideal_state.get_eos(NodeStates.STATIC), [0], sol_dict)
-)
+# Plot convergence history
+# globals().update(
+#     residual_debugger(ideal_state.get_eos(NodeStates.STATIC), [0], sol_dict)
+# )
