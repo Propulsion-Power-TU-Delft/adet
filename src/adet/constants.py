@@ -56,3 +56,6 @@ AdetArray = Union[
     float,
     int,
 ]
+
+# Universal gas constant (J/(mol·K))
+UNIVERSAL_GAS_CONSTANT = 8.31446261815324

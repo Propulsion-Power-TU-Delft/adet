@@ -6,10 +6,11 @@ from functools import wraps
 from inspect import Parameter, Signature
 from typing import Annotated
 
+import numpy as np
 from casadi import MX
-from numpy import log
 from pint import Quantity
 
+from adet.constants import UNIVERSAL_GAS_CONSTANT
 from adet.equations.base_equation import EquationBase
 from adet.variables import ThermoVariables
 from adet.varspec import NodeStates, VarSpec
@@ -33,8 +34,7 @@ def override_state_signature(func, state: NodeStates):
         # Extract the varspec metadata
         spec: VarSpec = param.annotation.__metadata__[0]
         # Apply state and node transformations
-        spec = spec.with_state(state)
-        spec = spec.at_node(0)
+        spec = spec.with_state(state).at_node(0)
 
         new_param = Parameter(
             name,
@@ -76,7 +76,7 @@ class IdealGasState(AnalyticalFluidState):
         self.viscosity = viscosity
         self.cvmass = self.gas_constant / (self.gamma - 1)
         self.cpmass = self.cvmass * self.gamma
-        self.molar_mass = 8.314462618153241 / sp_gas_constant
+        self.molar_mass = UNIVERSAL_GAS_CONSTANT / sp_gas_constant
 
         super().__init__()
 
@@ -85,7 +85,7 @@ class IdealGasState(AnalyticalFluidState):
             trm.Cp: self.cpmass,
             trm.Cv: self.cvmass,
             trm.Viscosity: self.viscosity,
-            trm.GasConstant: 8.31446261815324,
+            trm.GasConstant: UNIVERSAL_GAS_CONSTANT,
             trm.MolarMass: self.molar_mass,
             trm.RefPress: 1,
             trm.RefTemp: 1,
@@ -107,16 +107,15 @@ class IdealGasState(AnalyticalFluidState):
         cpmass: trm.Cp.Hint,
         cvmass: trm.Cv.Hint,
     ):
-        """Docstring test"""
+        """Ideal gas law, calorifically perfect gas"""
         gamma = cpmass / cvmass
-
         specific_gas_const = gas_constant / molar_mass
 
         r1 = p - specific_gas_const * rhomass * T
-        r2 = hmass - cpmass * T
-        r3 = umass - cvmass * T
+        r2 = hmass - cpmass * (T - T_ref)
+        r3 = umass - cvmass * (T - T_ref)
         r4 = speed_sound - (gamma * specific_gas_const * T) ** 0.5
-        r5 = smass - cpmass * log(T / T_ref) + specific_gas_const * log(p / p_ref)
+        r5 = smass - cpmass * np.log(T / T_ref) + specific_gas_const * np.log(p / p_ref)
 
         return r1, r2, r3, r4, r5
 

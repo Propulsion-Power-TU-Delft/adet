@@ -942,7 +942,11 @@ class SystemAssembler(ABC):
                     guess_value = np.array([guess_value[0]])
 
             # Scale
-            scaling_factor = _scale_reg.get(spec.unit)
+            if self.data.scaled:
+                scaling_factor = _scale_reg.get(spec.unit)
+            else:
+                scaling_factor = 1.0
+
             guess_value_scaled = guess_value / scaling_factor
             guesses.append(guess_value_scaled)
 
