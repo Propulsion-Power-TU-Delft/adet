@@ -163,7 +163,6 @@ ntw = ComponentNetwork(
 
 
 ntw.build()
-input()
 
 x0_is = ntw.system.get_guess(fallback=0.6)
 kn_is = ntw.system.get_boundary_conds()
@@ -197,35 +196,34 @@ solution_is = solve_root_problem(rtfn, solution_is, kn_is)
 
 sol_loss_dict = ntw.system.sol_to_dict(solution_is)
 
-if False:
-    # Remove isentropic and add losses
-    for eq, pos in EQS_ISENTROPIC.items():
-        rotor.remove_equation(eq.__class__, pos)
-    for eq, pos in EQS_WITH_LOSSES.items():
-        rotor.add_equation(eq, pos)
+# Remove isentropic and add losses
+for eq, pos in EQS_ISENTROPIC.items():
+    rotor.remove_equation(eq.__class__, pos)
+for eq, pos in EQS_WITH_LOSSES.items():
+    rotor.add_equation(eq, pos)
 
-    ntw.build()  # Rebuild
-    # input()
+ntw.build()  # Rebuild
+# input()
 
-    # Get
-    x0_loss = ntw.system.get_guess(sol_is_dict, fallback=0.8)
-    bnd_loss = ntw.system.get_bounds(BOUNDS)
-    rootfinder_loss = ntw.system.make_rootfinder(
-        'ipopt',
-        opts={
-            'error_on_fail': False,
-            'ipopt.tol': 1e-7,
-            'ipopt.print_level': 3,
-        },
-    )
+# Get
+x0_loss = ntw.system.get_guess(sol_is_dict, fallback=0.8)
+bnd_loss = ntw.system.get_bounds(BOUNDS)
+rootfinder_loss = ntw.system.make_rootfinder(
+    'ipopt',
+    opts={
+        'error_on_fail': False,
+        'ipopt.tol': 1e-7,
+        'ipopt.print_level': 3,
+    },
+)
 
-    solution_loss = solve_root_problem(
-        rootfinder_loss,
-        x0_loss,
-        kn_is,
-        suppress_output=False,
-    )
-    sol_loss_dict = ntw.system.sol_to_dict(solution_loss)
+solution_loss = solve_root_problem(
+    rootfinder_loss,
+    x0_loss,
+    kn_is,
+    suppress_output=False,
+)
+sol_loss_dict = ntw.system.sol_to_dict(solution_loss)
 
 fig, axs = plt.subplots(1, 2, figsize=(10, 5))
 

@@ -1,9 +1,9 @@
+from pint import Quantity
 from adet.diagnostics import SystemDiagnostics
 from adet.tools.coolprop_utils import DebugAbstractState
 import logging
 
 import casadi as cs
-from pint import Quantity
 
 from adet.assemblers import CasadiSystem
 from adet.equations.fundamental import (
@@ -15,13 +15,11 @@ from adet.equations.fundamental import (
 )
 from adet.equations.geometrical import AnnulusAreas, MeridionalGeometry
 from adet.equations.nondimensional import AbsoluteMachNumber
-from adet.equations.utils import residual_debugger
 from adet.fluid.ideal_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
 from adet.solution import solve_root_problem
 from adet.tools.loggers import setup_logger
 from adet.variables import NodeVariables
-from adet.varspec import NodeStates
 
 logger = logging.getLogger(__name__)
 setup_logger(logger)
@@ -42,8 +40,8 @@ system = CasadiSystem(num_span=1)
 node0 = NodeVariables(0)
 
 # *** Fluid model
-ideal_state = IdealGasState(1.4, 287.0, 2e-5)
-ideal_state = DebugAbstractState('HEOS', 'air')
+ideal_state = IdealGasState(1.4, 287, 2e-5)
+# ideal_state = DebugAbstractState('HEOS', 'air')
 
 # ***
 fluid_settings = FluidSettings(
@@ -58,12 +56,12 @@ for eq, pos in EQUATIONS.items():
 BC = {
     node0.kin.Omega: 1000.0,
     node0.kin.FlowAngleAbs: Quantity(30, 'deg'),  # Inlet absolute flow angle
-    node0.oth.TotMassFlow: 100.0,  # Total massflow across the annulus
+    node0.oth.TotMassFlow: 50.0,  # Total massflow across the annulus
     node0.geo.Rmid: 0.1,  # Midpoint annulus radius
     node0.geo.Height: 0.1,  # Annulus height
     node0.geo.MeridionalAngle: 0.0,
-    node0.tot.Pressure: 18.1e5,
-    node0.tot.Temperature: 573.15,
+    node0.tot.Pressure: 10e5,
+    node0.tot.Temperature: 500,
 }
 
 system.add_boundary_conditions(BC)
@@ -71,37 +69,12 @@ system.add_spanwise_constants(node0.kin.V_mer, node0.geo.HDistr)
 
 system.build()
 
-rtfn = system.make_rootfinder(
-    'newton',
-    {
-        'error_on_fail': False,
-        'print_iteration': True,
-        # 'print_level': 2,
-    },
-)
+rtfn = system.make_rootfinder('newton')
 
-x0 = system.get_guess(
-    manual_values={
-        node0.stc.Pressure.Glob: 15e5,
-        # node0.rlt.Pressure: 19e5,
-        # node0.kin.V_mag: 100,
-    },
-    fallback=0.5,
-)
+x0 = system.get_guess()
 kn = system.get_boundary_conds()
-resfunc = system.make_residual_function()
+bnd = system.get_bounds()
 
-diag = SystemDiagnostics(system, kn)
+sol = solve_root_problem(rtfn, x0, kn, bnd)
 
-func_val = resfunc(x0, kn)
-jac_val = resfunc.jacobian()(x0, kn, func_val)
-first_step = cs.inv(jac_val[0]) @ func_val
-
-sol = solve_root_problem(rtfn, x0, kn)
 sol_dict = system.sol_to_dict(sol)
-
-
-# Plot convergence history
-# globals().update(
-#     residual_debugger(ideal_state.get_eos(NodeStates.STATIC), [0], sol_dict)
-# )

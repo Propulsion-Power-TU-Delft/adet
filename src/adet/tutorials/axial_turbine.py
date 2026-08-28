@@ -1,11 +1,9 @@
 # === IMPORTS
-from adet.fluid.ideal_eos import IdealGasState
 import logging
 from copy import deepcopy
 
 import matplotlib.pyplot as plt
 import numpy as np
-from CoolProp import AbstractState
 from pint import Quantity
 
 from adet.assemblers import CasadiSystem
@@ -19,7 +17,6 @@ from adet.equations.geometrical import ModifiedZweifel
 from adet.equations.nondimensional import (
     FlowCoefficientMid,
     StaticTotalDegreeOfReaction,
-    TotalTotalExpansionEfficiency,
     WorkCoefficientMid,
 )
 from adet.fluid.settings import FluidSettings
@@ -28,6 +25,7 @@ from adet.losses.basic import (
     ZeroDeviation,
 )
 from adet.solution import solve_root_problem
+from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 from adet.tools.plotting import plot_camberline, plot_velocity_triangles, setup_mpl
 from adet.variables import NodeVariables
@@ -40,8 +38,8 @@ n3 = NodeVariables(3)
 logger = logging.getLogger(__name__)
 setup_logger(logger)
 
-fluid_state = AbstractState('HEOS', 'Air')
-fluid_state = IdealGasState(1.4, 287, 2e-5)
+fluid_state = DebugAbstractState('HEOS', 'Air')
+# fluid_state = IdealGasState(1.4, 287, 2e-5)
 
 # *** Inlet conditions
 inlet = Inlet(

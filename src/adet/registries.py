@@ -181,6 +181,7 @@ SCALING_FACTORS: dict[str, float] = {
     'm**2': 1e-2,
     'm**2 / s': 10.0,
     'kg / m**3': 2.0,  # Densities
+    'm**3 / kg': 0.5,  # Specific vols
     'dimensionless': 1.0,
 }
 # Convert to standard string representation
