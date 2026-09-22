@@ -9,8 +9,10 @@ Analysis of Centrifugal Compressors* (2019), Eqs. (3.1)-(3.20), applied to a
 compressor impeller. See that file's module docstring for the full
 derivation and the modeling choices shared by both examples (rothalpy
 conservation, the general blade-to-blade loading law, the SS/PS velocity
-superposition and blade surface pressures, the zero-incidence-then-Kutta
-deviation model); only what differs for a turbine rotor is noted here.
+superposition and blade surface pressures, the attached-flow-then-Kutta
+deviation model downstream of the leading edge); only what differs for a
+turbine rotor -- including the rotor-inlet incidence model -- is noted
+here.
 
 What actually differs from the compressor case
 -------------------------------------------------
@@ -30,11 +32,18 @@ operating point* are mirrored:
   meanline radius overshoots non-monotonically; this is now caught by an
   assertion right after the Bezier curve is built).
 - The leading-edge blade metal angle is taken as purely radial
-  (``BETA_BL_IN = 0``), the common "90-degree IFR turbine" zero-incidence
-  design convention (absolute inlet swirl equal to the blade speed); the
-  trailing-edge (exducer) angle is strongly backswept
+  (``BETA_BL_IN = 0``), the common "90-degree IFR turbine" blade design;
+  the trailing-edge (exducer) angle is strongly backswept
   (``BETA_BL_OUT`` a large negative angle), consistent with
   ``radial_inflow_turbine.py``'s rotor.
+- The rotor inlet does *not* assume zero incidence (flow angle = blade
+  angle): it instead uses
+  ``adet.equations.control_volumes.OptimalIncidenceRadialInflowTurbine``
+  to predict the efficiency-optimum incidence angle that results from
+  flow slip relative to the blades, following H. Chen and N. C. Baines, "The
+  aerodynamic loading of radial and mixed-flow turbines," Int. J. Mech.
+  Sci. 36(1), pp. 63-79 (1994). See ``chen1994_optimum_incidence.py`` for
+  that equation solved on its own, decoupled from the rest of this model.
 - No sign flips are needed anywhere else: with radius *decreasing*
   downstream and the exducer turning the flow to a large negative relative
   angle, :math:`\\Omega \\, d(R V_u)/ds` comes out negative on its own,
@@ -65,6 +74,7 @@ from adet.fluid.ideal_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
 from adet.geometry import BezierCurve
 from adet.losses.basic import IsentropicLink, ZeroDeviation
+from adet.equations.control_volumes import OptimalIncidenceRadialInflowTurbine
 from adet.solution import solve_root_problem
 from adet.tools.loggers import setup_logger
 from adet.variables import NodeVariables, ThermoVariables, VariableEnum
@@ -414,7 +424,17 @@ _BETA_BL_SLOPE = (BETA_BL_OUT - BETA_BL_IN) / S_MAX  # constant (linear law)
 EQUATIONS = {}
 for i in range(N_STATIONS):
     EQUATIONS[Kinematics()] = i
-    if i <= TRANSITION_STAR:
+    if i == 0:
+        # Rotor leading edge: rather than assume zero incidence (flow
+        # angle = blade angle exactly), account for flow slip and impose
+        # the efficiency-optimum incidence of Chen & Baines (1994) --
+        # see ``chen1994_optimum_incidence.py`` for this equation solved
+        # in isolation, and
+        # ``adet.equations.control_volumes.OptimalIncidenceRadialInflowTurbine``
+        # for the derivation. This is what was previously causing the
+        # incidence predicted here to disagree with reference data.
+        EQUATIONS[OptimalIncidenceRadialInflowTurbine()] = i
+    elif i <= TRANSITION_STAR:
         EQUATIONS[ZeroDeviation()] = i
     elif i != TRAILING_EDGE:
         EQUATIONS[
@@ -463,6 +483,11 @@ BOUNDARY_CONDITIONS[nodes[0].tot.Pressure] = Quantity(P0_TOT, 'Pa')
 BOUNDARY_CONDITIONS[nodes[0].tot.Temperature] = Quantity(T0_TOT, 'K')
 BOUNDARY_CONDITIONS[nodes[0].oth.StreamMassFlow] = MASS_FLOW
 
+# Cone angle input for OptimalIncidenceRadialInflowTurbine at the rotor leading edge
+# (MERID_ANGLE_IN = -90 deg => purely radial inlet => 90 deg cone angle,
+# consistent with the meanline geometry built above).
+BOUNDARY_CONDITIONS[nodes[0].geo.MeridionalAngle] = MERID_ANGLE_IN
+
 # No blade loading right at the leading edge: zero incidence at the radial
 # inlet, so the loading described by Eq. (3.13) only builds up downstream.
 BOUNDARY_CONDITIONS[bl_nodes[0].DeltaW] = 0.0
@@ -493,6 +518,7 @@ MANUAL_GUESSES = {}
 for i in range(N_STATIONS):
     MANUAL_GUESSES[nodes[i].kin.FlowAngleRel] = BETA_BL_STATIONS[i]
     MANUAL_GUESSES[nodes[i].kin.W_mag] = max(OMEGA * R_STATIONS[i], 50.0)
+    MANUAL_GUESSES[nodes[i].oth.SlipFactor] = 0.9
     # NOTE: Seed mass flow, density and meridional velocity consistently
     # (mf = rho * Vm * A) at *every* station from the start: without this,
     # IPOPT starts from a guess that violates MassConservation station-to-
@@ -504,6 +530,12 @@ for i in range(N_STATIONS):
     MANUAL_GUESSES[nodes[i].kin.V_mer] = MASS_FLOW / (
         _RHO0_APPROX * 2 * np.pi * R_STATIONS[i] * H_STATIONS[i]
     )
+
+# Rotor leading edge (station 0): the previous zero-incidence guess is a
+# poor starting point now that OptimalIncidenceRadialInflowTurbine lets the flow angle
+# deviate from the blade metal angle -- seed it near the typical
+# empirical optimum instead (see chen1994_optimum_incidence.py).
+MANUAL_GUESSES[nodes[0].kin.FlowAngleRel] = np.radians(-20.0)
 
 x0 = system.get_guess(MANUAL_GUESSES, fallback=0.6)
 kn = system.get_boundary_conds()

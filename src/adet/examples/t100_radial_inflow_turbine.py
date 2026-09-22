@@ -60,6 +60,14 @@ State:
 - Deviation is modeled as zero-deviation (blade angle = flow angle) at
   every row exit, as in ``radial_inflow_turbine.py`` -- consistent with the
   small measured deviation both papers report at the design point.
+- The rotor's leading-edge blade metal angle is kept exactly as tabulated
+  (purely radial, 0 deg -- the real T-100 geometry); a fictitious,
+  zero-length ``SlipGap`` component is inserted immediately upstream of
+  the rotor to account for flow slip there (Chen & Baines 1994) without
+  disturbing that real geometry or the usual same-station continuity
+  link from the vaneless space. See
+  ``adet.components.blade_row.SlipGap`` and
+  ``chen1994_optimum_incidence.py``.
 """
 
 import logging
@@ -71,7 +79,7 @@ from pint import Quantity
 from tabulate import tabulate
 
 from adet.assemblers import CasadiSystem
-from adet.components.blade_row import BladeRow, Interspace
+from adet.components.blade_row import BladeRow, Interspace, SlipGap
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.base_equation import LossApplier
@@ -138,8 +146,10 @@ STATION_LABELS = {
     1: 'Nozzle outlet',
     2: 'Interspace inlet',
     3: 'Interspace outlet',
-    4: 'Rotor inlet',
-    5: 'Rotor outlet',
+    4: 'Slip gap inlet',
+    5: 'Slip gap outlet',
+    6: 'Rotor inlet',
+    7: 'Rotor outlet',
 }
 
 n0 = NodeVariables(0)
@@ -148,6 +158,8 @@ n2 = NodeVariables(2)
 n3 = NodeVariables(3)
 n4 = NodeVariables(4)
 n5 = NodeVariables(5)
+n6 = NodeVariables(6)
+n7 = NodeVariables(7)
 
 # ============================================================
 # Geometry and boundary conditions.
@@ -311,6 +323,30 @@ interspace = Interspace(
     },
 )
 
+# Fictitious, zero-length lumped station accounting for flow slip (Chen &
+# Baines 1994) at the rotor's leading edge -- see
+# ``adet.components.blade_row.SlipGap`` and
+# ``chen1994_optimum_incidence.py``. Radius/height are unchanged across it
+# (RadiusRatio/HeightRatio default to 1.0), it co-rotates with the rotor
+# (same shaft), and it carries a *duplicate* of the rotor's own (real,
+# unmodified) blade number and LE metal angle so its slip-corrected
+# relative flow angle -- not the rotor's own metal angle -- becomes the
+# actual incidence the rotor "sees" (via the normal same-station
+# from_previous_node link, exactly as it would inherit from any other
+# upstream component).
+slip_gap = SlipGap(
+    'slip_gap',
+    shaft=shaft,
+    bound_cond={
+        n1.geo.NumBlades: ROTOR_NUM_BLADES,
+        n1.geo.MetalAngle: Quantity(0, 'deg'),  # rotor's real LE blade angle
+    },
+    extra_equations={
+        IsentropicLink(): (0, 1),
+    },
+    correlation='chen',
+)
+
 rotor = BladeRow(
     'impeller',
     bound_cond={
@@ -360,6 +396,7 @@ ntw = ComponentNetwork(
     [
         stator,
         interspace,
+        slip_gap,
         rotor,
     ],
 )
@@ -392,8 +429,12 @@ BETA4_GUESS = Quantity(-32.7, 'deg')
 
 x0 = ntw.system.get_guess(
     {
+        # Slip gap (fictitious, lumped at the rotor LE): same guess as
+        # the rotor-inlet triangle/thermo state it represents
         n4.kin.FlowAngleRel: BETA4_GUESS.to('rad').magnitude,
-        n5.kin.FlowAngleRel: BETA3_MEAN.to('rad').magnitude,
+        n5.kin.FlowAngleRel: BETA4_GUESS.to('rad').magnitude,
+        n6.kin.FlowAngleRel: BETA4_GUESS.to('rad').magnitude,
+        n7.kin.FlowAngleRel: BETA3_MEAN.to('rad').magnitude,
         n0.stc.Pressure: 5.78e5,
         n0.stc.Temperature: 1050.0,
         n0.stc.Entropy: 4708.1,
@@ -409,9 +450,15 @@ x0 = ntw.system.get_guess(
         n4.stc.Pressure: 2.948e5,
         n4.stc.Temperature: 906.7,
         n4.stc.Entropy: 4735.8,
-        n5.stc.Pressure: P5_STATIC,
-        n5.stc.Temperature: 713.9,
-        n5.stc.Entropy: 4798.9,
+        n5.stc.Pressure: 2.948e5,
+        n5.stc.Temperature: 906.7,
+        n5.stc.Entropy: 4735.8,
+        n6.stc.Pressure: 2.948e5,
+        n6.stc.Temperature: 906.7,
+        n6.stc.Entropy: 4735.8,
+        n7.stc.Pressure: P5_STATIC,
+        n7.stc.Temperature: 713.9,
+        n7.stc.Entropy: 4798.9,
     },
     fallback=0.5,
 )
@@ -429,14 +476,21 @@ bnd = ntw.system.get_bounds(
         # NOTE: near-zero design exit swirl (Jones Fig. 4: V_theta/U =
         # 0.014); bound around the physical branch as in
         # radial_inflow_turbine.py
-        n5.kin.FlowAngleAbs: (
+        n7.kin.FlowAngleAbs: (
             Quantity(-20, 'deg').to('rad').magnitude,
             Quantity(20, 'deg').to('rad').magnitude,
         ),
         # NOTE: rotor inlet incidence is *negative* (see BETA4_GUESS
         # above) -- bound around that physical branch, staying away from
-        # the |incidence| = 90 deg singularity in ImpellerIncidenceLoss
-        n4.kin.FlowAngleRel: (
+        # the |incidence| = 90 deg singularity in ImpellerIncidenceLoss.
+        # Also applied to the slip gap's own outlet (n5), which is where
+        # ChenOptimumIncidence actually determines this angle and whose
+        # value the rotor inlet (n6) simply inherits.
+        n5.kin.FlowAngleRel: (
+            Quantity(-70, 'deg').to('rad').magnitude,
+            Quantity(0, 'deg').to('rad').magnitude,
+        ),
+        n6.kin.FlowAngleRel: (
             Quantity(-70, 'deg').to('rad').magnitude,
             Quantity(0, 'deg').to('rad').magnitude,
         ),
@@ -531,7 +585,8 @@ LOSS_MECHANISMS = {
 COMPONENT_NODES = {
     'Nozzle': (0, 1),
     'Interspace': (2, 3),
-    'Rotor': (4, 5),
+    'Slip gap': (4, 5),
+    'Rotor': (6, 7),
 }
 
 loss_rows = []
@@ -549,7 +604,7 @@ for component, (inlet_idx, outlet_idx) in COMPONENT_NODES.items():
 
     loss_rows.append([component, 'Subtotal (s_out - s_in)', f'{ds_component:.3f}'])
 
-loss_rows.append(['All components', 'TOTAL (s5 - s0)', f'{ds_total_all:.3f}'])
+loss_rows.append(['All components', 'TOTAL (s7 - s0)', f'{ds_total_all:.3f}'])
 
 print(
     tabulate(
@@ -562,7 +617,7 @@ print(
 # --- Overall performance vs. Sauret Table 3 (engine conditions, "Present"
 # 1D analysis) and Jones (1996) Table 2 (design goal)
 h0 = _val(n0.tot.Enthalpy)
-h5 = _val(n5.tot.Enthalpy)
+h5 = _val(n7.tot.Enthalpy)
 specific_work = h0 - h5
 
 print(
@@ -570,15 +625,15 @@ print(
     f'({specific_work / 2326.0:.1f} BTU/lb)'
 )
 print(
-    "Sauret Table 3 gives Power = 120.8 kW at 0.33 kg/s (=~ 366 kJ/kg =~ "
-    '157 BTU/lb); Jones\' Table 2 states 43.9 BTU/lb, inconsistent with '
-    'both Sauret and Jones\' own tip speed / Vtheta-over-U by roughly a '
+    'Sauret Table 3 gives Power = 120.8 kW at 0.33 kg/s (=~ 366 kJ/kg =~ '
+    "157 BTU/lb); Jones' Table 2 states 43.9 BTU/lb, inconsistent with "
+    "both Sauret and Jones' own tip speed / Vtheta-over-U by roughly a "
     'factor of 4 (see module docstring) -- likely an OCR-dropped leading '
     'digit -- so it is not used as a design target here.'
 )
 print(
     f'Rotor-exit pressure ratio (p0_0 / p5_static): '
-    f'{_val(n0.tot.Pressure) / _val(n5.stc.Pressure):.3f} '
+    f'{_val(n0.tot.Pressure) / _val(n7.stc.Pressure):.3f} '
     f'(Sauret Table 4, Present: {P0_TOT.magnitude / P5_STATIC:.3f})'
 )
 

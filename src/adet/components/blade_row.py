@@ -7,6 +7,7 @@ from matplotlib.lines import Line2D
 
 from adet.components import BaseComponent, Shaft
 from adet.equations import EquationBase
+from adet.equations.control_volumes import OptimalIncidenceRadialInflowTurbine
 from adet.equations.fundamental import (
     ConstantAngMomentum,
     ConstRelEnthalpy,
@@ -257,6 +258,111 @@ class Interspace(BaseComponent):
         self._boundary_conditions[n1.kin.Omega] = 0
         # NOTE: Null axial chord => exactly radial diffuser
         self._boundary_conditions[n1.geo.ChordAx] = 0
+
+
+class SlipGap(BaseComponent):
+    """
+    Fictitious, zero-length lumped station accounting for flow slip (Chen
+    & Baines 1994) immediately upstream of a rotor's leading edge, without
+    altering the rotor's own blade metal angle or breaking the usual
+    same-station continuity link (``from_previous_node``) a ``BladeRow``
+    relies on to inherit its inlet triangle from whatever comes before it.
+
+    Structurally identical to ``Interspace`` -- no blades, no radius or
+    height change across it, meant to sit with zero length right before a
+    rotor, at the same physical station -- except:
+
+    - It rotates at the rotor's own speed (``shaft``), so its own
+      ``Kinematics`` equation resolves the relative frame (and hence the
+      slip-corrected incidence) at the correct blade speed.
+    - Instead of ``Interspace``'s ``ConstantAngMomentum`` (passing the
+      inlet absolute swirl straight through unmodified), its outlet
+      relative flow angle is set by ``OptimalIncidenceRadialInflowTurbine``, using the
+      *real* (unmodified) rotor blade metal angle, blade number and cone
+      angle supplied as this component's own node-1 boundary conditions.
+
+    Insert it into a ``ComponentNetwork`` between the upstream
+    row/interspace and the rotor, e.g. ``[..., interspace, slip_gap,
+    rotor]``, with ``shaft=`` the same ``Shaft`` as the rotor, and
+    boundary conditions ``n1.geo.NumBlades`` / ``n1.geo.MetalAngle`` /
+    (if not radial) ``n1.geo.MeridionalAngle`` duplicated from the
+    rotor's own node-0 values.
+
+    Parameters
+    ----------
+    correlation : str
+        Which slip-factor correlation ``OptimalIncidenceRadialInflowTurbine``
+        uses -- ``'chen'`` (default, Eq. 8) or ``'stanitz'`` (Eq. 4). See
+        that class's docstring for the difference between the two.
+    """
+
+    base_equations = [
+        # Fundamental equations -- no work extracted, no radius change
+        (ConstRelEnthalpy, (0, 1)),
+        (MassConservation, (0, 1)),
+        (MeridionalGeometry, 1),
+        (RadialGeometry, (0, 1)),
+        # No blades (only a bookkeeping incidence correction)
+        (ZeroBlockage, 0),
+        (ZeroBlockage, 1),
+        # Flow slip, in place of Interspace's ConstantAngMomentum: the
+        # outlet relative flow angle follows Chen & Baines (1994) instead
+        # of the inlet absolute swirl being passed through unmodified
+        (OptimalIncidenceRadialInflowTurbine, 1),
+    ]
+
+    constant_variables = [
+        _kin.Omega,
+    ]
+
+    from_previous_node = (
+        ABSOLUTE_LINK
+        + GEOM_LINK
+        + [
+            _geo.HDistr,
+            _geo.RDistr,
+        ]
+    )
+
+    def __init__(
+        self,
+        name: str,
+        shaft: Shaft,
+        bound_cond: dict[VarSpec, Any] = {},
+        correlation: str = 'chen',
+        extra_equations: dict[EquationBase, int | tuple[int, ...]] = {},
+        **kwargs,
+    ):
+        # Overrides the default (position-1) OptimalIncidenceRadialInflowTurbine
+        # instance with one using the requested correlation -- same
+        # UniqueEquation superseding mechanism a user-supplied
+        # extra_equations entry would trigger (see
+        # BaseComponent._merge_unique_equations).
+        extra_equations = {
+            OptimalIncidenceRadialInflowTurbine(correlation=correlation): 1,
+            **extra_equations,
+        }
+        super().__init__(name, bound_cond, extra_equations=extra_equations, **kwargs)
+        self._shaft = None
+        self.shaft = shaft
+
+    def _post_init(self):
+        # Zero-length, zero-radius/height-change lumped station
+        self._boundary_conditions.setdefault(n1.geo.RadiusRatio, 1.0)
+        self._boundary_conditions.setdefault(n1.geo.HeightRatio, 1.0)
+        self._boundary_conditions.setdefault(n1.geo.ChordAx, 0.0)
+
+    @property
+    def shaft(self) -> Shaft | None:
+        return self._shaft
+
+    @shaft.setter
+    def shaft(self, shaft: Shaft):
+        self._shaft = shaft
+        if shaft.is_constrained:
+            self._boundary_conditions[n1.kin.Omega] = shaft.omega
+        else:
+            self._boundary_conditions.pop(n1.kin.Omega, None)
 
 
 @dataclass

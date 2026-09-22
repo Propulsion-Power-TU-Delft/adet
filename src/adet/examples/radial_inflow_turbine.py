@@ -7,6 +7,13 @@ State:
 - Most losses are missing
 - Missing stator-rotor row gap
 - Volute not integrated
+- The rotor's leading-edge blade metal angle is kept as-designed; a
+  fictitious, zero-length ``SlipGap`` component is inserted immediately
+  upstream of the rotor to account for flow slip there (Chen & Baines
+  1994) without disturbing that geometry or the usual same-station
+  continuity link from the vaneless space. See
+  ``adet.components.blade_row.SlipGap`` and
+  ``chen1994_optimum_incidence.py``.
 """
 
 import logging
@@ -18,7 +25,7 @@ from pint import Quantity
 from tabulate import tabulate
 
 from adet.assemblers import CasadiSystem
-from adet.components.blade_row import BladeRow, Interspace
+from adet.components.blade_row import BladeRow, Interspace, SlipGap
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.base_equation import LossApplier
@@ -84,8 +91,10 @@ STATION_LABELS = {
     1: 'Stator outlet',
     2: 'Interspace inlet',
     3: 'Interspace outlet',
-    4: 'Rotor inlet',
-    5: 'Rotor outlet',
+    4: 'Slip gap inlet',
+    5: 'Slip gap outlet',
+    6: 'Rotor inlet',
+    7: 'Rotor outlet',
 }
 
 # |> Stator 0 - 1
@@ -94,9 +103,12 @@ n1 = NodeVariables(1)
 # |> Inters 2 - 3
 n2 = NodeVariables(2)
 n3 = NodeVariables(3)
-# |> Rotor  4 - 5
+# |> Slip gap 4 - 5
 n4 = NodeVariables(4)
 n5 = NodeVariables(5)
+# |> Rotor  6 - 7
+n6 = NodeVariables(6)
+n7 = NodeVariables(7)
 
 inl = Inlet(
     {
@@ -169,6 +181,28 @@ interspace = Interspace(
     },
 )
 
+# Fictitious, zero-length lumped station accounting for flow slip (Chen &
+# Baines 1994) at the rotor's leading edge -- see
+# ``adet.components.blade_row.SlipGap`` and
+# ``chen1994_optimum_incidence.py``. Radius/height are unchanged across it
+# (RadiusRatio/HeightRatio default to 1.0), it co-rotates with the rotor
+# (same shaft), and it carries a *duplicate* of the rotor's own (real,
+# unmodified) blade number and LE metal angle so its slip-corrected
+# relative flow angle -- not the rotor's own metal angle -- becomes the
+# actual incidence the rotor "sees" (via the normal same-station
+# from_previous_node link, exactly as it would inherit from any other
+# upstream component).
+slip_gap = SlipGap(
+    'slip_gap',
+    shaft=shaft,
+    bound_cond={
+        n1.geo.NumBlades: 13,
+        n1.geo.MetalAngle: Quantity(45, 'deg'),  # rotor's real LE blade angle
+    },
+    extra_equations={
+        IsentropicLink(): (0, 1),
+    },
+)
 
 rotor = BladeRow(
     'impeller',
@@ -217,6 +251,7 @@ ntw = ComponentNetwork(
     [
         stator,
         interspace,
+        slip_gap,
         rotor,
     ],
 )
@@ -230,8 +265,12 @@ rtfn = ntw.system.make_rootfinder(
 x0 = ntw.system.get_guess(
     {
         # NOTE: Keep the incidence loss's fractional-power terms away from
-        # the |incidence| = 90 deg singularity during early iterations
+        # the |incidence| = 90 deg singularity during early iterations.
+        # Slip gap (fictitious, lumped at the rotor LE): same guess as
+        # the rotor-inlet triangle it represents.
         n4.kin.FlowAngleRel: Quantity(48, 'deg').to('rad').magnitude,
+        n5.kin.FlowAngleRel: Quantity(48, 'deg').to('rad').magnitude,
+        n6.kin.FlowAngleRel: Quantity(48, 'deg').to('rad').magnitude,
         # NOTE: Seed the thermodynamic state at every station close to the
         # known-good solution (from a prior solve without the endwall-loss
         # march) -- the new march equations add several more EOS calls
@@ -253,9 +292,15 @@ x0 = ntw.system.get_guess(
         n4.stc.Pressure: 1.51e5,
         n4.stc.Temperature: 534.8,
         n4.stc.Entropy: 1177.4,
-        n5.stc.Pressure: 0.443e5,
-        n5.stc.Temperature: 519.7,
-        n5.stc.Entropy: 1183.1,
+        n5.stc.Pressure: 1.51e5,
+        n5.stc.Temperature: 534.8,
+        n5.stc.Entropy: 1177.4,
+        n6.stc.Pressure: 1.51e5,
+        n6.stc.Temperature: 534.8,
+        n6.stc.Entropy: 1177.4,
+        n7.stc.Pressure: 0.443e5,
+        n7.stc.Temperature: 519.7,
+        n7.stc.Entropy: 1183.1,
     },
     fallback=0.5,
 )
@@ -274,13 +319,20 @@ bnd = ntw.system.get_bounds(
         # NOTE: With the rotor outlet static pressure fixed, FlowAngleAbs
         # is free and the problem has multiple roots; bound it around the
         # physical branch (else IPOPT lands on a different angle each run)
-        n5.kin.FlowAngleAbs: (
+        n7.kin.FlowAngleAbs: (
             Quantity(-20, 'deg').to('rad').magnitude,
             Quantity(60, 'deg').to('rad').magnitude,
         ),
         # NOTE: Keep the incidence loss's fractional-power terms away from
-        # the |incidence| = 90 deg singularity throughout the search
-        n4.kin.FlowAngleRel: (
+        # the |incidence| = 90 deg singularity throughout the search. Also
+        # applied to the slip gap's own outlet (n5), which is where
+        # OptimalIncidenceRadialInflowTurbine actually determines this
+        # angle and whose value the rotor inlet (n6) simply inherits.
+        n5.kin.FlowAngleRel: (
+            Quantity(0, 'deg').to('rad').magnitude,
+            Quantity(90, 'deg').to('rad').magnitude,
+        ),
+        n6.kin.FlowAngleRel: (
             Quantity(0, 'deg').to('rad').magnitude,
             Quantity(90, 'deg').to('rad').magnitude,
         ),
@@ -382,7 +434,8 @@ LOSS_MECHANISMS = {
 COMPONENT_NODES = {
     'Stator': (0, 1),
     'Interspace': (2, 3),
-    'Rotor': (4, 5),
+    'Slip gap': (4, 5),
+    'Rotor': (6, 7),
 }
 
 loss_rows = []
@@ -400,7 +453,7 @@ for component, (inlet_idx, outlet_idx) in COMPONENT_NODES.items():
 
     loss_rows.append([component, 'Subtotal (s_out - s_in)', f'{ds_component:.3f}'])
 
-loss_rows.append(['All components', 'TOTAL (s5 - s0)', f'{ds_total_all:.3f}'])
+loss_rows.append(['All components', 'TOTAL (s7 - s0)', f'{ds_total_all:.3f}'])
 
 print(
     tabulate(
