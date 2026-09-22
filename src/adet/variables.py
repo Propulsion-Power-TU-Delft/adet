@@ -168,6 +168,8 @@ class Losses(VariableEnum):
     Ds_leakage = VarSpec('ds_leakage', 'J / kg / K')
     Ds_mixing = VarSpec('ds_mixing', 'J / kg / K')
     Ds_profile = VarSpec('ds_profile', 'J / kg / K')
+    Ds_endwall = VarSpec('ds_endwall', 'J / kg / K', guess=1.0, bounds=(0.0, 500.0))
+    Ds_incidence = VarSpec('ds_incidence', 'J / kg / K')
     Ds_secondary = VarSpec('ds_secondary', 'J / kg / K')
     Ds_total = VarSpec('ds_total', 'J / kg / K')
     Ds_main = VarSpec('ds_main', 'J / kg / K')

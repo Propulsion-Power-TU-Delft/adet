@@ -10,20 +10,29 @@ State:
 """
 
 import logging
+import math
 
 import matplotlib.pyplot as plt
+import numpy as np
 from pint import Quantity
+from tabulate import tabulate
 
 from adet.assemblers import CasadiSystem
 from adet.components.blade_row import BladeRow, Interspace
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
+from adet.equations.base_equation import LossApplier
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
 from adet.equations.nondimensional import GammaPV
-from adet.equations.utils import residual_debugger
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation
-from adet.losses.rit import StatorProfileLoss
+from adet.losses.rit import (
+    StatorProfileLoss,
+    EndwallLoss,
+    ImpellerIncidenceLoss,
+    ImpellerLeakageLoss,
+    ImpellerPassageLoss,
+)
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
@@ -32,7 +41,52 @@ from adet.variables import NodeVariables
 
 logger = logging.getLogger(__name__)
 setup_logger(logger)
-PLOTS = False
+PLOTS = True
+
+
+_n0 = NodeVariables(0)
+_n1 = NodeVariables(1)
+
+
+class AddImpellerLosses(LossApplier):
+    """Apply the rotor's passage + leakage + incidence losses to the static
+    entropy rise."""
+
+    def residual(
+        self,
+        s0: _n0.stc.Entropy.Hint,
+        s1: _n1.stc.Entropy.Hint,
+        ds_profile1: _n1.loss.Ds_profile.Hint,
+        ds_leakage1: _n1.loss.Ds_leakage.Hint,
+        ds_incidence1: _n1.loss.Ds_incidence.Hint,
+        ds_endwall1: _n1.loss.Ds_endwall.Hint,
+    ):
+        return s1 - (s0 + ds_profile1 + ds_leakage1 + ds_incidence1 + ds_endwall1)
+
+
+class AddStatorLosses(LossApplier):
+    """Apply the stator's profile loss to the static entropy rise."""
+
+    def residual(
+        self,
+        s0: _n0.stc.Entropy.Hint,
+        s1: _n1.stc.Entropy.Hint,
+        ds_profile1: _n1.loss.Ds_profile.Hint,
+        ds_endwall1: _n1.loss.Ds_endwall.Hint,
+    ):
+        return s1 - (s0 + ds_profile1 + ds_endwall1)
+
+
+# |> Machine stations, in the order the components are chained below (each
+# component owns two fresh global nodes: inlet, outlet)
+STATION_LABELS = {
+    0: 'Stator inlet',
+    1: 'Stator outlet',
+    2: 'Interspace inlet',
+    3: 'Interspace outlet',
+    4: 'Rotor inlet',
+    5: 'Rotor outlet',
+}
 
 # |> Stator 0 - 1
 n0 = NodeVariables(0)
@@ -72,7 +126,7 @@ stator = BladeRow(
     bound_cond={
         n1.geo.HeightRatio: 1.0,
         n1.geo.RadiusRatio: 0.75,
-        n1.geo.Rmid: Quantity(25.75, 'mm'),
+        n1.geo.Rmid: Quantity(26.1, 'mm'),
         n1.geo.MeridionalAngle: Quantity(-90, 'deg'),
         # *** Outlet
         n1.geo.MetalAngle: Quantity(78, 'deg'),
@@ -91,11 +145,11 @@ stator = BladeRow(
     },
     shaft=casing,
     extra_equations={
-        IsentropicLink(): (0, 1),
+        AddStatorLosses(): (0, 1),
         ZeroDeviation(): 0,  # No incidence
-        # *** Loss + Dependencies
-        # ShockLoss(): 1,
+        # *** Loss + Dependencies (disabled: inviscid check)
         StatorProfileLoss(): (0, 1),
+        EndwallLoss(): (0, 1),
         IsentropicProperties(): (0, 1),
         BoundaryLayerRatios(): 1,
         GammaPV(): 0,
@@ -106,7 +160,8 @@ stator = BladeRow(
 interspace = Interspace(
     'intrspc',
     {
-        n1.geo.RadiusRatio: 0.96,
+        # Rotor inlet (Rmid = 25.75 mm) / stator outlet (Rmid = 26.1 mm)
+        n1.geo.RadiusRatio: 25.75 / 26.1,
         n1.geo.HeightRatio: 1.0,
     },
     extra_equations={
@@ -123,21 +178,29 @@ rotor = BladeRow(
         n1.geo.Height: Quantity(12.3, 'mm'),
         n1.geo.MeridionalAngle: Quantity(0, 'deg'),
         # *** Blade Geometry
-        n0.geo.BldThick: 0.0,
-        n1.geo.BldThick: 0.0,
+        n0.geo.BldThick: 0.0003,
+        n0.geo.MetalAngle: Quantity(45, 'deg'),
+        n1.geo.BldThick: 0.0003,
         n1.geo.ChordAx: Quantity(10.2, 'mm'),
         n1.geo.NumBlades: 13,
         # *** Outlet condition
-        n1.kin.FlowAngleAbs: Quantity(0, 'deg'),
+        n1.stc.Pressure: Quantity(0.443, 'bar'),
+        # *** Tip clearance
+        n0.geo.TipClearance: Quantity(0.2, 'mm'),
+        n1.geo.TipClearance: Quantity(0.2, 'mm'),
     },
     shaft=shaft,
     extra_equations={
-        IsentropicLink(): (0, 1),
-        ZeroDeviation(): 0,  # No incidence
+        AddImpellerLosses(): (0, 1),
+        IsentropicProperties(): (0, 1),
+        ImpellerPassageLoss(): (0, 1),
+        ImpellerLeakageLoss(): (0, 1),
+        ImpellerIncidenceLoss(): (0, 1),
+        EndwallLoss(): (0, 1),
     },
 )
 
-abs_state = DebugAbstractState('REFPROP', 'MM')
+abs_state = DebugAbstractState('HEOS', 'MM')
 
 fluid_settings = FluidSettings(
     fluid_state=abs_state,
@@ -153,9 +216,8 @@ ntw = ComponentNetwork(
     CasadiSystem(1),
     [
         stator,
-        # shock_mix,
-        # interspace,
-        # rotor,
+        interspace,
+        rotor,
     ],
 )
 
@@ -165,7 +227,38 @@ rtfn = ntw.system.make_rootfinder(
     'ipopt',
     opts={'error_on_fail': False},
 )
-x0 = ntw.system.get_guess(fallback=0.5)
+x0 = ntw.system.get_guess(
+    {
+        # NOTE: Keep the incidence loss's fractional-power terms away from
+        # the |incidence| = 90 deg singularity during early iterations
+        n4.kin.FlowAngleRel: Quantity(48, 'deg').to('rad').magnitude,
+        # NOTE: Seed the thermodynamic state at every station close to the
+        # known-good solution (from a prior solve without the endwall-loss
+        # march) -- the new march equations add several more EOS calls
+        # (self.eos(P, s) at each radial station) whose validity domain is
+        # narrow for this fluid, so starting far from the physical state
+        # risks an out-of-range CoolProp query during early iterations
+        n0.stc.Pressure: 18.07e5,
+        n0.stc.Temperature: 573.1,
+        n0.stc.Entropy: 1159.5,
+        n1.stc.Pressure: 1.61e5,
+        n1.stc.Temperature: 535.6,
+        n1.stc.Entropy: 1177.4,
+        n2.stc.Pressure: 1.61e5,
+        n2.stc.Temperature: 535.6,
+        n2.stc.Entropy: 1177.4,
+        n3.stc.Pressure: 1.51e5,
+        n3.stc.Temperature: 534.8,
+        n3.stc.Entropy: 1177.4,
+        n4.stc.Pressure: 1.51e5,
+        n4.stc.Temperature: 534.8,
+        n4.stc.Entropy: 1177.4,
+        n5.stc.Pressure: 0.443e5,
+        n5.stc.Temperature: 519.7,
+        n5.stc.Entropy: 1183.1,
+    },
+    fallback=0.5,
+)
 kn = ntw.system.get_boundary_conds()
 bnd = ntw.system.get_bounds(
     {
@@ -174,6 +267,23 @@ bnd = ntw.system.get_bounds(
         # NOTE: Thermo bounding stabilizes a lot
         n0.stc.Temperature.Glob: (300, 580),
         n0.stc.Pressure.Glob: (1e3, 1e9),
+        # NOTE: Keep the endwall-loss march's intermediate (P, s) EOS calls
+        # away from the fluid's validity dome during early iterations
+        n1.stc.Pressure: (0.3e5, 20e5),
+        n0.stc.Entropy.Glob: (200.0, 3000.0),
+        # NOTE: With the rotor outlet static pressure fixed, FlowAngleAbs
+        # is free and the problem has multiple roots; bound it around the
+        # physical branch (else IPOPT lands on a different angle each run)
+        n5.kin.FlowAngleAbs: (
+            Quantity(-20, 'deg').to('rad').magnitude,
+            Quantity(60, 'deg').to('rad').magnitude,
+        ),
+        # NOTE: Keep the incidence loss's fractional-power terms away from
+        # the |incidence| = 90 deg singularity throughout the search
+        n4.kin.FlowAngleRel: (
+            Quantity(0, 'deg').to('rad').magnitude,
+            Quantity(90, 'deg').to('rad').magnitude,
+        ),
     }
 )
 
@@ -185,77 +295,143 @@ sol = solve_root_problem(rtfn, sol, kn, bnd)
 
 sol_data = ntw.system.sol_to_dict(sol)
 
+# ============================================================
+# Active machine stations: only the components actually chained
+# into the network above have solved nodes (see STATION_LABELS)
+# ============================================================
+active_stations = [
+    (NodeVariables(node_idx), node_idx, STATION_LABELS[node_idx])
+    for node_idx in range(2 * ntw.num_components)
+]
+
+
+def _val(spec) -> float:
+    return float(sol_data[spec][0])
+
+
+# ============================================================
+# Terminal output: thermodynamic and flow variables at each station
+# ============================================================
+rows = [
+    [
+        f'{node_idx}: {label}',
+        f'{_val(n.stc.Pressure) / 1e5:.3f}',
+        f'{_val(n.tot.Pressure) / 1e5:.3f}',
+        f'{_val(n.rlt.Pressure) / 1e5:.3f}',
+        f'{_val(n.stc.Temperature):.1f}',
+        f'{_val(n.tot.Temperature):.1f}',
+        f'{_val(n.stc.Density):.3f}',
+        f'{_val(n.stc.Entropy):.1f}',
+        f'{_val(n.kin.V_mag):.1f}',
+        f'{_val(n.kin.W_mag):.1f}',
+        f'{_val(n.kin.BladeSpeed):.1f}',
+        f'{math.degrees(_val(n.kin.FlowAngleAbs)):.1f}',
+        f'{math.degrees(_val(n.kin.FlowAngleRel)):.1f}',
+        f'{_val(n.kin.Mach):.3f}',
+        f'{_val(n.kin.RelMach):.3f}',
+        # f'{_val(n.geo.RDistr) * 1e3:.2f}',
+    ]
+    for n, node_idx, label in active_stations
+]
+
+print(
+    tabulate(
+        rows,
+        headers=[
+            'Station',
+            'p\n[bar]',
+            'p0\n[bar]',
+            'p0_rel\n[bar]',
+            'T\n[K]',
+            'T0\n[K]',
+            'rho\n[kg/m3]',
+            's\n[J/kg/K]',
+            'V\n[m/s]',
+            'W\n[m/s]',
+            'U\n[m/s]',
+            'alpha\n[deg]',
+            'beta\n[deg]',
+            'M',
+            'M_rel',
+            # 'R [mm]',
+        ],
+        tablefmt='github',
+    )
+)
+
+# ============================================================
+# Loss breakdown: specific entropy increase per loss mechanism,
+# grouped by component. Each component's "Subtotal" row is the
+# actual solved entropy rise (s_out - s_in) across that component,
+# which should match the sum of its mechanism rows -- the
+# AddStatorLosses/AddImpellerLosses equations enforce that
+# equality, so this also doubles as a consistency check.
+# ============================================================
+LOSS_MECHANISMS = {
+    'Stator': [
+        ('Profile', lambda n: n.loss.Ds_profile),
+        ('Endwall', lambda n: n.loss.Ds_endwall),
+    ],
+    'Rotor': [
+        ('Profile', lambda n: n.loss.Ds_profile),
+        ('Leakage', lambda n: n.loss.Ds_leakage),
+        ('Incidence', lambda n: n.loss.Ds_incidence),
+        ('Endwall', lambda n: n.loss.Ds_endwall),
+    ],
+}
+COMPONENT_NODES = {
+    'Stator': (0, 1),
+    'Interspace': (2, 3),
+    'Rotor': (4, 5),
+}
+
+loss_rows = []
+ds_total_all = 0.0
+for component, (inlet_idx, outlet_idx) in COMPONENT_NODES.items():
+    n_out = NodeVariables(outlet_idx)
+    ds_component = _val(n_out.stc.Entropy) - _val(NodeVariables(inlet_idx).stc.Entropy)
+    ds_total_all += ds_component
+
+    mechanisms = LOSS_MECHANISMS.get(component, [])
+    if not mechanisms:
+        loss_rows.append([component, '(isentropic, no loss model)', f'{0.0:.3f}'])
+    for mechanism, spec_fn in mechanisms:
+        loss_rows.append([component, mechanism, f'{_val(spec_fn(n_out)):.3f}'])
+
+    loss_rows.append([component, 'Subtotal (s_out - s_in)', f'{ds_component:.3f}'])
+
+loss_rows.append(['All components', 'TOTAL (s5 - s0)', f'{ds_total_all:.3f}'])
+
+print(
+    tabulate(
+        loss_rows,
+        headers=['Component', 'Loss mechanism', 'Ds\n[J/kg/K]'],
+        tablefmt='github',
+    )
+)
+
+# ============================================================
+# Velocity triangle plots at each station
+# ============================================================
 if PLOTS:
-    # Plotting
-    fig, ax_mer = plt.subplots()
-    ax_mer.set_aspect('equal')
+    ncols = min(len(active_stations), 3)
+    nrows = math.ceil(len(active_stations) / ncols)
+    fig, axs_tri = plt.subplots(nrows, ncols, figsize=(6 * ncols, 6 * nrows), dpi=70)
+    axs_flat = np.atleast_1d(axs_tri).flatten()
 
-    # sta_geom = RowGeometry(
-    #     float(sol_data[n0.geo.Rmid][0]),
-    #     float(sol_data[n1.geo.Rmid][0]),
-    #     float(sol_data[n0.geo.Height][0]),
-    #     float(sol_data[n1.geo.Height][0]),
-    #     float(sol_data[n0.geo.MeridionalAngle][0]),
-    #     float(sol_data[n1.geo.MeridionalAngle][0]),
-    #     float(sol_data[n1.geo.ChordAx][0]),
-    # )
-    #
-    # rot_geom = RowGeometry(
-    #     float(sol_data[n4.geo.Rmid][0]),
-    #     float(sol_data[n5.geo.Rmid][0]),
-    #     float(sol_data[n4.geo.Height][0]),
-    #     float(sol_data[n5.geo.Height][0]),
-    #     float(sol_data[n4.geo.MeridionalAngle][0]),
-    #     float(sol_data[n5.geo.MeridionalAngle][0]),
-    #     float(sol_data[n5.geo.ChordAx][0]),
-    # )
-    #
-    # sta_geom.plot_meridional_profile(color='b', ax=ax_mer)
-    # rot_geom.plot_meridional_profile(color='k', ax=ax_mer)
+    for ax, (n, node_idx, label) in zip(axs_flat, active_stations):
+        ax.set_aspect('equal')
+        plot_velocity_triangles(
+            sol_data[n.kin.V_tan],
+            sol_data[n.kin.V_mer],
+            sol_data[n.kin.BladeSpeed],
+            sol_data[n.geo.RDistr],
+            ax,
+        )
+        ax.set_title(f'{node_idx}: {label}')
 
-    fig, axs_tri = plt.subplots(2, 2, figsize=(10, 20), dpi=70)
-    [ax.set_aspect('equal') for ax in axs_tri.flat]
+    for ax in axs_flat[len(active_stations) :]:
+        ax.set_visible(False)
 
-    plot_velocity_triangles(
-        sol_data[n0.kin.V_tan],
-        sol_data[n0.kin.V_mer],
-        sol_data[n0.kin.BladeSpeed],
-        sol_data[n0.geo.RDistr],
-        axs_tri[0, 0],
-        fontsize=17,
-    )
-    plot_velocity_triangles(
-        sol_data[n1.kin.V_tan],
-        sol_data[n1.kin.V_mer],
-        sol_data[n1.kin.BladeSpeed],
-        sol_data[n1.geo.RDistr],
-        axs_tri[0, 1],
-        fontsize=17,
-    )
-    plot_velocity_triangles(
-        sol_data[n2.kin.V_tan],
-        sol_data[n2.kin.V_mer],
-        sol_data[n2.kin.BladeSpeed],
-        sol_data[n2.geo.RDistr],
-        axs_tri[1, 0],
-        fontsize=17,
-    )
-    plot_velocity_triangles(
-        sol_data[n3.kin.V_tan],
-        sol_data[n3.kin.V_mer],
-        sol_data[n3.kin.BladeSpeed],
-        sol_data[n3.geo.RDistr],
-        axs_tri[1, 1],
-        fontsize=17,
-    )
+    fig.tight_layout()
     plt.show()
-
-
-# Turbine power
-# pwr = sol_data[n0.oth.CumMassFlow] * (
-#     sol_data[n4.tot.Enthalpy] - sol_data[n5.tot.Enthalpy]
-# )
-# print(f'Turbine power {pwr}')
-
-# Debug loss
-globals().update(residual_debugger(StatorProfileLoss(), [0, 1], sol_data))

@@ -49,7 +49,7 @@ IPOPT_DEFAULTS = {
     'ipopt.bound_frac': 0.1,  # Relative initial push < 0.5
     'ipopt.mu_init': 0.3,  # Initial barrier param
     'ipopt.mu_strategy': 'adaptive',
-    'ipopt.linear_solver': 'spral',
+    'ipopt.linear_solver': 'mumps',
     # Lower = stricter restoration (def = 100 * tol)
     'ipopt.resto_failure_feasibility_threshold': 1e-7,
     'ipopt.expect_infeasible_problem': 'yes',
