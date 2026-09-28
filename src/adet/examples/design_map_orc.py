@@ -228,7 +228,7 @@ DUTY_COEFFS = {
 }
 
 PHI_SPAN = np.linspace(0.4, 1.5, MAP_POINTS)
-PSI_SPAN = np.linspace(3.0, 10.0, MAP_POINTS)
+PSI_SPAN = np.linspace(2.0, 10.0, MAP_POINTS)
 
 INLET_PRESSURE = 1.3 * abs_state.p_critical()
 INLET_TEMPERATURE = 1.045 * abs_state.T_critical()
@@ -491,7 +491,7 @@ rootfinder_loss = ntw.system.make_rootfinder(
 rtfn_kn = ntw.system.make_rootfinder('kinsol')
 
 try:
-    solution = solve_root_problem(rootfinder_loss, x0_loss, kn_loss, bnd_loss)
+    solution = solve_root_problem(rootfinder_loss, x0_loss, kn_loss)
 except RuntimeError:
     solution = solve_root_problem(rootfinder_loss, x0_loss, kn_loss)
 

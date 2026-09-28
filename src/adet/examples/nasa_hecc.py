@@ -860,7 +860,7 @@ if RUN_MULTI:
                     ax,
                 )
 
-        fig, ax = plt.subplots(figsize=(12, 7))
+        fig, ax = plt.subplots(figsize=(5, 6))
         ax.set_aspect('equal')
 
         # Plot meridional profile for impeller only
@@ -884,11 +884,14 @@ if RUN_MULTI:
             mer_angle_out=mer_angle_out,
             axial_chord=axial_chord,
         )
-        geom.plot_meridional_profile(color='k', ax=ax)
+        lines = geom.plot_meridional_profile(color='k', ax=ax)
+        [ln.set_linewidth(2.0) for ln in lines]
 
-        ax.set_title('Meridional profile')
+        # ax.set_title('Meridional profile')
         ax.set_xlabel(r'$z$ / [m]')
         ax.set_ylabel(r'$r$ / [m]')
+        ax.set_ylim(-0.01, 1.02 * r_out)
+        ax.hlines(0.0, 0.0, axial_chord, linestyles='-.', linewidth=1.5)
         ax.grid(True, alpha=0.3)
 
         fig.tight_layout()
