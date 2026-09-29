@@ -139,8 +139,10 @@ class ParabolicLine(QGraphicsItem):
         control_point: DraggablePoint,
         end_point: DraggablePoint,
         parent=None,
+        show_control_polygon: bool = False,
     ):
         super().__init__(parent)
+        self.show_control_polygon = show_control_polygon
         self.start_point = start_point
         self.control_point = control_point
         self.end_point = end_point
@@ -197,10 +199,33 @@ class ParabolicLine(QGraphicsItem):
         y = (1 - t) ** 2 * p0.y() + 2 * (1 - t) * t * p1.y() + t**2 * p2.y()
         return QPointF(x, y)
 
+    @staticmethod
+    def _direction_angle(origin: QPointF, target: QPointF) -> float:
+        """Angle in degrees of the vector origin -> target, in scene coordinates."""
+        return math.degrees(
+            math.atan2(target.y() - origin.y(), target.x() - origin.x())
+        )
+
+    @property
+    def inlet_angle(self) -> float:
+        """Tangent angle (deg) at the start of the parabola, measured from the x axis."""
+        return self._direction_angle(
+            self.start_point.get_position(), self.control_point.get_position()
+        )
+
+    @property
+    def outlet_angle(self) -> float:
+        """Tangent angle (deg) at the end of the parabola, measured from the x axis."""
+        return self._direction_angle(
+            self.control_point.get_position(), self.end_point.get_position()
+        )
+
     def boundingRect(self):
         points = [
             self._get_bezier_point(i / self.segments) for i in range(self.segments + 1)
         ]
+        if self.show_control_polygon:
+            points += self._control_polygon()
         if not points:
             return QRectF()
         min_x = min(p.x() for p in points) - 2
@@ -209,7 +234,19 @@ class ParabolicLine(QGraphicsItem):
         max_y = max(p.y() for p in points) + 2
         return QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
 
+    def _control_polygon(self) -> list[QPointF]:
+        return [
+            self.start_point.get_position(),
+            self.control_point.get_position(),
+            self.end_point.get_position(),
+        ]
+
     def paint(self, painter: QPainter, _option, _widget):
+        if self.show_control_polygon:
+            polygon = self._control_polygon()
+            painter.setPen(QPen(QColor(128, 128, 128), 1, Qt.PenStyle.DashLine))
+            for a, b in zip(polygon, polygon[1:]):
+                painter.drawLine(a, b)
         painter.setPen(QPen(QColor(100, 200, 100), 2))
         points = [
             self._get_bezier_point(i / self.segments) for i in range(self.segments + 1)
