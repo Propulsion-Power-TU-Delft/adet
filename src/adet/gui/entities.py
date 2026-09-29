@@ -1,8 +1,12 @@
 import math
 
-from PyQt6.QtCore import QPointF, QRectF
+from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import QBrush, QColor, QPainter, QPen
-from PyQt6.QtWidgets import QGraphicsItem
+from PyQt6.QtWidgets import QApplication, QGraphicsItem
+
+
+CONTROL_MARKER_RADIUS = 4.0
+ANGLE_SNAP_DEG = 10.0
 
 
 class DraggablePoint(QGraphicsItem):
@@ -85,14 +89,15 @@ class DraggablePoint(QGraphicsItem):
             if self.max_y is not None:
                 y = min(y, self.max_y)
             constrained_value = QPointF(x, y)
-
+            return super().itemChange(change, constrained_value)
+        if change == QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged:
+            # Notify only after the position is applied, so dependents read the new value
             for dependent in self._dependents:
                 dependent._on_point_moved()
-            return super().itemChange(change, constrained_value)
         return super().itemChange(change, value)
 
 
-class Line(QGraphicsItem):
+class SimpleLine(QGraphicsItem):
     """A line connecting two points that updates when they move."""
 
     def __init__(self, point1: DraggablePoint, point2: DraggablePoint, parent=None):
@@ -238,13 +243,15 @@ class CubicBezierLine(QGraphicsItem):
 
     def __init__(
         self,
-        start_point: DraggablePoint,
-        control_point1: DraggablePoint,
-        control_point2: DraggablePoint,
-        end_point: DraggablePoint,
+        start_point,
+        control_point1,
+        control_point2,
+        end_point,
         parent=None,
+        show_control_polygon: bool = False,
     ):
         super().__init__(parent)
+        self.show_control_polygon = show_control_polygon
         self.start_point = start_point
         self.control_point1 = control_point1
         self.control_point2 = control_point2
@@ -252,11 +259,15 @@ class CubicBezierLine(QGraphicsItem):
         self.segments = 300
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemStacksBehindParent, True)
 
-        # Register as dependent on all control points
-        self.start_point.add_dependent(self)
-        self.control_point1.add_dependent(self)
-        self.control_point2.add_dependent(self)
-        self.end_point.add_dependent(self)
+        # Register as dependent on all control points (if they support it)
+        if hasattr(self.start_point, 'add_dependent'):
+            self.start_point.add_dependent(self)
+        if hasattr(self.control_point1, 'add_dependent'):
+            self.control_point1.add_dependent(self)
+        if hasattr(self.control_point2, 'add_dependent'):
+            self.control_point2.add_dependent(self)
+        if hasattr(self.end_point, 'add_dependent'):
+            self.end_point.add_dependent(self)
 
     def _get_bezier_point(self, t: float) -> QPointF:
         """Calculate a point on the cubic Bezier curve at parameter t (0-1)."""
@@ -275,19 +286,38 @@ class CubicBezierLine(QGraphicsItem):
         y = mt3 * p0.y() + 3 * mt2 * t * p1.y() + 3 * mt * t2 * p2.y() + t3 * p3.y()
         return QPointF(x, y)
 
+    def _control_polygon(self) -> list[QPointF]:
+        return [
+            self.start_point.get_position(),
+            self.control_point1.get_position(),
+            self.control_point2.get_position(),
+            self.end_point.get_position(),
+        ]
+
     def boundingRect(self):
         points = [
             self._get_bezier_point(i / self.segments) for i in range(self.segments + 1)
         ]
-        if not points:
-            return QRectF()
-        min_x = min(p.x() for p in points) - 2
-        min_y = min(p.y() for p in points) - 2
-        max_x = max(p.x() for p in points) + 2
-        max_y = max(p.y() for p in points) + 2
+        if self.show_control_polygon:
+            points += self._control_polygon()
+        min_x = min(p.x() for p in points) - CONTROL_MARKER_RADIUS - 2
+        min_y = min(p.y() for p in points) - CONTROL_MARKER_RADIUS - 2
+        max_x = max(p.x() for p in points) + CONTROL_MARKER_RADIUS + 2
+        max_y = max(p.y() for p in points) + CONTROL_MARKER_RADIUS + 2
         return QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
 
     def paint(self, painter: QPainter, _option, _widget):
+        if self.show_control_polygon:
+            polygon = self._control_polygon()
+            painter.setPen(QPen(QColor(128, 128, 128), 1, Qt.PenStyle.DashLine))
+            for a, b in zip(polygon, polygon[1:]):
+                painter.drawLine(a, b)
+            # Inner control points (end points are already draggable points)
+            painter.setPen(QPen(QColor(90, 90, 90), 1))
+            painter.setBrush(QBrush(QColor(200, 200, 200)))
+            for point in polygon[1:3]:
+                painter.drawEllipse(point, CONTROL_MARKER_RADIUS, CONTROL_MARKER_RADIUS)
+
         painter.setPen(QPen(QColor(200, 150, 100), 2))
         points = [
             self._get_bezier_point(i / self.segments) for i in range(self.segments + 1)
@@ -347,6 +377,7 @@ class SymmetricLine(QGraphicsItem):
                 change == QGraphicsItem.GraphicsItemChange.ItemPositionChange
                 and not self._updating_endpoints
             ):
+                value = self._snap_angle(value)
                 self._updating_endpoints = True
                 try:
                     # Update end2 to be symmetric
@@ -366,6 +397,7 @@ class SymmetricLine(QGraphicsItem):
                 change == QGraphicsItem.GraphicsItemChange.ItemPositionChange
                 and not self._updating_endpoints
             ):
+                value = self._snap_angle(value)
                 self._updating_endpoints = True
                 try:
                     # Update end1 to be symmetric
@@ -387,10 +419,35 @@ class SymmetricLine(QGraphicsItem):
             ):
                 self._updating_endpoints = True
                 try:
-                    # Calculate displacement
+                    # Apply axis constraint if center has one
+                    constrained_value = value
+                    if hasattr(self.center, 'axis_constraint'):
+                        if self.center.axis_constraint == 'x':
+                            constrained_value = QPointF(
+                                value.x(), self.center.pos().y()
+                            )
+                        elif self.center.axis_constraint == 'y':
+                            constrained_value = QPointF(
+                                self.center.pos().x(), value.y()
+                            )
+
+                    # Clamp to the center's bounds so the endpoints follow the
+                    # actual (clamped) displacement
+                    cx, cy = constrained_value.x(), constrained_value.y()
+                    if self.center.min_x is not None:
+                        cx = max(cx, self.center.min_x)
+                    if self.center.max_x is not None:
+                        cx = min(cx, self.center.max_x)
+                    if self.center.min_y is not None:
+                        cy = max(cy, self.center.min_y)
+                    if self.center.max_y is not None:
+                        cy = min(cy, self.center.max_y)
+                    constrained_value = QPointF(cx, cy)
+
+                    # Calculate displacement based on constrained value
                     old_center = self.center.pos()
-                    dx = value.x() - old_center.x()
-                    dy = value.y() - old_center.y()
+                    dx = constrained_value.x() - old_center.x()
+                    dy = constrained_value.y() - old_center.y()
 
                     # Move both endpoints by the same displacement
                     end1_pos = self.end1.get_position()
@@ -406,6 +463,23 @@ class SymmetricLine(QGraphicsItem):
         self.end1.itemChange = end1_constrained_itemChange  # type: ignore
         self.end2.itemChange = end2_constrained_itemChange  # type: ignore
         self.center.itemChange = center_constrained_itemChange  # type: ignore
+
+    def _snap_angle(self, value: QPointF) -> QPointF:
+        """Snap an endpoint position to ANGLE_SNAP_DEG steps while Ctrl is held."""
+        if not (QApplication.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier):
+            return value
+        center_pos = self.center.get_position()
+        dx = value.x() - center_pos.x()
+        dy = value.y() - center_pos.y()
+        radius = math.hypot(dx, dy)
+        if radius == 0:
+            return value
+        step = math.radians(ANGLE_SNAP_DEG)
+        angle = round(math.atan2(dy, dx) / step) * step
+        return QPointF(
+            center_pos.x() + radius * math.cos(angle),
+            center_pos.y() + radius * math.sin(angle),
+        )
 
     def boundingRect(self):
         p1 = self.end1.get_position()
@@ -436,167 +510,300 @@ class SymmetricLine(QGraphicsItem):
         self.update()
 
 
-class AlignedPoints(QGraphicsItem):
-    """Keeps two points aligned on the same x or y coordinate.
+class StaticPoint:
+    """A point that doesn't interact with the scene, just holds position."""
 
-    When one point moves, the other updates to maintain alignment on the
-    specified axis ('x' or 'y').
+    def __init__(self, x: float, y: float):
+        self._pos = QPointF(x, y)
+
+    def get_position(self) -> QPointF:
+        return self._pos
+
+    def setPos(self, x: float, y: float):
+        self._pos = QPointF(x, y)
+
+
+class AlignedPoints:
+    """Keeps two points aligned along the x or y axis.
+
+    ``axis='x'`` places both points on a line parallel to the x axis (same y).
+    ``axis='y'`` places both points on a line parallel to the y axis (same x).
+    The constraint works in both directions: whichever point is moved drags the
+    other one along. If both differ from their last values, the leader wins.
+    When aligning at creation and when the leader's own limits stop it, the
+    follower adapts to the leader. The alignment overrides any
+    ``axis_constraint`` of the follower.
+    """
+
+    def __init__(self, leader: DraggablePoint, follower: DraggablePoint, axis: str):
+        if axis not in ('x', 'y'):
+            raise ValueError(f"axis must be 'x' or 'y', got {axis!r}")
+        self.leader = leader
+        self.follower = follower
+        self.axis = axis
+        self._syncing = False
+        self.leader.add_dependent(self)
+        self.follower.add_dependent(self)
+        self._sync_follower()
+        self._last_leader = self._value(self.leader)
+        self._last_follower = self._value(self.follower)
+
+    def _value(self, point) -> float:
+        """Coordinate that must match between the two points."""
+        pos = point.get_position()
+        return pos.y() if self.axis == 'x' else pos.x()
+
+    def _set_value(self, point, value: float):
+        pos = point.get_position()
+        if self.axis == 'x':
+            point.setPos(pos.x(), value)
+        else:
+            point.setPos(value, pos.y())
+
+    def _sync_follower(self):
+        """Move the follower to the leader's aligned coordinate."""
+        # The alignment must win over the follower's own axis constraint
+        constraint = self.follower.axis_constraint
+        self.follower.axis_constraint = None
+        try:
+            self._set_value(self.follower, self._value(self.leader))
+        finally:
+            self.follower.axis_constraint = constraint
+
+    def _on_point_moved(self):
+        """Keep the points aligned, following whichever one moved."""
+        if self._syncing:
+            return
+        self._syncing = True
+        try:
+            leader_moved = self._value(self.leader) != self._last_leader
+            follower_moved = self._value(self.follower) != self._last_follower
+            if follower_moved and not leader_moved:
+                self._set_value(self.leader, self._value(self.follower))
+            # The leader may have been clamped, so the follower adapts to it
+            self._sync_follower()
+            self._last_leader = self._value(self.leader)
+            self._last_follower = self._value(self.follower)
+        finally:
+            self._syncing = False
+
+
+class PerpendicularPoints(QGraphicsItem):
+    """Keeps three points perpendicular at the middle point.
+
+    The middle point (point2) is the junction of two line segments:
+    point1 → point2 and point2 → point3, which stay perpendicular.
+    Only point1 and point2 are draggable; point3 is calculated.
     """
 
     def __init__(
         self,
-        point1: DraggablePoint,
-        point2: DraggablePoint,
-        axis: str = 'x',
+        point1,
+        point2,
         parent=None,
+        point3_distance: float = 50.0,
+        distance_to=None,
+        distance_fraction: float = 1 / 3,
     ):
         super().__init__(parent)
         self.point1 = point1
         self.point2 = point2
-        self.axis = axis
-        self._updating = False
+        self.point3_distance = point3_distance
+        # If given, |point3_distance| is replaced by distance_fraction times the
+        # distance from point2 to this point; the sign still picks the side
+        self.distance_to = distance_to
+        self.distance_fraction = distance_fraction
+
+        # point3 is updated in place so that other items holding a reference to it
+        # (e.g. a spline control point) always see its current position
+        self.point3 = StaticPoint(0, 0)
+        self._update_point3()
+        self._dependents = []
 
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemStacksBehindParent, True)
 
-        self.point1.add_dependent(self)
-        self.point2.add_dependent(self)
+        # Only register as dependent if the point supports it
+        if hasattr(self.point1, 'add_dependent'):
+            self.point1.add_dependent(self)
+        if hasattr(self.point2, 'add_dependent'):
+            self.point2.add_dependent(self)
+        if hasattr(self.distance_to, 'add_dependent'):
+            self.distance_to.add_dependent(self)
 
-        original_p1_itemChange = self.point1.itemChange
-        original_p2_itemChange = self.point2.itemChange
+    def _current_distance(self) -> float:
+        """Signed distance from point2 to point3."""
+        if self.distance_to is None:
+            return self.point3_distance
+        p2 = self.point2.get_position()
+        target = self.distance_to.get_position()
+        length = math.hypot(target.x() - p2.x(), target.y() - p2.y())
+        return math.copysign(self.distance_fraction * length, self.point3_distance)
 
-        def p1_constrained_itemChange(change, value):
-            if (
-                change == QGraphicsItem.GraphicsItemChange.ItemPositionChange
-                and not self._updating
-            ):
-                self._updating = True
-                try:
-                    if self.axis == 'x':
-                        self.point2.setPos(value.x(), self.point2.pos().y())
-                    else:
-                        self.point2.setPos(self.point2.pos().x(), value.y())
-                finally:
-                    self._updating = False
+    def _update_point3(self):
+        """Update point3 based on perpendicularity and its distance from point2."""
+        p1 = self.point1.get_position()
+        p2 = self.point2.get_position()
+        distance = self._current_distance()
 
-            return original_p1_itemChange(change, value)
+        v1_dx = p2.x() - p1.x()
+        v1_dy = p2.y() - p1.y()
 
-        def p2_constrained_itemChange(change, value):
-            if (
-                change == QGraphicsItem.GraphicsItemChange.ItemPositionChange
-                and not self._updating
-            ):
-                self._updating = True
-                try:
-                    if self.axis == 'x':
-                        self.point1.setPos(value.x(), self.point1.pos().y())
-                    else:
-                        self.point1.setPos(self.point1.pos().x(), value.y())
-                finally:
-                    self._updating = False
+        perp_dx = -v1_dy
+        perp_dy = v1_dx
 
-            return original_p2_itemChange(change, value)
+        perp_len = math.sqrt(perp_dx**2 + perp_dy**2)
+        if perp_len == 0:
+            self.point3.setPos(p2.x(), p2.y())
+            return
 
-        self.point1.itemChange = p1_constrained_itemChange  # type: ignore
-        self.point2.itemChange = p2_constrained_itemChange  # type: ignore
+        perp_dx_norm = (perp_dx / perp_len) * distance
+        perp_dy_norm = (perp_dy / perp_len) * distance
+
+        self.point3.setPos(p2.x() + perp_dx_norm, p2.y() + perp_dy_norm)
 
     def boundingRect(self):
-        return QRectF()
+        p1 = self.point1.get_position()
+        p2 = self.point2.get_position()
+        p3 = self.point3.get_position()
+
+        min_x = min(p1.x(), p2.x(), p3.x()) - 2
+        min_y = min(p1.y(), p2.y(), p3.y()) - 2
+        max_x = max(p1.x(), p2.x(), p3.x()) + 2
+        max_y = max(p1.y(), p2.y(), p3.y()) + 2
+
+        return QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
 
     def paint(self, painter: QPainter, _option, _widget):
-        pass
+        painter.setPen(QPen(QColor(100, 150, 200), 2))
+        p1 = self.point1.get_position()
+        p2 = self.point2.get_position()
+        p3 = self.point3.get_position()
+        painter.drawLine(p1, p2)
+        painter.drawLine(p2, p3)
+
+    def add_dependent(self, item):
+        """Register an item that depends on this constraint's point3."""
+        if item not in self._dependents:
+            self._dependents.append(item)
 
     def _on_point_moved(self):
-        pass
+        """Update point3 when any draggable point moves."""
+        self._update_point3()
+        for dependent in self._dependents:
+            dependent._on_point_moved()
+        self.prepareGeometryChange()
+        self.update()
 
 
-class PerpendicularPoints(QGraphicsItem):
-    """Keeps two points' connecting line perpendicular to a reference direction.
+class MeridionalProfile:
+    """A meridional profile made of two symmetric lines joined by two splines.
 
-    The line formed by perp_point1 and perp_point2 stays perpendicular to the
-    line formed by ref_point1 and ref_point2.
+    Each symmetric line has a draggable center and two mirrored endpoints. Each
+    endpoint has a perpendicular constraint whose calculated point acts as a
+    control point of a cubic Bezier spline, so the splines leave both lines
+    at a right angle. The first spline joins the ``end1`` points of the lines
+    and the second joins the ``end2`` points.
     """
 
     def __init__(
         self,
-        ref_point1: DraggablePoint,
-        ref_point2: DraggablePoint,
-        perp_point1: DraggablePoint,
-        perp_point2: DraggablePoint,
-        parent=None,
+        center1: tuple[float, float] = (150, 600),
+        end1: tuple[float, float] = (150, 400),
+        center2: tuple[float, float] = (550, 400),
+        end2: tuple[float, float] = (550, 200),
+        control_fraction: float = 1 / 3,
+        center1_axis_constraint: str | None = 'y',
     ):
-        super().__init__(parent)
-        self.ref_point1 = ref_point1
-        self.ref_point2 = ref_point2
-        self.perp_point1 = perp_point1
-        self.perp_point2 = perp_point2
-        self._updating = False
+        # First line
+        self.center1 = DraggablePoint(*center1, axis_constraint=center1_axis_constraint)
+        self.end1 = DraggablePoint(*end1)
+        self.line1 = SymmetricLine(self.center1, self.end1)
 
-        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemStacksBehindParent, True)
+        # Second line
+        # The second center cannot go left of the first center
+        self.center2 = DraggablePoint(*center2, min_x=self.center1.pos().x())
+        self.end2 = DraggablePoint(*end2)
+        self.line2 = SymmetricLine(self.center2, self.end2)
 
-        for point in [ref_point1, ref_point2, perp_point1, perp_point2]:
-            point.add_dependent(self)
+        # Perpendicular constraints; the sign flips the side of the control point.
+        # Each control point sits at control_fraction of the distance between the
+        # spline's endpoints away from its own endpoint.
+        self.perp1_a = PerpendicularPoints(
+            self.center1,
+            self.line1.end1,
+            point3_distance=1,
+            distance_to=self.line2.end1,
+            distance_fraction=control_fraction,
+        )
+        self.perp1_b = PerpendicularPoints(
+            self.center1,
+            self.line1.end2,
+            point3_distance=-1,
+            distance_to=self.line2.end2,
+            distance_fraction=control_fraction,
+        )
+        self.perp2_a = PerpendicularPoints(
+            self.center2,
+            self.line2.end1,
+            point3_distance=-1,
+            distance_to=self.line1.end1,
+            distance_fraction=control_fraction,
+        )
+        self.perp2_b = PerpendicularPoints(
+            self.center2,
+            self.line2.end2,
+            point3_distance=1,
+            distance_to=self.line1.end2,
+            distance_fraction=control_fraction,
+        )
 
-        original_pp1_itemChange = self.perp_point1.itemChange
-        original_pp2_itemChange = self.perp_point2.itemChange
+        # Splines between matching endpoints of the two lines
+        self.spline_a = CubicBezierLine(
+            self.line1.end1,
+            self.perp1_a.point3,
+            self.perp2_a.point3,
+            self.line2.end1,
+            show_control_polygon=True,
+        )
+        self.perp1_a.add_dependent(self.spline_a)
+        self.perp2_a.add_dependent(self.spline_a)
 
-        def enforce_perpendicular():
-            """Adjust perp_point2 to be perpendicular to reference direction."""
-            ref1 = self.ref_point1.get_position()
-            ref2 = self.ref_point2.get_position()
-            pp1 = self.perp_point1.get_position()
+        self.spline_b = CubicBezierLine(
+            self.line1.end2,
+            self.perp1_b.point3,
+            self.perp2_b.point3,
+            self.line2.end2,
+            show_control_polygon=True,
+        )
+        self.perp1_b.add_dependent(self.spline_b)
+        self.perp2_b.add_dependent(self.spline_b)
 
-            ref_dx = ref2.x() - ref1.x()
-            ref_dy = ref2.y() - ref1.y()
+        # The constraints still drive the control points when hidden
+        for perp in self.perpendiculars:
+            perp.setVisible(False)
 
-            perp_dx = -ref_dy
-            perp_dy = ref_dx
+    @property
+    def perpendiculars(self) -> tuple[PerpendicularPoints, ...]:
+        return self.perp1_a, self.perp1_b, self.perp2_a, self.perp2_b
 
-            perp_len = math.sqrt(perp_dx**2 + perp_dy**2)
-            if perp_len == 0:
-                return
+    @property
+    def items(self) -> list[QGraphicsItem]:
+        """All graphics items of the profile, in the order they should be added."""
+        return [
+            self.center1,
+            self.end1,
+            self.line1.end2,
+            self.line1,
+            self.center2,
+            self.end2,
+            self.line2.end2,
+            self.line2,
+            *self.perpendiculars,
+            self.spline_a,
+            self.spline_b,
+        ]
 
-            dist = math.sqrt(
-                (self.perp_point2.pos().x() - pp1.x()) ** 2
-                + (self.perp_point2.pos().y() - pp1.y()) ** 2
-            )
-
-            perp_dx_normalized = (perp_dx / perp_len) * dist
-            perp_dy_normalized = (perp_dy / perp_len) * dist
-
-            self._updating = True
-            try:
-                self.perp_point2.setPos(
-                    pp1.x() + perp_dx_normalized, pp1.y() + perp_dy_normalized
-                )
-            finally:
-                self._updating = False
-
-        def pp1_constrained_itemChange(change, value):
-            if (
-                change == QGraphicsItem.GraphicsItemChange.ItemPositionChange
-                and not self._updating
-            ):
-                enforce_perpendicular()
-
-            return original_pp1_itemChange(change, value)
-
-        def pp2_constrained_itemChange(change, value):
-            if (
-                change == QGraphicsItem.GraphicsItemChange.ItemPositionChange
-                and not self._updating
-            ):
-                enforce_perpendicular()
-
-            return original_pp2_itemChange(change, value)
-
-        self.perp_point1.itemChange = pp1_constrained_itemChange  # type: ignore
-        self.perp_point2.itemChange = pp2_constrained_itemChange  # type: ignore
-
-    def boundingRect(self):
-        return QRectF()
-
-    def paint(self, painter: QPainter, _option, _widget):
-        pass
-
-    def _on_point_moved(self):
-        pass
+    def add_to_scene(self, scene):
+        """Add every item of the profile to the given scene."""
+        for item in self.items:
+            scene.addItem(item)
