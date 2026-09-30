@@ -7,6 +7,11 @@ from PyQt6.QtWidgets import QApplication, QGraphicsItem
 
 CONTROL_MARKER_RADIUS = 4.0
 ANGLE_SNAP_DEG = 10.0
+PARABOLA_ANGLE_SNAP_DEG = 5.0
+
+
+def _ctrl_held() -> bool:
+    return bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier)
 
 
 class DraggablePoint(QGraphicsItem):
@@ -188,6 +193,63 @@ class ParabolicLine(QGraphicsItem):
             return original_control_itemChange(change, value)
 
         self.control_point.itemChange = control_constrained_itemChange  # type: ignore
+
+        # Snap the tangent angles at both ends while Ctrl is held
+        original_start_itemChange = self.start_point.itemChange
+        original_end_itemChange = self.end_point.itemChange
+
+        def start_snapped_itemChange(change, value):
+            if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
+                value = self._snap_start(value)
+            return original_start_itemChange(change, value)
+
+        def end_snapped_itemChange(change, value):
+            if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
+                value = self._snap_end(value)
+            return original_end_itemChange(change, value)
+
+        self.start_point.itemChange = start_snapped_itemChange  # type: ignore
+        self.end_point.itemChange = end_snapped_itemChange  # type: ignore
+
+    def _snap_start(self, value: QPointF) -> QPointF:
+        """Snap the inlet angle to PARABOLA_ANGLE_SNAP_DEG steps while Ctrl is held.
+
+        The start point only moves vertically, so the snapped angle fixes its y.
+        """
+        if not _ctrl_held():
+            return value
+        start_x = self.start_point.pos().x()
+        control = self.control_point.get_position()
+        dx = control.x() - start_x
+        if dx <= 0:
+            return value
+        step = math.radians(PARABOLA_ANGLE_SNAP_DEG)
+        angle = round(math.atan2(control.y() - value.y(), dx) / step) * step
+        if abs(math.cos(angle)) < 1e-9:
+            return value
+        return QPointF(start_x, control.y() - dx * math.tan(angle))
+
+    def _snap_end(self, value: QPointF) -> QPointF:
+        """Snap the outlet angle to PARABOLA_ANGLE_SNAP_DEG steps while Ctrl is held.
+
+        The control point follows the end point to the midpoint in x, so the angle
+        is measured from that future control position.
+        """
+        if not _ctrl_held():
+            return value
+        start_x = self.start_point.get_position().x()
+        control_y = self.control_point.get_position().y()
+        dx = (value.x() - start_x) / 2
+        dy = value.y() - control_y
+        radius = math.hypot(dx, dy)
+        if radius == 0:
+            return value
+        step = math.radians(PARABOLA_ANGLE_SNAP_DEG)
+        angle = round(math.atan2(dy, dx) / step) * step
+        return QPointF(
+            start_x + 2 * radius * math.cos(angle),
+            control_y + radius * math.sin(angle),
+        )
 
     def _get_bezier_point(self, t: float) -> QPointF:
         """Calculate a point on the quadratic Bezier curve at parameter t (0-1)."""
@@ -503,7 +565,7 @@ class SymmetricLine(QGraphicsItem):
 
     def _snap_angle(self, value: QPointF) -> QPointF:
         """Snap an endpoint position to ANGLE_SNAP_DEG steps while Ctrl is held."""
-        if not (QApplication.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier):
+        if not _ctrl_held():
             return value
         center_pos = self.center.get_position()
         dx = value.x() - center_pos.x()
@@ -818,6 +880,23 @@ class MeridionalProfile:
         # The constraints still drive the control points when hidden
         for perp in self.perpendiculars:
             perp.setVisible(False)
+
+        # Dragging the first center translates the whole profile vertically
+        self._last_center1_y = self.center1.pos().y()
+        self.center1.add_dependent(self)
+
+    def _on_point_moved(self):
+        """Translate the second line by the vertical displacement of the first center.
+
+        The first line follows its own center; the second center drags its
+        endpoints, and the constraints and splines update through their dependencies.
+        """
+        dy = self.center1.pos().y() - self._last_center1_y
+        if dy == 0:
+            return
+        self._last_center1_y += dy
+        pos = self.center2.pos()
+        self.center2.setPos(pos.x(), pos.y() + dy)
 
     @property
     def perpendiculars(self) -> tuple[PerpendicularPoints, ...]:
