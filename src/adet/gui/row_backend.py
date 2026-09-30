@@ -1,11 +1,9 @@
 # === IMPORTS
-from adet.fluid.ideal_eos import IdealGasState
 import logging
 import math
 from collections.abc import Mapping, Sequence
 
 import numpy as np
-from CoolProp import AbstractState
 from numpy.typing import NDArray
 
 from adet.assemblers import CasadiSystem
@@ -13,6 +11,7 @@ from adet.components import BladeRow, Inlet
 from adet.components.connections import Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.fundamental import FreeVortexDistribution
+from adet.fluid.ideal_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import (
     TotalPressureLoss,
@@ -30,7 +29,7 @@ setup_logger(logger)
 
 
 INLET_CONDITIONS: dict[VarSpec, float] = {
-    n0.oth.TotMassFlow: 10.0,
+    n0.oth.TotMassFlow: 50.0,
     n0.tot.Pressure: 10e5,
     n0.tot.Temperature: 500,
 }
@@ -51,7 +50,7 @@ FIRST_ROW_PARAMS: dict[VarSpec, float] = {
     # *** Rotational speed of the row
     n1.kin.Omega: 100.0,
 }
-METAL_TURNING = math.radians(30)  # outlet minus inlet metal angle of an added row
+METAL_TURNING = math.radians(10)  # outlet minus inlet metal angle of an added row
 
 
 class RowBackend:

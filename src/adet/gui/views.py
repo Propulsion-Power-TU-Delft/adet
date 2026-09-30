@@ -1112,6 +1112,9 @@ class MainGuiView(QWidget):
         fit_button = QPushButton('Fit both views')
         fit_button.clicked.connect(lambda _checked=False: self.fit_views())
         top_row.addWidget(fit_button)
+        reset_button = QPushButton('Reset to last converged')
+        reset_button.clicked.connect(lambda _checked=False: self.reset_geometry())
+        top_row.addWidget(reset_button)
         layout.addLayout(top_row)
         views_splitter = QSplitter(Qt.Orientation.Vertical)
         views_splitter.setChildrenCollapsible(False)
@@ -1150,10 +1153,13 @@ class MainGuiView(QWidget):
         self._solve_timer.timeout.connect(self.update_solution)
         self._notifiers: list[ChangeNotifier] = []
         self._syncing = False  # leading edges are being redrawn from the solution
+        # Point positions of every row at the last converged solution
+        self._converged_points: list[list[QPointF]] = []
 
         self._append_row()
         self._fit_triangle_area()
         self._update_triangles()
+        self._remember_converged()
 
         # Animation runs on the log of the zoom so steps compose smoothly
         self._zoom_applied = 0.0
@@ -1188,9 +1194,7 @@ class MainGuiView(QWidget):
 
     def _append_row(self):
         """Draw the last row of the backend after the rows already shown."""
-        # A new row starts on the shaft of the last one, as its speed is the same; the
-        # first row starts on the stationary casing
-        shaft = self.rows[-1].shaft if self.rows else self.casing_shaft
+        # Every new row starts on the stationary casing
         row = BladeRowView(
             self.backend,
             len(self.rows),
@@ -1198,7 +1202,7 @@ class MainGuiView(QWidget):
             self.profile_scene,
             self.parabola_scene,
             self.shaft_panel.shafts,
-            shaft,
+            self.casing_shaft,
         )
         self.rows.append(row)
         row.shaft_combo.currentIndexChanged.connect(self._schedule_solve)
@@ -1256,6 +1260,7 @@ class MainGuiView(QWidget):
         QApplication.processEvents()
         self.profile_view._update_extent()
         self.fit_views()
+        self._remember_converged()
         self.status_label.setText(f'Row {len(self.rows)} added and converged')
 
     def delete_row(self):
@@ -1301,6 +1306,7 @@ class MainGuiView(QWidget):
         QApplication.processEvents()
         self.profile_view._update_extent()
         self.fit_views()
+        self._remember_converged()
         self.status_label.setText(f'Row {len(self.rows) + 1} removed and converged')
 
     def drawn_geometry(self) -> dict[VarSpec, float]:
@@ -1347,7 +1353,32 @@ class MainGuiView(QWidget):
         self._update_triangles(converged)
         if converged:
             self._sync_inlet_angles()
+            self._remember_converged()
         return converged
+
+    def _remember_converged(self):
+        """Keep the drawn point positions as the state to go back to."""
+        self._converged_points = [
+            [point.pos() for point in row.points] for row in self.rows
+        ]
+
+    def reset_geometry(self):
+        """Redraw the geometry of the last converged solution and solve it again."""
+        if len(self._converged_points) != len(self.rows):
+            return
+        self._solve_timer.stop()
+        self._syncing = True  # the restore is not an edit, so no solve per point
+        try:
+            # Points drag their aligned partners along, so a second pass settles
+            # any point that a later one moved
+            for _ in range(2):
+                for row, positions in zip(self.rows, self._converged_points):
+                    for point, position in zip(row.points, positions):
+                        point.setPos(position)
+        finally:
+            self._syncing = False
+        if self.update_solution():
+            self.status_label.setText('Reset to the last converged geometry')
 
     def _sync_inlet_angles(self):
         """Draw the leading edges of the following rows at the solved angle.
