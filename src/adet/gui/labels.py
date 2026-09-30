@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QGraphicsSimpleTextItem,
 )
 
-from adet.gui.entities import DraggablePoint
+from adet.gui.entities import DraggablePoint, ParabolicLine
 
 
 class AngleLabel(QGraphicsSimpleTextItem):
@@ -49,13 +49,24 @@ class RotationArrow(QGraphicsItem):
     HEAD = 10  # pixels
     COLOR = QColor(255, 200, 50)
 
-    def __init__(self, omega: float):
+    def __init__(self, omega: float, parabola: ParabolicLine, y: float):
         super().__init__()
         self.omega = omega
+        self.parabola = parabola
+        self.fixed_y = y
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True)
         self.label = QGraphicsSimpleTextItem('rotation', self)
         self.label.setBrush(QBrush(self.COLOR))
         self.label.setPos(-self.label.boundingRect().width() / 2, self.LENGTH / 2 + 4)
+        parabola.start_point.add_dependent(self)
+        parabola.end_point.add_dependent(self)
+        self._on_point_moved()
+
+    def _on_point_moved(self):
+        """Stay below the mid point of the parabola when its end points move."""
+        start_x = self.parabola.start_point.get_position().x()
+        end_x = self.parabola.end_point.get_position().x()
+        self.setPos((start_x + end_x) / 2, self.fixed_y)
 
     def set_omega(self, omega: float):
         """Flip the arrow when the sign of the rotational speed changes."""
@@ -72,7 +83,10 @@ class RotationArrow(QGraphicsItem):
         direction = -1 if self.omega > 0 else 1  # scene y points down
         half = self.LENGTH / 2
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(self.COLOR, 2))
+        pen = QPen(self.COLOR, 2)
+        pen.setCapStyle(Qt.PenCapStyle.FlatCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.MiterJoin)
+        painter.setPen(pen)
         painter.setBrush(QBrush(self.COLOR))
         tip = QPointF(0, direction * half)
         painter.drawLine(QPointF(0, -direction * half), tip)

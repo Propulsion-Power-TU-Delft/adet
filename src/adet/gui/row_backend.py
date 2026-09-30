@@ -1,13 +1,12 @@
 # === IMPORTS
 from adet.fluid.ideal_eos import IdealGasState
 import logging
-from collections.abc import Mapping
-from copy import deepcopy
+import math
+from collections.abc import Mapping, Sequence
 
 import numpy as np
 from CoolProp import AbstractState
 from numpy.typing import NDArray
-from pint import Quantity
 
 from adet.assemblers import CasadiSystem
 from adet.components import BladeRow, Inlet
@@ -30,72 +29,98 @@ logger = logging.getLogger(__name__)
 setup_logger(logger)
 
 
-class RowBackend:
-    """Blade row network that is solved once and then re-solved with Newton.
+INLET_CONDITIONS: dict[VarSpec, float] = {
+    n0.oth.TotMassFlow: 10.0,
+    n0.tot.Pressure: 10e5,
+    n0.tot.Temperature: 500,
+}
+FIRST_ROW_PARAMS: dict[VarSpec, float] = {
+    # *** Inlet geometry
+    n0.geo.Rmid: 0.2,
+    n0.geo.Height: 0.1,
+    n0.geo.MeridionalAngle: 0.0,
+    # *** Outlet geometry
+    n1.geo.MeridionalAngle: 0.0,
+    n1.geo.Height: 0.12,
+    n1.geo.Rmid: 0.2,
+    # *** Chord and blades
+    n1.geo.ChordAx: 0.1,
+    n1.geo.NumBlades: 40,
+    n0.geo.MetalAngle: math.radians(30),
+    n1.geo.MetalAngle: math.radians(-30),
+    # *** Rotational speed of the row
+    n1.kin.Omega: 100.0,
+}
+METAL_TURNING = math.radians(30)  # outlet minus inlet metal angle of an added row
 
-    The geometry boundary conditions live in the known-parameters vector ``kn``.
-    ``set_geometry`` overwrites entries of ``kn`` and ``solve`` runs the Newton
-    rootfinder starting from the last converged solution.
+
+class RowBackend:
+    """Chain of blade rows that is solved once and then re-solved with Newton.
+
+    Row ``k`` goes from node ``2k`` to node ``2k + 1``. The inlet geometry of every
+    row but the first is linked to the outlet of the previous row, so ``row_params``
+    only holds it for the first row. The geometry boundary conditions live in the
+    known-parameters vector ``kn``. ``set_geometry`` overwrites entries of ``kn``
+    and ``solve`` runs the Newton rootfinder starting from the last converged
+    solution. ``add_row`` appends a row and rebuilds the network.
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        row_params: Sequence[Mapping[VarSpec, float]] | None = None,
+        inlet_conditions: Mapping[VarSpec, float] | None = None,
+        guess: Mapping[VarSpec, NDArray] | None = None,
+    ):
+        # Boundary conditions of each row, with the specs of the row's own nodes
+        # (n0 = inlet, n1 = outlet) and values in base units
+        self.row_params = [dict(p) for p in row_params or [FIRST_ROW_PARAMS]]
+        self.inlet_conditions = dict(inlet_conditions or INLET_CONDITIONS)
+        # Values by spec (not by position) used as the initial guess where available
+        self._guess: Mapping[VarSpec, NDArray] = guess or {}
         self._build()
         self._solve_initial()
+
+    @property
+    def num_rows(self) -> int:
+        return len(self.row_params)
+
+    @staticmethod
+    def row_nodes(row: int) -> tuple[NodeVariables, NodeVariables]:
+        """Inlet and outlet node variables of a row."""
+        return NodeVariables(2 * row), NodeVariables(2 * row + 1)
 
     # === Setup
     def _build(self):
         # abs_state = AbstractState('HEOS', 'Air')
         abs_state = IdealGasState(1.4, 287, 2e-5)
 
-        # *** Inlet conditions
-        inlet = Inlet(
-            boundary_conditions={
-                # *** Inlet total conditions
-                n0.oth.TotMassFlow: 10.0,
-                n0.tot.Pressure: 10e5,
-                n0.tot.Temperature: 500,
+        inlet = Inlet(boundary_conditions=dict(self.inlet_conditions))
+
+        self.rows: list[BladeRow] = []
+        for index, params in enumerate(self.row_params):
+            bound_cond = {
+                spec: value for spec, value in params.items() if spec != n1.kin.Omega
             }
-        )
-
-        casing = Shaft(100, is_constrained=True)
-        shaft = Shaft(-1, is_constrained=False)
-
-        self.stator = BladeRow(
-            name='stator',
-            shaft=casing,
-            bound_cond={
-                # *** Inlet geometry
-                n0.geo.Rmid: 0.2,
-                n0.geo.Height: 0.1,
-                n0.geo.MeridionalAngle: Quantity(0, 'deg'),
-                # *** Outlet geometry
-                n1.geo.MeridionalAngle: Quantity(0, 'deg'),
-                n1.geo.Height: 0.12,
-                n1.geo.Rmid: 0.2,
-                # *** Chord
-                n1.geo.ChordAx: 0.1,
-                n1.geo.NumBlades: 40,  # Number of blades
-                n0.geo.MetalAngle: Quantity(30, 'deg'),
-                n1.geo.MetalAngle: Quantity(-30, 'deg'),
-            },
-            extra_equations={
-                ZeroDeviation(): 0,  # No incidence (design)
-                TotalPressureLoss(0.9): (0, 1),  # Loss coefficient
-                # ModifiedZweifel(): (0, 1),
-            },
-            spanwise_constants=[n1.geo.ChordAx],
-        )
-
-        # > Modify the rotor
-        rotor = deepcopy(self.stator)  # Reuse the stator as template
-        rotor.shaft = shaft  # Assign the rotating shaft
-        rotor.name = 'rotor'
-
-        self.stator.set_spanwise_constant(
-            # Uniform inlet meridional velocity and streamtubes heights
-            n0.kin.V_mer,
-            n0.geo.HDistr,
-        )
+            row = BladeRow(
+                name=f'row{index}',
+                shaft=Shaft(params[n1.kin.Omega], is_constrained=True),
+                bound_cond=bound_cond,
+                extra_equations={
+                    # No incidence: the inlet metal angle of the first row sets the
+                    # flow, while the following rows take it from the previous row
+                    ZeroDeviation(): 0,
+                    TotalPressureLoss(0.9): (0, 1),  # Loss coefficient
+                    # ModifiedZweifel(): (0, 1),
+                },
+                spanwise_constants=[n1.geo.ChordAx],
+            )
+            if index == 0:
+                row.set_spanwise_constant(
+                    # Uniform inlet meridional velocity and streamtubes heights
+                    n0.kin.V_mer,
+                    n0.geo.HDistr,
+                )
+            self.rows.append(row)
 
         fluid_settings = FluidSettings(
             fluid_state=abs_state,
@@ -106,18 +131,18 @@ class RowBackend:
             fluid_settings=fluid_settings,
             inlet=inlet,
             backend=CasadiSystem(num_span=1),
-            components=[self.stator],
+            components=self.rows,
         )
 
         # Free vortex radial equilibrium
         if self.ntw.system.num_span > 1:
-            self.stator.add_equation(FreeVortexDistribution(), 1)
-            rotor.add_equation(FreeVortexDistribution(), 1)
+            for row in self.rows:
+                row.add_equation(FreeVortexDistribution(), 1)
 
         self.ntw.build()
 
         system = self.ntw.system
-        self.x0 = system.get_guess(fallback=0.8)
+        self.x0 = system.get_guess(self._guess, fallback=0.8)
         self.kn = system.get_boundary_conds()
         self.bnd = system.get_bounds(
             {
@@ -196,3 +221,70 @@ class RowBackend:
         self._sol = sol
         self.sol_dict = self.ntw.system.sol_to_dict(sol)
         return True
+
+    # === Adding and removing rows
+    def next_row_params(self) -> dict[VarSpec, float]:
+        """Boundary conditions of a row that would follow the last one.
+
+        The inlet geometry comes from the link to the previous row. The row keeps
+        the meridional angle, the height, the axial chord and the speed of the last
+        row, and its endwalls stay parallel. Its inlet metal angle is the relative
+        flow angle leaving the last row (a result, since the incidence is zero) and
+        its outlet metal angle is turned by ``METAL_TURNING`` from it.
+        """
+        _, last = self.row_nodes(self.num_rows - 1)
+        get = self.get_value
+        angle = get(last.geo.MeridionalAngle)
+        chord = get(last.geo.ChordAx)
+        metal_in = get(last.kin.FlowAngleRel)
+        return {
+            n1.geo.MeridionalAngle: angle,
+            n1.geo.Height: get(last.geo.Height),
+            # The station lines lean downstream for a positive angle (as drawn in the
+            # GUI), so the mean line moves inwards; the walls stay parallel
+            n1.geo.Rmid: get(last.geo.Rmid) - chord * math.tan(angle),
+            n1.geo.ChordAx: chord,
+            n1.geo.NumBlades: get(last.geo.NumBlades),
+            n1.geo.MetalAngle: metal_in + METAL_TURNING,
+            n1.kin.Omega: get(last.kin.Omega),
+        }
+
+    def add_row(self, params: Mapping[VarSpec, float]):
+        """Append a row and solve the longer chain from scratch.
+
+        ``params`` are the boundary conditions of the new row in its own nodes. The
+        current geometry of the existing rows is kept. If the new network cannot be
+        solved, the error is raised and this backend stays as it was.
+        """
+        self._rebuild([*self._current_row_params(), dict(params)])
+
+    def remove_last_row(self):
+        """Drop the last row and solve the shorter chain from scratch.
+
+        The current geometry of the remaining rows is kept. If the network cannot be
+        solved, the error is raised and this backend stays as it was.
+        """
+        if self.num_rows < 2:
+            raise ValueError('The first row cannot be removed')
+        self._rebuild(self._current_row_params()[:-1])
+
+    def _current_row_params(self) -> list[dict[VarSpec, float]]:
+        """Boundary conditions of every row as they are now."""
+        return [
+            {
+                spec: self.get_value(spec.at_node(2 * index + spec.node))
+                for spec in row_params
+            }
+            for index, row_params in enumerate(self.row_params)
+        ]
+
+    def _rebuild(self, rows: list[dict[VarSpec, float]]):
+        """Replace the chain by ``rows``, keeping the inlet and the current solution."""
+        inlet_conditions = {
+            spec: self.get_value(spec) for spec in self.inlet_conditions
+        }
+        # The positions of the knowns and of the free variables change with the nodes,
+        # so the converged solution goes in by spec as the initial guess
+        new = RowBackend(rows, inlet_conditions, guess=self.sol_dict)
+        # Only reached when the new network solved, so nothing is half updated
+        self.__dict__.update(new.__dict__)

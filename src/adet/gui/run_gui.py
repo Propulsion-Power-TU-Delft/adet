@@ -2,10 +2,12 @@
 
 import threading
 import time
+from pathlib import Path
 
 from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import (
     QColor,
+    QFont,
     QFontDatabase,
     QFontMetricsF,
     QPainter,
@@ -26,6 +28,9 @@ SPLASH_DURATION = 1.5  # seconds
 SPLASH_FPS = 30.0
 SPLASH_BACKGROUND = QColor(40, 40, 40)  # same as the scene background
 SPLASH_RADIUS = 24  # corner radius in pixels
+FONTS_DIR = (
+    Path(__file__).resolve().parents[3] / 'fonts'
+)  # repository root fonts folder
 
 
 def _splash_pixmap(lines: list[str]) -> QPixmap:
@@ -85,9 +90,18 @@ def animate_splash(app: QApplication, splash: QSplashScreen, worker: threading.T
         worker.join(1 / SPLASH_FPS)
 
 
+def load_app_font(app: QApplication):
+    """Register JetBrains Mono from the repository fonts folder and make it the app font."""
+    for font_file in FONTS_DIR.glob('JetBrainsMono*.ttf'):
+        QFontDatabase.addApplicationFont(str(font_file))
+    if 'JetBrains Mono' in QFontDatabase.families():
+        app.setFont(QFont('JetBrains Mono', 10))
+
+
 def main():
     """Run the test application."""
     app = QApplication([])
+    load_app_font(app)
     # The first solution is computed in a thread while the splash animation plays
     backends: list[RowBackend] = []
     errors: list[BaseException] = []

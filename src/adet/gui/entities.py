@@ -1,7 +1,7 @@
 import math
 
 from PyQt6.QtCore import QPointF, QRectF, Qt
-from PyQt6.QtGui import QBrush, QColor, QPainter, QPen
+from PyQt6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
 from PyQt6.QtWidgets import QApplication, QGraphicsItem
 
 
@@ -10,8 +10,17 @@ ANGLE_SNAP_DEG = 10.0
 PARABOLA_ANGLE_SNAP_DEG = 5.0
 
 
+# Point travel per unit of cursor travel
+SLOW_DRAG_FACTOR = 0.7
+FAST_DRAG_FACTOR = 1.0  # while Shift is held
+
+
 def _ctrl_held() -> bool:
     return bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier)
+
+
+def _shift_held() -> bool:
+    return bool(QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier)
 
 
 class DraggablePoint(QGraphicsItem):
@@ -38,6 +47,8 @@ class DraggablePoint(QGraphicsItem):
         self.max_y = max_y
         self.setPos(x, y)
         self.setAcceptHoverEvents(True)
+        # The view uses ScrollHandDrag, so override the hand cursor over points
+        self.setCursor(Qt.CursorShape.ArrowCursor)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
         self._dependents = []
@@ -73,6 +84,28 @@ class DraggablePoint(QGraphicsItem):
         """Register an item that depends on this point's position."""
         if item not in self._dependents:
             self._dependents.append(item)
+
+    def remove_dependent(self, item):
+        """Stop notifying an item that was registered with ``add_dependent``."""
+        if item in self._dependents:
+            self._dependents.remove(item)
+
+    def mousePressEvent(self, event):
+        self._last_scene_pos = event.scenePos()
+        self._drag_target = self.pos()
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        """Drag the point slowly by default, at full cursor speed while Shift is held."""
+        # Move by a fraction of the cursor travel since the last event, so the
+        # point can be toggled between slow and fast without jumping
+        delta = event.scenePos() - self._last_scene_pos
+        self._last_scene_pos = event.scenePos()
+        factor = FAST_DRAG_FACTOR if _shift_held() else SLOW_DRAG_FACTOR
+        # Accumulate on the unsnapped target: snapping and constraints only modify
+        # the position that is applied, so they never eat into the drag travel
+        self._drag_target += delta * factor
+        self.setPos(self._drag_target)
 
     def itemChange(self, change, value):
         """Notify dependents when position changes."""
@@ -147,6 +180,7 @@ class ParabolicLine(QGraphicsItem):
         show_control_polygon: bool = False,
     ):
         super().__init__(parent)
+        self.color = QColor(255, 255, 255)
         self.show_control_polygon = show_control_polygon
         self.start_point = start_point
         self.control_point = control_point
@@ -216,7 +250,10 @@ class ParabolicLine(QGraphicsItem):
 
         The start point only moves vertically, so the snapped angle fixes its y.
         """
-        if not _ctrl_held():
+        movable = (
+            self.start_point.flags() & QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+        )
+        if not movable or not _ctrl_held():
             return value
         start_x = self.start_point.pos().x()
         control = self.control_point.get_position()
@@ -309,7 +346,7 @@ class ParabolicLine(QGraphicsItem):
             painter.setPen(QPen(QColor(128, 128, 128), 1, Qt.PenStyle.DashLine))
             for a, b in zip(polygon, polygon[1:]):
                 painter.drawLine(a, b)
-        painter.setPen(QPen(QColor(100, 200, 100), 2))
+        painter.setPen(QPen(self.color, 2))
         points = [
             self._get_bezier_point(i / self.segments) for i in range(self.segments + 1)
         ]
@@ -348,9 +385,11 @@ class CubicBezierLine(QGraphicsItem):
         end_point,
         parent=None,
         show_control_polygon: bool = False,
+        color: QColor | None = None,
     ):
         super().__init__(parent)
         self.show_control_polygon = show_control_polygon
+        self.color = color if color is not None else QColor(200, 150, 100)
         self.start_point = start_point
         self.control_point1 = control_point1
         self.control_point2 = control_point2
@@ -417,7 +456,7 @@ class CubicBezierLine(QGraphicsItem):
             for point in polygon[1:3]:
                 painter.drawEllipse(point, CONTROL_MARKER_RADIUS, CONTROL_MARKER_RADIUS)
 
-        painter.setPen(QPen(QColor(200, 150, 100), 2))
+        painter.setPen(QPen(self.color, 2))
         points = [
             self._get_bezier_point(i / self.segments) for i in range(self.segments + 1)
         ]
@@ -443,8 +482,10 @@ class SymmetricLine(QGraphicsItem):
         center_point: DraggablePoint,
         end_point: DraggablePoint,
         parent=None,
+        color: QColor | None = None,
     ):
         super().__init__(parent)
+        self.color = color if color is not None else QColor(100, 150, 200)
         self.center = center_point
         self.end1 = end_point
         self._updating_endpoints = False
@@ -593,7 +634,7 @@ class SymmetricLine(QGraphicsItem):
         return QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
 
     def paint(self, painter: QPainter, _option, _widget):
-        painter.setPen(QPen(QColor(100, 150, 200), 2))
+        painter.setPen(QPen(self.color, 2))
         p1 = self.end1.get_position()
         p2 = self.end2.get_position()
         painter.drawLine(p1, p2)
@@ -794,6 +835,119 @@ class PerpendicularPoints(QGraphicsItem):
         self.update()
 
 
+class GapFollower:
+    """Keeps a line shifted along the wall direction from a source line.
+
+    The shift has length ``gap`` along the meridional direction, i.e. normal to the
+    source line, so the endwalls of both lines meet as if the gap were not there. The
+    followed line has the same length and tilt as the source one.
+    """
+
+    def __init__(
+        self,
+        source_center: DraggablePoint,
+        source_end: DraggablePoint,
+        center: DraggablePoint,
+        end: DraggablePoint,
+        gap: float,
+    ):
+        self.source_center = source_center
+        self.source_end = source_end
+        self.center = center
+        self.end = end
+        self.gap = gap
+        self._syncing = False
+        source_center.add_dependent(self)
+        source_end.add_dependent(self)
+
+    @staticmethod
+    def offset(
+        source_center: DraggablePoint, source_end: DraggablePoint, gap: float
+    ) -> QPointF:
+        """Shift of the source line to its gapped copy."""
+        dx = source_end.pos().x() - source_center.pos().x()
+        dy_up = source_center.pos().y() - source_end.pos().y()
+        # The line is undirected: pick the normal that points towards +x, and downwards
+        # when the line is horizontal
+        if dy_up < 0 or (dy_up == 0 and dx < 0):
+            dx, dy_up = -dx, -dy_up
+        length = math.hypot(dx, dy_up)
+        if length < 1e-9:
+            return QPointF(gap, 0.0)
+        # The gap is measured along the meridional direction (normal to the line).
+        # Working with the normal directly, instead of tan(angle), stays finite when
+        # the line is horizontal (90 deg meridional angle). Scene y points down, and
+        # a line leaning towards +x has a wall going down
+        return QPointF(gap * dy_up / length, gap * dx / length)
+
+    def detach(self):
+        self.source_center.remove_dependent(self)
+        self.source_end.remove_dependent(self)
+
+    def _on_point_moved(self):
+        if self._syncing:
+            return
+        self._syncing = True
+        try:
+            shift = self.offset(self.source_center, self.source_end, self.gap)
+            # The endpoints follow the center, then are set to the source ones
+            self.center.setPos(self.source_center.pos() + shift)
+            self.end.setPos(self.source_end.pos() + shift)
+        finally:
+            self._syncing = False
+
+
+class MeridionalFill(QGraphicsItem):
+    """Translucent fill of the region enclosed by the two lines and two splines."""
+
+    OPACITY = 0.2
+
+    def __init__(
+        self,
+        spline_a: CubicBezierLine,
+        spline_b: CubicBezierLine,
+        color: QColor,
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.spline_a = spline_a
+        self.spline_b = spline_b
+        self.color = color
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemStacksBehindParent, True)
+
+    def _path(self) -> QPainterPath:
+        a, b = self.spline_a, self.spline_b
+        path = QPainterPath(a.start_point.get_position())
+        path.cubicTo(
+            a.control_point1.get_position(),
+            a.control_point2.get_position(),
+            a.end_point.get_position(),
+        )
+        path.lineTo(b.end_point.get_position())
+        path.cubicTo(
+            b.control_point2.get_position(),
+            b.control_point1.get_position(),
+            b.start_point.get_position(),
+        )
+        path.closeSubpath()
+        return path
+
+    def boundingRect(self):
+        return self._path().controlPointRect().adjusted(-2, -2, 2, 2)
+
+    def paint(self, painter: QPainter, _option, _widget):
+        fill = QColor(self.color)
+        fill.setAlphaF(self.OPACITY)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(fill))
+        painter.drawPath(self._path())
+
+    def _on_point_moved(self):
+        """Called when a constraint driving the region boundary changes."""
+        self.prepareGeometryChange()
+        self.update()
+
+
 class MeridionalProfile:
     """A meridional profile made of two symmetric lines joined by two splines.
 
@@ -802,6 +956,10 @@ class MeridionalProfile:
     control point of a cubic Bezier spline, so the splines leave both lines
     at a right angle. The first spline joins the ``end1`` points of the lines
     and the second joins the ``end2`` points.
+
+    With ``previous`` and a ``gap`` the first line is a copy of the last line of
+    ``previous``, shifted by ``gap`` along the meridional direction. It follows
+    ``previous`` and cannot be dragged. Without a gap the line is shared.
     """
 
     def __init__(
@@ -812,17 +970,45 @@ class MeridionalProfile:
         end2: tuple[float, float] = (550, 200),
         control_fraction: float = 1 / 3,
         center1_axis_constraint: str | None = 'y',
+        line_color: QColor | None = None,
+        previous: 'MeridionalProfile | None' = None,
+        gap: float = 0.0,
     ):
-        # First line
-        self.center1 = DraggablePoint(*center1, axis_constraint=center1_axis_constraint)
-        self.end1 = DraggablePoint(*end1)
-        self.line1 = SymmetricLine(self.center1, self.end1)
+        if line_color is None:
+            line_color = QColor(255, 255, 255)
+
+        # First line; when following another profile without a gap, its inlet station
+        # is the outlet station of that profile (same points, so they always coincide)
+        self._shares_line1 = previous is not None and gap == 0
+        self.gap_follower: GapFollower | None = None
+        if previous is None or gap != 0:
+            if previous is not None:
+                shift = GapFollower.offset(previous.center2, previous.end2, gap)
+                start = previous.center2.pos() + shift
+                tip = previous.end2.pos() + shift
+                center1, end1 = (start.x(), start.y()), (tip.x(), tip.y())
+                center1_axis_constraint = None  # it follows the previous profile
+            self.center1 = DraggablePoint(
+                *center1, axis_constraint=center1_axis_constraint
+            )
+            self.end1 = DraggablePoint(*end1)
+            self.line1 = SymmetricLine(self.center1, self.end1, color=line_color)
+            if previous is not None:
+                for point in (self.center1, self.end1, self.line1.end2):
+                    point.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
+                self.gap_follower = GapFollower(
+                    previous.center2, previous.end2, self.center1, self.end1, gap
+                )
+        else:
+            self.center1 = previous.center2
+            self.end1 = previous.end2
+            self.line1 = previous.line2
 
         # Second line
         # The second center cannot go left of the first center
         self.center2 = DraggablePoint(*center2, min_x=self.center1.pos().x())
         self.end2 = DraggablePoint(*end2)
-        self.line2 = SymmetricLine(self.center2, self.end2)
+        self.line2 = SymmetricLine(self.center2, self.end2, color=line_color)
 
         # Perpendicular constraints; the sign flips the side of the control point.
         # Each control point sits at control_fraction of the distance between the
@@ -863,6 +1049,7 @@ class MeridionalProfile:
             self.perp2_a.point3,
             self.line2.end1,
             show_control_polygon=True,
+            color=line_color,
         )
         self.perp1_a.add_dependent(self.spline_a)
         self.perp2_a.add_dependent(self.spline_a)
@@ -873,17 +1060,38 @@ class MeridionalProfile:
             self.perp2_b.point3,
             self.line2.end2,
             show_control_polygon=True,
+            color=line_color,
         )
         self.perp1_b.add_dependent(self.spline_b)
         self.perp2_b.add_dependent(self.spline_b)
+
+        # The fill repaints whenever a constraint (which covers all four line ends
+        # and the spline control points) updates
+        self.fill = MeridionalFill(self.spline_a, self.spline_b, line_color)
+        for perp in self.perpendiculars:
+            perp.add_dependent(self.fill)
 
         # The constraints still drive the control points when hidden
         for perp in self.perpendiculars:
             perp.setVisible(False)
 
-        # Dragging the first center translates the whole profile vertically
+        # Dragging the first center translates the whole profile vertically; a shared
+        # station is moved on its own
         self._last_center1_y = self.center1.pos().y()
-        self.center1.add_dependent(self)
+        if previous is None:
+            self.center1.add_dependent(self)
+
+    def set_color(self, color: QColor):
+        """Draw the lines and splines of the profile in ``color``.
+
+        A first line shared with the previous profile keeps the color of that profile.
+        """
+        items = [self.line2, self.spline_a, self.spline_b, self.fill]
+        if not self._shares_line1:
+            items.append(self.line1)
+        for item in items:
+            item.color = color
+            item.update()
 
     def _on_point_moved(self):
         """Translate the second line by the vertical displacement of the first center.
@@ -905,11 +1113,15 @@ class MeridionalProfile:
     @property
     def items(self) -> list[QGraphicsItem]:
         """All graphics items of the profile, in the order they should be added."""
+        # The shared inlet station belongs to the previous profile's scene items
+        inlet_items = (
+            []
+            if self._shares_line1
+            else [self.center1, self.end1, self.line1.end2, self.line1]
+        )
         return [
-            self.center1,
-            self.end1,
-            self.line1.end2,
-            self.line1,
+            self.fill,
+            *inlet_items,
             self.center2,
             self.end2,
             self.line2.end2,
