@@ -127,6 +127,7 @@ class RadiusAxis(QGraphicsItem):
         self.scene_per_meter = scene_per_meter
         self.tick_step = tick_step
         self.extent = min_extent  # meters covered by the axis line and ticks
+        self.watched: list[DraggablePoint] = []
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemStacksBehindParent, True)
 
         self.tick_labels: list[QGraphicsSimpleTextItem] = []
@@ -151,9 +152,19 @@ class RadiusAxis(QGraphicsItem):
         """Radius of the tracked point in meters."""
         return (self.origin_y - self.tracked.get_position().y()) / self.scene_per_meter
 
+    def watch(self, points):
+        """Also extend the axis to reach the highest of these points."""
+        for point in points:
+            if point not in self.watched:
+                self.watched.append(point)
+                point.add_dependent(self)
+        self._on_point_moved()
+
     def _grow(self):
-        """Extend the axis so it always reaches past the tracked point."""
-        needed = self.radius() + self.MARGIN / self.scene_per_meter
+        """Extend the axis so it always reaches past the highest point."""
+        top_y = min(p.get_position().y() for p in (self.tracked, *self.watched))
+        needed = (self.origin_y - top_y) / self.scene_per_meter
+        needed += self.MARGIN / self.scene_per_meter
         while self.extent < needed:
             self.extent *= 2
         while len(self.tick_labels) <= self.extent / self.tick_step:

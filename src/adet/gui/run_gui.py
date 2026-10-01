@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import QApplication, QSplashScreen
 
 from adet.gui.row_backend import RowBackend
 from adet.gui.views import MainGuiView
-from adet.tools.printing import logo_morph_frame
+from adet.tools.printing import logo_morph_bold, logo_morph_frame
 
 SPLASH_SIZE = (640, 300)  # pixels
 SPLASH_FONT_FAMILIES = ('Cascadia Mono', 'Cascadia Code', 'Consolas')  # terminal fonts
@@ -33,13 +33,20 @@ FONTS_DIR = (
 )  # repository root fonts folder
 
 
-def _splash_pixmap(lines: list[str]) -> QPixmap:
-    """Splash image with the ASCII logo ``lines`` on a dark rounded background."""
+def _splash_pixmap(lines: list[str], bold: list[list[bool]]) -> QPixmap:
+    """Splash image with the ASCII logo ``lines`` on a dark rounded background.
+
+    ``bold`` flags per character whether it is drawn in bold.
+    """
     width, height = SPLASH_SIZE
     canvas = QPixmap(width, height)
     canvas.fill(Qt.GlobalColor.transparent)
     painter = QPainter(canvas)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setRenderHints(
+        QPainter.RenderHint.Antialiasing
+        | QPainter.RenderHint.TextAntialiasing
+        | QPainter.RenderHint.SmoothPixmapTransform
+    )
     background = QPainterPath()
     background.addRoundedRect(QRectF(0, 0, width, height), SPLASH_RADIUS, SPLASH_RADIUS)
     painter.fillPath(background, SPLASH_BACKGROUND)
@@ -47,8 +54,9 @@ def _splash_pixmap(lines: list[str]) -> QPixmap:
     # Prefer the fonts of the Windows terminals, then the system fixed font
     font.setFamilies([*SPLASH_FONT_FAMILIES, font.family()])
     font.setPixelSize(SPLASH_FONT_SIZE)
-    font.setBold(True)
-    painter.setFont(font)
+    font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+    bold_font = QFont(font)
+    bold_font.setBold(True)
     painter.setPen(SPLASH_TEXT_COLOR)
     # Draw on a fixed character grid, so the columns never drift between lines
     metrics = QFontMetricsF(font)
@@ -59,6 +67,7 @@ def _splash_pixmap(lines: list[str]) -> QPixmap:
     for row, line in enumerate(lines):
         for col, char in enumerate(line):
             if not char.isspace():
+                painter.setFont(bold_font if bold[row][col] else font)
                 painter.drawText(
                     QPointF(left + col * cell_width, top + row * cell_height), char
                 )
@@ -68,7 +77,7 @@ def _splash_pixmap(lines: list[str]) -> QPixmap:
 
 def make_splash() -> QSplashScreen:
     """Splash screen showing the start of the logo animation."""
-    splash = QSplashScreen(_splash_pixmap(logo_morph_frame(0.0)))
+    splash = QSplashScreen(_splash_pixmap(logo_morph_frame(0.0), logo_morph_bold(0.0)))
     # Let the transparent corners show through
     splash.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
     return splash
@@ -81,10 +90,12 @@ def animate_splash(app: QApplication, splash: QSplashScreen, worker: threading.T
     """
     start = time.perf_counter()
     while (progress := (time.perf_counter() - start) / SPLASH_DURATION) < 1:
-        splash.setPixmap(_splash_pixmap(logo_morph_frame(progress)))
+        splash.setPixmap(
+            _splash_pixmap(logo_morph_frame(progress), logo_morph_bold(progress))
+        )
         app.processEvents()
         time.sleep(1 / SPLASH_FPS)
-    splash.setPixmap(_splash_pixmap(logo_morph_frame(1.0)))
+    splash.setPixmap(_splash_pixmap(logo_morph_frame(1.0), logo_morph_bold(1.0)))
     while worker.is_alive():
         app.processEvents()
         worker.join(1 / SPLASH_FPS)
@@ -95,7 +106,10 @@ def load_app_font(app: QApplication):
     for font_file in FONTS_DIR.glob('JetBrainsMono*.ttf'):
         QFontDatabase.addApplicationFont(str(font_file))
     if 'JetBrains Mono' in QFontDatabase.families():
-        app.setFont(QFont('JetBrains Mono', 10))
+        font = QFont('JetBrains Mono', 10)
+        font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+        app.setFont(font)
 
 
 def main():

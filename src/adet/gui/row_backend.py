@@ -2,6 +2,7 @@
 import logging
 import math
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import NDArray
@@ -43,7 +44,7 @@ FIRST_ROW_PARAMS: dict[VarSpec, float] = {
     n1.geo.Height: 0.12,
     n1.geo.Rmid: 0.2,
     # *** Chord and blades
-    n1.geo.ChordAx: 0.1,
+    n1.geo.Chord: 0.1,
     n1.geo.NumBlades: 40,
     # *** Relative flow angles; the metal angles (camber lines) are results
     n0.kin.FlowAngleRel: math.radians(30),
@@ -54,6 +55,26 @@ FIRST_ROW_PARAMS: dict[VarSpec, float] = {
 FLOW_TURNING = math.radians(
     10
 )  # outlet minus inlet relative flow angle of an added row
+
+
+@dataclass(frozen=True)
+class FluidChoice:
+    """Working fluid: an ideal gas, or a CoolProp fluid with its backend."""
+
+    ideal: bool = True
+    gamma: float = 1.4
+    gas_constant: float = 287.0  # J/(kg K)
+    viscosity: float = 2e-5  # Pa s
+    name: str = 'Air'  # CoolProp fluid name
+    backend: str = 'HEOS'  # CoolProp backend
+
+    def make_state(self):
+        """Fluid state object for the network."""
+        if self.ideal:
+            return IdealGasState(self.gamma, self.gas_constant, self.viscosity)
+        from CoolProp import AbstractState
+
+        return AbstractState(self.backend, self.name)
 
 
 class RowBackend:
@@ -72,6 +93,7 @@ class RowBackend:
         row_params: Sequence[Mapping[VarSpec, float]] | None = None,
         inlet_conditions: Mapping[VarSpec, float] | None = None,
         guess: Mapping[VarSpec, NDArray] | None = None,
+        fluid: FluidChoice | None = None,
     ):
         # Boundary conditions of each row, with the specs of the row's own nodes
         # (n0 = inlet, n1 = outlet) and values in base units. A row imposes either its
@@ -80,6 +102,7 @@ class RowBackend:
         self.inlet_conditions = dict(inlet_conditions or INLET_CONDITIONS)
         # Values by spec (not by position) used as the initial guess where available
         self._guess: Mapping[VarSpec, NDArray] = guess or {}
+        self.fluid = fluid or FluidChoice()
         self._build()
         self._solve_initial()
 
@@ -122,8 +145,7 @@ class RowBackend:
 
     # === Setup
     def _build(self):
-        # abs_state = AbstractState('HEOS', 'Air')
-        abs_state = IdealGasState(1.4, 287, 2e-5)
+        abs_state = self.fluid.make_state()
 
         inlet = Inlet(boundary_conditions=dict(self.inlet_conditions))
 
@@ -258,7 +280,7 @@ class RowBackend:
         """Boundary conditions of a row that would follow the last one.
 
         The inlet geometry comes from the link to the previous row. The row keeps
-        the meridional angle, the height and the axial chord of the last row, and its
+        the meridional angle, the height and the chord of the last row, and its
         endwalls stay parallel. It turns at ``omega`` (rad/s), or at the speed of the
         last row if none is given. It imposes relative flow angles, whatever
         the last row does; its outlet relative flow angle is turned
@@ -267,15 +289,21 @@ class RowBackend:
         _, last = self.row_nodes(self.num_rows - 1)
         get = self.get_value
         angle = get(last.geo.MeridionalAngle)
-        chord = get(last.geo.ChordAx)
+        height = get(last.geo.Height)
+        # The row is a rectangle: the chord, the distance between the inlet and outlet
+        # centers, is half the height of the station lines
+        chord = 0.5 * height
         angle_in = get(last.kin.FlowAngleRel)
         return {
             n1.geo.MeridionalAngle: angle,
-            n1.geo.Height: get(last.geo.Height),
-            # The station lines lean downstream for a positive angle (as drawn in the
-            # GUI), so the mean line moves inwards; the walls stay parallel
-            n1.geo.Rmid: get(last.geo.Rmid) - chord * math.tan(angle),
-            n1.geo.ChordAx: chord,
+            n1.geo.Height: height,
+            # The outlet center lies on the straight line through the previous outlet
+            # center, normal to the station line, which is tilted by the meridional
+            # angle (as drawn in the GUI). It is one chord away, so the radius drops
+            # by chord * sin(angle) and the walls stay parallel: the row is a
+            # rectangle in the meridional view, also for a radial row
+            n1.geo.Rmid: get(last.geo.Rmid) - chord * math.sin(angle),
+            n1.geo.Chord: chord,
             n1.geo.NumBlades: get(last.geo.NumBlades),
             n1.kin.FlowAngleRel: angle_in + FLOW_TURNING,
             n1.kin.Omega: get(last.kin.Omega) if omega is None else omega,
@@ -326,13 +354,25 @@ class RowBackend:
             for index, row_params in enumerate(self.row_params)
         ]
 
-    def _rebuild(self, rows: list[dict[VarSpec, float]]):
+    def set_fluid(self, fluid: FluidChoice):
+        """Change the working fluid and solve the chain again from the current one.
+
+        If the new network cannot be solved, the error is raised and this backend
+        stays as it was.
+        """
+        self._rebuild(self._current_row_params(), fluid)
+
+    def _rebuild(
+        self, rows: list[dict[VarSpec, float]], fluid: FluidChoice | None = None
+    ):
         """Replace the chain by ``rows``, keeping the inlet and the current solution."""
         inlet_conditions = {
             spec: self.get_value(spec) for spec in self.inlet_conditions
         }
         # The positions of the knowns and of the free variables change with the nodes,
         # so the converged solution goes in by spec as the initial guess
-        new = RowBackend(rows, inlet_conditions, guess=self.sol_dict)
+        new = RowBackend(
+            rows, inlet_conditions, guess=self.sol_dict, fluid=fluid or self.fluid
+        )
         # Only reached when the new network solved, so nothing is half updated
         self.__dict__.update(new.__dict__)

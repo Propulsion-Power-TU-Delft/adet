@@ -1,4 +1,4 @@
-"""Views of the GUI: synced profile views, velocity triangles and the main window."""
+"""Views of the GUI: profile and camber views, velocity triangles and the main window."""
 
 import logging
 import math
@@ -40,6 +40,7 @@ from PyQt6.QtWidgets import (
     QGraphicsView,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QScrollArea,
     QScrollBar,
@@ -51,11 +52,12 @@ from PyQt6.QtWidgets import (
 from adet.gui.entities import (
     AlignedPoints,
     DraggablePoint,
+    GapFollower,
     MeridionalProfile,
     ParabolicLine,
 )
 from adet.gui.labels import AngleLabel, RadiusAxis, RotationArrow
-from adet.gui.row_backend import RowBackend, n0
+from adet.gui.row_backend import FluidChoice, RowBackend, n0
 from adet.variables import VarSpec
 
 logger = logging.getLogger(__name__)
@@ -88,6 +90,7 @@ MOVING_SHAFT_COLORS = (  # colors given in turn to the moving shafts
 SHAFT_PANEL_WIDTH = 240  # pixels
 SHAFT_CIRCLE_SIZE = 18  # pixels
 VIEW_CORNER_RADIUS = 16.0  # corner rounding of every view, pixels
+PANEL_BORDER_COLOR = QColor(80, 80, 80)  # enclosure of the fluid and shaft panels
 SPLITTER_HANDLE_WIDTH = 10  # gap between views, wide enough to grab
 PROFILE_VIEW_STRETCH = 3  # startup height share of the meridional profile view
 PARABOLA_VIEW_STRETCH = 2  # startup height share of the camber line view
@@ -218,8 +221,11 @@ def _line_geometry(center: QPointF, end: QPointF) -> tuple[float, float]:
     """Height (m) and tilt from the vertical (rad) of a station line."""
     dx = end.x() - center.x()
     dy_up = center.y() - end.y()
-    # Either end can be the upper one; fold the direction into the upper half plane
-    if dy_up < 0 or (dy_up == 0 and dx < 0):
+    # Either end can be the upper one; fold the direction into the upper half plane.
+    # A horizontal line (+-90 degrees) is folded to +90 whatever the rounding noise
+    # of the scene coordinates, which would otherwise flip it to -90
+    horizontal = abs(dy_up) <= 1e-9 * max(1.0, abs(dx))
+    if (horizontal and dx < 0) or (not horizontal and dy_up < 0):
         dx, dy_up = -dx, -dy_up
     return 2 * math.hypot(dx, dy_up) / SCENE_PER_METER, math.atan2(dx, dy_up)
 
@@ -234,6 +240,16 @@ def _make_spin(
     spin.setValue(value)
     spin.setKeyboardTracking(False)  # solve on Enter or focus loss, not per digit
     return spin
+
+
+def _enclose(panel: QWidget, name: str):
+    """Draw a rounded rectangle border around ``panel``; its children are unaffected."""
+    panel.setObjectName(name)
+    panel.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+    panel.setStyleSheet(
+        f'#{name} {{ border: 1px solid {PANEL_BORDER_COLOR.name()};'
+        f' border-radius: {int(VIEW_CORNER_RADIUS)}px; }}'
+    )
 
 
 def _circle_pixmap(color: QColor, size: int = SHAFT_CIRCLE_SIZE) -> QPixmap:
@@ -313,6 +329,7 @@ class ShaftPanel(QWidget):
         self.shafts: list[ShaftView] = []
         self._next_number = 2  # the first moving shaft is added without a number
         self.setMinimumWidth(SHAFT_PANEL_WIDTH)
+        _enclose(self, 'shaftPanel')
         self._layout = QVBoxLayout(self)
         self._layout.setSpacing(ROW_GAP)
         title = QLabel('Shafts')
@@ -365,6 +382,161 @@ class ShaftPanel(QWidget):
         shaft.hide()  # until the deferred delete happens
         shaft.deleteLater()
         self.shaft_removed.emit(index, shaft)
+
+
+class FluidPanel(QWidget):
+    """Working fluid choice: an ideal gas or a CoolProp fluid.
+
+    ``changed`` fires with the new ``FluidChoice`` when the user applies it (Enter in
+    a field, a spin box edit or the model switch).
+    """
+
+    changed = pyqtSignal(FluidChoice)
+
+    def __init__(self, fluid: FluidChoice):
+        super().__init__()
+        self.model_combo = QComboBox()
+        self.model_combo.addItems(['Ideal', 'CoolProp'])
+        self.gamma_spin = _make_spin(fluid.gamma, 1.0001, 3.0, 0.05, 3)
+        self.gas_constant_spin = _make_spin(fluid.gas_constant, 1e-3, 1e5, 1.0, 3)
+        self.viscosity_spin = _make_spin(fluid.viscosity * 1e6, 1e-3, 1e6, 1.0, 3)
+        self.name_edit = QLineEdit(fluid.name)
+        self.backend_edit = QLineEdit(fluid.backend)
+
+        _enclose(self, 'fluidPanel')
+        layout = QVBoxLayout(self)
+        layout.setSpacing(ROW_GAP // 2)
+        title = QLabel('Working fluid')
+        title.setStyleSheet('font-weight: bold; font-size: 14px;')
+        layout.addWidget(title)
+        layout.addWidget(self.model_combo)
+        self._ideal_fields = self._add_fields(
+            layout,
+            (
+                ('gamma [-]', self.gamma_spin),
+                ('R [J/(kg K)]', self.gas_constant_spin),
+                ('mu [uPa s]', self.viscosity_spin),
+            ),
+        )
+        self._coolprop_fields = self._add_fields(
+            layout, (('Fluid', self.name_edit), ('Backend', self.backend_edit))
+        )
+        self.model_combo.setCurrentIndex(0 if fluid.ideal else 1)
+        self._show_fields()
+        self._last = fluid
+
+        self.model_combo.currentIndexChanged.connect(self._on_model_changed)
+        for spin in (self.gamma_spin, self.gas_constant_spin, self.viscosity_spin):
+            spin.valueChanged.connect(self._emit)
+        for edit in (self.name_edit, self.backend_edit):
+            edit.editingFinished.connect(self._emit)
+
+    @staticmethod
+    def _add_fields(layout: QVBoxLayout, fields) -> QWidget:
+        """Labelled ``fields`` in one widget, so they show and hide together."""
+        container = QWidget()
+        inner = QVBoxLayout(container)
+        inner.setContentsMargins(0, 0, 0, 0)
+        for text, widget in fields:
+            row = QHBoxLayout()
+            row.addWidget(QLabel(text))
+            row.addWidget(widget, 1)
+            inner.addLayout(row)
+        layout.addWidget(container)
+        return container
+
+    def _show_fields(self):
+        ideal = self.model_combo.currentIndex() == 0
+        self._ideal_fields.setVisible(ideal)
+        self._coolprop_fields.setVisible(not ideal)
+
+    def _on_model_changed(self):
+        self._show_fields()
+        self._emit()
+
+    @property
+    def fluid(self) -> FluidChoice:
+        return FluidChoice(
+            ideal=self.model_combo.currentIndex() == 0,
+            gamma=self.gamma_spin.value(),
+            gas_constant=self.gas_constant_spin.value(),
+            viscosity=self.viscosity_spin.value() * 1e-6,
+            name=self.name_edit.text().strip(),
+            backend=self.backend_edit.text().strip(),
+        )
+
+    def set_fluid(self, fluid: FluidChoice):
+        """Show ``fluid`` again (after a failed change) without notifying."""
+        self._last = fluid  # so the edits below are not seen as changes
+        widgets = self.findChildren(QWidget)
+        for widget in widgets:
+            widget.blockSignals(True)
+        self.model_combo.setCurrentIndex(0 if fluid.ideal else 1)
+        self.gamma_spin.setValue(fluid.gamma)
+        self.gas_constant_spin.setValue(fluid.gas_constant)
+        self.viscosity_spin.setValue(fluid.viscosity * 1e6)
+        self.name_edit.setText(fluid.name)
+        self.backend_edit.setText(fluid.backend)
+        for widget in widgets:
+            widget.blockSignals(False)
+        self._show_fields()
+
+    def _emit(self):
+        fluid = self.fluid
+        # Editing also finishes on focus loss without a change
+        if fluid != self._last:
+            self._last = fluid
+            self.changed.emit(fluid)
+
+
+class InletPanel(QWidget):
+    """Inlet total conditions: total pressure (bar) and total temperature (K).
+
+    ``changed`` fires on any edit.
+    """
+
+    changed = pyqtSignal()
+
+    def __init__(self, pressure: float, temperature: float):
+        super().__init__()
+        self.pressure_spin = _make_spin(pressure * 1e-5, 1e-3, 1e4, 0.1, 3)
+        self.temperature_spin = _make_spin(temperature, 1.0, 1e4, 5.0, 2)
+
+        _enclose(self, 'inletPanel')
+        layout = QVBoxLayout(self)
+        layout.setSpacing(ROW_GAP // 2)
+        title = QLabel('Inlet conditions')
+        title.setStyleSheet('font-weight: bold; font-size: 14px;')
+        layout.addWidget(title)
+        for text, spin in (
+            ('Total pressure [bar]', self.pressure_spin),
+            ('Total temperature [K]', self.temperature_spin),
+        ):
+            row = QHBoxLayout()
+            row.addWidget(QLabel(text))
+            row.addWidget(spin, 1)
+            layout.addLayout(row)
+            spin.valueChanged.connect(self.changed)
+
+    @property
+    def pressure(self) -> float:
+        """Total pressure, Pa."""
+        return self.pressure_spin.value() * 1e5
+
+    @property
+    def temperature(self) -> float:
+        """Total temperature, K."""
+        return self.temperature_spin.value()
+
+    def set_conditions(self, pressure: float, temperature: float):
+        """Show the total pressure (Pa) and temperature (K) without notifying."""
+        for spin, value in (
+            (self.pressure_spin, pressure * 1e-5),
+            (self.temperature_spin, temperature),
+        ):
+            spin.blockSignals(True)
+            spin.setValue(value)
+            spin.blockSignals(False)
 
 
 class ChangeNotifier:
@@ -502,10 +674,10 @@ class RoundedGraphicsView(QGraphicsView):
 
 
 class SyncedView(RoundedGraphicsView):
-    """A fixed-scale view sharing its x range and scroll position with its group.
+    """A fixed-scale view that can share its x range and scroll position with a group.
 
     Views in the same group always have the same x range and horizontal scroll
-    position, and none of them rescales, so points aligned in x stay aligned on screen.
+    position. By default a view is alone in its group.
     """
 
     def __init__(self, scene: QGraphicsScene):
@@ -979,13 +1151,24 @@ class BladeRowView:
         chord = get(self.outlet.geo.ChordAx) * SCENE_PER_METER
         # A following row is drawn after a visual gap, which the solution ignores
         self.gap = 0.0 if previous is None else AXIAL_GAP
-        start_x = (
-            PROFILE_START_X
-            if previous is None
-            else previous.profile.center2.pos().x() + self.gap
-        )
+        # The gap is along the meridional direction, which is not the x axis when the
+        # station line is tilted (and is the y axis for a radial row)
+        if previous is None:
+            start_x = PROFILE_START_X
+            start_y = RADIUS_ORIGIN_Y - get(self.inlet.geo.Rmid) * SCENE_PER_METER
+        else:
+            prev_profile = previous.profile
+            shift = GapFollower.offset(
+                prev_profile.center2, prev_profile.end2, self.gap
+            )
+            start_x = prev_profile.center2.pos().x() + shift.x()
+            start_y = prev_profile.center2.pos().y() + shift.y()
+        # The chord joins the centers, so x only advances by what is left of it after
+        # the radial change; a radial row has almost no axial extent
+        center2_y = RADIUS_ORIGIN_Y - get(self.outlet.geo.Rmid) * SCENE_PER_METER
+        axial_chord = math.sqrt(max(chord**2 - (center2_y - start_y) ** 2, 0.0))
         center2, end2 = _line_points(
-            start_x + chord,
+            start_x + axial_chord,
             get(self.outlet.geo.Rmid),
             get(self.outlet.geo.Height),
             get(self.outlet.geo.MeridionalAngle),
@@ -1021,27 +1204,27 @@ class BladeRowView:
             )
             profile_scene.addItem(self.radius_axis)
 
-        # Parabola in the parabola scene; the points only share x with the centers
-        # through the alignment, which works across scenes
-        center1 = self.profile.center1
-        center2 = self.profile.center2
+        # Parabola in the parabola scene, independent of the profile view. It spans
+        # the actual chord, so it also works for radial components
         # The camber parabola is drawn from the solved metal angles (positive = rising)
         metal0 = get(self.inlet.geo.MetalAngle)
         metal1 = get(self.outlet.geo.MetalAngle)
-        half_dx = (center2.pos().x() - center1.pos().x()) / 2
-        # A following row starts at the height where the previous camber line ends
-        start_y = (
-            PARABOLA_START_Y
+        camber_chord = get(self.outlet.geo.Chord) * SCENE_PER_METER
+        half_dx = camber_chord / 2
+        # A following row starts where the previous camber line ends
+        start_x, start_y = (
+            (PROFILE_START_X, PARABOLA_START_Y)
             if previous is None
-            else previous.camber_points[2].pos().y()
+            else (
+                previous.camber_points[2].pos().x(),
+                previous.camber_points[2].pos().y(),
+            )
         )
         control_y = start_y - half_dx * math.tan(metal0)
         end_y = control_y - half_dx * math.tan(metal1)
-        start = DraggablePoint(center1.pos().x(), start_y)
-        end = DraggablePoint(center2.pos().x(), end_y)
-        self.start_alignment = AlignedPoints(center1, start, 'y')
-        self.end_alignment = AlignedPoints(center2, end, 'y')
-        control = DraggablePoint((start.pos().x() + end.pos().x()) / 2, control_y)
+        start = DraggablePoint(start_x, start_y)
+        end = DraggablePoint(start_x + camber_chord, end_y)
+        control = DraggablePoint(start_x + half_dx, control_y)
         self.parabola = ParabolicLine(start, control, end, show_control_polygon=True)
         for item in (start, end, control, self.parabola):
             parabola_scene.addItem(item)
@@ -1178,8 +1361,6 @@ class BladeRowView:
         assert self.previous is not None, 'The first row cannot be removed'
         owners: list = [
             notifier,
-            self.start_alignment,
-            self.end_alignment,
             *self.profile.perpendiculars,
             self.profile.spline_a,
             self.profile.spline_b,
@@ -1229,8 +1410,12 @@ class BladeRowView:
             self.outlet.geo.Rmid: (RADIUS_ORIGIN_Y - center2.y()) / SCENE_PER_METER,
             self.outlet.geo.Height: height1,
             self.outlet.geo.MeridionalAngle: mer_angle1,
-            # The gap lies before center1, so it is not part of the chord
-            self.outlet.geo.ChordAx: (center2.x() - center1.x()) / SCENE_PER_METER,
+            # The gap lies before center1, so it is not part of the chord, which is the
+            # distance between the centers of the leading and trailing edges
+            self.outlet.geo.Chord: math.hypot(
+                center2.x() - center1.x(), center2.y() - center1.y()
+            )
+            / SCENE_PER_METER,
         }
         if self.radius_axis is not None:
             height0, mer_angle0 = _line_geometry(center1, profile.end1.get_position())
@@ -1250,11 +1435,17 @@ class BladeRowView:
         """
         start, control, end = self.camber_points
         get = self.backend.get_value
-        half_dx = control.pos().x() - start.pos().x()  # control sits at the midpoint
+        chord = get(self.outlet.geo.Chord) * SCENE_PER_METER
+        half_dx = chord / 2  # control sits at the midpoint of the chord
+        # The leading edge follows the trailing edge of the previous row in x too
+        start_x = start.pos().x()
+        if self.previous is not None:
+            start_x = self.previous.camber_points[2].pos().x()
+            start.setPos(start_x, start.pos().y())
         control_y = start.pos().y() - half_dx * math.tan(get(self.inlet.geo.MetalAngle))
-        control.setPos(control.pos().x(), control_y)
+        control.setPos(start_x + half_dx, control_y)
         end_y = control_y - half_dx * math.tan(get(self.outlet.geo.MetalAngle))
-        end.setPos(end.pos().x(), end_y)
+        end.setPos(start_x + chord, end_y)
 
     def operating_conditions(self) -> dict[VarSpec, float]:
         """Rotational speed (rad/s) of the shaft and imposed relative flow angles."""
@@ -1314,6 +1505,13 @@ class MainGuiView(QWidget):
             ROTOR_COLOR,
             self.backend.get_value(RowBackend.row_nodes(0)[1].kin.Omega),
         )
+        self.fluid_panel = FluidPanel(self.backend.fluid)
+        self.fluid_panel.changed.connect(self._on_fluid_changed)
+        self.inlet_panel = InletPanel(
+            self.backend.get_value(n0.tot.Pressure),
+            self.backend.get_value(n0.tot.Temperature),
+        )
+        self.inlet_panel.changed.connect(self._schedule_solve)
         self.shaft_panel.changed.connect(self._on_shaft_speed_changed)
         self.shaft_panel.shaft_added.connect(self._on_shaft_added)
         self.shaft_panel.shaft_removed.connect(self._on_shaft_removed)
@@ -1322,7 +1520,14 @@ class MainGuiView(QWidget):
         self._root = QSplitter(Qt.Orientation.Horizontal)
         root_layout = QHBoxLayout(self)
         root_layout.addWidget(self._root)
-        self._root.addWidget(self.shaft_panel)
+        # Fluid and inlet conditions above the shafts, in one column
+        left_column = QWidget()
+        left_layout = QVBoxLayout(left_column)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.addWidget(self.fluid_panel)
+        left_layout.addWidget(self.inlet_panel)
+        left_layout.addWidget(self.shaft_panel, 1)
+        self._root.addWidget(left_column)
         center = QWidget()
         layout = QVBoxLayout(center)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -1357,11 +1562,13 @@ class MainGuiView(QWidget):
         views_splitter.setStretchFactor(0, PROFILE_VIEW_STRETCH)
         views_splitter.setStretchFactor(1, PARABOLA_VIEW_STRETCH)
         layout.addWidget(views_splitter, 1)
-        # Same scale and x range, so aligned points line up on screen
+        # The views are independent: each has its own scale, position and x range
         self.group = [self.profile_view, self.parabola_view]
         for view in self.group:
-            view.group = self.group
-            view.zoom_callback = self.zoom_views
+            # Ctrl + scroll zooms only the view under the cursor
+            view.zoom_callback = lambda factor, view=view: self.zoom_views(
+                factor, [view]
+            )
 
         # Velocity triangles in a column per row on the right; beyond
         # ``MAX_VISIBLE_ROWS`` the area keeps its width and scrolls horizontally
@@ -1390,6 +1597,9 @@ class MainGuiView(QWidget):
         self._converged_points: list[list[QPointF]] = []
         # Imposed flow angles of every row at the last converged solution
         self._converged_angles: list[dict[VarSpec, float]] = []
+        # Inlet conditions and fluid at the last converged solution
+        self._converged_inlet: dict[VarSpec, float] = {}
+        self._converged_fluid: FluidChoice = self.backend.fluid
 
         self._append_row()
         self._fit_triangle_area()
@@ -1399,14 +1609,15 @@ class MainGuiView(QWidget):
         # Animation runs on the log of the zoom so steps compose smoothly
         self._zoom_applied = 0.0
         self._zoom_target = 0.0
+        self._zoom_views: list[SyncedView] = self.group
         self._zoom_anim = QVariantAnimation(self)
         self._zoom_anim.setDuration(ZOOM_DURATION_MS)
         self._zoom_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._zoom_anim.valueChanged.connect(self._on_zoom_step)
 
         # Gliding fit of the views when a row is added
-        self._fit_from: tuple[float, float, list[float]] = (1.0, 0.0, [])
-        self._fit_to: tuple[float, float, list[float]] = (1.0, 0.0, [])
+        self._fit_from: list[tuple[float, float, float]] = []
+        self._fit_to: list[tuple[float, float, float]] = []
         self._fit_anim = QVariantAnimation(self)
         self._fit_anim.setStartValue(0.0)
         self._fit_anim.setEndValue(1.0)
@@ -1442,6 +1653,9 @@ class MainGuiView(QWidget):
             self._on_angle_mode_changed,
         )
         self.rows.append(row)
+        # The radius axis of the first row reaches the highest point of every row
+        if (axis := self.rows[0].radius_axis) is not None:
+            axis.watch(row.points)
         row.shaft_combo.currentIndexChanged.connect(self._schedule_solve)
 
         # Shaft choice on top of the triangles of the row; all triangles share one scale
@@ -1509,7 +1723,7 @@ class MainGuiView(QWidget):
             return
         self._solve_timer.stop()
         # The remaining rows keep what is drawn, so it goes to the backend first
-        values: dict[VarSpec, float] = {n0.oth.TotMassFlow: self.mass_flow_spin.value()}
+        values = self._inlet_conditions()
         for row in self.rows[:-1]:
             values |= row.drawn_geometry() | row.operating_conditions()
         self.backend.set_geometry(values)
@@ -1556,12 +1770,39 @@ class MainGuiView(QWidget):
             geometry |= row.drawn_geometry()
         return geometry
 
+    def _inlet_conditions(self) -> dict[VarSpec, float]:
+        """Mass flow (kg/s), total pressure (Pa) and temperature (K) of the inlet."""
+        return {
+            n0.oth.TotMassFlow: self.mass_flow_spin.value(),
+            n0.tot.Pressure: self.inlet_panel.pressure,
+            n0.tot.Temperature: self.inlet_panel.temperature,
+        }
+
     def operating_conditions(self) -> dict[VarSpec, float]:
-        """Mass flow (kg/s) and rotational speeds (rad/s) from the input fields."""
-        conditions = {n0.oth.TotMassFlow: self.mass_flow_spin.value()}
+        """Inlet conditions and rotational speeds (rad/s) from the input fields."""
+        conditions = self._inlet_conditions()
         for row in self.rows:
             conditions |= row.operating_conditions()
         return conditions
+
+    def _on_fluid_changed(self, fluid: FluidChoice):
+        """Rebuild the solution with another working fluid."""
+        self._solve_timer.stop()
+        # The current drawing is solved first, so the new fluid starts from it
+        if not self.update_solution():
+            self.status_label.setText('Fix the current solution before the fluid')
+            self.fluid_panel.set_fluid(self.backend.fluid)
+            return
+        try:
+            self.backend.set_fluid(fluid)
+        except Exception as err:  # CoolProp raises ValueError for unknown fluids
+            logger.warning(f'Could not change the fluid: {err}')
+            self.status_label.setText('Could not solve with the other fluid')
+            self.fluid_panel.set_fluid(self.backend.fluid)
+            return
+        self._update_triangles()
+        self._remember_converged()
+        self.status_label.setText('Fluid changed and converged')
 
     def _on_shaft_added(self, shaft: ShaftView):
         for row in self.rows:
@@ -1627,14 +1868,27 @@ class MainGuiView(QWidget):
             [point.pos() for point in row.points] for row in self.rows
         ]
         self._converged_angles = [dict(row.flow_angles) for row in self.rows]
+        self._converged_inlet = self._inlet_conditions()
+        self._converged_fluid = self.backend.fluid
 
     def reset_geometry(self):
-        """Redraw the geometry of the last converged solution and solve it again."""
+        """Redraw the geometry of the last converged solution and solve it again.
+
+        The inlet conditions and the fluid go back as well.
+        """
         if len(self._converged_points) != len(self.rows):
             return
         for row, angles in zip(self.rows, self._converged_angles):
             row.flow_angles.update(angles)
         self._solve_timer.stop()
+        inlet = self._converged_inlet
+        self.mass_flow_spin.blockSignals(True)
+        self.mass_flow_spin.setValue(inlet[n0.oth.TotMassFlow])
+        self.mass_flow_spin.blockSignals(False)
+        self.inlet_panel.set_conditions(
+            inlet[n0.tot.Pressure], inlet[n0.tot.Temperature]
+        )
+        self.fluid_panel.set_fluid(self._converged_fluid)
         self._syncing = True  # the restore is not an edit, so no solve per point
         try:
             # Points drag their aligned partners along, so a second pass settles
@@ -1660,7 +1914,7 @@ class MainGuiView(QWidget):
                 row.sync_camber()
         finally:
             self._syncing = False
-        self.profile_view._update_extent()
+        self.parabola_view._update_extent()
 
     def _update_triangles(self, converged: bool = True):
         """Show the velocity triangles of the current solution."""
@@ -1669,15 +1923,21 @@ class MainGuiView(QWidget):
         if converged:
             VelocityTriangleView.fit_group(self._triangle_views())
 
-    def zoom_views(self, factor: float):
-        """Animate a zoom of every view by the same factor.
+    def zoom_views(self, factor: float, views: list[SyncedView] | None = None):
+        """Animate a zoom of ``views`` (both by default) by the same factor.
 
-        Presses during a running animation add to what is left of it.
+        Presses during a running animation add to what is left of it, when they zoom
+        the same views.
         """
+        views = self.group if views is None else views
         remaining = 0.0
-        if self._zoom_anim.state() == QVariantAnimation.State.Running:
+        if (
+            self._zoom_anim.state() == QVariantAnimation.State.Running
+            and views == self._zoom_views
+        ):
             remaining = self._zoom_target - self._zoom_applied
-            self._zoom_anim.stop()
+        self._zoom_anim.stop()
+        self._zoom_views = views
         self._zoom_applied = 0.0
         self._zoom_target = remaining + math.log(factor)
         self._zoom_anim.setStartValue(0.0)
@@ -1691,55 +1951,47 @@ class MainGuiView(QWidget):
         self._apply_zoom(math.exp(step))
 
     def _apply_zoom(self, factor: float):
-        """Zoom every view by the same factor, keeping the shared x centre."""
-        viewport = self.profile_view.viewport()
-        assert viewport is not None
-        center_x = self.profile_view.mapToScene(viewport.rect().center()).x()
-        for view in self.group:
-            view_viewport = view.viewport()
-            assert view_viewport is not None
-            center_y = view.mapToScene(view_viewport.rect().center()).y()
-            view.scale(factor, factor)
-            view.centerOn(center_x, center_y)
-
-    def _fit_target(self) -> tuple[float, float, list[float]]:
-        """Common scale, shared x centre and y centre per view that fit the content."""
-        self.profile_view._update_extent()
-        rects = [view.content_rect() for view in self.group]
-        # The x range is shared, so it must hold the content of every view
-        left = min(rect.left() for rect in rects)
-        right = max(rect.right() for rect in rects)
-        width = right - left
-        scales = []
-        for view, rect in zip(self.group, rects):
+        """Zoom the views being zoomed by the same factor, each about its own centre."""
+        for view in self._zoom_views:
             viewport = view.viewport()
             assert viewport is not None
-            scales.append(
-                min(viewport.width() / width, viewport.height() / rect.height())
-            )
-        return min(scales), (left + right) / 2, [rect.center().y() for rect in rects]
+            center = view.mapToScene(viewport.rect().center())
+            view.scale(factor, factor)
+            view.centerOn(center)
 
-    def _show_view(self, scale: float, center_x: float, center_ys: list[float]):
-        for view, center_y in zip(self.group, center_ys):
+    def _fit_target(self) -> list[tuple[float, float, float]]:
+        """Scale and centre (x, y) of every view that fit its own content."""
+        for view in self.group:
+            view._update_extent()
+        targets = []
+        for view in self.group:
+            rect = view.content_rect()
+            viewport = view.viewport()
+            assert viewport is not None
+            scale = min(
+                viewport.width() / rect.width(), viewport.height() / rect.height()
+            )
+            targets.append((scale, rect.center().x(), rect.center().y()))
+        return targets
+
+    def _show_view(self, targets: list[tuple[float, float, float]]):
+        for view, (scale, center_x, center_y) in zip(self.group, targets):
             view.resetTransform()
             view.scale(scale, scale)
             view.centerOn(center_x, center_y)
 
-    def _current_view(self) -> tuple[float, float, list[float]]:
-        """Scale, shared x centre and y centre per view as shown now."""
-        centers = []
+    def _current_view(self) -> list[tuple[float, float, float]]:
+        """Scale and centre (x, y) of every view as shown now."""
+        current = []
         for view in self.group:
             viewport = view.viewport()
             assert viewport is not None
-            centers.append(view.mapToScene(viewport.rect().center()))
-        return (
-            self.profile_view.transform().m11(),
-            centers[0].x(),
-            [center.y() for center in centers],
-        )
+            center = view.mapToScene(viewport.rect().center())
+            current.append((view.transform().m11(), center.x(), center.y()))
+        return current
 
     def fit_views(self, animated: bool = True):
-        """Fit the profile and the parabola (not the axis) using one common scale.
+        """Fit the profile and the parabola (not the axis), each to its own content.
 
         With ``animated`` (the default) the views glide to the fit with an ease.
         """
@@ -1747,7 +1999,7 @@ class MainGuiView(QWidget):
         self._fit_anim.stop()
         end = self._fit_target()
         if not animated:
-            self._show_view(*end)
+            self._show_view(end)
             return
         self._fit_from, self._fit_to = self._current_view(), end
         self._fit_anim.start()
@@ -1755,11 +2007,11 @@ class MainGuiView(QWidget):
     def _on_fit_step(self, progress):
         """Show the views a fraction ``progress`` of the way to the fit."""
         t = float(progress)
-        (scale0, x0, ys0), (scale1, x1, ys1) = self._fit_from, self._fit_to
-        # The scale is interpolated in its log, like the zoom, so it feels uniform
-        scale = math.exp(math.log(scale0) + (math.log(scale1) - math.log(scale0)) * t)
-        self._show_view(
-            scale,
-            x0 + (x1 - x0) * t,
-            [y0 + (y1 - y0) * t for y0, y1 in zip(ys0, ys1)],
-        )
+        steps = []
+        for (scale0, x0, y0), (scale1, x1, y1) in zip(self._fit_from, self._fit_to):
+            # The scale is interpolated in its log, like the zoom, so it feels uniform
+            scale = math.exp(
+                math.log(scale0) + (math.log(scale1) - math.log(scale0)) * t
+            )
+            steps.append((scale, x0 + (x1 - x0) * t, y0 + (y1 - y0) * t))
+        self._show_view(steps)

@@ -52,6 +52,18 @@ def logo_morph_frame(progress: float, band: int = 12) -> list[str]:
     return rows
 
 
+def logo_morph_bold(progress: float, band: int = 12) -> list[list[bool]]:
+    """Per character of the logo, whether it is bold at ``progress`` of the morph.
+
+    Characters are normal weight until the wave front reaches them and bold after.
+    """
+    logo_file = Path(__file__).parent / 'ascii_logo.txt'
+    lines = logo_file.read_text().splitlines()
+    width = max(len(line) for line in lines)
+    front = progress * (width + band)
+    return [[col < front for col in range(len(line))] for line in lines]
+
+
 def animate_logo(duration: float = 1.5, fps: float = 30.0, band: int = 12):
     """Print the logo morphing from ``-``
     characters to the final logo, left to right."""
