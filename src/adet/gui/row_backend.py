@@ -45,12 +45,15 @@ FIRST_ROW_PARAMS: dict[VarSpec, float] = {
     # *** Chord and blades
     n1.geo.ChordAx: 0.1,
     n1.geo.NumBlades: 40,
-    n0.geo.MetalAngle: math.radians(30),
-    n1.geo.MetalAngle: math.radians(-30),
+    # *** Relative flow angles; the metal angles (camber lines) are results
+    n0.kin.FlowAngleRel: math.radians(30),
+    n1.kin.FlowAngleRel: math.radians(-30),
     # *** Rotational speed of the row
-    n1.kin.Omega: 100.0,
+    n1.kin.Omega: 0.0,
 }
-METAL_TURNING = math.radians(10)  # outlet minus inlet metal angle of an added row
+FLOW_TURNING = math.radians(
+    10
+)  # outlet minus inlet relative flow angle of an added row
 
 
 class RowBackend:
@@ -71,7 +74,8 @@ class RowBackend:
         guess: Mapping[VarSpec, NDArray] | None = None,
     ):
         # Boundary conditions of each row, with the specs of the row's own nodes
-        # (n0 = inlet, n1 = outlet) and values in base units
+        # (n0 = inlet, n1 = outlet) and values in base units. A row imposes either its
+        # relative or its absolute flow angles, whichever specs it holds
         self.row_params = [dict(p) for p in row_params or [FIRST_ROW_PARAMS]]
         self.inlet_conditions = dict(inlet_conditions or INLET_CONDITIONS)
         # Values by spec (not by position) used as the initial guess where available
@@ -87,6 +91,34 @@ class RowBackend:
     def row_nodes(row: int) -> tuple[NodeVariables, NodeVariables]:
         """Inlet and outlet node variables of a row."""
         return NodeVariables(2 * row), NodeVariables(2 * row + 1)
+
+    def is_absolute(self, row: int, node: int) -> bool:
+        """Whether the angle at a node (0 = inlet, 1 = outlet) of the row is absolute.
+
+        The inlet of a following row takes the kind of the previous outlet, as it is
+        the same station.
+        """
+        if node == 0 and row > 0:
+            return self.is_absolute(row - 1, 1)
+        return (n0, n1)[node].kin.FlowAngleAbs in self.row_params[row]
+
+    def angle_spec(self, row: int, node: int) -> VarSpec:
+        """Flow angle (of the kind imposed there) at a node (0 or 1) of the row."""
+        kin = self.row_nodes(row)[node].kin
+        return kin.FlowAngleAbs if self.is_absolute(row, node) else kin.FlowAngleRel
+
+    @staticmethod
+    def _with_angle_kind(
+        params: Mapping[VarSpec, float], node: int, absolute: bool
+    ) -> dict[VarSpec, float]:
+        """Copy of ``params`` with the flow angle at ``node`` of the given kind."""
+        kin = (n0, n1)[node].kin
+        old, new = (
+            (kin.FlowAngleRel, kin.FlowAngleAbs)
+            if absolute
+            else (kin.FlowAngleAbs, kin.FlowAngleRel)
+        )
+        return {(new if spec == old else spec): value for spec, value in params.items()}
 
     # === Setup
     def _build(self):
@@ -105,8 +137,8 @@ class RowBackend:
                 shaft=Shaft(params[n1.kin.Omega], is_constrained=True),
                 bound_cond=bound_cond,
                 extra_equations={
-                    # No incidence: the inlet metal angle of the first row sets the
-                    # flow, while the following rows take it from the previous row
+                    # No incidence: the inlet metal angle follows the flow, which the
+                    # imposed relative flow angles set. No deviation either (base)
                     ZeroDeviation(): 0,
                     TotalPressureLoss(0.9): (0, 1),  # Loss coefficient
                     # ModifiedZweifel(): (0, 1),
@@ -222,20 +254,21 @@ class RowBackend:
         return True
 
     # === Adding and removing rows
-    def next_row_params(self) -> dict[VarSpec, float]:
+    def next_row_params(self, omega: float | None = None) -> dict[VarSpec, float]:
         """Boundary conditions of a row that would follow the last one.
 
         The inlet geometry comes from the link to the previous row. The row keeps
-        the meridional angle, the height, the axial chord and the speed of the last
-        row, and its endwalls stay parallel. Its inlet metal angle is the relative
-        flow angle leaving the last row (a result, since the incidence is zero) and
-        its outlet metal angle is turned by ``METAL_TURNING`` from it.
+        the meridional angle, the height and the axial chord of the last row, and its
+        endwalls stay parallel. It turns at ``omega`` (rad/s), or at the speed of the
+        last row if none is given. It imposes relative flow angles, whatever
+        the last row does; its outlet relative flow angle is turned
+        by ``FLOW_TURNING`` from the relative flow angle leaving the last row.
         """
         _, last = self.row_nodes(self.num_rows - 1)
         get = self.get_value
         angle = get(last.geo.MeridionalAngle)
         chord = get(last.geo.ChordAx)
-        metal_in = get(last.kin.FlowAngleRel)
+        angle_in = get(last.kin.FlowAngleRel)
         return {
             n1.geo.MeridionalAngle: angle,
             n1.geo.Height: get(last.geo.Height),
@@ -244,8 +277,8 @@ class RowBackend:
             n1.geo.Rmid: get(last.geo.Rmid) - chord * math.tan(angle),
             n1.geo.ChordAx: chord,
             n1.geo.NumBlades: get(last.geo.NumBlades),
-            n1.geo.MetalAngle: metal_in + METAL_TURNING,
-            n1.kin.Omega: get(last.kin.Omega),
+            n1.kin.FlowAngleRel: angle_in + FLOW_TURNING,
+            n1.kin.Omega: get(last.kin.Omega) if omega is None else omega,
         }
 
     def add_row(self, params: Mapping[VarSpec, float]):
@@ -266,6 +299,22 @@ class RowBackend:
         if self.num_rows < 2:
             raise ValueError('The first row cannot be removed')
         self._rebuild(self._current_row_params()[:-1])
+
+    def set_angle_mode(self, row: int, node: int, absolute: bool):
+        """Make a row impose the absolute or relative flow angle at a node instead.
+
+        The angles of the current solution become the new boundary conditions and the
+        system is rebuilt. If the new network cannot be solved, the error is raised and
+        this backend stays as it was. The inlet of a following row imposes nothing.
+        """
+        if absolute == self.is_absolute(row, node):
+            return
+        rows = self._current_row_params()
+        rows[row] = {
+            spec: self.get_value(spec.at_node(2 * row + spec.node))
+            for spec in self._with_angle_kind(self.row_params[row], node, absolute)
+        }
+        self._rebuild(rows)
 
     def _current_row_params(self) -> list[dict[VarSpec, float]]:
         """Boundary conditions of every row as they are now."""

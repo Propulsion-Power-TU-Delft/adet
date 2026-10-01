@@ -2,12 +2,13 @@ import math
 
 from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import QBrush, QColor, QPainter, QPainterPath, QPen
-from PyQt6.QtWidgets import QApplication, QGraphicsItem
+from PyQt6.QtWidgets import QApplication, QGraphicsItem, QGraphicsLineItem
 
 
 CONTROL_MARKER_RADIUS = 4.0
 ANGLE_SNAP_DEG = 10.0
 PARABOLA_ANGLE_SNAP_DEG = 5.0
+MERIDIONAL_SNAP_DISTANCE = 4.0  # scene units within which the second line snaps
 
 
 # Point travel per unit of cursor travel
@@ -52,6 +53,7 @@ class DraggablePoint(QGraphicsItem):
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
         self._dependents = []
+        self._release_listeners = []
 
     def boundingRect(self):
         return QRectF(
@@ -94,6 +96,15 @@ class DraggablePoint(QGraphicsItem):
         self._last_scene_pos = event.scenePos()
         self._drag_target = self.pos()
         super().mousePressEvent(event)
+
+    def add_release_listener(self, callback):
+        """Call ``callback()`` when the mouse button is released on this point."""
+        self._release_listeners.append(callback)
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        for callback in self._release_listeners:
+            callback()
 
     def mouseMoveEvent(self, event):
         """Drag the point slowly by default, at full cursor speed while Shift is held."""
@@ -272,7 +283,8 @@ class ParabolicLine(QGraphicsItem):
         The control point follows the end point to the midpoint in x, so the angle
         is measured from that future control position.
         """
-        if not _ctrl_held():
+        movable = self.end_point.flags() & QGraphicsItem.GraphicsItemFlag.ItemIsMovable
+        if not movable or not _ctrl_held():
             return value
         start_x = self.start_point.get_position().x()
         control_y = self.control_point.get_position().y()
@@ -948,6 +960,28 @@ class MeridionalFill(QGraphicsItem):
         self.update()
 
 
+class SnapHighlight(QGraphicsLineItem):
+    """Temporary red dotted line drawn on top of everything while a snap is active."""
+
+    def __init__(self):
+        super().__init__()
+        pen = QPen(QColor(255, 40, 40), 2, Qt.PenStyle.DotLine)
+        pen.setCosmetic(True)
+        self.setPen(pen)
+        self.setZValue(1e9)
+        self.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+        self.setVisible(False)
+
+    def show_between(self, scene, start: QPointF, end: QPointF):
+        if self.scene() is not scene:
+            scene.addItem(self)
+        self.setLine(start.x(), start.y(), end.x(), end.y())
+        self.setVisible(True)
+
+    def clear(self):
+        self.setVisible(False)
+
+
 class MeridionalProfile:
     """A meridional profile made of two symmetric lines joined by two splines.
 
@@ -1009,6 +1043,37 @@ class MeridionalProfile:
         self.center2 = DraggablePoint(*center2, min_x=self.center1.pos().x())
         self.end2 = DraggablePoint(*end2)
         self.line2 = SymmetricLine(self.center2, self.end2, color=line_color)
+
+        # Dragging the second center snaps the line to the first one
+        original_center2_itemChange = self.center2.itemChange
+
+        def center2_snapped_itemChange(change, value):
+            if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
+                scene = self.center2.scene()
+                if (
+                    _ctrl_held()
+                    and scene is not None
+                    and scene.mouseGrabberItem() is self.center2
+                ):
+                    # Ctrl while dragging restricts the move to the y direction
+                    value = QPointF(self.center2.pos().x(), value.y())
+                value = self._snap_center2(value)
+            return original_center2_itemChange(change, value)
+
+        self.center2.itemChange = center2_snapped_itemChange  # type: ignore
+
+        # Red dotted line showing what a snap aligns to, for the length of the drag
+        self.snap_highlight = SnapHighlight()
+        self.center2.add_release_listener(self.snap_highlight.clear)
+        self.line2.end1.add_release_listener(self.snap_highlight.clear)
+        self.line2.end2.add_release_listener(self.snap_highlight.clear)
+
+        # Dragging an end of the second line snaps its spline straight as well
+        for end, ref, mirror_ref in (
+            (self.line2.end1, self.line1.end1, self.line1.end2),
+            (self.line2.end2, self.line1.end2, self.line1.end1),
+        ):
+            self._install_end_snap(end, ref, mirror_ref)
 
         # Perpendicular constraints; the sign flips the side of the control point.
         # Each control point sits at control_fraction of the distance between the
@@ -1080,6 +1145,122 @@ class MeridionalProfile:
         self._last_center1_y = self.center1.pos().y()
         if previous is None:
             self.center1.add_dependent(self)
+
+    def _snap_center2(self, value: QPointF) -> QPointF:
+        """Snap the dragged second center vertically to the first line.
+
+        The second line moves so that either its center or one of its ends is level
+        with the matching point of the first line, i.e. their offset is perpendicular
+        to the first line. For the ends this makes the spline between them straight.
+        Only a drag by the mouse snaps, not the profile following the first center.
+        """
+        scene = self.center2.scene()
+        if scene is None or scene.mouseGrabberItem() is not self.center2:
+            return value
+        self.snap_highlight.clear()
+        tilt = self.line1.end1.pos() - self.center1.pos()
+        if abs(tilt.y()) < 1e-9:
+            return value  # a horizontal first line cannot be levelled vertically
+        pairs = (
+            (self.center2, self.center1),
+            (self.line2.end1, self.line1.end1),
+            (self.line2.end2, self.line1.end2),
+        )
+        best: float | None = None
+        best_line: tuple[QPointF, QPointF] | None = None
+        for point, reference in pairs:
+            # Offset of the point from the dragged center, unchanged by the drag
+            offset = point.pos() - self.center2.pos()
+            gap = value + offset - reference.pos()
+            # Vertical shift that makes the gap perpendicular to the first line
+            dy = -(gap.x() * tilt.x() + gap.y() * tilt.y()) / tilt.y()
+            if abs(dy) <= MERIDIONAL_SNAP_DISTANCE and (
+                best is None or abs(dy) < abs(best)
+            ):
+                best = dy
+                best_line = (reference.pos(), value + offset + QPointF(0, dy))
+        if best is None or best_line is None:
+            return value
+        self.snap_highlight.show_between(scene, *best_line)
+        return QPointF(value.x(), value.y() + best)
+
+    def _install_end_snap(
+        self, end: DraggablePoint, reference: DraggablePoint, mirror_reference
+    ):
+        """Snap ``end`` of the second line, when dragged, to a straight spline.
+
+        ``reference`` is the end of the first line joined to ``end`` by a spline and
+        ``mirror_reference`` the one joined to the mirrored end of the second line.
+        """
+        original_itemChange = end.itemChange
+
+        def end_snapped_itemChange(change, value):
+            if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange:
+                value = self._snap_end(end, reference, mirror_reference, value)
+            return original_itemChange(change, value)
+
+        end.itemChange = end_snapped_itemChange  # type: ignore
+
+    def _snap_end(
+        self,
+        end: DraggablePoint,
+        reference: DraggablePoint,
+        mirror_reference: DraggablePoint,
+        value: QPointF,
+    ) -> QPointF:
+        """Move the dragged end so that a spline of the second line becomes straight.
+
+        A spline is straight when the offset between its ends is perpendicular to the
+        first line. Either the dragged end or its mirror about the second center can
+        be levelled with its counterpart; the shift is along the first line.
+        While Ctrl is held the end keeps the angle of the line snapped to its steps,
+        so it is only shifted along that direction.
+        """
+        scene = end.scene()
+        if scene is None or scene.mouseGrabberItem() is not end:
+            return value
+        self.snap_highlight.clear()
+        center = self.center2.pos()
+        direction: QPointF | None = None
+        if _ctrl_held():
+            value = self.line2._snap_angle(value)
+            direction = value - center
+            length = math.hypot(direction.x(), direction.y())
+            if length == 0:
+                return value
+            direction = direction / length
+        tilt = self.line1.end1.pos() - self.center1.pos()
+        norm2 = tilt.x() ** 2 + tilt.y() ** 2
+        if norm2 < 1e-18:
+            return value
+        # Unit shift of the dragged end that changes the gap along the first line by 1
+        if direction is None:
+            step = tilt / norm2
+        else:
+            across = direction.x() * tilt.x() + direction.y() * tilt.y()
+            if abs(across) < 1e-9 * math.sqrt(norm2):
+                return value  # the end moves perpendicular to the first line
+            step = direction / across
+        mirror = QPointF(2 * center.x() - value.x(), 2 * center.y() - value.y())
+        best: QPointF | None = None
+        best_line: tuple[QPointF, QPointF] | None = None
+        best_size = MERIDIONAL_SNAP_DISTANCE
+        for gap, sign, ref, moved in (
+            (value - reference.pos(), -1, reference, value),
+            (mirror - mirror_reference.pos(), 1, mirror_reference, mirror),
+        ):
+            along = gap.x() * tilt.x() + gap.y() * tilt.y()
+            shift = sign * along * step
+            size = math.hypot(shift.x(), shift.y())
+            if size <= best_size:
+                best_size = size
+                best = shift
+                # The mirrored end moves opposite to the dragged one
+                best_line = (ref.pos(), moved - sign * best)
+        if best is None or best_line is None:
+            return value
+        self.snap_highlight.show_between(scene, *best_line)
+        return value + best
 
     def set_color(self, color: QColor):
         """Draw the lines and splines of the profile in ``color``.

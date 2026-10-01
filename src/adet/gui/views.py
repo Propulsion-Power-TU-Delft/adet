@@ -29,9 +29,11 @@ from PyQt6.QtGui import (
 )
 from PyQt6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFrame,
+    QGraphicsEllipseItem,
     QGraphicsItem,
     QGraphicsScene,
     QGraphicsSimpleTextItem,
@@ -89,6 +91,111 @@ VIEW_CORNER_RADIUS = 16.0  # corner rounding of every view, pixels
 SPLITTER_HANDLE_WIDTH = 10  # gap between views, wide enough to grab
 PROFILE_VIEW_STRETCH = 3  # startup height share of the meridional profile view
 PARABOLA_VIEW_STRETCH = 2  # startup height share of the camber line view
+TIP_GRAB_RADIUS = 14  # pixels around the tip of V that grab the mouse
+TIP_HANDLE_RADIUS = 5  # pixels
+SWITCH_TRACK_SIZE = (44, 22)  # width, height of the sliding switch track, pixels
+SWITCH_KNOB_MARGIN = 3  # gap between the knob and the track edge, pixels
+SWITCH_SLIDE_MS = 120  # duration of the knob slide
+SWITCH_TRACK_COLOR = QColor(80, 80, 80)
+SWITCH_KNOB_COLOR = QColor(58, 134, 255)
+SWITCH_ACTIVE_TEXT_COLOR = QColor(230, 230, 230)
+SWITCH_INACTIVE_TEXT_COLOR = QColor(130, 130, 130)
+MAX_FLOW_ANGLE = math.radians(80)  # dragged relative flow angles stay within +-this
+FLOW_ANGLE_SNAP_DEG = 5.0  # step of the dragged angle while Ctrl is held
+
+
+class SlideSwitch(QCheckBox):
+    """Left/right switch whose knob slides between two labelled options.
+
+    Unchecked is the left option and checked the right one. It keeps the ``QCheckBox``
+    interface (``toggled``, ``setChecked``, ``setEnabled``).
+    """
+
+    def __init__(self, left_text: str, right_text: str, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.left_text = left_text
+        self.right_text = right_text
+        self._position = 0.0  # 0 knob on the left, 1 on the right
+        self._animation = QVariantAnimation(self)
+        self._animation.setDuration(SWITCH_SLIDE_MS)
+        self._animation.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        self._animation.valueChanged.connect(self._set_position)
+        self.toggled.connect(self._slide)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def setChecked(self, checked: bool):
+        """Set the state; without a ``toggled`` signal the knob jumps there.
+
+        Setting the state it already has leaves a running slide untouched.
+        """
+        if checked == self.isChecked():
+            return
+        super().setChecked(checked)
+        self._animation.stop()
+        self._position = 1.0 if checked else 0.0
+        self.update()
+
+    def sizeHint(self):
+        metrics = self.fontMetrics()
+        width = (
+            metrics.horizontalAdvance(self.left_text)
+            + metrics.horizontalAdvance(self.right_text)
+            + SWITCH_TRACK_SIZE[0]
+            + 4 * SWITCH_KNOB_MARGIN
+        )
+        return QRectF(0, 0, width, SWITCH_TRACK_SIZE[1] + 4).size().toSize()
+
+    def hitButton(self, pos):
+        return self.rect().contains(pos)
+
+    def _slide(self, checked: bool):
+        self._animation.stop()
+        self._animation.setStartValue(self._position)
+        self._animation.setEndValue(1.0 if checked else 0.0)
+        self._animation.start()
+
+    def _set_position(self, position: float):
+        self._position = position
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setOpacity(1.0 if self.isEnabled() else 0.4)
+        metrics = self.fontMetrics()
+        track_w, track_h = SWITCH_TRACK_SIZE
+        left_w = metrics.horizontalAdvance(self.left_text)
+        track_x = left_w + 2 * SWITCH_KNOB_MARGIN
+        track_y = (self.height() - track_h) / 2
+        height = self.height()
+
+        # Option labels, the selected one highlighted
+        painter.setPen(
+            SWITCH_INACTIVE_TEXT_COLOR if self.isChecked() else SWITCH_ACTIVE_TEXT_COLOR
+        )
+        painter.drawText(
+            QRectF(0, 0, left_w, height), Qt.AlignmentFlag.AlignVCenter, self.left_text
+        )
+        painter.setPen(
+            SWITCH_ACTIVE_TEXT_COLOR if self.isChecked() else SWITCH_INACTIVE_TEXT_COLOR
+        )
+        painter.drawText(
+            QRectF(track_x + track_w + 2 * SWITCH_KNOB_MARGIN, 0, self.width(), height),
+            Qt.AlignmentFlag.AlignVCenter,
+            self.right_text,
+        )
+
+        # Track and knob
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(SWITCH_TRACK_COLOR)
+        painter.drawRoundedRect(
+            QRectF(track_x, track_y, track_w, track_h), track_h / 2, track_h / 2
+        )
+        knob = track_h - 2 * SWITCH_KNOB_MARGIN
+        knob_x = track_x + SWITCH_KNOB_MARGIN
+        knob_x += self._position * (track_w - knob - 2 * SWITCH_KNOB_MARGIN)
+        painter.setBrush(SWITCH_KNOB_COLOR)
+        painter.drawEllipse(QRectF(knob_x, track_y + SWITCH_KNOB_MARGIN, knob, knob))
 
 
 def _line_points(
@@ -512,11 +619,83 @@ class SyncedView(RoundedGraphicsView):
         self._update_extent()
 
 
+class TriangleGraphicsView(RoundedGraphicsView):
+    """Graphics view of a velocity triangle whose W tip can be dragged vertically.
+
+    The meridional velocity is set by the mass flow, so the tip only moves along the
+    tangential direction: ``on_angle_dragged`` gets the relative flow angle (rad) of
+    the tip at the cursor height and the current meridional velocity. Without a
+    callback the tip is not draggable.
+    """
+
+    def __init__(self, scene: QGraphicsScene):
+        super().__init__(scene)
+        self.tip: QPointF | None = None  # tip of W in scene coordinates
+        self.on_angle_dragged: Callable[[float], None] | None = None
+        self._dragging = False
+        viewport = self.viewport()
+        assert viewport is not None
+        viewport.setMouseTracking(True)  # hover feedback without a button pressed
+
+    def _over_tip(self, pos: QPointF) -> bool:
+        if self.tip is None or self.on_angle_dragged is None:
+            return False
+        tip = self.mapFromScene(self.tip)
+        return math.hypot(pos.x() - tip.x(), pos.y() - tip.y()) <= TIP_GRAB_RADIUS
+
+    def _drag_to(self, event):
+        """Report the flow angle at the cursor height, snapped while Ctrl is held."""
+        if self.tip is None:
+            return
+        cursor = self.mapToScene(event.position().toPoint())
+        # Scene y points down, so the tangential velocity is the negated scene y; the
+        # meridional velocity (scene x) does not follow the cursor
+        angle = math.atan2(-cursor.y(), self.tip.x())
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            step = math.radians(FLOW_ANGLE_SNAP_DEG)
+            angle = round(angle / step) * step
+        angle = max(-MAX_FLOW_ANGLE, min(MAX_FLOW_ANGLE, angle))
+        if self.on_angle_dragged is not None:
+            self.on_angle_dragged(angle)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self._over_tip(
+            event.position()
+        ):
+            self._dragging = True
+            self._drag_to(event)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        viewport = self.viewport()
+        assert viewport is not None
+        if self._dragging:
+            self._drag_to(event)
+            event.accept()
+            return
+        viewport.setCursor(
+            Qt.CursorShape.PointingHandCursor
+            if self._over_tip(event.position())
+            else Qt.CursorShape.ArrowCursor
+        )
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if self._dragging:
+            self._dragging = False
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+
 class VelocityTriangleView(QWidget):
     """Velocity triangle of one station, drawn with Qt graphics items.
 
     Axes follow ``plot_velocity_triangles``: V_m to the right, V_t upwards. W and V
-    start at the origin and U closes the triangle.
+    start at the origin and U closes the triangle. With ``on_angle_dragged`` set the
+    tip of W can be dragged along V_t to impose the relative flow angle of the station.
     """
 
     ARROW_HEAD = 0.06  # head length as a fraction of the drawn extent
@@ -528,9 +707,10 @@ class VelocityTriangleView(QWidget):
 
     def __init__(self, title: str):
         super().__init__()
+        self.absolute = False  # imposed angle is the relative one (tip of W)
         self._scene = QGraphicsScene()
         self._scene.setBackgroundBrush(QBrush(BACKGROUND_COLOR))
-        self._view = RoundedGraphicsView(self._scene)
+        self._view = TriangleGraphicsView(self._scene)
         self._view.setRenderHint(QPainter.RenderHint.Antialiasing)
         # The visible range is set exactly by ``fit_group``, so no scrolling
         self._view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -538,16 +718,8 @@ class VelocityTriangleView(QWidget):
         self.data_rect = QRectF()  # area the drawing needs, in scene units
         self.group: list[VelocityTriangleView] = [self]  # views sharing scale and x
         self._axis_items: list[QGraphicsItem] = []
-        # Velocities on screen (v_tan, v_mer, U) and the animation towards new ones
+        # Velocities on screen (v_tan, v_mer, U)
         self._shown: tuple[float, float, float] | None = None
-        self._anim_start = (0.0, 0.0, 0.0)
-        self._anim_target = (0.0, 0.0, 0.0)
-        self._anim = QVariantAnimation(self)
-        self._anim.setStartValue(0.0)
-        self._anim.setEndValue(1.0)
-        self._anim.setDuration(100)
-        self._anim.setEasingCurve(QEasingCurve.Type.OutBounce)
-        self._anim.valueChanged.connect(self._animate_step)
         self._readout = QLabel('')
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -557,27 +729,29 @@ class VelocityTriangleView(QWidget):
         layout.addWidget(self._view, 1)
         layout.addWidget(self._readout)
 
+    @property
+    def on_angle_dragged(self) -> Callable[[float], None] | None:
+        return self._view.on_angle_dragged
+
+    @on_angle_dragged.setter
+    def on_angle_dragged(self, callback: Callable[[float], None] | None):
+        self._view.on_angle_dragged = callback
+
+    def set_absolute(self, absolute: bool):
+        """Drag the tip of V (absolute angle) instead of the tip of W (relative)."""
+        self.absolute = absolute
+        if self._shown is not None:
+            self._draw(*self._shown)
+
     def set_title_color(self, color: QColor):
         self._title_label.setStyleSheet(f'font-weight: bold; color: {color.name()};')
 
     def set_velocities(self, v_tan: float, v_mer: float, blade_speed: float):
-        """Animate the triangle from what is shown now to the new velocities (m/s)."""
-        target = (v_tan, v_mer, blade_speed)
-        self._anim.stop()
-        start = self._shown
-        if start is None:
-            self._draw(*target)
-            return
-        self._anim_start, self._anim_target = start, target
-        self._anim.start()
-
-    def _animate_step(self, progress: float):
-        """Draw the triangle a fraction ``progress`` of the way to the target."""
-        current = tuple(
-            a + (b - a) * progress for a, b in zip(self._anim_start, self._anim_target)
-        )
-        self._draw(*current)
-        self.fit_group(self.group)
+        """Draw the triangle with the new velocities (m/s)."""
+        first = self._shown is None
+        self._draw(v_tan, v_mer, blade_speed)
+        if not first:
+            self.fit_group(self.group)
 
     def _draw(self, v_tan: float, v_mer: float, blade_speed: float):
         """Redraw the triangle (m/s)."""
@@ -595,6 +769,24 @@ class VelocityTriangleView(QWidget):
         self._arrow('W', origin, w_tip, extent)
         self._arrow('U', w_tip, v_tip, extent)
         self._arrow('V', origin, v_tip, extent)
+        # The tip that is dragged is the one of the imposed angle
+        drag_tip, drag_name = (v_tip, 'V') if self.absolute else (w_tip, 'W')
+        self._view.tip = drag_tip
+        if self.on_angle_dragged is not None:
+            handle = QGraphicsEllipseItem(
+                -TIP_HANDLE_RADIUS,
+                -TIP_HANDLE_RADIUS,
+                2 * TIP_HANDLE_RADIUS,
+                2 * TIP_HANDLE_RADIUS,
+            )
+            handle.setBrush(QBrush(self.COLORS[drag_name]))
+            handle.setPen(QPen(QColor('white'), 1))
+            handle.setFlag(
+                QGraphicsItem.GraphicsItemFlag.ItemIgnoresTransformations, True
+            )
+            handle.setPos(drag_tip)
+            handle.setZValue(1)
+            self._scene.addItem(handle)
 
         # The axes and the scale are set by ``fit_group``, once every view has its data
         ys = (0.0, -v_tan, -w_tan)
@@ -606,15 +798,16 @@ class VelocityTriangleView(QWidget):
             right - left,
             max(ys) - min(ys) + 0.4 * extent,
         )
+        angle = math.degrees(math.atan2(v_tan if self.absolute else w_tan, v_mer))
         self._readout.setText(
-            f'Vm = {v_mer:.1f}   Vt = {v_tan:.1f}   Wt = {w_tan:.1f}   '
-            f'U = {blade_speed:.1f} m/s'
+            f'{"α" if self.absolute else "β"} = {angle:.1f}°   Vm = {v_mer:.1f}   Vt = {v_tan:.1f}   '
+            f'Wt = {w_tan:.1f}   U = {blade_speed:.1f} m/s'
         )
 
     def set_failed(self):
         """Remove the triangle and warn that the solution failed."""
-        self._anim.stop()
         self._shown = None
+        self._view.tip = None
         self._scene.clear()
         self._axis_items = []
         self.data_rect = QRectF()
@@ -752,6 +945,10 @@ class BladeRowView:
     inlet station is the outlet station of ``previous`` (the same points), so a chain
     of rows stays connected while any of them is edited. The row takes the color and
     the rotational speed of its shaft.
+
+    The relative flow angles are imposed by dragging the tip of W in the outlet
+    triangle (and in the inlet triangle of the first row), which calls
+    ``on_flow_changed``. The camber line is a result of the solution.
     """
 
     def __init__(
@@ -763,8 +960,12 @@ class BladeRowView:
         parabola_scene: QGraphicsScene,
         shafts: list[ShaftView],
         shaft: ShaftView,
+        on_flow_changed: Callable[[], None],
+        on_angle_mode_changed: Callable[['BladeRowView', int, bool], None],
     ):
         self.backend = backend
+        self.on_flow_changed = on_flow_changed
+        self.on_angle_mode_changed = on_angle_mode_changed
         self.index = index
         self.previous = previous
         self.shafts = shafts
@@ -824,7 +1025,7 @@ class BladeRowView:
         # through the alignment, which works across scenes
         center1 = self.profile.center1
         center2 = self.profile.center2
-        # The camber parabola is built from the metal angles (positive = rising)
+        # The camber parabola is drawn from the solved metal angles (positive = rising)
         metal0 = get(self.inlet.geo.MetalAngle)
         metal1 = get(self.outlet.geo.MetalAngle)
         half_dx = (center2.pos().x() - center1.pos().x()) / 2
@@ -847,12 +1048,12 @@ class BladeRowView:
         self.camber_points = (start, control, end)
         self.camber_alignment: AlignedPoints | None = None
         if previous is not None:
-            # The leading edge stays at the height of the previous trailing edge in
-            # real time; the inlet angle follows the solution (``sync_inlet_angle``)
+            # The leading edge stays at the height of the previous trailing edge
             self.camber_alignment = AlignedPoints(previous.camber_points[2], start, 'x')
-            # The inlet angle is a result, so the control point is not draggable either
-            for point in (start, control):
-                point.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
+        # The camber line is a result of the solution (``sync_camber``), so none of
+        # its points is draggable
+        for point in self.camber_points:
+            point.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
 
         # Angle counters next to the first and last point of the parabola
         self.inlet_label = AngleLabel(
@@ -888,7 +1089,46 @@ class BladeRowView:
             VelocityTriangleView(f'Row {index + 1} inlet'),
             VelocityTriangleView(f'Row {index + 1} outlet'),
         )
+        # Choice of the flow angle that is imposed by dragging, per triangle. The inlet
+        # of a following row takes the flow from the previous row, so it has no choice
+        self.angle_switches = (
+            SlideSwitch('Relative angle', 'Absolute angle'),
+            SlideSwitch('Relative angle', 'Absolute angle'),
+        )
+        for node, switch in enumerate(self.angle_switches):
+            # The change solves synchronously, so it waits for the knob to finish sliding
+            switch.toggled.connect(
+                lambda checked, node=node: QTimer.singleShot(
+                    SWITCH_SLIDE_MS,
+                    lambda: self.on_angle_mode_changed(self, node, checked),
+                )
+            )
+        self.angle_switches[0].setEnabled(previous is None)
+        self.flow_angles: dict[VarSpec, float] = {}
+        self.set_angle_mode()
         self._apply_shaft_color()
+
+    def set_angle_mode(self):
+        """Impose the flow angles of the kinds the backend uses, from its solution.
+
+        The inlet of a following row takes the flow from the previous row, so its
+        angle is a result and not imposed.
+        """
+        self.flow_angles = {}
+        for node, (view, switch) in enumerate(
+            zip(self.triangle_views, self.angle_switches)
+        ):
+            absolute = self.backend.is_absolute(self.index, node)
+            if node == 1 or self.previous is None:
+                spec = self.backend.angle_spec(self.index, node)
+                self.flow_angles[spec] = self.backend.get_value(spec)
+                view.on_angle_dragged = lambda angle, spec=spec: self._set_flow_angle(
+                    spec, angle
+                )
+            view.set_absolute(absolute)
+            switch.blockSignals(True)
+            switch.setChecked(absolute)
+            switch.blockSignals(False)
 
     def add_shaft_option(self, shaft: ShaftView):
         """Offer a shaft added after the row was created."""
@@ -968,13 +1208,13 @@ class BladeRowView:
     def points(self) -> tuple[DraggablePoint, ...]:
         """Every point whose movement changes the geometry of the row."""
         profile = self.profile
-        return (
-            profile.center1,
-            profile.end1,
-            profile.center2,
-            profile.end2,
-            *self.camber_points,
-        )
+        return (profile.center1, profile.end1, profile.center2, profile.end2)
+
+    def _set_flow_angle(self, spec: VarSpec, angle: float):
+        """Impose a new relative flow angle (rad) and ask for a solve."""
+        if self.flow_angles[spec] != angle:
+            self.flow_angles[spec] = angle
+            self.on_flow_changed()
 
     def drawn_geometry(self) -> dict[VarSpec, float]:
         """Geometry currently drawn, as boundary conditions of the row (m, rad).
@@ -991,14 +1231,7 @@ class BladeRowView:
             self.outlet.geo.MeridionalAngle: mer_angle1,
             # The gap lies before center1, so it is not part of the chord
             self.outlet.geo.ChordAx: (center2.x() - center1.x()) / SCENE_PER_METER,
-            # Scene y points down, metal angles are positive when rising
-            self.outlet.geo.MetalAngle: -math.radians(self.parabola.outlet_angle),
         }
-        if self.previous is None:
-            # A following row has zero incidence, so its inlet angle is a result
-            geometry[self.inlet.geo.MetalAngle] = -math.radians(
-                self.parabola.inlet_angle
-            )
         if self.radius_axis is not None:
             height0, mer_angle0 = _line_geometry(center1, profile.end1.get_position())
             geometry |= {
@@ -1008,24 +1241,24 @@ class BladeRowView:
             }
         return geometry
 
-    def sync_inlet_angle(self):
-        """Tilt the leading edge of a following row to the solved inlet metal angle.
+    def sync_camber(self):
+        """Draw the camber line of the solved metal angles.
 
-        The metal angle equals the flow angle (zero incidence). The leading edge is
-        pinned in y to the previous row, so only the control point moves; the end
-        point stays where it was dragged.
+        The leading edge is pinned in y (to the previous trailing edge for a following
+        row), so the control point and then the trailing edge move to the tangents.
+        The trailing edge drags the leading edge of the next row along.
         """
-        if self.previous is None:
-            return
-        start, control, _end = self.camber_points
+        start, control, end = self.camber_points
+        get = self.backend.get_value
         half_dx = control.pos().x() - start.pos().x()  # control sits at the midpoint
-        metal0 = self.backend.get_value(self.inlet.geo.MetalAngle)
-        shift = start.pos().y() - half_dx * math.tan(metal0) - control.pos().y()
-        control.setPos(control.pos().x(), control.pos().y() + shift)
+        control_y = start.pos().y() - half_dx * math.tan(get(self.inlet.geo.MetalAngle))
+        control.setPos(control.pos().x(), control_y)
+        end_y = control_y - half_dx * math.tan(get(self.outlet.geo.MetalAngle))
+        end.setPos(end.pos().x(), end_y)
 
     def operating_conditions(self) -> dict[VarSpec, float]:
-        """Rotational speed (rad/s) of the shaft of the row."""
-        return {self.outlet.kin.Omega: self.shaft.omega}
+        """Rotational speed (rad/s) of the shaft and imposed relative flow angles."""
+        return {self.outlet.kin.Omega: self.shaft.omega} | self.flow_angles
 
     def update_triangles(self, converged: bool = True):
         """Show the velocity triangles of the current solution."""
@@ -1155,6 +1388,8 @@ class MainGuiView(QWidget):
         self._syncing = False  # leading edges are being redrawn from the solution
         # Point positions of every row at the last converged solution
         self._converged_points: list[list[QPointF]] = []
+        # Imposed flow angles of every row at the last converged solution
+        self._converged_angles: list[dict[VarSpec, float]] = []
 
         self._append_row()
         self._fit_triangle_area()
@@ -1203,6 +1438,8 @@ class MainGuiView(QWidget):
             self.parabola_scene,
             self.shaft_panel.shafts,
             self.casing_shaft,
+            self._schedule_solve,
+            self._on_angle_mode_changed,
         )
         self.rows.append(row)
         row.shaft_combo.currentIndexChanged.connect(self._schedule_solve)
@@ -1210,9 +1447,10 @@ class MainGuiView(QWidget):
         # Shaft choice on top of the triangles of the row; all triangles share one scale
         column = QVBoxLayout()
         column.addWidget(row.shaft_combo)
-        for triangle_view in row.triangle_views:
+        for switch, triangle_view in zip(row.angle_switches, row.triangle_views):
             # Columns keep their width, so extra rows scroll instead of squeezing
             triangle_view.setMinimumWidth(TRIANGLE_COLUMN_WIDTH - ROW_GAP)
+            column.addWidget(switch)
             column.addWidget(triangle_view)
         self._triangle_layout.addLayout(column)
         self._row_ui.append(column)
@@ -1245,7 +1483,9 @@ class MainGuiView(QWidget):
             self.status_label.setText('Fix the current solution before adding a row')
             return
         try:
-            self.backend.add_row(self.backend.next_row_params())
+            # The new row starts on the casing, so it must not inherit the last speed
+            params = self.backend.next_row_params(self.casing_shaft.omega)
+            self.backend.add_row(params)
         except RuntimeError as err:
             logger.warning(f'Could not add a row: {err}')
             self.status_label.setText('Could not solve with the added row')
@@ -1287,7 +1527,7 @@ class MainGuiView(QWidget):
         row = self.rows.pop()
         row.remove(self._notifiers.pop())
         column = self._row_ui.pop()
-        for widget in (row.shaft_combo, *row.triangle_views):
+        for widget in (row.shaft_combo, *row.angle_switches, *row.triangle_views):
             column.removeWidget(widget)
             widget.deleteLater()
         self._triangle_layout.removeItem(column)
@@ -1352,20 +1592,48 @@ class MainGuiView(QWidget):
             self.status_label.setText('Newton failed')
         self._update_triangles(converged)
         if converged:
-            self._sync_inlet_angles()
+            self._sync_camber_lines()
             self._remember_converged()
         return converged
 
+    def _on_angle_mode_changed(self, row: BladeRowView, node: int, absolute: bool):
+        """Make a row impose the absolute or relative flow angle at a node."""
+        self._solve_timer.stop()
+        # The current drawing is solved first, so the new boundary conditions are
+        # the flow angles that are on screen
+        if not self.update_solution():
+            self.status_label.setText('Fix the current solution before switching')
+            row.set_angle_mode()  # back to the switch of the backend
+            return
+        try:
+            self.backend.set_angle_mode(row.index, node, absolute)
+        except RuntimeError as err:
+            logger.warning(f'Could not switch the flow angle: {err}')
+            self.status_label.setText('Could not solve with the other flow angle')
+            row.set_angle_mode()
+            return
+        for other in self.rows:
+            other.set_angle_mode()
+        self._update_triangles()
+        self._remember_converged()
+        self.status_label.setText(
+            f'Row {row.index + 1} {"inlet" if node == 0 else "outlet"} imposes the '
+            f'{"absolute" if absolute else "relative"} flow angle'
+        )
+
     def _remember_converged(self):
-        """Keep the drawn point positions as the state to go back to."""
+        """Keep the drawn point positions and flow angles to go back to."""
         self._converged_points = [
             [point.pos() for point in row.points] for row in self.rows
         ]
+        self._converged_angles = [dict(row.flow_angles) for row in self.rows]
 
     def reset_geometry(self):
         """Redraw the geometry of the last converged solution and solve it again."""
         if len(self._converged_points) != len(self.rows):
             return
+        for row, angles in zip(self.rows, self._converged_angles):
+            row.flow_angles.update(angles)
         self._solve_timer.stop()
         self._syncing = True  # the restore is not an edit, so no solve per point
         try:
@@ -1380,17 +1648,19 @@ class MainGuiView(QWidget):
         if self.update_solution():
             self.status_label.setText('Reset to the last converged geometry')
 
-    def _sync_inlet_angles(self):
-        """Draw the leading edges of the following rows at the solved angle.
+    def _sync_camber_lines(self):
+        """Draw the camber lines of the solved metal angles.
 
-        Moving them is not an edit, so it must not trigger another solve.
+        Moving them is not an edit, so it must not trigger another solve. The rows go
+        in order, as each trailing edge sets the height of the next leading edge.
         """
         self._syncing = True
         try:
             for row in self.rows:
-                row.sync_inlet_angle()
+                row.sync_camber()
         finally:
             self._syncing = False
+        self.profile_view._update_extent()
 
     def _update_triangles(self, converged: bool = True):
         """Show the velocity triangles of the current solution."""
