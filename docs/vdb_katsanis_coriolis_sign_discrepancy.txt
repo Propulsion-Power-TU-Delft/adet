@@ -1,0 +1,191 @@
+Sign discrepancy in the Coriolis term of Van den Braembussche Eq. (3.3)
+relative to its own cited source, Katsanis (1964)
+========================================================================
+
+Context
+-------
+src/adet/examples/radial_impeller_meridional_flow.py implements the
+hub-to-shroud (spanwise) meridional velocity equation from:
+
+    Van den Braembussche, R., "Design and Analysis of Centrifugal
+    Compressors", ASME/Wiley, 2019, Section 3.1.1, Eq. (3.3).
+
+That section explicitly attributes the equation's numerical solution
+method to:
+
+    Katsanis, T., "Use of Arbitrary Quasi-Orthogonals for Calculating
+    Flow Distribution in the Meridional Plane of a Turbomachine",
+    NASA TN D-2546, 1964.  (docs/Katsanis1964.pdf)
+
+Re-deriving Van den Braembussche's Eq. (3.3) directly from Katsanis's
+own, fully worked derivation (his Appendix B) shows that the sign of
+the Coriolis term (the "2*Omega" term) is flipped in Van den
+Braembussche's book relative to Katsanis's result. The curvature and
+swirl terms agree exactly; only the Coriolis term's sign differs. This
+rules out a global sign-convention difference (e.g. a flipped normal
+direction would flip all three terms, not just one).
+
+adet's implementation (MeridionalMomentumMarch in
+radial_impeller_meridional_flow.py) uses the Katsanis sign, i.e. it
+deliberately does NOT match Van den Braembussche's Eq. (3.3) as
+literally printed.
+
+
+Van den Braembussche's equations
+---------------------------------
+Eq. (3.1) (p. 64), the n-direction (hub-to-shroud) force balance,
+neglecting blade lean:
+
+    (1/rho) dP/dn = [(Omega*R - Wu)^2 / R] * cos(gamma) - Wm_tilde^2 / R_n
+
+Eq. (3.2) (p. 64), substituting h = P/rho and constant rothalpy:
+
+    (1/rho) dP/dn = -W_tilde * dW_tilde/dn + Omega^2 * R * dR/dn
+
+Eliminating (1/rho) dP/dn between (3.1) and (3.2), and using the
+geometric identity dR/dn = cos(gamma) (required for the Omega^2*R
+terms to cancel, which they must for Eq. 3.3 to have no bare Omega^2*R
+term), gives Van den Braembussche's Eq. (3.3) (p. 64):
+
+    dW_tilde/dn = W_tilde * cos(beta)^2 / R_n
+                  + cos(gamma) * sin(beta) * (2*Omega - W_tilde*sin(beta)/R)
+
+                = W_tilde*cos(beta)^2/R_n
+                  + 2*Omega*cos(gamma)*sin(beta)
+                  - cos(gamma)*sin(beta)^2*W_tilde/R                    (*)
+
+This is a correct, self-consistent algebraic consequence of Eqs. (3.1)
+and (3.2) as printed -- i.e. going from (3.1)+(3.2) to (3.3) involves
+no error. The question is whether (3.1) itself (specifically its
+representation of the Coriolis/centrifugal content of the normal
+force balance) matches the more rigorous, independently-derived
+reference it cites.
+
+
+Katsanis's derivation
+----------------------
+Katsanis (1964), Appendix B, "Derivation of the Velocity Gradient
+Equation", starts from Euler's equation for a nonviscous fluid (Eq.
+B1) and works in relative cylindrical coordinates (r, theta, z) of a
+frame rotating at angular speed omega. The key intermediate results
+are:
+
+  - Eq. (B10): the directional derivative of W along an arbitrary 3-D
+    curve q, in terms of the relative-frame momentum balance.
+  - Eqs. (B11)-(B12): dWr/dt, dWz/dt, and (1/W) d(rWtheta)/dt expressed
+    via the meridional angle alpha (= the book's gamma: "angle between
+    meridional streamline and z-axis"), the blade/flow angle beta
+    (= the book's beta: Wtheta = W*sin(beta), Wm = W*cos(beta)), and
+    the meridional curvature 1/r_c (= the book's 1/R_n).
+  - Eq. (B13)/(B14): dW/dq = a*dr/dq + b*dz/dq + c*dtheta/dq +
+    (1/W)(dh_i'/dq - omega*dlambda/dq), with
+
+        a = W*cos(beta)^2*cos(alpha)/r_c - W*sin(beta)^2/r
+            + sin(alpha)*cos(beta)*dWm/dm - 2*omega*sin(beta)
+
+        b = -W*cos(beta)^2*sin(alpha)/r_c + cos(alpha)*cos(beta)*dWm/dm
+
+  - Eq. (1)/(2) (main text, p. 3): the same result, generalized to an
+    arbitrary quasi-orthogonal (not necessarily normal to the
+    streamline) and including blade-to-blade terms. Eq. (3) of this
+    note only needs the normal-to-streamline, no-blade-lean reduction
+    of this general equation, which is exactly Eq. (B15) specialized
+    as described in the next paragraph.
+
+Katsanis states explicitly (p. 19, directly below Eq. B15): "If the
+line s is normal to the meridional streamline, then s = n, dr/ds =
+dr/dn = cos(alpha), and dz/ds = dz/dn = -sin(alpha)". Combined with a
+hub-to-shroud surface at constant theta (dtheta/dn = 0) and uniform
+inlet rothalpy/prerotation across the span (dh_i'/dn = 0, dlambda/dn =
+0, both stated as assumptions in the book's own numerical example,
+p. 10), this reduces Katsanis's Eq. (B15) to:
+
+    dW/dn = a*cos(alpha) - b*sin(alpha)
+
+Substituting the a, b above and expanding:
+
+    a*cos(alpha) = W*cos(beta)^2*cos(alpha)^2/r_c - W*sin(beta)^2*cos(alpha)/r
+                   + sin(alpha)*cos(alpha)*cos(beta)*dWm/dm - 2*omega*sin(beta)*cos(alpha)
+
+    b*sin(alpha) = -W*cos(beta)^2*sin(alpha)^2/r_c
+                   + sin(alpha)*cos(alpha)*cos(beta)*dWm/dm
+
+The dWm/dm cross terms are identical in both lines and cancel exactly
+in a*cos(alpha) - b*sin(alpha). Using cos(alpha)^2 + sin(alpha)^2 = 1
+for the curvature term, this leaves:
+
+    dW/dn = W*cos(beta)^2/r_c
+            - W*sin(beta)^2*cos(alpha)/r
+            - 2*omega*sin(beta)*cos(alpha)
+
+          = W*cos(beta)^2/r_c
+            - cos(alpha)*sin(beta)*(2*omega + W*sin(beta)/r)          (**)
+
+
+Comparing (*) and (**)
+------------------------
+Using the shared notation (Katsanis's omega, alpha = the book's Omega,
+gamma):
+
+  Van den Braembussche, Eq. (3.3):
+      dW/dn = W*cos(beta)^2/R_n + 2*Omega*cos(gamma)*sin(beta)
+              - cos(gamma)*sin(beta)^2*W/R
+
+  Katsanis (1964), Eq. (B15) specialized to s = n:
+      dW/dn = W*cos(beta)^2/r_c - 2*omega*cos(alpha)*sin(beta)
+              - cos(alpha)*sin(beta)^2*W/r
+
+  Term            | Van den Braembussche | Katsanis  | Agree?
+  ----------------|-----------------------|-----------|--------
+  Curvature       | + W cos^2(beta)/R_n   | same      | yes
+  Coriolis        | + 2*Omega*cos(gamma)*sin(beta) | - 2*omega*cos(alpha)*sin(beta) | NO (sign flipped)
+  Swirl           | - cos(gamma)*sin^2(beta)*W/R | same | yes
+
+Two of the three terms match exactly; only the Coriolis term's sign
+differs. A uniform convention difference (e.g. the direction chosen
+for n, or the sign of Omega) would flip all three terms together, not
+select one -- so this is not explained by a convention mismatch. It
+indicates a sign error introduced somewhere in Van den Braembussche's
+own derivation of Eq. (3.1) or in going from Eq. (3.1)/(3.2) to
+Eq. (3.3), relative to the fully worked derivation in the paper the
+book itself cites for this method.
+
+
+Consequence for the physics
+-----------------------------
+With the book's printed sign (+2*Omega*cos(gamma)*sin(beta)), for a
+backswept blade (beta < 0, so sin(beta) < 0) this term is negative --
+i.e. the Coriolis contribution *opposes* (and, at high enough Omega,
+can overwhelm) the curvature-driven acceleration of the meridional
+flow toward the shroud, reversing the expected hub/shroud trend. This
+is the "something strange" behavior originally observed in the
+example's diagnostic plots.
+
+With the Katsanis sign (-2*Omega*cos(gamma)*sin(beta)), the same
+backswept case gives a positive contribution -- i.e. the Coriolis term
+*reinforces* the curvature-driven shroud acceleration, consistent with
+the expected physical picture (confirmed against adet's own numerical
+results: with the corrected sign, the mean meridional velocity goes
+from being hub > shroud to shroud > hub, matching the simple-curvature
+intuition, Eq. 3.4, which the full Eq. 3.3 must reduce to at beta = 0
+and is not affected by this term either way).
+
+
+Where this is implemented
+----------------------------
+src/adet/examples/radial_impeller_meridional_flow.py:
+  - MeridionalMomentumMarch._rhs() implements Eq. (**), the
+    Katsanis-sign version, not Eq. (*) as printed in the book.
+  - The module docstring documents this correction and both
+    derivations in condensed form.
+
+
+References (local copies in docs/)
+-------------------------------------
+  - Katsanis1964.pdf -- NASA TN D-2546, "Use of Arbitrary
+    Quasi-Orthogonals for Calculating Flow Distribution in the
+    Meridional Plane of a Turbomachine". Equations (1), (2), (B1)-(B16)
+    are the ones referenced above.
+  - radial-impeller-flow.pdf -- excerpt of Van den Braembussche,
+    "Design and Analysis of Centrifugal Compressors" (2019), Chapter 3.
+    Equations (3.1)-(3.3) on pp. 63-64 are the ones referenced above.

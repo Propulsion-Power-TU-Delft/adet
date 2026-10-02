@@ -257,74 +257,21 @@ class ChokingArea(EquationBase):
 
 # *** Rotor inlet incidence (design correlation, not a loss)
 class OptimalIncidenceRadialInflowTurbine(DeviationModel):
-    """
-    Rotor-inlet incidence for radial and mixed-flow turbines, accounting
-    for flow slip, from H. Chen and N. C. Baines, "The aerodynamic
-    loading of radial and mixed-flow turbines," Int. J. Mech. Sci. 36(1),
-    pp. 63-79 (1994) (``docs/chen1994 The aerodynamic loading of radial
-    and mixed-flow turbines.pdf``), Eqs. (3)-(5), (8).
+    """Rotor-inlet incidence for radial/mixed-flow turbines accounting for
+    flow slip, from H. Chen and N. C. Baines, "The aerodynamic loading of
+    radial and mixed-flow turbines," Int. J. Mech. Sci. 36(1), pp. 63-79
+    (1994), Eqs. (3)-(5), (8). Replaces the usual zero-incidence
+    assumption (``ZeroDeviation``): the flow slips relative to the
+    blades, as at a centrifugal compressor impeller exit.
 
-    Replaces the usual zero-incidence assumption (``ZeroDeviation``) at a
-    rotor inlet: rather than forcing the relative flow angle to equal the
-    blade metal angle exactly, the flow is allowed to slip relative to the
-    blades -- exactly as a slip factor does at a centrifugal compressor
-    impeller exit (the two flows are aerodynamically analogous at this
-    single station, even though a turbine rotor passage as a whole is
-    accelerating rather than diffusing).
+    ``correlation`` selects the slip-factor formula: ``'chen'`` (default,
+    Eq. 8, eddy contained within the blade passage) or ``'stanitz'``
+    (Eq. 4, the original centrifugal-compressor correlation).
 
-    Two slip-factor correlations from the paper are available via
-    ``correlation``:
-
-    - ``'chen'`` (default) -- Eq. (8), assuming the passage relative eddy
-      responsible for slip is contained wholly within the blade passage.
-      Reported by the paper as a marked improvement over the Stanitz
-      correlation for both radial and mixed-flow turbines.
-    - ``'stanitz'`` -- Eq. (4), the original centrifugal-compressor
-      correlation (Stanitz 1952), included for comparison.
-
-    Both give the slip factor :math:`\\mu` as a function of the blade
-    number :math:`Z`, the cone angle :math:`\\gamma` (the angle the
-    blade-passage flow direction makes with the rotor axis in the
-    meridional plane -- read here from ``MeridionalAngle``, whose ADeT
-    convention of 0 deg = axial, +-90 deg = radial already matches
-    :math:`\\gamma` up to a sign that ``sin`` does not see), and the blade
-    metal angle :math:`\\beta_{b2}`. This slip factor is a purely
-    geometric/design correlation -- it does not depend on the operating
-    point.
-
-    Given :math:`\\mu`, the *actual* incidence is not a fixed design
-    target: it depends on the flow actually arriving at the rotor.
-    Reworking Eq. (5) (:math:`\\psi_2 = C_{\\theta 2}/U_2 = \\mu /
-    (1 - \\tan\\beta_{b2}/\\tan\\alpha_2)`, with :math:`\\tan\\alpha_2 =
-    C_{\\theta 2}/C_{m2}`) to eliminate :math:`\\alpha_2` and solve
-    directly for :math:`C_{\\theta 2}` gives
-
-    .. math::
-        C_{\\theta 2} = \\mu U_2 + C_{m2} \\tan\\beta_{b2}
-                      = C_{\\theta 2,\\mathrm{ideal}} - (1 - \\mu) U_2,
-
-    i.e. the classic Wiesner-style slip *velocity* :math:`(1-\\mu)U_2` is
-    simply subtracted from the ideal (zero-deviation) swirl -- the same
-    structure ``adet.losses.compressors.BackstromSlip`` already uses for
-    a centrifugal compressor impeller, just with :math:`\\mu` from a
-    different correlation. Only the tangential component changes: the
-    meridional velocity (and hence the blade speed, at fixed radius) is
-    assumed unaffected by slip, so :math:`C_{m2}` and :math:`U_2` here are
-    the actual, already-resolved values at this node (from mass
-    conservation / area / rotation elsewhere in the system), not a
-    separately posited "ideal" flow. This is what makes the resulting
-    incidence depend on the actual operating point (mass flow, rotor
-    speed, upstream swirl) rather than being a fixed function of geometry
-    alone.
-
-    Note that ADeT's velocity-triangle convention (:math:`V_\\theta = U +
-    W_m \\tan\\beta`, from ``Kinematics``) has the opposite sign for the
-    :math:`\\tan\\beta` term from the paper's (:math:`C_{\\theta 2} = U_2 -
-    C_{m2}\\tan\\beta_2`); the residual below is written directly in
-    ADeT's own relative-velocity form (:math:`W_{\\theta 2} = W_{m2}
-    \\tan\\beta_{b2} - (1-\\mu) U_2`, equivalent to the boxed equation
-    above via :math:`C_{\\theta 2} = W_{\\theta 2} + U_2`), so no sign
-    bookkeeping against the paper is needed.
+    Given the slip factor :math:`\\mu`, Eq. (5) reworked for
+    :math:`C_{\\theta 2}` gives the classic Wiesner-style form
+    :math:`C_{\\theta 2} = C_{\\theta 2,\\mathrm{ideal}} - (1-\\mu) U_2`
+    (cf. ``adet.losses.compressors.BackstromSlip``).
     """
 
     def __init__(self, correlation: str = 'chen', **kwargs):
@@ -360,11 +307,9 @@ class OptimalIncidenceRadialInflowTurbine(DeviationModel):
 
         r_slip = slip0 - slip_target
 
-        # Eq. (5) reworked for the actual (operating-point) tangential
-        # velocity: the ideal (zero-deviation) relative tangential
-        # velocity, reduced by the Wiesner-style slip deficit
-        # (1 - mu) * U -- see the class docstring for the derivation.
-        # Wm (and hence U at fixed radius) is unaffected by slip.
+        # Eq. (5), reworked for the actual tangential velocity (see class
+        # docstring): ideal relative Wt minus the Wiesner-style slip
+        # deficit (1 - mu) * U.
         wt_ideal = wm0 * np.tan(metal_ang0)
         wt_actual = wt_ideal - (1 - slip0) * u0
         r_incidence = wm0 * np.tan(beta0) - wt_actual

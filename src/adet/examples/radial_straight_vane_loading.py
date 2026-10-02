@@ -82,10 +82,10 @@ R_OUT = 0.110  # [m] meanline radius at the trailing edge
 
 H_CONST = 0.020  # [m] passage width (blade height), constant along the vane
 
-BETA_BL_DEG = -0.0
+BETA_BL_DEG = -20.0
 BETA_BL = np.radians(BETA_BL_DEG)  # [rad]; 0 = straight radial vane (Fig. 3.8a)
 
-NUM_BLADES = 9
+NUM_BLADES = 19
 BLADE_THICKNESS = 0.0015  # [m], constant along the streamline
 
 RPM = 5_000.0

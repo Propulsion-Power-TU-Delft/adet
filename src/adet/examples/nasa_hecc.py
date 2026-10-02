@@ -273,7 +273,7 @@ impeller = BladeRow(
         n1.geo.Height: Quantity(0.01524, 'm'),
         n1.geo.MetalAngle: Quantity(-30, 'deg'),
         n1.geo.ThickByPitch: 0.02,
-        n1.geo.ChordAx: Quantity(0.133879895, 'm'),
+        n1.geo.MerChord: Quantity(0.133879895, 'm'),
         n1.geo.NumBlades: NUM_BLADES,
         n1.geo.NumSplitters: NUM_BLADES,
         # > Loss coefficients contributors
@@ -873,7 +873,7 @@ if RUN_MULTI:
         height_out = float(sol_multi_dict[outlet_n.geo.Height][0])
         mer_angle_in = float(sol_multi_dict[inlet_n.geo.MeridionalAngle][0])
         mer_angle_out = float(sol_multi_dict[outlet_n.geo.MeridionalAngle][0])
-        axial_chord = float(sol_multi_dict[outlet_n.geo.ChordAx][0])
+        axial_chord = float(sol_multi_dict[outlet_n.geo.MerChord][0])
 
         geom = RowGeometry(
             r_in=r_in,

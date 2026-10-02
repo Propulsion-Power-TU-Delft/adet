@@ -76,18 +76,18 @@ class MeridionalRatios(EquationBase):
         hgt1: n1.geo.Height.Hint,
         h_ratio1: n1.geo.HeightRatio.Hint,
         fl_angle1: n1.geo.FlareAngle.Hint,
-        chord_ax1: n1.geo.ChordAx.Hint,
+        mer_chord1: n1.geo.MerChord.Hint,
         rr_mid0: n0.geo.Rmid.Hint,
         rr_mid1: n1.geo.Rmid.Hint,
         rad_ratio1: n1.geo.RadiusRatio.Hint,
         asp_ratio1: n1.geo.AspectRatio.Hint,
     ):
-        midspan = get_midspan_idx(chord_ax1)
+        midspan = get_midspan_idx(mer_chord1)
 
         r1 = h_ratio1 - hgt1 / hgt0
-        r2 = np.tan(fl_angle1) * 2 * chord_ax1[midspan] - (hgt1 - hgt0)
+        r2 = np.tan(fl_angle1) * 2 * mer_chord1[midspan] - (hgt1 - hgt0)
         r3 = rad_ratio1 * rr_mid0 - rr_mid1
-        r4 = asp_ratio1 * chord_ax1[midspan] - (hgt0 + hgt1) / 2
+        r4 = asp_ratio1 * mer_chord1[midspan] - (hgt0 + hgt1) / 2
 
         return r1, r2, r3, r4
 
@@ -121,13 +121,13 @@ class FlareAngleLimitedAR(EquationBase):
         h0: n0.geo.Height.Hint,
         h1: n1.geo.Height.Hint,
         h_ratio1: n1.geo.HeightRatio.Hint,
-        chord_ax1: n1.geo.ChordAx.Hint,
+        mer_chord1: n1.geo.MerChord.Hint,
         rr_mid0: n0.geo.Rmid.Hint,
         rr_mid1: n1.geo.Rmid.Hint,
         rad_ratio1: n1.geo.RadiusRatio.Hint,
         fl_angle1: n1.geo.FlareAngle.Hint,
     ):
-        midspan = get_midspan_idx(chord_ax1)
+        midspan = get_midspan_idx(mer_chord1)
 
         r1 = h_ratio1 - h1 / h0
         r2 = rad_ratio1 * rr_mid0 - rr_mid1
@@ -136,7 +136,7 @@ class FlareAngleLimitedAR(EquationBase):
         ar_tgt = self._aspect_ratio
         flr_max = self._max_flare
 
-        mid_chord_ax = chord_ax1[midspan]
+        mid_mer_chord = mer_chord1[midspan]
         tan_flare_max = np.tan(flr_max)
 
         half_delta_height = (h1 - h0) / 2
@@ -146,9 +146,9 @@ class FlareAngleLimitedAR(EquationBase):
         chord_FL_MAX = half_delta_height / tan_flare_max
 
         # Define the flare angle
-        r3 = fl_angle1 - np.arctan(half_delta_height / mid_chord_ax)
+        r3 = fl_angle1 - np.arctan(half_delta_height / mid_mer_chord)
         # Set the axial chord
-        r4 = mid_chord_ax - safe_max(chord_AR, chord_FL_MAX)
+        r4 = mid_mer_chord - safe_max(chord_AR, chord_FL_MAX)
 
         return r1, r2, r3, r4
 
@@ -273,14 +273,14 @@ class EndwallProperties(EquationBase):
         return r1, r2, r3, r4, r5, r6, r7, r8, r9, r10
 
 
-class ChordAxbyOutradius(EquationBase):
+class MerChordByOutRadius(EquationBase):
     def residual(
         self,
         rr_mid0: n0.geo.Rmid.Hint,
-        chord_ax0: n0.geo.ChordAx.Hint,
-        chax_rad_ratio0: n0.ndim.ChAxOutRadRatio.Hint,
+        mer_chord0: n0.geo.MerChord.Hint,
+        mer_chord_rad_ratio0: n0.ndim.MerChordOutRadRatio.Hint,
     ):
-        return rr_mid0 * chax_rad_ratio0 - chord_ax0
+        return rr_mid0 * mer_chord_rad_ratio0 - mer_chord0
 
 
 class CamberFunction(EquationBase):
@@ -307,7 +307,7 @@ class ModifiedZweifel(EquationBase):
         p1: n1.stc.Pressure.Hint,
         Zw: n1.geo.ZweifelCoeff.Hint,
         n_bl_opt: n1.geo.NumBladesOpt.Hint,
-        chord_ax1: n1.geo.ChordAx.Hint,
+        mer_chord1: n1.geo.MerChord.Hint,
         rr_mid1: n1.geo.Rmid.Hint,
     ):
         midspan = get_midspan_idx(wm0)
@@ -317,7 +317,7 @@ class ModifiedZweifel(EquationBase):
         )
         solidity_ax = (rho0 * wm0 + rho1 * wm1) * delta_Vt / (2 * Zw * (p_rlt0 - p1))
 
-        optimal_pitch = chord_ax1[midspan] / solidity_ax[midspan]
+        optimal_pitch = mer_chord1[midspan] / solidity_ax[midspan]
         num_blades_opt = (2 * np.pi * rr_mid1) / optimal_pitch
         return n_bl_opt - num_blades_opt
 
@@ -329,6 +329,33 @@ class OptNumBlades(EquationBase):
         n_bl_opt: n0.geo.NumBladesOpt.Hint,
     ):
         return n_bl - n_bl_opt
+
+
+def glassman_num_blades(alpha2_deg):
+    """Glassman (1976, NASA TN D-8164) minimum-blade-number correlation for
+    a radial-inflow turbine rotor:
+
+    .. math::
+        Z = \\frac{\\pi}{30} (110 - \\alpha_2) \\tan(\\alpha_2)
+
+    :math:`\\alpha_2` (rotor inlet absolute flow angle) in degrees.
+    """
+    return (np.pi / 30) * (110 - alpha2_deg) * np.tan(np.radians(alpha2_deg))
+
+
+class GlassmanNumBlades(EquationBase):
+    """Symbolic form of :func:`glassman_num_blades`, imposed directly on the
+    rotor's actual blade count."""
+
+    def residual(
+        self,
+        alpha0: n0.kin.FlowAngleAbs.Hint,
+        n_bl: n0.geo.NumBlades.Hint,
+    ):
+        # np.degrees/np.radians aren't CasADi-overloaded (unlike np.tan),
+        # so the deg<->rad conversion is done with plain arithmetic here.
+        alpha_deg = safe_abs(alpha0) * 180 / np.pi
+        return n_bl - ((np.pi / 30) * (110 - alpha_deg) * np.tan(safe_abs(alpha0)))
 
 
 class MinimalCamberLine(CamberLineGeom):
@@ -343,7 +370,7 @@ class MinimalCamberLine(CamberLineGeom):
     def residual(
         self,
         chord1: n1.geo.Chord.Hint,
-        chord_ax1: n1.geo.ChordAx.Hint,
+        mer_chord1: n1.geo.MerChord.Hint,
         stagger1: n1.geo.Stagger.Hint,
         camb_len1: n1.geo.CamberLength.Hint,
         metal_angle0: n0.geo.MetalAngle.Hint,
@@ -353,7 +380,7 @@ class MinimalCamberLine(CamberLineGeom):
 
         r1 = camb_len1 - chord1
         r2 = stagger1 - stagger_computed
-        r3 = chord1 * np.cos(stagger1) - chord_ax1
+        r3 = chord1 * np.cos(stagger1) - mer_chord1
         return r1, r2, r3
 
 
@@ -363,16 +390,16 @@ class TwoSegmentCamberline(CamberLineGeom):
     meet at half of the axial chord
     """
 
-    def _compute_lines(self, inlet_angle, outlet_angle, chord_ax):
+    def _compute_lines(self, inlet_angle, outlet_angle, mer_chord):
         tan0 = np.tan(inlet_angle)
         tan1 = np.tan(outlet_angle)
 
-        y_end = chord_ax / 2 * (tan0 + tan1)
+        y_end = mer_chord / 2 * (tan0 + tan1)
 
-        len0 = (chord_ax**2 / 4 * (1 + tan0**2)) ** 0.5
-        len1 = (chord_ax**2 / 4 * (1 + tan1**2)) ** 0.5
+        len0 = (mer_chord**2 / 4 * (1 + tan0**2)) ** 0.5
+        len1 = (mer_chord**2 / 4 * (1 + tan1**2)) ** 0.5
 
-        stagger = np.arctan(y_end / chord_ax)
+        stagger = np.arctan(y_end / mer_chord)
         camber_len = len0 + len1
 
         return stagger, camber_len
@@ -383,38 +410,38 @@ class TwoSegmentCamberline(CamberLineGeom):
         metal_angle1: n1.geo.MetalAngle.Hint,
         chord1: n1.geo.Chord.Hint,
         stagger1: n1.geo.Stagger.Hint,
-        chord_ax1: n1.geo.ChordAx.Hint,
+        mer_chord1: n1.geo.MerChord.Hint,
         camb_len1: n1.geo.CamberLength.Hint,
     ):
         stagger_computed, camber_len_computed = self._compute_lines(
-            metal_angle0, metal_angle1, chord_ax1
+            metal_angle0, metal_angle1, mer_chord1
         )
         r1 = camb_len1 - camber_len_computed
         r2 = stagger1 - stagger_computed
-        r3 = chord1 * np.cos(stagger1) - chord_ax1
+        r3 = chord1 * np.cos(stagger1) - mer_chord1
         return r1, r2, r3
 
 
 if __name__ == '__main__':
     inlet_angle = 1.0
     outlet_angle = -1.5
-    chord_ax = 0.5
+    mer_chord = 0.5
 
     tan0 = np.tan(inlet_angle)
     tan1 = np.tan(outlet_angle)
 
-    half_chord = chord_ax / 2
+    half_chord = mer_chord / 2
     y_end = half_chord * (tan0 + tan1)
 
     len0 = (half_chord**2 * (1 + tan0**2)) ** 0.5
     len1 = (half_chord**2 * (1 + tan1**2)) ** 0.5
 
-    stagger = np.arctan(y_end / chord_ax)
+    stagger = np.arctan(y_end / mer_chord)
     camber_len = len0 + len1
 
-    plt.plot([0, chord_ax / 2], [0, chord_ax / 2 * tan0])
-    plt.plot([chord_ax / 2, chord_ax], [chord_ax / 2 * tan0, y_end])
-    plt.plot(chord_ax, y_end)
+    plt.plot([0, mer_chord / 2], [0, mer_chord / 2 * tan0])
+    plt.plot([mer_chord / 2, mer_chord], [mer_chord / 2 * tan0, y_end])
+    plt.plot(mer_chord, y_end)
     plt.show()
 
 
@@ -422,24 +449,24 @@ class ParabolicCamberline(CamberLineGeom):
     config = EquationConfig(manual_units=('m', 'm', 'rad'))
 
     @staticmethod
-    def _compute_parabola(inlet_angle, outlet_angle, chord_ax):
+    def _compute_parabola(inlet_angle, outlet_angle, mer_chord):
         tan0 = np.tan(inlet_angle)
         tan1 = np.tan(outlet_angle)
 
-        a = (tan1 - tan0) / (2 * chord_ax)
+        a = (tan1 - tan0) / (2 * mer_chord)
         b = tan0
 
         a = safe_min_clip(a, 1e-3)
 
-        y_out = a * chord_ax**2 + b * chord_ax
-        stagger = np.arctan(y_out / chord_ax)
+        y_out = a * mer_chord**2 + b * mer_chord
+        stagger = np.arctan(y_out / mer_chord)
 
         return a, b, stagger
 
     @staticmethod
-    def _parabolic_arc_len(a, b, chord_ax):
-        """Exact arc length of y = ax² + bx from x = 0 to x = chord_ax"""
-        term1 = 2 * a * chord_ax + b
+    def _parabolic_arc_len(a, b, mer_chord):
+        """Exact arc length of y = ax² + bx from x = 0 to x = mer_chord"""
+        term1 = 2 * a * mer_chord + b
         term0 = b
 
         sqrt1 = np.sqrt(1 + term1**2)
@@ -458,15 +485,15 @@ class ParabolicCamberline(CamberLineGeom):
         metal_angle1: n1.geo.MetalAngle.Hint,
         chord1: n1.geo.Chord.Hint,
         stagger1: n1.geo.Stagger.Hint,
-        chord_ax1: n1.geo.ChordAx.Hint,
+        mer_chord1: n1.geo.MerChord.Hint,
         camb_len1: n1.geo.CamberLength.Hint,
     ):
         a, b, stagger_computed = self._compute_parabola(
-            metal_angle0, metal_angle1, chord_ax1
+            metal_angle0, metal_angle1, mer_chord1
         )
-        arc_len_computed = self._parabolic_arc_len(a, b, chord_ax1)
+        arc_len_computed = self._parabolic_arc_len(a, b, mer_chord1)
 
         r1 = camb_len1 - arc_len_computed
-        r2 = chord1 * np.cos(stagger1) - chord_ax1
+        r2 = chord1 * np.cos(stagger1) - mer_chord1
         r3 = stagger1 - stagger_computed
         return r1, r2, r3

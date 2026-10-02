@@ -269,7 +269,7 @@ class EndwallLoss(LossModel):
         rr_tip1: n1.geo.Rtip.Hint,
         mer_angle0: n0.geo.MeridionalAngle.Hint,
         mer_angle1: n1.geo.MeridionalAngle.Hint,
-        chord_ax1: n1.geo.ChordAx.Hint,
+        mer_chord1: n1.geo.MerChord.Hint,
         omega0: n0.kin.Omega.Hint,
         p0: n0.stc.Pressure.Hint,
         p1: n1.stc.Pressure.Hint,
@@ -289,9 +289,18 @@ class EndwallLoss(LossModel):
         n_stations = self.N_STATIONS
         t_values = [i / n_stations for i in range(n_stations + 1)]
 
+        # mer_chord1 is the row's meridional-plane chord magnitude (axial
+        # for an axial row, radial for a radial row, per MeridionalAngle);
+        # only its axial (z) projection is a literal z-span here -- e.g.
+        # zero for a purely radial row (MeridionalAngle = -90 deg), where
+        # the wall curve stays flat in z and the whole chord shows up as
+        # the (already-correct, independent) r_hub/r_tip radial span.
+        mean_mer_angle = (mer_angle0 + mer_angle1) / 2
+        z_span = mer_chord1 * np.cos(mean_mer_angle)
+
         z_hub, r_hub = _bezier_wall_stations(
-            0.0 * chord_ax1,
-            chord_ax1,
+            0.0 * z_span,
+            z_span,
             rr_hub0,
             rr_hub1,
             mer_angle0,
@@ -299,8 +308,8 @@ class EndwallLoss(LossModel):
             t_values,
         )
         z_tip, r_tip = _bezier_wall_stations(
-            0.0 * chord_ax1,
-            chord_ax1,
+            0.0 * z_span,
+            z_span,
             rr_tip0,
             rr_tip1,
             mer_angle0,
@@ -413,7 +422,7 @@ class ImpellerPassageLoss(LossModel):
         r3s: n1.geo.Rtip.Hint,
         beta3g: n1.geo.MetalAngle.Hint,
         h3: n1.geo.Height.Hint,
-        chord_ax1: n1.geo.ChordAx.Hint,
+        mer_chord1: n1.geo.MerChord.Hint,
         n_bl1: n1.geo.NumBlades.Hint,
         w0: n0.kin.W_mag.Hint,
         w1: n1.kin.W_mag.Hint,
@@ -424,9 +433,9 @@ class ImpellerPassageLoss(LossModel):
     ):
         # Blade chord along the mean camber line, from the axial chord
         mean_tan_beta = (np.tan(beta2g) + np.tan(beta3g)) / 2
-        chord = chord_ax1 / np.cos(np.arctan(mean_tan_beta))
+        chord = mer_chord1 / np.cos(np.arctan(mean_tan_beta))
 
-        hyd_len = np.pi / 4 * ((chord_ax1 - h2 / 2) + (r2m - r3s - h3 / 2))
+        hyd_len = np.pi / 4 * ((mer_chord1 - h2 / 2) + (r2m - r3s - h3 / 2))
 
         hyd_diam = 0.5 * (
             (4 * np.pi * r2m * h2) / (n_bl1 * h2 + 2 * np.pi * r2m)
@@ -481,7 +490,7 @@ class ImpellerLeakageLoss(LossModel):
         r3m: n1.geo.Rmid.Hint,
         r3s: n1.geo.Rtip.Hint,
         h3: n1.geo.Height.Hint,
-        chord_ax1: n1.geo.ChordAx.Hint,
+        mer_chord1: n1.geo.MerChord.Hint,
         n_bl1: n1.geo.NumBlades.Hint,
         cl1: n1.geo.TipClearance.Hint,
         s0: n0.stc.Entropy.Hint,
@@ -493,7 +502,7 @@ class ImpellerLeakageLoss(LossModel):
         gr_H = cl1 / h3
 
         Cx = (1 - (r3s / r2m)) / (vm0 * h2)
-        Cr = (r3s / r2m) * (chord_ax1 - h2) / (vm1 * r3m * h3)
+        Cr = (r3s / r2m) * (mer_chord1 - h2) / (vm1 * r3m * h3)
 
         # Cross term (sqrt of a product that can wander through zero away
         # from the converged solution, e.g. during the solver's initial

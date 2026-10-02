@@ -14,60 +14,30 @@ described in:
     for Academic Validation," Proc. ASME IMECE2012, IMECE2012-88315.
     (``docs/Sauret2012 Open Design T100.pdf``)
 
-Jones (1996) is the original design/test paper; it gives the cycle
-boundary conditions (Table 2) and mean-line velocity triangles (Fig. 4)
-precisely, but its geometry is only given as scanned drawings (Fig. 9)
-that cannot be reliably digitized for exact dimensions. Sauret (2012)
-independently reproduces the exact 3D geometry of this same turbine (with
-Jones' own cooperation, see her Acknowledgments) as tabulated numbers
-(her Tables 1-2 and Appendix A) specifically so it can be used as an open
-academic validation case -- so geometry here is taken from Sauret's
-tables wherever available, falling back to Jones' text only for the few
-items Sauret doesn't tabulate (nozzle inlet swirl angle).
-
-Data provenance
----------------
-Every geometric or boundary-condition parameter is commented with the
-table/figure (Jones or Sauret) it comes from. The few items neither paper
-tabulates -- blade thicknesses away from the tabulated LE/TE stations,
-generic boundary-layer closure parameters -- are flagged inline with
+Jones (1996) gives the cycle boundary conditions (Table 2) and mean-line
+velocity triangles (Fig. 4); its geometry is only available as scanned
+drawings. Sauret (2012) independently tabulates the exact 3D geometry of
+this same turbine (her Tables 1-2 and Appendix A), so geometry here is
+taken from Sauret wherever available, falling back to Jones' text only
+for the few items Sauret doesn't tabulate (nozzle inlet swirl angle).
+Every geometric/boundary-condition parameter is commented with its
+source table/figure; items neither paper tabulates are flagged
 ``NOTE (assumed)``.
 
-Jones' Table 2 "Specific work" entry (43.9 BTU/lb) is *not* used as a
-boundary condition: it is inconsistent by roughly a factor of 4 with the
-Euler work implied by Jones' own tip speed and rotor-inlet Vtheta/U
-(``U * Vtheta = 649 m/s * 0.882 * 649 m/s =~ 372 kJ/kg =~ 160 BTU/lb``),
-and with Sauret's Table 3 "Power [kW] = 120.8" at RITAL's ``0.33 kg/s``
-mass flow (``120800 / 0.33 =~ 366 kJ/kg =~ 157 BTU/lb``) -- both
-independently agreeing with each other and disagreeing with Jones' table,
-most plausibly an OCR-dropped leading digit ("143.9"/"142.8" misread as
-"43.9"/"42.8") in the Jones source scan. It is only printed for reference,
-not imposed.
-
-Rotor exit static pressure is taken from Sauret's Table 4 "Present"
-(RITAL) 1D meanline result at *engine* conditions (``P_S`` = 94.7 kPa at
-the rotor outlet), not from Jones' Table 3 (which is a *rig-test* result
-at different, rescaled boundary conditions -- an earlier revision of this
-script mistakenly combined the two, mixing rig-test-derived ratios with
-engine-condition absolute pressures, which was the root cause of an
-infeasible solve).
+Jones' Table 2 "Specific work" (43.9 BTU/lb) is not used as a boundary
+condition -- it disagrees by roughly a factor of 4 with both Jones' own
+tip-speed/Vtheta data and Sauret's Table 3 Power figure; printed for
+reference only. Rotor exit static pressure is taken from Sauret's Table 4
+"Present" (RITAL) result at engine conditions, not Jones' rig-test Table 3.
 
 State:
 ------
-- Design point only (50 hp rating); the 75 hp uprating (nozzle throat area
-  +9.3%) is not modeled.
+- Design point only (50 hp rating); the 75 hp uprating is not modeled.
 - No exhaust diffuser (rotor exit is the last modeled station).
-- Deviation is modeled as zero-deviation (blade angle = flow angle) at
-  every row exit, as in ``radial_inflow_turbine.py`` -- consistent with the
-  small measured deviation both papers report at the design point.
-- The rotor's leading-edge blade metal angle is kept exactly as tabulated
-  (purely radial, 0 deg -- the real T-100 geometry); a fictitious,
-  zero-length ``SlipGap`` component is inserted immediately upstream of
-  the rotor to account for flow slip there (Chen & Baines 1994) without
-  disturbing that real geometry or the usual same-station continuity
-  link from the vaneless space. See
-  ``adet.components.blade_row.SlipGap`` and
-  ``chen1994_optimum_incidence.py``.
+- Zero-deviation at every row exit, as in ``radial_inflow_turbine.py``.
+- A fictitious, zero-length ``SlipGap`` component upstream of the rotor
+  accounts for rotor-inlet flow slip (Chen & Baines 1994) -- see
+  ``adet.components.blade_row.SlipGap``.
 """
 
 import logging
@@ -87,6 +57,7 @@ from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
 from adet.equations.nondimensional import GammaPV
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation
+from adet.losses.mixing import DentonBaumgartnerMixingLoss, SieverdingBasePressure
 from adet.losses.rit import (
     StatorProfileLoss,
     EndwallLoss,
@@ -110,8 +81,8 @@ _n1 = NodeVariables(1)
 
 
 class AddImpellerLosses(LossApplier):
-    """Apply the rotor's passage + leakage + incidence + endwall losses to
-    the static entropy rise."""
+    """Apply the rotor's passage + leakage + incidence + endwall + mixing
+    losses to the static entropy rise."""
 
     def residual(
         self,
@@ -121,13 +92,16 @@ class AddImpellerLosses(LossApplier):
         ds_leakage1: _n1.loss.Ds_leakage.Hint,
         ds_incidence1: _n1.loss.Ds_incidence.Hint,
         ds_endwall1: _n1.loss.Ds_endwall.Hint,
+        ds_mixing1: _n1.loss.Ds_mixing.Hint,
     ):
-        return s1 - (s0 + ds_profile1 + ds_leakage1 + ds_incidence1 + ds_endwall1)
+        return s1 - (
+            s0 + ds_profile1 + ds_leakage1 + ds_incidence1 + ds_endwall1 + ds_mixing1
+        )
 
 
 class AddStatorLosses(LossApplier):
-    """Apply the nozzle's profile + endwall losses to the static entropy
-    rise."""
+    """Apply the nozzle's profile + endwall + mixing losses to the static
+    entropy rise."""
 
     def residual(
         self,
@@ -135,8 +109,9 @@ class AddStatorLosses(LossApplier):
         s1: _n1.stc.Entropy.Hint,
         ds_profile1: _n1.loss.Ds_profile.Hint,
         ds_endwall1: _n1.loss.Ds_endwall.Hint,
+        ds_mixing1: _n1.loss.Ds_mixing.Hint,
     ):
-        return s1 - (s0 + ds_profile1 + ds_endwall1)
+        return s1 - (s0 + ds_profile1 + ds_endwall1 + ds_mixing1)
 
 
 # |> Machine stations, in the order the components are chained below (each
@@ -162,74 +137,45 @@ n6 = NodeVariables(6)
 n7 = NodeVariables(7)
 
 # ============================================================
-# Geometry and boundary conditions.
-#
-# Radii/heights/lengths/angles below are Sauret Table 2 ("TURBINE
-# GEOMETRIC DIMENSIONS") and Appendix A (Tables 6-11) unless noted
-# otherwise; cycle boundary conditions are Sauret Table 1 ("TURBINE
-# DESIGN PARAMETERS"), which reproduces Jones' Table 2 engine design
-# point to 4-5 significant figures.
+# Geometry and boundary conditions. Radii/heights/lengths/angles are
+# Sauret Table 2 and Appendix A (Tables 6-11) unless noted otherwise;
+# cycle boundary conditions are Sauret Table 1.
 # ============================================================
 
-# --- Nozzle radii [m] (Sauret Table 2, "Nozzle"): R_in = 74 mm (inlet),
-# R_out = 63.5 mm (exit).
+# Nozzle radii [m] (Sauret Table 2, "Nozzle")
 NOZZLE_R_IN = 0.074
 NOZZLE_R_OUT = 0.0635
 NOZZLE_RADIUS_RATIO = NOZZLE_R_OUT / NOZZLE_R_IN  # n1(exit)/n0(inlet)
 
-# --- Nozzle heights [m] (Sauret Table 2): Inlet Height = 6.35 mm, Exit
-# Height = 6 mm.
+# Nozzle heights [m] (Sauret Table 2)
 NOZZLE_HEIGHT_IN = 0.00635
 NOZZLE_HEIGHT_OUT = 0.006
 NOZZLE_HEIGHT_RATIO = NOZZLE_HEIGHT_OUT / NOZZLE_HEIGHT_IN
 
-# --- Nozzle blade geometry (Sauret Table 2 "Nozzle" + Appendix Table 6,
-# m=0%): TE Thickness = 0.51 mm; Chord = 22.9 mm; LE thickness (hub =
-# shroud at m=0%, since the nozzle LE is purely radial) = 0.661 mm.
+# Nozzle blade geometry (Sauret Table 2 "Nozzle" + Appendix Table 6, m=0%)
 NOZZLE_TE_THICKNESS = 0.00051
 NOZZLE_LE_THICKNESS = 0.000661
 NOZZLE_CHORD = 0.0229
 NOZZLE_NUM_BLADES = 19  # Sauret Table 1 / Jones text
 
-# --- Rotor inlet (inducer) tip radius [m] (Sauret Table 2, "Rotor" R_in);
-# matches Jones' text "rotor tip diameter of 4.58 inches" (0.058166 m
-# radius) to within rounding. At the rotor's purely-radial LE (Sauret
-# Table 8, m=0%: hub R = shroud R = 0.058166 m, offset only in z by the
-# inlet height), hub and shroud radii coincide, consistent with ADeT's
-# ``MeridionalAngle = -90 deg`` convention (see EndwallProperties).
+# Rotor inlet (inducer) tip radius [m] (Sauret Table 2, "Rotor" R_in);
+# matches Jones' "rotor tip diameter of 4.58 inches" to within rounding.
 R2_TIP = 0.0582
 
-# --- Vaneless-space (nozzle exit -> rotor inlet) radius and height
-# ratios, from the two rows' own tabulated radii/heights above (Sauret
-# Table 2): rotor inlet R/H = 58.2 mm / 6.35 mm vs. nozzle exit R/H =
-# 63.5 mm / 6 mm -- a mild radius contraction with a mild height
-# expansion through the vaneless gap.
+# Vaneless-space (nozzle exit -> rotor inlet) radius/height ratios, from
+# the two rows' tabulated radii/heights above (Sauret Table 2)
 VANELESS_GAP_RATIO = R2_TIP / NOZZLE_R_OUT  # rotor inlet R / nozzle exit R
 VANELESS_HEIGHT_RATIO = 0.00635 / NOZZLE_HEIGHT_OUT
 
-# --- Exducer (rotor exit) hub/tip radii [m] (Sauret Table 8, m=100%):
-# hub R = 15.24 mm, shroud (tip) R = 36.83 mm. (Jones' text "exducer
-# diameter of 2.9 in." at a "mean flow angle of 58 deg" turns out to
-# match the *tip* radius exactly, 36.83 mm, not a hub/tip mean as an
-# earlier revision of this script assumed -- that wrong assumption
-# produced a much larger blade height (35.5 mm vs. the actual 21.6 mm)
-# and was the dominant contributor to an earlier infeasible solve.)
+# Exducer (rotor exit) hub/tip radii [m] (Sauret Table 8, m=100%)
 R3_HUB = 0.01524
 R3_TIP = 0.03683
 H3 = R3_TIP - R3_HUB
 
-# --- Rotor exit mean relative flow angle: Sauret Fig. 8(c) "Outlet
-# Rotor" gives beta_ts = -57.3 deg (Present/RITAL), matching Jones'
-# "mean flow angle of 58 deg" (backswept, hence the negative sign
-# following the same convention as BETA_BL_OUT in
-# radial_inflow_turbine_blade_loading.py).
+# Rotor exit mean relative flow angle (Sauret Fig. 8(c), Present/RITAL)
 BETA3_MEAN = Quantity(-57.3, 'deg')
 
-# --- Rotor blade geometry (Sauret Table 2 "Rotor" + Appendix Tables 9-10,
-# m=0%/100%): Axial Length = 38.9 mm; TE Thickness = 0.76 mm; Chord =
-# 45.7 mm; LE thickness (hub 1.008 mm, shroud 0.711 mm at m=0%, averaged);
-# clearances: Axial (inlet/shroud side) = 0.4 mm, Radial (exducer) =
-# 0.23 mm.
+# Rotor blade geometry (Sauret Table 2 "Rotor" + Appendix Tables 9-10)
 ROTOR_AXIAL_LENGTH = 0.0389
 ROTOR_TE_THICKNESS = 0.00076
 ROTOR_LE_THICKNESS = 0.00086
@@ -238,28 +184,22 @@ ROTOR_INLET_CLEARANCE = 0.0004
 ROTOR_EXDUCER_CLEARANCE = 0.00023
 ROTOR_NUM_BLADES = 16  # Sauret Table 1 / Jones text
 
-# --- Cycle boundary conditions at the engine design point (Sauret Table
-# 1; matches Jones' Table 2 50 hp rating).
+# Cycle boundary conditions at the engine design point (Sauret Table 1;
+# matches Jones' Table 2 50 hp rating)
 T0_TOT = Quantity(1056.5, 'K')
 P0_TOT = Quantity(580400, 'Pa')
 MDOT = Quantity(0.33, 'kg/s')
 N_RPM = Quantity(106588, 'rpm')
 
-# --- Rotor exit static pressure: Sauret Table 4, rotor "Outlet" P_S,
-# "Present" (RITAL) column, at *engine* conditions -- see module
-# docstring for why this replaces the previous (wrong-context) rig-test
-# derived value.
+# Rotor exit static pressure: Sauret Table 4, "Present" (RITAL) column,
+# engine conditions (not Jones' rig-test Table 3, see module docstring)
 P5_STATIC = 94700.0
 
-# --- Nozzle inlet swirl: Sauret's tables don't give this (only Jones'
-# text does). NOTE (assumed / Jones-only): "At the nozzle leading edge
-# the flow angles varied from approximately 20 to 40 deg from radial";
-# the midpoint is used as a representative mean-line value.
+# NOTE (assumed / Jones-only): Sauret doesn't tabulate nozzle inlet
+# swirl; Jones gives a 20-40 deg range, midpoint used here.
 NOZZLE_INLET_SWIRL = Quantity(30.0, 'deg')
 
-# --- Nozzle exit (absolute flow/metal) angle: Sauret Fig. 8(a) "Outlet
-# Stator" gives alpha = 78.1 deg (Present/RITAL), matching Jones' Fig. 4
-# (77.6 deg) / "Nozzle Design" text (77.7 deg) closely.
+# Nozzle exit angle (Sauret Fig. 8(a), Present/RITAL)
 NOZZLE_EXIT_ANGLE = Quantity(78.1, 'deg')
 
 inl = Inlet(
@@ -287,14 +227,10 @@ stator = BladeRow(
         n0.geo.BldThick: Quantity(NOZZLE_LE_THICKNESS, 'm'),
         n1.geo.BldThick: Quantity(NOZZLE_TE_THICKNESS, 'm'),
         n1.geo.NumBlades: NOZZLE_NUM_BLADES,
-        # NOTE: negligible axial chord -- approximates the 2D radial-vane
-        # nozzle profile Sauret Fig. 10/Jones Fig. 10 shows (the passage
-        # is purely radial, MeridionalAngle = -90 deg at both ends, so its
-        # true axial extent is ~0), same simplification used for the
-        # ORCHID stator in radial_inflow_turbine.py.
-        n1.geo.ChordAx: Quantity(0.01, 'mm'),
-        # NOTE (assumed): generic boundary-layer closure parameters, not
-        # given in either paper.
+        # Negligible axial chord: purely radial nozzle passage (~0 true
+        # axial extent), same simplification as radial_inflow_turbine.py.
+        n1.geo.MerChord: Quantity(0.01, 'mm'),
+        # Assumed: not given in either paper.
         n1.oth.MomByBld: 0.075,
         n1.oth.DispByMom: 2.0,
         n1.oth.DispByHgt: 0.09,
@@ -309,6 +245,8 @@ stator = BladeRow(
         BoundaryLayerRatios(): 1,
         GammaPV(): 0,
         GammaPV(): 1,
+        SieverdingBasePressure(): (0, 1),
+        DentonBaumgartnerMixingLoss(): 1,
     },
 )
 
@@ -323,17 +261,8 @@ interspace = Interspace(
     },
 )
 
-# Fictitious, zero-length lumped station accounting for flow slip (Chen &
-# Baines 1994) at the rotor's leading edge -- see
-# ``adet.components.blade_row.SlipGap`` and
-# ``chen1994_optimum_incidence.py``. Radius/height are unchanged across it
-# (RadiusRatio/HeightRatio default to 1.0), it co-rotates with the rotor
-# (same shaft), and it carries a *duplicate* of the rotor's own (real,
-# unmodified) blade number and LE metal angle so its slip-corrected
-# relative flow angle -- not the rotor's own metal angle -- becomes the
-# actual incidence the rotor "sees" (via the normal same-station
-# from_previous_node link, exactly as it would inherit from any other
-# upstream component).
+# Fictitious, zero-length lumped station for rotor-inlet flow slip (Chen &
+# Baines 1994) -- see adet.components.blade_row.SlipGap.
 slip_gap = SlipGap(
     'slip_gap',
     shaft=shaft,
@@ -358,11 +287,15 @@ rotor = BladeRow(
         n0.geo.BldThick: Quantity(ROTOR_LE_THICKNESS, 'm'),
         n0.geo.MetalAngle: Quantity(0, 'deg'),  # purely radial LE blades
         n1.geo.BldThick: Quantity(ROTOR_TE_THICKNESS, 'm'),
-        n1.geo.ChordAx: Quantity(ROTOR_AXIAL_LENGTH, 'm'),
+        n1.geo.MerChord: Quantity(ROTOR_AXIAL_LENGTH, 'm'),
         n1.geo.NumBlades: ROTOR_NUM_BLADES,
         n1.stc.Pressure: Quantity(P5_STATIC, 'Pa'),
         n0.geo.TipClearance: Quantity(ROTOR_INLET_CLEARANCE, 'm'),
         n1.geo.TipClearance: Quantity(ROTOR_EXDUCER_CLEARANCE, 'm'),
+        # Assumed: not given in either paper, same as the nozzle exit.
+        n1.oth.MomByBld: 0.075,
+        n1.oth.DispByMom: 2.0,
+        n1.oth.DispByHgt: 0.09,
     },
     shaft=shaft,
     extra_equations={
@@ -372,13 +305,16 @@ rotor = BladeRow(
         ImpellerLeakageLoss(): (0, 1),
         ImpellerIncidenceLoss(): (0, 1),
         EndwallLoss(): (0, 1),
+        BoundaryLayerRatios(): 1,
+        GammaPV(): 0,
+        GammaPV(): 1,
+        SieverdingBasePressure(): (0, 1),
+        DentonBaumgartnerMixingLoss(): 1,
     },
 )
 
-# NOTE (assumed): the T-100's turbine inlet gas is hot combustion product,
-# not the rig test's unheated drive air; approximated here with CoolProp's
-# real-gas HEOS model for air (neither paper gives gas composition/
-# property data).
+# Assumed: neither paper gives gas composition/property data for the
+# T-100's combustion-product working fluid; approximated with air.
 abs_state = DebugAbstractState('HEOS', 'Air')
 
 fluid_settings = FluidSettings(
@@ -410,27 +346,18 @@ rtfn = ntw.system.make_rootfinder(
 
 # ============================================================
 # Initial guess -- Sauret Table 4's "Present" (RITAL) 1D meanline P_S/T_S
-# per station at engine conditions, used directly as guesses (the
-# corresponding entropy guesses are real CoolProp ``HEOS``/``Air`` values
-# at those (P, T) points, following the same tight-guess approach used
-# for the ORCHID example, needed since the real-fluid EOS has a narrower
-# validity domain than an ideal gas).
+# per station at engine conditions, with matching CoolProp entropy values
+# (a tight guess is needed since the real-fluid EOS has a narrow validity
+# domain).
 # ============================================================
 U2 = 649.224  # rotor inlet tip speed [m/s] (= 2130 ft/s, Jones Fig. 2(a))
 VTHETA4_OVER_U = 0.882  # Jones Fig. 4 inlet triangle
-# Rotor inlet relative flow angle: Sauret Fig. 8(b) "Inlet Rotor" gives
-# beta = -32.7 deg (Present/RITAL), matching Jones' "31 deg of rotor
-# negative incidence" text (blades are purely radial at the LE, so this
-# *is* the incidence). Negative, not positive as an earlier revision of
-# this script had it -- that wrong sign, combined with a solver bound of
-# (0, 90) deg excluding the negative branch entirely, was a second
-# contributor to the earlier infeasible solve.
+# Rotor inlet relative flow angle (Sauret Fig. 8(b), Present/RITAL);
+# blades are purely radial at the LE, so this is also the incidence.
 BETA4_GUESS = Quantity(-32.7, 'deg')
 
 x0 = ntw.system.get_guess(
     {
-        # Slip gap (fictitious, lumped at the rotor LE): same guess as
-        # the rotor-inlet triangle/thermo state it represents
         n4.kin.FlowAngleRel: BETA4_GUESS.to('rad').magnitude,
         n5.kin.FlowAngleRel: BETA4_GUESS.to('rad').magnitude,
         n6.kin.FlowAngleRel: BETA4_GUESS.to('rad').magnitude,
@@ -465,27 +392,21 @@ x0 = ntw.system.get_guess(
 kn = ntw.system.get_boundary_conds()
 bnd = ntw.system.get_bounds(
     {
-        # NOTE: nozzle throat is close to choke (Sauret Table 4: M = 0.887
-        # (Present) at the nozzle exit) -- keep the solver away from a
-        # supersonic branch
+        # Nozzle throat is close to choke (Sauret Table 4: M = 0.887);
+        # keep the solver away from a supersonic branch.
         n1.kin.Mach: (0.3, 1.05),
         n0.stc.Temperature.Glob: (300, 1300),
         n0.stc.Pressure.Glob: (1e3, 2e6),
         n1.stc.Pressure: (0.3e5, 8e5),
         n0.stc.Entropy.Glob: (3000.0, 7000.0),
-        # NOTE: near-zero design exit swirl (Jones Fig. 4: V_theta/U =
-        # 0.014); bound around the physical branch as in
-        # radial_inflow_turbine.py
+        # Near-zero design exit swirl (Jones Fig. 4: V_theta/U = 0.014)
         n7.kin.FlowAngleAbs: (
             Quantity(-20, 'deg').to('rad').magnitude,
             Quantity(20, 'deg').to('rad').magnitude,
         ),
-        # NOTE: rotor inlet incidence is *negative* (see BETA4_GUESS
-        # above) -- bound around that physical branch, staying away from
-        # the |incidence| = 90 deg singularity in ImpellerIncidenceLoss.
-        # Also applied to the slip gap's own outlet (n5), which is where
-        # ChenOptimumIncidence actually determines this angle and whose
-        # value the rotor inlet (n6) simply inherits.
+        # Rotor inlet incidence is negative (see BETA4_GUESS); bound
+        # around that branch, away from the ImpellerIncidenceLoss
+        # |incidence| = 90 deg singularity.
         n5.kin.FlowAngleRel: (
             Quantity(-70, 'deg').to('rad').magnitude,
             Quantity(0, 'deg').to('rad').magnitude,
@@ -574,12 +495,14 @@ LOSS_MECHANISMS = {
     'Nozzle': [
         ('Profile', lambda n: n.loss.Ds_profile),
         ('Endwall', lambda n: n.loss.Ds_endwall),
+        ('Mixing', lambda n: n.loss.Ds_mixing),
     ],
     'Rotor': [
         ('Profile', lambda n: n.loss.Ds_profile),
         ('Leakage', lambda n: n.loss.Ds_leakage),
         ('Incidence', lambda n: n.loss.Ds_incidence),
         ('Endwall', lambda n: n.loss.Ds_endwall),
+        ('Mixing', lambda n: n.loss.Ds_mixing),
     ],
 }
 COMPONENT_NODES = {
@@ -624,13 +547,7 @@ print(
     f'\nSpecific work (h0_tot - h5_tot): {specific_work:.1f} J/kg '
     f'({specific_work / 2326.0:.1f} BTU/lb)'
 )
-print(
-    'Sauret Table 3 gives Power = 120.8 kW at 0.33 kg/s (=~ 366 kJ/kg =~ '
-    "157 BTU/lb); Jones' Table 2 states 43.9 BTU/lb, inconsistent with "
-    "both Sauret and Jones' own tip speed / Vtheta-over-U by roughly a "
-    'factor of 4 (see module docstring) -- likely an OCR-dropped leading '
-    'digit -- so it is not used as a design target here.'
-)
+print('Sauret Table 3 gives Power = 120.8 kW at 0.33 kg/s (=~ 366 kJ/kg =~ 157 BTU/lb)')
 print(
     f'Rotor-exit pressure ratio (p0_0 / p5_static): '
     f'{_val(n0.tot.Pressure) / _val(n7.stc.Pressure):.3f} '

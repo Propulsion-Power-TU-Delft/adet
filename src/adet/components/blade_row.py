@@ -224,7 +224,7 @@ class VanelessDiffuser(BaseComponent):
     def _post_init(self):
         self._boundary_conditions[n1.kin.Omega] = 0
         # NOTE: Null axial chord => exactly radial diffuser
-        self._boundary_conditions[n1.geo.ChordAx] = 0.0
+        self._boundary_conditions[n1.geo.MerChord] = 0.0
 
 
 class Interspace(BaseComponent):
@@ -257,7 +257,7 @@ class Interspace(BaseComponent):
     def _post_init(self):
         self._boundary_conditions[n1.kin.Omega] = 0
         # NOTE: Null axial chord => exactly radial diffuser
-        self._boundary_conditions[n1.geo.ChordAx] = 0
+        self._boundary_conditions[n1.geo.MerChord] = 0
 
 
 class SlipGap(BaseComponent):
@@ -350,7 +350,7 @@ class SlipGap(BaseComponent):
         # Zero-length, zero-radius/height-change lumped station
         self._boundary_conditions.setdefault(n1.geo.RadiusRatio, 1.0)
         self._boundary_conditions.setdefault(n1.geo.HeightRatio, 1.0)
-        self._boundary_conditions.setdefault(n1.geo.ChordAx, 0.0)
+        self._boundary_conditions.setdefault(n1.geo.MerChord, 0.0)
 
     @property
     def shaft(self) -> Shaft | None:

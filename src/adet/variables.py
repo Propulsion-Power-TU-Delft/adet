@@ -92,7 +92,7 @@ class GeometricVariables(VariableEnum):
     Height = VarSpec('height', 'm', 0.1, bounds=(0.0, 1e2), scalar=True)
     CumArea = VarSpec('cum_area', 'm**2', 0.3, scalar=True)
     EffArea = VarSpec('area_eff', 'm**2', 0.1)
-    ChordAx = VarSpec('chord_ax', 'm', 0.1)
+    MerChord = VarSpec('mer_chord', 'm', 0.1)
     Stagger = VarSpec('stag_angle', 'rad', 0.1)
     BldThick = VarSpec('bld_thick', 'm', 0.005)
     Solidity = VarSpec('solidity', '', 1.0)
@@ -128,6 +128,7 @@ class GeometricVariables(VariableEnum):
 
 class Nondimensional(VariableEnum):
     EtaTT = VarSpec('eta_tt', '', 0.9)
+    EtaTS = VarSpec('eta_ts', '', 0.85)
     PRatio = VarSpec('pRatio', '')
     PRatio_choke = VarSpec('pRatio_chk', '')
     VmRatio = VarSpec('VmRatio', '', 1.0)
@@ -145,7 +146,7 @@ class Nondimensional(VariableEnum):
     SwallowingCap = VarSpec('swllCap', '')
     SpecificSpeed = VarSpec('specificSpeed', '')
     SizeParameter = VarSpec('sizeParameter', '')
-    ChAxOutRadRatio = VarSpec('chAx_outRad_Ratio', '')
+    MerChordOutRadRatio = VarSpec('mer_chord_outRad_Ratio', '')
     DegreeOfReaction = VarSpec('reactDegree', '', scalar=True)
     DegreeOfReactionTS = VarSpec('reactDegree_ts', '', scalar=True)
 

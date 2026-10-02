@@ -1,95 +1,33 @@
 """
 Meanline blade-to-blade loading of a radial impeller.
 
-This example implements, at the meanline only, the inviscid quasi-3D flow
-model described in Chapter 3 ("Radial Impeller Flow Calculation") of
+Implements, at the meanline only, the inviscid quasi-3D flow model of
 Van den Braembussche, *Design and Analysis of Centrifugal Compressors*
-(2019), Section 3.1 "Inviscid Impeller Flow Calculation", Equations (3.1)
-to (3.20). It plots the resulting suction-side (SS) / pressure-side (PS)
-relative velocity and static pressure distribution along the meanline of a
-prescribed impeller geometry.
+(2019), Chapter 3, Section 3.1 "Inviscid Impeller Flow Calculation",
+Eqs. (3.1)-(3.20). Plots the resulting suction-side (SS) / pressure-side
+(PS) relative velocity and static pressure distribution along the
+meanline of a prescribed impeller geometry.
 
-What is implemented, and what is deliberately simplified
-----------------------------------------------------------
-The book splits the flow into a meridional (hub-to-shroud) problem
-(Eqs. 3.1-3.6) and a blade-to-blade problem (Eqs. 3.7-3.20). Because this
-example only considers the mean streamsurface (no hub/shroud split), there
-is nothing to resolve in the pitchwise-averaged *meridional* direction:
-Eqs. (3.1)-(3.6) describe how the average meridional velocity differs
-between hub and shroud, which collapses to a single value at midspan.
-We therefore only implement the blade-to-blade part of the model:
+Only the blade-to-blade part of the model (Eqs. 3.7, 3.13-3.15) is
+implemented -- the meridional (hub-to-shroud) problem (Eqs. 3.1-3.6)
+collapses to a single meanline value since there's no hub/shroud split
+here. The general loading form (3.13) is used, not its axial/2D/
+straight-channel special cases (3.16-3.18), since none apply to a real
+curved rotating radial passage. The slip/deviation model (Eqs. 3.8-3.12)
+is approximated by ``SlipTransition``: zero deviation up to a transition
+point, then a quadratic blend to the trailing edge whose free coefficient
+is set by the Kutta condition (zero blade loading at exit) rather than an
+empirical slip correlation, since ADeT has none built in. Blade-surface
+static pressure (not explicit in the book, but a direct consequence of
+its equations) follows from rothalpy conservation (Eq. 1.68) plus the
+inviscid/isentropic assumption shared by both surfaces.
 
-- Eq. (3.7): the mean relative velocity :math:`\\widetilde{W} =
-  \\widetilde{W}_m / \\cos(\\beta_{fl})`. This is not written out
-  explicitly: ADeT's existing :class:`~adet.equations.fundamental.Kinematics`
-  equation already encodes exactly this relation once the flow angle is
-  tied to the blade metal angle (see below), so it is reused as-is.
-- Eqs. (3.13)-(3.15): the general blade-to-blade loading, i.e. the
-  suction-to-pressure side relative velocity difference, obtained from
-  zero absolute vorticity flux through the blade-to-blade channel. This
-  is implemented in :class:`BladeToBladeLoading` below, using a backward
-  finite difference between consecutive meanline stations (mirroring the
-  streamline-curvature recurrence of Eq. 3.5). We use the *general* form
-  (3.13) rather than the axial-machine (3.16), 2D-non-rotating (3.17) or
-  radial-straight-channel (3.18) special cases, since none of those
-  simplifications apply to a real (curved, rotating, radial) impeller
-  passage.
-- Eqs. (3.19)-(3.20): not used to build an equation, but evaluated as a
-  diagnostic after solving. They state that the blade loading -- and
-  hence :math:`d(R V_u)/ds` -- vanishes only for a very particular
-  backsweep law (a "force-free" blade). We print :math:`R V_u` along the
-  meanline to show that our (generic, backswept) blade indeed loads the
-  flow, i.e. :math:`d(RV_u)/ds \\neq 0`.
-- Eqs. (3.8)-(3.12): the slip/deviation model relating the flow angle to
-  the blade angle near the leading and trailing edge. We assume zero
-  deviation (:math:`\\beta_{fl} = \\beta_{bl}`, via the existing
-  :class:`~adet.losses.basic.ZeroDeviation` equation) everywhere except
-  in a transition region approaching the trailing edge, where
-  :class:`SlipTransition` implements a simplified version of Eqs.
-  (3.9)-(3.11) (a quadratic blend of the flow angle, continuous in value
-  and slope with the blade angle at the transition point). Rather than
-  fixing its free coefficient from an empirical slip correlation as the
-  book does in Eq. (3.12), we let the Kutta condition (zero blade loading
-  at the trailing edge, see ``BOUNDARY_CONDITIONS`` below) determine it,
-  since ADeT has no slip correlation of its own and the book itself notes
-  (Section 3.1.3) that the zero trailing-edge loading is "in agreement
-  with the Kutta condition" and "related to an increasing flow angle
-  ... resulting from backward curvature and slip".
-- The SS/PS velocities are obtained, as described in the text just below
-  Eq. (3.13), by "superposing this velocity difference on the pitchwise
-  averaged value" symmetrically: :math:`W_{SS,PS} = \\widetilde{W} \\pm
-  \\Delta W / 2`.
-- The static pressure on each blade surface (not covered explicitly by
-  Eqs. 3.1-3.20, but a direct and standard consequence of them) is
-  obtained from: (1) conservation of rothalpy :math:`I = h + W^2/2 -
-  U^2/2` (Eq. 1.68, referenced by the book when deriving Eq. 3.2, and
-  assumed uniform hence constant everywhere) to get the local static
-  enthalpy on each surface from its local relative velocity, (2) the
-  isentropic assumption of an *inviscid* impeller flow (this section's
-  title) to share the meanline static entropy between both surfaces, and
-  (3) the equation of state to convert the resulting (h, s) pairs into
-  pressure.
-- Blade blockage (the :math:`\\delta_{bl}` term in Eq. 3.13) is included
-  as a small constant blade thickness, but is *not* subtracted from the
-  meridional flow area (i.e. :class:`~adet.equations.fundamental.
-  ZeroBlockage` is used for the area, not
-  :class:`~adet.equations.fundamental.BladeBlockage`) to keep the
-  meridional (area/mass) part of the model unrelated to the blade-to-blade
-  loading part, as in the book's presentation.
-
-Modeling approach
-------------------
-Following ADeT's equation-oriented philosophy, the meanline is discretized
-into ``N_STATIONS`` nodes from the leading edge (node 0) to the trailing
-edge (node ``N_STATIONS - 1``). All the "standard" ADeT equations
-(``Kinematics``, ``AnnulusAreas``, ``MassAreaRelation``, ``ZeroBlockage``,
-``TotalStaticMatching``, ``ZeroDeviation``, ``MassConservation``,
-``IsentropicLink``) are reused unmodified from the library, exactly as in
-the other examples/tutorials. Only the physics that is specific to this
-book chapter (rothalpy conservation, the blade-to-blade loading of Eq.
-3.13, the SS/PS velocity superposition and the SS/PS pressure) is added as
-new, self-contained custom equations and custom variables, following the
-same pattern shown in ``docs/source/concepts/custom_equations.md``.
+The meanline is discretized into ``N_STATIONS`` nodes from the leading
+edge (node 0) to the trailing edge. Standard ADeT equations (Kinematics,
+AnnulusAreas, MassAreaRelation, ZeroBlockage, TotalStaticMatching,
+ZeroDeviation, MassConservation, IsentropicLink) are reused unmodified;
+only the physics specific to this chapter is added as custom equations
+and variables.
 """
 
 import logging
@@ -126,31 +64,19 @@ thrm = ThermoVariables()
 # ============================================================
 # 1. Impeller geometry and operating point (all prescribed)
 # ============================================================
-N_STATIONS = 15  # LE = station 0, TE = station N_STATIONS - 1
+N_STATIONS = 20  # LE = station 0, TE = station N_STATIONS - 1
 
 R_IN = 0.055  # [m] meanline radius at the leading edge (inducer)
 R_OUT = 0.130  # [m] meanline radius at the trailing edge
 Z_LENGTH = 0.090  # [m] axial extent of the meridional path (for plotting)
 
-# Meridional flow (tangent) angle at each end of the channel -- passed
-# straight through to BezierCurve's own angle_in/angle_out, whose
-# convention it follows exactly: 0 deg = purely axial (+z), +90 deg =
-# purely radial *outward* (dr/ds > 0), -90 deg = purely radial *inward*
-# (dr/ds < 0). The default below (0/+90) is the classic axial-inducer-to-
-# radial-outlet impeller used so far. Set either to any value in between
-# (or beyond) for a non-axial inlet / non-radial outlet, i.e. a mixed-flow
-# channel shape.
-#
-# NOTE (sign convention -- get this wrong and the meanline radius overshoots
-# non-monotonically instead of sweeping smoothly from R_IN to R_OUT, which
-# silently breaks the whole quasi-1D area/velocity model): since R_IN <
-# R_OUT here, MERID_ANGLE_IN must have a component consistent with leaving
-# R_IN towards larger radius and MERID_ANGLE_OUT a *positive* (outward)
-# component -- i.e. angles are given exactly as the physical direction of
-# travel at that point, not negated or mirrored. This is checked
-# automatically below (see the monotonic-radius assertion).
-MERID_ANGLE_IN = np.radians(20)  # [rad] purely axial at the inlet
-MERID_ANGLE_OUT = np.radians(60.0)  # [rad] purely radial (outward) at the outlet
+# Meridional flow (tangent) angle at each end (BezierCurve convention:
+# 0 deg = axial +z, +90 deg = radial outward, -90 deg = radial inward).
+# Angles are the physical direction of travel, not mirrored between ends
+# -- getting the sign wrong makes the meanline radius overshoot
+# non-monotonically (checked below).
+MERID_ANGLE_IN = np.radians(0.0)  # [rad] purely axial at the inlet
+MERID_ANGLE_OUT = np.radians(90.0)  # [rad] purely radial (outward) at the outlet
 
 H_IN = 0.026  # [m] passage width (blade height) at the leading edge
 H_OUT = 0.012  # [m] passage width (blade height) at the trailing edge
@@ -164,7 +90,7 @@ BLADE_THICKNESS = 0.0015  # [m], constant along the streamline
 RPM = 16_000.0
 OMEGA = RPM * 2 * np.pi / 60  # [rad/s]
 
-MASS_FLOW = 0.9  # [kg/s]
+MASS_FLOW = 0.5  # [kg/s]
 P0_TOT = 101_325.0  # [Pa]
 T0_TOT = 293.15  # [K]
 
@@ -222,14 +148,8 @@ DELTA_S = np.diff(_s_stations)  # streamwise spacing of each interval
 # ============================================================
 nodes = [NodeVariables(i) for i in range(N_STATIONS)]
 
-# Local node placeholders 0 ("upstream"/"self") and 1 ("downstream"/"other"),
-# used only inside the equation classes' residual() hints below -- exactly
-# the n0/n1 convention used throughout adet.equations.* and the other
-# examples. These are unrelated to the *absolute* station index: ADeT remaps
-# them to whichever absolute nodes are passed to `add_equation(eq, pos)`.
-# (Indexing directly into `nodes` inside a type hint, e.g. `nodes[0].kin...`,
-# would work at runtime but defeats static type checkers, since `nodes[0]`
-# is not a statically resolvable expression.)
+# Local node placeholders (upstream/downstream) for residual() hints,
+# unrelated to absolute station index -- the standard n0/n1 convention.
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)
 
@@ -265,21 +185,11 @@ bl1 = BladeLoadingVariables(1)
 # 4. Custom equations specific to this book chapter
 # ============================================================
 class RothalpyConservation(EquationBase):
-    """
-    Conservation of rothalpy between two consecutive meanline stations.
+    """Conservation of rothalpy between two consecutive meanline stations
+    (Van den Braembussche Eq. 1.68):
 
     .. math::
-        I = h + \\frac{W^2}{2} - \\Omega R^2 \\cdot 0
-             \\quad\\Rightarrow\\quad
         I = h_{t}^{rel} - \\frac{U^2}{2} = \\text{const.}
-
-    This is Eq. (1.68) of the book, invoked in the text right after
-    Eq. (3.2) when it is assumed that the rothalpy is uniform at the
-    inlet and therefore constant everywhere in the impeller. ADeT's
-    ``TotalStaticMatching`` equation already provides the relative total
-    enthalpy :math:`h_t^{rel} = h + W^2/2`; here we only need to remove
-    the blade speed contribution :math:`U^2/2` and match it between the
-    two nodes.
     """
 
     def residual(
@@ -295,9 +205,8 @@ class RothalpyConservation(EquationBase):
 
 
 class BladeToBladeLoading(EquationBase):
-    """
-    General blade-to-blade suction-to-pressure side velocity difference,
-    Eq. (3.13):
+    """General blade-to-blade suction-to-pressure side velocity
+    difference (Van den Braembussche Eq. 3.13):
 
     .. math::
         W_{SS} - W_{PS} = \\left(\\frac{2\\pi}{Z_r} -
@@ -305,19 +214,8 @@ class BladeToBladeLoading(EquationBase):
         \\frac{d}{ds}\\left(\\Omega R^2 -
         \\widetilde{W}_m R \\tan\\beta_{fl}\\right)
 
-    The streamwise derivative is evaluated with a backward finite
-    difference between the upstream (node 0) and downstream (node 1)
-    meanline stations, in the same spirit as the streamline-curvature
-    recurrence of Eq. (3.5). The two contributions to the derivative are
-    kept separate to mirror Eqs. (3.14) (rotational term,
-    :math:`d(\\Omega R^2)/ds`) and (3.15) (blade-to-blade turning term,
-    :math:`d(\\widetilde{W}_m R \\tan\\beta_{fl})/ds`).
-
-    Parameters
-    ----------
-    delta_s : float
-        Streamwise (arc length) distance between the two meanline
-        stations linked by this equation instance, :math:`\\Delta s`.
+    The streamwise derivative is a backward finite difference between the
+    upstream (node 0) and downstream (node 1) stations (``delta_s``).
     """
 
     config = EquationConfig(manual_units=('m / s',))
@@ -353,32 +251,22 @@ class BladeToBladeLoading(EquationBase):
 
 
 class SlipTransition(EquationBase):
-    """
-    Simplified stand-in for the flow-angle/blade-angle deviation model of
-    Eqs. (3.9)-(3.12), used only over the small region approaching the
-    trailing edge where the loading must relax to zero to satisfy the
-    Kutta condition (see the ``DeltaW`` boundary condition at the
-    trailing edge, further below).
+    """Simplified stand-in for the flow-angle/blade-angle deviation model
+    of Van den Braembussche Eqs. (3.9)-(3.12), used approaching the
+    trailing edge where the loading must relax to zero (Kutta condition).
 
-    Downstream of a transition point :math:`s^*`, the flow angle is
-    approximated by a second-degree polynomial in the streamwise
-    coordinate (Eq. 3.9), with two of its three coefficients fixed by
-    continuity of the flow angle and of its slope with the blade metal
-    angle at :math:`s^*` (Eqs. 3.10, 3.11):
+    Downstream of a transition point :math:`s^*`, the flow angle follows
+    a quadratic blend continuous in value and slope with the blade metal
+    angle at :math:`s^*` (Eqs. 3.9-3.11):
 
     .. math::
         \\beta_{fl}(s) = A (s - s^*)^2 +
         \\left.\\frac{d\\beta_{bl}}{ds}\\right|_{s^*} (s - s^*) +
         \\beta_{bl}(s^*)
 
-    The book fixes the remaining coefficient :math:`A` from a prescribed
-    trailing-edge slip angle (Eq. 3.12, :math:`\\beta_{2,fl} =
-    \\beta_{2,slip}`), obtained from an empirical slip correlation. Since
-    ADeT has no slip correlation built in, and this example wants to
-    *enforce* the Kutta condition directly rather than reproduce a
-    particular slip factor, :math:`\\beta_{2,slip}` is used the other way
-    round here: it is simply the (free) flow angle at the trailing edge,
-    which the Kutta condition (elsewhere) determines self-consistently.
+    Rather than fixing :math:`A` from an empirical slip correlation
+    (Eq. 3.12, absent in ADeT), the trailing-edge angle is left free and
+    determined by the Kutta condition elsewhere.
     """
 
     config = EquationConfig(manual_units=('rad',))
@@ -416,13 +304,9 @@ class SlipTransition(EquationBase):
 
 
 class SuctionPressureVelocities(EquationBase):
-    """
-    Superpose the blade-to-blade loading on the pitchwise-averaged
-    relative velocity to recover the SS and PS velocity distribution, as
-    described just below Eq. (3.13): "Superposing this velocity
-    difference on the pitchwise averaged value :math:`\\widetilde{W}`
-    provides the SS and PS velocity distribution."
-    """
+    """Superpose the blade-to-blade loading on the pitchwise-averaged
+    relative velocity to recover SS/PS velocities (Van den Braembussche,
+    text below Eq. 3.13)."""
 
     def residual(
         self,
@@ -437,17 +321,9 @@ class SuctionPressureVelocities(EquationBase):
 
 
 class BladeSurfacePressures(EquationBase):
-    """
-    Static pressure on the suction (SS) and pressure (PS) blade surfaces.
-
-    Not an explicit equation of Section 3.1, but the direct consequence
-    of combining conservation of rothalpy (Eq. 1.68, see
-    :class:`RothalpyConservation`) with the isentropic (inviscid)
-    assumption of Section 3.1 -- both surfaces share the meanline static
-    entropy -- to get the local static enthalpy on each surface from its
-    local relative velocity, and then the equation of state to convert
-    each (h, s) pair into a pressure.
-    """
+    """Static pressure on the suction (SS) and pressure (PS) blade
+    surfaces, from rothalpy conservation (:class:`RothalpyConservation`)
+    plus the shared meanline static entropy (inviscid assumption)."""
 
     config = EquationConfig(
         input_pair=cp.HmassSmass_INPUTS,
@@ -487,11 +363,8 @@ system.fluid_settings = FluidSettings(
 
 TRAILING_EDGE = N_STATIONS - 1
 
-# Station index of the transition point s* (Eqs. 3.9-3.12): upstream of
-# it the flow follows the blade angle exactly (ZeroDeviation); from it to
-# the trailing edge, the flow angle is left free and instead follows the
-# smooth quadratic blend of SlipTransition, which relaxes the loading to
-# zero by the trailing edge (Kutta condition).
+# Transition point s* (Eqs. 3.9-3.12): ZeroDeviation up to here, then
+# SlipTransition's quadratic blend down to zero loading at the TE.
 TRANSITION_STAR = int(round(0.6 * TRAILING_EDGE))
 _BETA_BL_SLOPE = (BETA_BL_OUT - BETA_BL_IN) / S_MAX  # constant (linear law)
 
@@ -510,9 +383,8 @@ for i in range(N_STATIONS):
                 slope_star=_BETA_BL_SLOPE,
             )
         ] = (i, TRAILING_EDGE)
-    # At i == TRAILING_EDGE, the flow angle is left free entirely: it *is*
-    # the beta_2_slip referenced by SlipTransition above, and it is
-    # itself pinned by the Kutta condition (see BOUNDARY_CONDITIONS).
+    # At TRAILING_EDGE the flow angle is left free, pinned by the Kutta
+    # condition instead (see BOUNDARY_CONDITIONS).
     EQUATIONS[AnnulusAreas()] = i
     EQUATIONS[ZeroBlockage()] = i
     EQUATIONS[MassAreaRelation()] = i
@@ -547,18 +419,10 @@ BOUNDARY_CONDITIONS[nodes[0].tot.Pressure] = Quantity(P0_TOT, 'Pa')
 BOUNDARY_CONDITIONS[nodes[0].tot.Temperature] = Quantity(T0_TOT, 'K')
 BOUNDARY_CONDITIONS[nodes[0].oth.StreamMassFlow] = MASS_FLOW
 
-# No blade loading right at the leading edge: the blade angle is assumed
-# to match the relative flow angle exactly at inlet (zero incidence), so
-# the loading described by Eq. (3.13) only builds up downstream of it.
+# Zero incidence at the LE: no blade loading yet.
 BOUNDARY_CONDITIONS[bl_nodes[0].DeltaW] = 0.0
 
-# Kutta condition at the trailing edge: W_SS = W_PS, i.e. zero blade
-# loading right at the exit (Section 3.1.3, "The zero velocity difference
-# at the trailing edge is in agreement with the Kutta conditions"). Since
-# ZeroDeviation was not added at the trailing edge above, the flow angle
-# there is free to deviate from the blade metal angle -- exactly the
-# mechanism the book attributes this condition to -- and BladeToBladeLoading
-# now determines that deviation instead of determining DeltaW.
+# Kutta condition at the TE: W_SS = W_PS (Van den Braembussche Sec 3.1.3).
 BOUNDARY_CONDITIONS[bl_nodes[TRAILING_EDGE].DeltaW] = 0.0
 
 system.add_boundary_conditions(BOUNDARY_CONDITIONS)

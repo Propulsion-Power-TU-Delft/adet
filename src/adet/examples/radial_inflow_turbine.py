@@ -7,13 +7,9 @@ State:
 - Most losses are missing
 - Missing stator-rotor row gap
 - Volute not integrated
-- The rotor's leading-edge blade metal angle is kept as-designed; a
-  fictitious, zero-length ``SlipGap`` component is inserted immediately
-  upstream of the rotor to account for flow slip there (Chen & Baines
-  1994) without disturbing that geometry or the usual same-station
-  continuity link from the vaneless space. See
-  ``adet.components.blade_row.SlipGap`` and
-  ``chen1994_optimum_incidence.py``.
+- A fictitious, zero-length ``SlipGap`` component upstream of the rotor
+  accounts for rotor-inlet flow slip (Chen & Baines 1994) -- see
+  ``adet.components.blade_row.SlipGap``.
 """
 
 import logging
@@ -33,6 +29,7 @@ from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
 from adet.equations.nondimensional import GammaPV
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation
+from adet.losses.mixing import DentonBaumgartnerMixingLoss, SieverdingBasePressure
 from adet.losses.rit import (
     StatorProfileLoss,
     EndwallLoss,
@@ -56,8 +53,8 @@ _n1 = NodeVariables(1)
 
 
 class AddImpellerLosses(LossApplier):
-    """Apply the rotor's passage + leakage + incidence losses to the static
-    entropy rise."""
+    """Apply the rotor's passage + leakage + incidence + endwall + mixing
+    losses to the static entropy rise."""
 
     def residual(
         self,
@@ -67,12 +64,16 @@ class AddImpellerLosses(LossApplier):
         ds_leakage1: _n1.loss.Ds_leakage.Hint,
         ds_incidence1: _n1.loss.Ds_incidence.Hint,
         ds_endwall1: _n1.loss.Ds_endwall.Hint,
+        ds_mixing1: _n1.loss.Ds_mixing.Hint,
     ):
-        return s1 - (s0 + ds_profile1 + ds_leakage1 + ds_incidence1 + ds_endwall1)
+        return s1 - (
+            s0 + ds_profile1 + ds_leakage1 + ds_incidence1 + ds_endwall1 + ds_mixing1
+        )
 
 
 class AddStatorLosses(LossApplier):
-    """Apply the stator's profile loss to the static entropy rise."""
+    """Apply the stator's profile + endwall + mixing losses to the static
+    entropy rise."""
 
     def residual(
         self,
@@ -80,8 +81,9 @@ class AddStatorLosses(LossApplier):
         s1: _n1.stc.Entropy.Hint,
         ds_profile1: _n1.loss.Ds_profile.Hint,
         ds_endwall1: _n1.loss.Ds_endwall.Hint,
+        ds_mixing1: _n1.loss.Ds_mixing.Hint,
     ):
-        return s1 - (s0 + ds_profile1 + ds_endwall1)
+        return s1 - (s0 + ds_profile1 + ds_endwall1 + ds_mixing1)
 
 
 # |> Machine stations, in the order the components are chained below (each
@@ -148,7 +150,7 @@ stator = BladeRow(
         n0.geo.ThickByPitch: 0.05,
         n1.geo.ThickByPitch: 0.05,
         n1.geo.NumBlades: 12,
-        n1.geo.ChordAx: Quantity(0.01, 'mm'),
+        n1.geo.MerChord: Quantity(0.01, 'mm'),
         # *** Boundary Layer
         n1.oth.MomByBld: 0.075,
         n1.oth.DispByMom: 2.0,
@@ -159,13 +161,15 @@ stator = BladeRow(
     extra_equations={
         AddStatorLosses(): (0, 1),
         ZeroDeviation(): 0,  # No incidence
-        # *** Loss + Dependencies (disabled: inviscid check)
+        # *** Losses
         StatorProfileLoss(): (0, 1),
         EndwallLoss(): (0, 1),
         IsentropicProperties(): (0, 1),
         BoundaryLayerRatios(): 1,
         GammaPV(): 0,
         GammaPV(): 1,
+        SieverdingBasePressure(): (0, 1),
+        DentonBaumgartnerMixingLoss(): 1,
     },
 )
 
@@ -181,17 +185,8 @@ interspace = Interspace(
     },
 )
 
-# Fictitious, zero-length lumped station accounting for flow slip (Chen &
-# Baines 1994) at the rotor's leading edge -- see
-# ``adet.components.blade_row.SlipGap`` and
-# ``chen1994_optimum_incidence.py``. Radius/height are unchanged across it
-# (RadiusRatio/HeightRatio default to 1.0), it co-rotates with the rotor
-# (same shaft), and it carries a *duplicate* of the rotor's own (real,
-# unmodified) blade number and LE metal angle so its slip-corrected
-# relative flow angle -- not the rotor's own metal angle -- becomes the
-# actual incidence the rotor "sees" (via the normal same-station
-# from_previous_node link, exactly as it would inherit from any other
-# upstream component).
+# Fictitious, zero-length lumped station for rotor-inlet flow slip (Chen &
+# Baines 1994) -- see adet.components.blade_row.SlipGap.
 slip_gap = SlipGap(
     'slip_gap',
     shaft=shaft,
@@ -215,13 +210,17 @@ rotor = BladeRow(
         n0.geo.BldThick: 0.0003,
         n0.geo.MetalAngle: Quantity(45, 'deg'),
         n1.geo.BldThick: 0.0003,
-        n1.geo.ChordAx: Quantity(10.2, 'mm'),
+        n1.geo.MerChord: Quantity(10.2, 'mm'),
         n1.geo.NumBlades: 13,
         # *** Outlet condition
         n1.stc.Pressure: Quantity(0.443, 'bar'),
         # *** Tip clearance
         n0.geo.TipClearance: Quantity(0.2, 'mm'),
         n1.geo.TipClearance: Quantity(0.2, 'mm'),
+        # *** Boundary Layer
+        n1.oth.MomByBld: 0.075,
+        n1.oth.DispByMom: 2.0,
+        n1.oth.DispByHgt: 0.09,
     },
     shaft=shaft,
     extra_equations={
@@ -231,6 +230,11 @@ rotor = BladeRow(
         ImpellerLeakageLoss(): (0, 1),
         ImpellerIncidenceLoss(): (0, 1),
         EndwallLoss(): (0, 1),
+        BoundaryLayerRatios(): 1,
+        GammaPV(): 0,
+        GammaPV(): 1,
+        SieverdingBasePressure(): (0, 1),
+        DentonBaumgartnerMixingLoss(): 1,
     },
 )
 
@@ -264,19 +268,13 @@ rtfn = ntw.system.make_rootfinder(
 )
 x0 = ntw.system.get_guess(
     {
-        # NOTE: Keep the incidence loss's fractional-power terms away from
-        # the |incidence| = 90 deg singularity during early iterations.
-        # Slip gap (fictitious, lumped at the rotor LE): same guess as
-        # the rotor-inlet triangle it represents.
+        # Keep the incidence loss's fractional-power terms away from the
+        # |incidence| = 90 deg singularity during early iterations.
         n4.kin.FlowAngleRel: Quantity(48, 'deg').to('rad').magnitude,
         n5.kin.FlowAngleRel: Quantity(48, 'deg').to('rad').magnitude,
         n6.kin.FlowAngleRel: Quantity(48, 'deg').to('rad').magnitude,
-        # NOTE: Seed the thermodynamic state at every station close to the
-        # known-good solution (from a prior solve without the endwall-loss
-        # march) -- the new march equations add several more EOS calls
-        # (self.eos(P, s) at each radial station) whose validity domain is
-        # narrow for this fluid, so starting far from the physical state
-        # risks an out-of-range CoolProp query during early iterations
+        # Seed close to a known-good solution: this fluid's EOS validity
+        # domain is narrow, and the loss equations add several EOS calls.
         n0.stc.Pressure: 18.07e5,
         n0.stc.Temperature: 573.1,
         n0.stc.Entropy: 1159.5,
@@ -301,33 +299,35 @@ x0 = ntw.system.get_guess(
         n7.stc.Pressure: 0.443e5,
         n7.stc.Temperature: 519.7,
         n7.stc.Entropy: 1183.1,
+        # GammaPV/PBase guesses: their generic defaults are far enough off
+        # for this dense organic fluid to push early IPOPT iterates into
+        # an out-of-range CoolProp query.
+        n0.oth.GammaPV: 1.05,
+        n1.oth.GammaPV: 1.05,
+        n6.oth.GammaPV: 1.05,
+        n7.oth.GammaPV: 1.05,
+        n1.oth.PBase: 0.032e5,
+        n7.oth.PBase: 0.38e5,
     },
     fallback=0.5,
 )
 kn = ntw.system.get_boundary_conds()
 bnd = ntw.system.get_bounds(
     {
-        # WARN: Force the supersonic solution w/ bounds
+        # Force the supersonic solution
         n1.kin.Mach: (1.01, 4.0),
-        # NOTE: Thermo bounding stabilizes a lot
         n0.stc.Temperature.Glob: (300, 580),
         n0.stc.Pressure.Glob: (1e3, 1e9),
-        # NOTE: Keep the endwall-loss march's intermediate (P, s) EOS calls
-        # away from the fluid's validity dome during early iterations
         n1.stc.Pressure: (0.3e5, 20e5),
         n0.stc.Entropy.Glob: (200.0, 3000.0),
-        # NOTE: With the rotor outlet static pressure fixed, FlowAngleAbs
-        # is free and the problem has multiple roots; bound it around the
-        # physical branch (else IPOPT lands on a different angle each run)
+        # Rotor outlet static pressure is fixed, so FlowAngleAbs is free and
+        # multi-rooted; bound it around the physical branch.
         n7.kin.FlowAngleAbs: (
             Quantity(-20, 'deg').to('rad').magnitude,
             Quantity(60, 'deg').to('rad').magnitude,
         ),
-        # NOTE: Keep the incidence loss's fractional-power terms away from
-        # the |incidence| = 90 deg singularity throughout the search. Also
-        # applied to the slip gap's own outlet (n5), which is where
-        # OptimalIncidenceRadialInflowTurbine actually determines this
-        # angle and whose value the rotor inlet (n6) simply inherits.
+        # Keep the incidence loss's fractional-power terms away from the
+        # |incidence| = 90 deg singularity throughout the search.
         n5.kin.FlowAngleRel: (
             Quantity(0, 'deg').to('rad').magnitude,
             Quantity(90, 'deg').to('rad').magnitude,
@@ -412,23 +412,21 @@ print(
 )
 
 # ============================================================
-# Loss breakdown: specific entropy increase per loss mechanism,
-# grouped by component. Each component's "Subtotal" row is the
-# actual solved entropy rise (s_out - s_in) across that component,
-# which should match the sum of its mechanism rows -- the
-# AddStatorLosses/AddImpellerLosses equations enforce that
-# equality, so this also doubles as a consistency check.
+# Loss breakdown: entropy rise per mechanism, grouped by component.
+# Subtotal rows should match the solved s_out - s_in per component.
 # ============================================================
 LOSS_MECHANISMS = {
     'Stator': [
         ('Profile', lambda n: n.loss.Ds_profile),
         ('Endwall', lambda n: n.loss.Ds_endwall),
+        ('Mixing', lambda n: n.loss.Ds_mixing),
     ],
     'Rotor': [
         ('Profile', lambda n: n.loss.Ds_profile),
         ('Leakage', lambda n: n.loss.Ds_leakage),
         ('Incidence', lambda n: n.loss.Ds_incidence),
         ('Endwall', lambda n: n.loss.Ds_endwall),
+        ('Mixing', lambda n: n.loss.Ds_mixing),
     ],
 }
 COMPONENT_NODES = {
