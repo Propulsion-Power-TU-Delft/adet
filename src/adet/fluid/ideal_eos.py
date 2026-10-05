@@ -22,11 +22,8 @@ class AnalyticalFluidState(ABC):
         # Move gamma and gas_constant to subclasses, make this general
         self.current_state: dict[str, Any] = {}
 
-        # Round otherwise sympy shits itself. 3 decimals (not 1): some
-        # real fluids' ideal-gas gamma is close enough to 1.0 that 1-decimal
-        # rounding collapses it to exactly 1.0, making cvmass = gas_constant
-        # / (gamma - 1) divide by zero (e.g. siloxane MM, gamma ~= 1.024).
-        self._gamma: float = round(gamma, 3)
+        # Round otherwise sympy shits itself
+        self._gamma: float = round(gamma, 1)
         self._gas_constant: float = round(gas_constant, 1)
 
         self._viscosity = viscosity

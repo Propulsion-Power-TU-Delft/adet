@@ -16,8 +16,5 @@ CLAUDE.md
 # macOS
 .DS_Store
 
-# Reference PDFs
-docs/*.pdf
-
 # Generated example outputs (design maps, plots)
 outputs/

@@ -147,7 +147,7 @@ class Nondimensional(VariableEnum):
     SwallowingCap = VarSpec('swllCap', '')
     SpecificSpeed = VarSpec('specificSpeed', '')
     SizeParameter = VarSpec('sizeParameter', '')
-    LaxByOutRadius = VarSpec('mer_chord_outRad_Ratio', '')
+    LaxByOutRadius = VarSpec('lax_by_outrad', '')
     DegreeOfReaction = VarSpec('reactDegree', '', scalar=True)
     DegreeOfReactionTS = VarSpec('reactDegree_ts', '', scalar=True)
 
