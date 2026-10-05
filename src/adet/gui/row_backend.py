@@ -144,9 +144,8 @@ DEFAULT_EXTRA_EQUATIONS: list[dict[str, Any]] = [
         'parameters': [0.9],
     },
 ]
-FLOW_TURNING = math.radians(
-    10
-)  # magnitude of the change in relative flow angle across an added row
+# magnitude of the change in relative flow angle across an added row
+FLOW_TURNING = math.radians(10)
 
 
 @dataclass(frozen=True)
@@ -640,9 +639,11 @@ class RowBackend:
         # TOML formatters keep split; short lists like [0, 1] are put back inline
         return re.sub(
             r'\[\n((?:[ \t]+[^\[\]\n]+,\n)+)\]',
-            lambda m: '['
-            + ', '.join(v.strip().rstrip(',') for v in m[1].split('\n')[:-1])
-            + ']',
+            lambda m: (
+                '['
+                + ', '.join(v.strip().rstrip(',') for v in m[1].split('\n')[:-1])
+                + ']'
+            ),
             text,
         )
 
@@ -656,8 +657,13 @@ class RowBackend:
         setup = tomllib.loads(text)
         guess = None
         if 'solution' in setup:
-            with open(base_dir / setup['solution']['file'], 'rb') as file:
-                guess = pickle.load(file)
+            solution = base_dir / setup['solution']['file']
+            try:
+                with open(solution, 'rb') as file:
+                    guess = pickle.load(file)
+            except FileNotFoundError:
+                # Without the pickle the chain is solved directly
+                logger.warning(f'Solution {solution} not found, solving directly')
         shafts = setup['shaft']
         row_params = []
         extra_equations = []
