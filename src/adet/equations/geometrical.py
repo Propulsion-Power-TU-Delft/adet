@@ -6,6 +6,7 @@ from adet.equations.base_equation import (
     EquationBase,
     EquationConfig,
     MeridionalGeom,
+    MeridionalChannel,
 )
 from adet.equations.utils import (
     get_midspan_idx,
@@ -274,20 +275,13 @@ class EndwallProperties(EquationBase):
 
 
 class LaxByOutRadius(EquationBase):
-    # TODO: Harmonize the axial length of centrifugal
-    # compressor and their definition in the meridional
-    # and bl-to-bl plane
     def residual(
         self,
-        rr_mid0: n0.geo.Rmid.Hint,
-        ax_len0: n0.geo.AxialLength.Hint,
-        lax_by_outrad0: n0.ndim.LaxByOutRadius.Hint,
-        mer_chord0: n0.geo.MerChord.Hint,
+        r_out: n0.geo.Rmid.Hint,
+        ax_len: n0.geo.AxialLength.Hint,
+        lax_by_outrad: n0.ndim.LaxByOutRadius.Hint,
     ):
-        r1 = rr_mid0 * lax_by_outrad0 - ax_len0
-        r2 = ax_len0 - mer_chord0
-
-        return r1, r2
+        return r_out * lax_by_outrad - ax_len
 
 
 class CamberFunction(EquationBase):
@@ -377,6 +371,19 @@ class MinimalCamberLine(CamberLineGeom):
         r2 = stagger1 - stagger_computed
         r3 = chord1 * np.cos(stagger1) - mer_chord1
         return r1, r2, r3
+
+
+class MinimalMeridional(MeridionalChannel):
+    def residual(
+        self,
+        mer_chord1: n1.geo.MerChord.Hint,
+        ax_len: n1.geo.AxialLength.Hint,
+        r_in: n0.geo.Rmid.Hint,
+        r_out: n1.geo.Rmid.Hint,
+    ):
+        cone_angle = np.arctan(safe_abs((r_in - r_out) / ax_len))
+
+        return mer_chord1 * np.cos(cone_angle) - ax_len
 
 
 class TwoSegmentCamberline(CamberLineGeom):

@@ -1213,7 +1213,7 @@ class BladeRowView:
         get = backend.get_value
 
         # Meridional profile in the profile scene
-        chord = get(self.outlet.geo.ChordAx) * SCENE_PER_METER
+        axial_length = get(self.outlet.geo.AxialLength) * SCENE_PER_METER
         # A following row is drawn after a visual gap, which the solution ignores
         self.gap = 0.0 if previous is None else AXIAL_GAP
         # The gap is along the meridional direction, which is not the x axis when the
@@ -1228,12 +1228,8 @@ class BladeRowView:
             )
             start_x = prev_profile.center2.pos().x() + shift.x()
             start_y = prev_profile.center2.pos().y() + shift.y()
-        # The chord joins the centers, so x only advances by what is left of it after
-        # the radial change; a radial row has almost no axial extent
-        # The visual gap does not count: the solution has none
-        center2_y = RADIUS_ORIGIN_Y - get(self.outlet.geo.Rmid) * SCENE_PER_METER
-        solved_start_y = RADIUS_ORIGIN_Y - get(self.inlet.geo.Rmid) * SCENE_PER_METER
-        axial_chord = math.sqrt(max(chord**2 - (center2_y - solved_start_y) ** 2, 0.0))
+        # The axial length is what x advances between the centers (a radial row has
+        # almost none). The visual gap does not count: the solution has none
         # The outlet line must not reach back over the inlet one: a radial row has a
         # horizontal outlet line, which centered on the axial advance would cross the
         # previous row. Keep its leftmost point at the rightmost point of the inlet line.
@@ -1251,9 +1247,9 @@ class BladeRowView:
             * SCENE_PER_METER
             * math.sin(get(self.outlet.geo.MeridionalAngle))
         )
-        axial_chord = max(axial_chord, abs(outlet_half_x - inlet_half_x))
+        axial_length = max(axial_length, abs(outlet_half_x - inlet_half_x))
         center2, end2 = _line_points(
-            start_x + axial_chord,
+            start_x + axial_length,
             get(self.outlet.geo.Rmid),
             get(self.outlet.geo.Height),
             get(self.outlet.geo.MeridionalAngle),
@@ -1290,11 +1286,12 @@ class BladeRowView:
             profile_scene.addItem(self.radius_axis)
 
         # Parabola in the parabola scene, independent of the profile view. It spans
-        # the actual chord, so it also works for radial components
+        # the meridional chord (from the axial length through MinimalMeridional), which
+        # is the extent of the blade-to-blade plane along the meridional direction
         # The camber parabola is drawn from the solved metal angles (positive = rising)
         metal0 = get(self.inlet.geo.MetalAngle)
         metal1 = get(self.outlet.geo.MetalAngle)
-        camber_chord = get(self.outlet.geo.Chord) * SCENE_PER_METER
+        camber_chord = get(self.outlet.geo.MerChord) * SCENE_PER_METER
         half_dx = camber_chord / 2
         # A following row starts where the previous camber line ends
         start_x, start_y = (
@@ -1520,12 +1517,9 @@ class BladeRowView:
             self.outlet.geo.Rmid: (RADIUS_ORIGIN_Y - center2.y()) / SCENE_PER_METER,
             self.outlet.geo.Height: height1,
             self.outlet.geo.MeridionalAngle: mer_angle1,
-            # The gap lies before center1, so it is not part of the chord, which is the
-            # distance between the centers of the leading and trailing edges
-            self.outlet.geo.Chord: math.hypot(
-                center2.x() - center1.x(), center2.y() - center1.y()
-            )
-            / SCENE_PER_METER,
+            # The gap lies before center1, so it is not part of the axial length, which
+            # is the x distance between the centers of the leading and trailing edges
+            self.outlet.geo.AxialLength: (center2.x() - center1.x()) / SCENE_PER_METER,
         }
         if self.radius_axis is not None:
             height0, mer_angle0 = _line_geometry(center1, profile.end1.get_position())
@@ -1545,8 +1539,8 @@ class BladeRowView:
         """
         start, control, end = self.camber_points
         get = self.backend.get_value
-        chord = get(self.outlet.geo.Chord) * SCENE_PER_METER
-        half_dx = chord / 2  # control sits at the midpoint of the chord
+        chord = get(self.outlet.geo.MerChord) * SCENE_PER_METER
+        half_dx = chord / 2  # control sits at the midpoint of the meridional chord
         # The leading edge follows the trailing edge of the previous row in x too,
         # keeping the visual gap between the rows
         start_x = start.pos().x()

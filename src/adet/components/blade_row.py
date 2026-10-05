@@ -23,6 +23,7 @@ from adet.equations.geometrical import (
     MeridionalRatios,
     MinimalCamberLine,
     RadialGeometry,
+    MinimalMeridional,
 )
 from adet.geometry import BezierCurve, StraightLine
 from adet.losses.basic import ZeroDeviation
@@ -95,6 +96,7 @@ class BladeRow(BaseComponent):
         (BladeRatios, 0),
         (BladeRatios, 1),
         (MinimalCamberLine, (0, 1)),
+        (MinimalMeridional, (0, 1)),
         # *** Common definitions (OPTIONAL)
         (EndwallProperties, 0),
         (EndwallProperties, 1),

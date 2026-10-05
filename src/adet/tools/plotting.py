@@ -108,7 +108,7 @@ def plot_velocity_triangles(Vt, Vm, U, rr, ax: Axes):
 def plot_camberline(
     inlet_angle,
     outlet_angle,
-    mer_chord,
+    axial_length,
     ax,
     color,
     *,
@@ -128,8 +128,8 @@ def plot_camberline(
         Inlet metal angle [rad]
     outlet_angle : float
         Outlet metal angle [rad]
-    mer_chord : float
-        Axial chord length [m]
+    axial_length : float
+        Axial length of the blade [m]
     color : str or color
         Color for the camber line
     axial_offset : float, optional
@@ -145,14 +145,14 @@ def plot_camberline(
     tan0 = np.tan(inlet_angle)
     tan1 = np.tan(outlet_angle)
 
-    a = (tan1 - tan0) / (2 * mer_chord)
+    a = (tan1 - tan0) / (2 * axial_length)
     b = tan0
 
     a = safe_min_clip(a, 1e-3)
 
     # y_out = a * mer_chord**2 + b * mer_chord
 
-    x = np.linspace(0, mer_chord, n_points)
+    x = np.linspace(0, axial_length, n_points)
     y = a * x**2 + b * x
 
     ax.plot(axial_offset + x, tangential_offset + y, color=color, **kwargs)

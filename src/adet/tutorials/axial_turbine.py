@@ -196,7 +196,7 @@ if PLOTS:
         plot_camberline(
             sol_dict[nodes[0].geo.MetalAngle],
             sol_dict[nodes[1].geo.MetalAngle],
-            sol_dict[nodes[1].geo.MerChord],
+            sol_dict[nodes[1].geo.AxialLength],
             ax=ax_cbl,
             color='k',
             axial_offset=offset,
@@ -210,7 +210,7 @@ if PLOTS:
         plot_camberline(
             sol_dict[nodes[0].geo.MetalAngle],
             sol_dict[nodes[1].geo.MetalAngle],
-            sol_dict[nodes[1].geo.MerChord],
+            sol_dict[nodes[1].geo.AxialLength],
             ax=ax_cbl,
             color='k',
             axial_offset=offset,

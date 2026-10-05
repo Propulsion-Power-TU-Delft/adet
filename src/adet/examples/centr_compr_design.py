@@ -253,7 +253,7 @@ height_in = float(sol_loss_dict[n0.geo.Height][0])
 height_out = float(sol_loss_dict[n1.geo.Height][0])
 mer_angle_in = float(sol_loss_dict[n0.geo.MeridionalAngle][0])
 mer_angle_out = float(sol_loss_dict[n1.geo.MeridionalAngle][0])
-axial_chord = float(sol_loss_dict[n1.geo.MerChord][0])
+axial_chord = float(sol_loss_dict[n1.geo.AxialLength][0])
 
 geom = RowGeometry(
     r_in=r_in,

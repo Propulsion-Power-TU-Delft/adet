@@ -253,11 +253,11 @@ if PLOTS:
             color_val = cmap((span_idx + 1) / num_span)
             inlet_angle = sol_dict[nodes[0].geo.MetalAngle][span_idx]
             outlet_angle = sol_dict[nodes[1].geo.MetalAngle][span_idx]
-            mer_chord = sol_dict[nodes[1].geo.MerChord][span_idx]
+            axial_length = sol_dict[nodes[1].geo.AxialLength][span_idx]
             plot_camberline(
                 inlet_angle,
                 outlet_angle,
-                mer_chord,
+                axial_length,
                 ax=ax_cbl,
                 color=color_val,
                 axial_offset=offset,
@@ -266,7 +266,7 @@ if PLOTS:
             plot_camberline(
                 inlet_angle,
                 outlet_angle,
-                mer_chord,
+                axial_length,
                 ax=ax_cbl,
                 color=color_val,
                 axial_offset=offset,

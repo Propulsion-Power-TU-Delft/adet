@@ -125,8 +125,8 @@ FIRST_ROW_PARAMS: dict[VarSpec, float] = {
     n1.geo.MeridionalAngle: 0.0,
     n1.geo.Height: 0.12,
     n1.geo.Rmid: 0.2,
-    # *** Chord and blades
-    n1.geo.Chord: 0.1,
+    # *** Axial length (the chord and meridional chord are results) and blades
+    n1.geo.AxialLength: 0.1,
     n1.geo.NumBlades: 40,
     # *** Relative flow angles; the metal angles (camber lines) are results
     n0.kin.FlowAngleRel: math.radians(30),
@@ -259,7 +259,7 @@ class RowBackend:
                 shaft=Shaft(params[n1.kin.Omega], is_constrained=True),
                 bound_cond=bound_cond,
                 extra_equations=_eval_equations(self.extra_equations[index]),
-                spanwise_constants=[n1.geo.ChordAx],
+                spanwise_constants=[n1.geo.AxialLength],
             )
             if index == 0:
                 row.set_spanwise_constant(
@@ -456,8 +456,8 @@ class RowBackend:
         get = self.get_value
         angle = get(last.geo.MeridionalAngle)
         height = get(last.geo.Height)
-        # The row is a rectangle: the chord, the distance between the inlet and outlet
-        # centers, is half the height of the station lines
+        # The row is a rectangle: the distance between the inlet and outlet centers
+        # is half the height of the station lines
         chord = 0.5 * height
         angle_in = get(last.kin.FlowAngleRel)
         # Add or subtract the turning, whichever leaves the smaller absolute angle
@@ -474,7 +474,8 @@ class RowBackend:
             # by chord * sin(angle) and the walls stay parallel: the row is a
             # rectangle in the meridional view, also for a radial row
             n1.geo.Rmid: get(last.geo.Rmid) - chord * math.sin(angle),
-            n1.geo.Chord: chord,
+            # Axial part of that distance; MinimalMeridional gives the meridional chord
+            n1.geo.AxialLength: chord * math.cos(angle),
             n1.geo.NumBlades: get(last.geo.NumBlades),
             n1.kin.FlowAngleRel: angle_out,
             n1.kin.Omega: get(last.kin.Omega) if omega is None else omega,
@@ -816,7 +817,7 @@ class RowBackend:
             '        shaft=shafts[ROW_SHAFTS[index]],',
             '        bound_cond=params,',
             '        extra_equations=ROW_EXTRA_EQUATIONS[index],',
-            '        spanwise_constants=[outlet.geo.ChordAx],',
+            '        spanwise_constants=[outlet.geo.AxialLength],',
             '    )',
             '    if index == 0:',
             '        row.set_spanwise_constant(inlet.kin.V_mer, inlet.geo.HDistr)',
