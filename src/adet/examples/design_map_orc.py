@@ -5,10 +5,17 @@ applications. Uses physics-based loss modeling.
 
 # === IMPORTS
 import logging
+import pickle
 from copy import deepcopy
+from pathlib import Path
 from typing import Literal, Type
 
 import CoolProp as cp
+import CoolProp
+
+CoolProp.CoolProp.set_config_string(
+    CoolProp.ALTERNATIVE_REFPROP_PATH, '/Users/matteomajer/Applications/REFPROP'
+)
 import matplotlib.pyplot as plt
 import numpy as np
 from pint import Quantity
@@ -32,6 +39,7 @@ from adet.equations.geometrical import (
 )
 from adet.equations.nondimensional import (
     FlowCoefficient,
+    GammaPV,
     StaticTotalDegreeOfReaction,
     TotalStaticLoadingCoefficient,
     TotalTotalExpansionEfficiency,
@@ -41,12 +49,18 @@ from adet.equations.nondimensional import (
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation  # noqa: F401
 from adet.losses.leakage import DentonTrapLeakage
-from adet.losses.mixing import DentonMixingLoss, SieverdingBasePressure
+from adet.losses.mixing import (
+    DentonBaumgartnerMixingLoss,
+    DentonMixingLoss,
+    SieverdingBasePressure,
+)
 from adet.losses.profile import DentonTrapProfile
 from adet.losses.secondary import SecondaryBSM
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
+from adet.tools.design_map import sweep_design_map
 from adet.tools.loggers import setup_logger
+from adet.tools.plotting import plot_design_map
 from adet.variables import NodeVariables, ThermoVariables
 
 n0 = NodeVariables(0)
@@ -126,90 +140,22 @@ def compute_design_map(
     starter_solutions=None,
     custom_bounds={},
 ):
-    rtfn_kin = ntw.system.make_rootfinder('kinsol')
-    rtfn_ip = ntw.system.make_rootfinder(
-        'ipopt',
-        opts={
-            'error_on_fail': True,
-            'ipopt.max_wall_time': 1.0,
-        },
+    """Thin wrapper around the shared ``sweep_design_map`` driver, fixed to
+    this file's (phi, psi) = (n3.ndim.FlowCoeff, n3.ndim.TSLoadCoeff) sweep
+    keys, PHI_SPAN/PSI_SPAN grid, and EtaTT sanity check."""
+    assert n_points == len(PHI_SPAN) == len(PSI_SPAN)
+    return sweep_design_map(
+        ntw,
+        n3.ndim.FlowCoeff,
+        n3.ndim.TSLoadCoeff,
+        PHI_SPAN,
+        PSI_SPAN,
+        first_sol,
+        starter_keys=starter_keys,
+        starter_solutions=starter_solutions,
+        custom_bounds=custom_bounds,
+        validity_check=lambda sd: 0.5 <= sd[n3.ndim.EtaTT] <= 1.0,
     )
-
-    keys = np.zeros((n_points**2, 2))
-
-    solutions = np.zeros((n_points**2, len(first_sol)))
-    solutions[0] = first_sol.flatten()
-
-    # Store solution dicts for each point
-    solution_dicts = []
-
-    kn = ntw.system.get_boundary_conds()
-    bnd = ntw.system.get_bounds(custom_bounds=custom_bounds)
-
-    curr_index = 0
-    boun_cond_keys = list(ntw.system.data.boun_cond.keys())
-    phi_idx = boun_cond_keys.index(n3.ndim.FlowCoeff)
-    psi_idx = boun_cond_keys.index(n3.ndim.TSLoadCoeff)
-    for phi in PHI_SPAN:
-        for psi in PSI_SPAN:
-            curr_key = np.array([phi, psi])
-            if starter_keys is not None and starter_solutions is not None:
-                distances = np.linalg.norm(curr_key - starter_keys, axis=1, ord=2)
-                idx = np.argmin(distances)
-                x0 = ntw.system.get_guess(starter_solutions[idx])
-            else:
-                distances = np.linalg.norm(curr_key - keys, axis=1, ord=np.inf)
-                idx = np.argmin(distances)
-                x0 = solutions[idx]
-                while np.isnan(x0).any():
-                    idx -= 1
-                    logger.warning('Solution cache miss, going to best next one')
-                    x0 = solutions[idx]
-
-            # Overwrite the knowns
-            kn[phi_idx] = np.array([phi * ntw.system.constraints_scaling[phi_idx]])
-            kn[psi_idx] = np.array([psi * ntw.system.constraints_scaling[psi_idx]])
-            solution = x0
-            try:
-                solution = solve_root_problem(rtfn_kin, x0, kn, suppress_output=True)
-            except RuntimeError:
-                # Try bounded and unbounded ipopt
-                logger.info('KINSOL failed, trying IPOPT...')
-                try:
-                    solution = solve_root_problem(
-                        rtfn_ip, x0, kn, bnd, suppress_output=True
-                    )
-                except RuntimeError:
-                    try:
-                        solution = solve_root_problem(
-                            rtfn_ip, x0, kn, suppress_output=True
-                        )
-                    except RuntimeError:
-                        logger.info('IPOPT failure, default to closest solution')
-                        # Just re-use previous solution
-                        # => no cache misses
-                        solution = x0
-
-                # solution = np.full(solution.shape, np.nan)
-
-            keys[curr_index, :] = curr_key
-            solutions[curr_index, :] = np.array(solution).flatten()
-
-            # Store the full solution dict
-            if not np.isnan(solution).any():
-                sol_dict = ntw.system.sol_to_dict(solution)
-                if sol_dict[n3.ndim.EtaTT] > 1.0 or sol_dict[n3.ndim.EtaTT] < 0.5:
-                    sol_dict = None
-                    logger.warning(f'Failed point at phi={phi:.2f}, psi={psi:.2f}')
-            else:
-                sol_dict = None
-                logger.warning(f'Failed point at phi={phi:.2f}, psi={psi:.2f}')
-
-            solution_dicts.append(sol_dict)
-
-            curr_index += 1
-
-    return keys, solutions, solution_dicts
 
 
 # ================================================
@@ -308,6 +254,8 @@ LOSS_MODELS: dict[
     DentonTrapProfile: (0, 1),
     # DentonRectLeakage: (0, 1),
     # DentonRectProfile: (0, 1),
+    # GammaPV: 1,  # needed at node 1 for DentonBaumgartnerMixingLoss
+    # DentonBaumgartnerMixingLoss: 1,
     DentonMixingLoss: 1,
     ClearanceByHeight: 1,
     BoundaryLayerRatios: 1,
@@ -377,8 +325,8 @@ ntw = ComponentNetwork(
     components=[stator, rotor],
 )
 
-rotor.set_spanwise_constant(n1.geo.ChordAx)
-stator.set_spanwise_constant(n1.geo.ChordAx, n0.geo.HDistr, n0.kin.V_mer)
+rotor.set_spanwise_constant(n1.geo.MerChord)
+stator.set_spanwise_constant(n1.geo.MerChord, n0.geo.HDistr, n0.kin.V_mer)
 rotor.copy_from_previous(n0.geo.HDistr, n0.geo.RDistr)
 rotor.remove_equation(MeridionalGeometry, 0)
 
@@ -517,6 +465,31 @@ design_map_data = {
     'psi_vals': psi_vals,
     'N_PTS': MAP_POINTS,
 }
+
+OUTPUT_DIR = Path(__file__).parents[3] / 'outputs' / 'design_maps'
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+design_map_path = OUTPUT_DIR / f'design_map_{file_identifier}.pkl'
+with open(design_map_path, 'wb') as f:
+    pickle.dump(design_map_data, f)
+logger.info(f'Saved design map data to {design_map_path}')
+
+# ========================== POSTPROCESSING
+with open(design_map_path, 'rb') as f:
+    loaded_map = pickle.load(f)
+
+fig, ax, _ = plot_design_map(
+    loaded_map['keys_loss'],
+    loaded_map['solution_dicts'],
+    n3.ndim.EtaTT,
+    loaded_map['N_PTS'],
+    z_label=r'Total-total efficiency $\eta_{tt}$',
+)
+ax.set_title('ORC axial turbine design map')
+fig.tight_layout()
+fig.savefig(OUTPUT_DIR / f'eta_tt_{file_identifier}.png', dpi=150)
+
+plt.show()
 
 vol_flow = DUTY_COEFFS[n1.ndim.VolflowRatio]
 react = DUTY_COEFFS[n1.ndim.DegreeOfReactionTS]
