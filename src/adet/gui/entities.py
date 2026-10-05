@@ -879,17 +879,15 @@ class GapFollower:
         """Shift of the source line to its gapped copy."""
         dx = source_end.pos().x() - source_center.pos().x()
         dy_up = source_center.pos().y() - source_end.pos().y()
-        # The line is undirected: pick the normal that points towards +x, and downwards
-        # when the line is horizontal
-        if dy_up < 0 or (dy_up == 0 and dx < 0):
-            dx, dy_up = -dx, -dy_up
         length = math.hypot(dx, dy_up)
         if length < 1e-9:
             return QPointF(gap, 0.0)
         # The gap is measured along the meridional direction (normal to the line).
+        # The line is directed from its center to its end, as built by _line_points,
+        # so the normal (cos(angle), sin(angle) in scene coordinates) turns
+        # continuously through 90 deg instead of flipping its radial sign there.
         # Working with the normal directly, instead of tan(angle), stays finite when
-        # the line is horizontal (90 deg meridional angle). Scene y points down, and
-        # a line leaning towards +x has a wall going down
+        # the line is horizontal. Scene y points down
         return QPointF(gap * dy_up / length, gap * dx / length)
 
     def detach(self):
@@ -1159,8 +1157,12 @@ class MeridionalProfile:
             return value
         self.snap_highlight.clear()
         tilt = self.line1.end1.pos() - self.center1.pos()
-        if abs(tilt.y()) < 1e-9:
-            return value  # a horizontal first line cannot be levelled vertically
+        if tilt.manhattanLength() < 1e-9:
+            return value
+        # Shift along y, or along x when the first line is closer to horizontal
+        # (radial), where a vertical shift cannot make the offset perpendicular
+        shift_x = abs(tilt.x()) > abs(tilt.y())
+        axis_tilt = tilt.x() if shift_x else tilt.y()
         pairs = (
             (self.center2, self.center1),
             (self.line2.end1, self.line1.end1),
@@ -1172,16 +1174,19 @@ class MeridionalProfile:
             # Offset of the point from the dragged center, unchanged by the drag
             offset = point.pos() - self.center2.pos()
             gap = value + offset - reference.pos()
-            # Vertical shift that makes the gap perpendicular to the first line
-            dy = -(gap.x() * tilt.x() + gap.y() * tilt.y()) / tilt.y()
-            if abs(dy) <= MERIDIONAL_SNAP_DISTANCE and (
-                best is None or abs(dy) < abs(best)
+            # Shift that makes the gap perpendicular to the first line
+            shift = -(gap.x() * tilt.x() + gap.y() * tilt.y()) / axis_tilt
+            if abs(shift) <= MERIDIONAL_SNAP_DISTANCE and (
+                best is None or abs(shift) < abs(best)
             ):
-                best = dy
-                best_line = (reference.pos(), value + offset + QPointF(0, dy))
+                best = shift
+                step = QPointF(shift, 0) if shift_x else QPointF(0, shift)
+                best_line = (reference.pos(), value + offset + step)
         if best is None or best_line is None:
             return value
         self.snap_highlight.show_between(scene, *best_line)
+        if shift_x:
+            return QPointF(value.x() + best, value.y())
         return QPointF(value.x(), value.y() + best)
 
     def _install_end_snap(

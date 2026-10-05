@@ -1,8 +1,10 @@
-"""Views of the GUI: profile and camber views, velocity triangles and the main window."""
+"""Views of the GUI: profile and camber views,
+velocity triangles and the main window."""
 
 import logging
 import math
 from collections.abc import Callable
+from pathlib import Path
 
 from PyQt6.QtCore import (
     QEasingCurve,
@@ -32,6 +34,7 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
+    QFileDialog,
     QFrame,
     QGraphicsEllipseItem,
     QGraphicsItem,
@@ -68,6 +71,10 @@ ZOOM_DURATION_MS = 150
 FIT_DURATION_MS = 100  # glide of the views to the fit when a row is added
 
 FIT_MARGIN = 20  # scene units around the content when fitting
+CORNER_BUTTON_MARGIN = 8  # pixels between a view's corner button and its edges
+CORNER_BUTTON_RIGHT_MARGIN = 16  # pixels between a corner button and the right edge
+FIT_ICON_SIZE = 20  # pixels
+FIT_BUTTON_SIZE = 33  # pixels
 RADIUS_ORIGIN_Y = 550.0  # scene y of radius 0
 SCENE_PER_METER = 2000.0  # the initial center at y=350 is then 0.1 m
 PROFILE_START_X = 150.0  # scene x of the inlet station
@@ -75,10 +82,12 @@ PARABOLA_START_Y = 150.0  # scene y of the first point of the camber parabola
 AXIAL_GAP = 20.0  # visual gap between blade rows along the wall, scene units
 TRIANGLE_COLUMN_WIDTH = 350  # window growth per added row, pixels
 MAX_VISIBLE_ROWS = 2  # rows whose triangles grow the window; more rows scroll
+ROW_LABEL_FONT_PX = 28  # row number above each triangle column
 ROW_GAP = 16  # spacing between the widgets of neighbouring blade rows, pixels
 SOLVE_DELAY_MS = 30  # geometry changes within this window share one solve
 BACKGROUND_COLOR = QColor(15, 15, 15)  # background of every view
 CASING_COLOR = QColor(170, 170, 170)
+DEFAULT_OMEGA = 100.0  # rad/s, first speed of a moving shaft
 ROTOR_COLOR = QColor(70, 170, 255)
 MOVING_SHAFT_COLORS = (  # colors given in turn to the moving shafts
     ROTOR_COLOR,
@@ -252,6 +261,18 @@ def _enclose(panel: QWidget, name: str):
     )
 
 
+class StatusLabel(QLabel):
+    """Wrapping status message, green normally and red when the text reports a failure."""
+
+    FAILURE_MARKERS = ('could not', 'failed', 'fix the current')
+
+    def setText(self, text: str | None):
+        failed = any(marker in (text or '').lower() for marker in self.FAILURE_MARKERS)
+        color = 'red' if failed else 'green'
+        self.setStyleSheet(f'color: {color}; font-weight: bold;')
+        super().setText(text)
+
+
 def _circle_pixmap(color: QColor, size: int = SHAFT_CIRCLE_SIZE) -> QPixmap:
     """A filled circle of ``color`` on a transparent background."""
     pixmap = QPixmap(size, size)
@@ -333,7 +354,7 @@ class ShaftPanel(QWidget):
         self._layout = QVBoxLayout(self)
         self._layout.setSpacing(ROW_GAP)
         title = QLabel('Shafts')
-        title.setStyleSheet('font-weight: bold; font-size: 14px;')
+        title.setStyleSheet('font-weight: bold; font-size: 15px;')
         self._layout.addWidget(title)
         add_button = QPushButton('+ Add moving shaft')
         add_button.clicked.connect(self.add_moving_shaft)
@@ -372,7 +393,12 @@ class ShaftPanel(QWidget):
         )
         name = f'Rotating shaft {self._next_number}'
         self._next_number += 1
-        return self.add_shaft(name, color, self.shafts[-1].omega, removable=True)
+        # A stationary shaft would divide by zero in the coefficients of its rows
+        omega = next(
+            (shaft.omega for shaft in reversed(self.shafts) if shaft.omega != 0.0),
+            DEFAULT_OMEGA,
+        )
+        return self.add_shaft(name, color, omega, removable=True)
 
     def remove_shaft(self, shaft: ShaftView):
         """Take a shaft out of the panel and tell the listeners."""
@@ -407,7 +433,7 @@ class FluidPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setSpacing(ROW_GAP // 2)
         title = QLabel('Working fluid')
-        title.setStyleSheet('font-weight: bold; font-size: 14px;')
+        title.setStyleSheet('font-weight: bold; font-size: 15px;')
         layout.addWidget(title)
         layout.addWidget(self.model_combo)
         self._ideal_fields = self._add_fields(
@@ -506,7 +532,7 @@ class InletPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setSpacing(ROW_GAP // 2)
         title = QLabel('Inlet conditions')
-        title.setStyleSheet('font-weight: bold; font-size: 14px;')
+        title.setStyleSheet('font-weight: bold; font-size: 15px;')
         layout.addWidget(title)
         for text, spin in (
             ('Total pressure [bar]', self.pressure_spin),
@@ -651,6 +677,23 @@ class RowControls:
             button.setRotation(math.degrees(tilt))
 
 
+def _fit_icon() -> QIcon:
+    """Two arrows along the diagonal pointing away from each other."""
+    size = FIT_ICON_SIZE
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(QPen(QColor('#ffffff'), 1.6))
+    low, high, head = 2.5, size - 2.5, 5.0
+    painter.drawLine(QPointF(low, high), QPointF(high, low))
+    for tip, sign in ((QPointF(low, high), 1), (QPointF(high, low), -1)):
+        painter.drawLine(tip, QPointF(tip.x() + sign * head, tip.y()))
+        painter.drawLine(tip, QPointF(tip.x(), tip.y() - sign * head))
+    painter.end()
+    return QIcon(pixmap)
+
+
 class RoundedGraphicsView(QGraphicsView):
     """A graphics view whose viewport has rounded corners of ``VIEW_CORNER_RADIUS``."""
 
@@ -694,6 +737,28 @@ class SyncedView(RoundedGraphicsView):
         self.axis_y: float | None = None  # scene y of a dash-dot axis line, if any
         self.zoom_callback: Callable[[float], None] | None = None  # for Ctrl + scroll
         self._hbar().valueChanged.connect(self._sync_scroll)
+        self._corner_button: QWidget | None = None
+
+    def set_corner_button(self, button: QWidget):
+        """Float ``button`` over the top right corner of the view."""
+        button.setParent(self)
+        self._corner_button = button
+        self._place_corner_button()
+        button.show()
+
+    def _place_corner_button(self):
+        if self._corner_button is not None:
+            size = self._corner_button.sizeHint()
+            self._corner_button.setGeometry(
+                self.width() - size.width() - CORNER_BUTTON_RIGHT_MARGIN,
+                CORNER_BUTTON_MARGIN,
+                size.width(),
+                size.height(),
+            )
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._place_corner_button()
 
     def drawBackground(self, painter, rect):
         """Draw the background and the dash-dot axis line across the whole view."""
@@ -895,9 +960,9 @@ class VelocityTriangleView(QWidget):
         self._readout = QLabel('')
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self._title_label = QLabel(title)
-        self._title_label.setStyleSheet('font-weight: bold;')
-        layout.addWidget(self._title_label)
+        # Not in the layout: the owner places the title above the angle switch
+        self.title_label = QLabel(title)
+        self.title_label.setStyleSheet('font-weight: bold;')
         layout.addWidget(self._view, 1)
         layout.addWidget(self._readout)
 
@@ -916,7 +981,7 @@ class VelocityTriangleView(QWidget):
             self._draw(*self._shown)
 
     def set_title_color(self, color: QColor):
-        self._title_label.setStyleSheet(f'font-weight: bold; color: {color.name()};')
+        self.title_label.setStyleSheet(f'font-weight: bold; color: {color.name()};')
 
     def set_velocities(self, v_tan: float, v_mer: float, blade_speed: float):
         """Draw the triangle with the new velocities (m/s)."""
@@ -1165,8 +1230,28 @@ class BladeRowView:
             start_y = prev_profile.center2.pos().y() + shift.y()
         # The chord joins the centers, so x only advances by what is left of it after
         # the radial change; a radial row has almost no axial extent
+        # The visual gap does not count: the solution has none
         center2_y = RADIUS_ORIGIN_Y - get(self.outlet.geo.Rmid) * SCENE_PER_METER
-        axial_chord = math.sqrt(max(chord**2 - (center2_y - start_y) ** 2, 0.0))
+        solved_start_y = RADIUS_ORIGIN_Y - get(self.inlet.geo.Rmid) * SCENE_PER_METER
+        axial_chord = math.sqrt(max(chord**2 - (center2_y - solved_start_y) ** 2, 0.0))
+        # The outlet line must not reach back over the inlet one: a radial row has a
+        # horizontal outlet line, which centered on the axial advance would cross the
+        # previous row. Keep its leftmost point at the rightmost point of the inlet line.
+        # The signed half widths make parallel lines (a radial row after a radial
+        # row) need no advance, so that the row goes straight on
+        inlet_half_x = (
+            get(self.inlet.geo.Height)
+            / 2
+            * SCENE_PER_METER
+            * math.sin(get(self.inlet.geo.MeridionalAngle))
+        )
+        outlet_half_x = (
+            get(self.outlet.geo.Height)
+            / 2
+            * SCENE_PER_METER
+            * math.sin(get(self.outlet.geo.MeridionalAngle))
+        )
+        axial_chord = max(axial_chord, abs(outlet_half_x - inlet_half_x))
         center2, end2 = _line_points(
             start_x + axial_chord,
             get(self.outlet.geo.Rmid),
@@ -1216,7 +1301,7 @@ class BladeRowView:
             (PROFILE_START_X, PARABOLA_START_Y)
             if previous is None
             else (
-                previous.camber_points[2].pos().x(),
+                previous.camber_points[2].pos().x() + self.gap,
                 previous.camber_points[2].pos().y(),
             )
         )
@@ -1266,12 +1351,18 @@ class BladeRowView:
             self.shaft_combo.addItem(QIcon(_circle_pixmap(option.color)), option.name)
         self.shaft_combo.setCurrentIndex(shafts.index(shaft))
         self.shaft_combo.currentIndexChanged.connect(self._on_shaft_selected)
+        # Coefficients of the row, shown only while it turns
+        self.coefficients_label = QLabel('')
+        self.coefficients_label.setVisible(False)
 
         # Inlet and outlet velocity triangles
         self.triangle_views = (
-            VelocityTriangleView(f'Row {index + 1} inlet'),
-            VelocityTriangleView(f'Row {index + 1} outlet'),
+            VelocityTriangleView('Inlet'),
+            VelocityTriangleView('Outlet'),
         )
+        # Row number on top of the column
+        self.row_label = QLabel(f'Row {index + 1}')
+        self.row_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         # Choice of the flow angle that is imposed by dragging, per triangle. The inlet
         # of a following row takes the flow from the previous row, so it has no choice
         self.angle_switches = (
@@ -1279,7 +1370,8 @@ class BladeRowView:
             SlideSwitch('Relative angle', 'Absolute angle'),
         )
         for node, switch in enumerate(self.angle_switches):
-            # The change solves synchronously, so it waits for the knob to finish sliding
+            # The change solves synchronously,
+            # so it waits for the knob to finish sliding
             switch.toggled.connect(
                 lambda checked, node=node: QTimer.singleShot(
                     SWITCH_SLIDE_MS,
@@ -1345,6 +1437,9 @@ class BladeRowView:
         self.profile.set_color(color)
         self.parabola.color = color
         self.parabola.update()
+        self.row_label.setStyleSheet(
+            f'font-weight: bold; font-size: {ROW_LABEL_FONT_PX}px; color: {color.name()};'
+        )
         for triangle_view in self.triangle_views:
             triangle_view.set_title_color(color)
 
@@ -1364,6 +1459,7 @@ class BladeRowView:
             *self.profile.perpendiculars,
             self.profile.spline_a,
             self.profile.spline_b,
+            self.profile.fill,
         ]
         if self.profile.gap_follower is not None:
             owners.append(self.profile.gap_follower)
@@ -1375,6 +1471,7 @@ class BladeRowView:
             self.previous.camber_points[2].remove_dependent(self.camber_alignment)
         for item in (
             *self.profile.items,
+            self.profile.snap_highlight,
             *self.camber_points,
             self.parabola,
             self.inlet_label,
@@ -1383,7 +1480,16 @@ class BladeRowView:
         ):
             scene = item.scene()
             if scene is not None:
+                # The lines are drawn from their points, so their bounds must be
+                # invalidated while those still have their position; otherwise the
+                # removed line can stay painted
+                scene.update(item.sceneBoundingRect().adjusted(-4, -4, 4, 4))
                 scene.removeItem(item)
+        for scene in (self.profile_scene, self.parabola_scene):
+            scene.update()
+            for view in scene.views():
+                if (viewport := view.viewport()) is not None:
+                    viewport.update()
 
     @property
     def points(self) -> tuple[DraggablePoint, ...]:
@@ -1437,11 +1543,18 @@ class BladeRowView:
         get = self.backend.get_value
         chord = get(self.outlet.geo.Chord) * SCENE_PER_METER
         half_dx = chord / 2  # control sits at the midpoint of the chord
-        # The leading edge follows the trailing edge of the previous row in x too
+        # The leading edge follows the trailing edge of the previous row in x too,
+        # keeping the visual gap between the rows
         start_x = start.pos().x()
         if self.previous is not None:
-            start_x = self.previous.camber_points[2].pos().x()
+            start_x = self.previous.camber_points[2].pos().x() + self.gap
+            # The start point is constrained to move in y when dragged, which would
+            # also ignore this x move and let the camber lines overlap
+            start.axis_constraint = None
             start.setPos(start_x, start.pos().y())
+            start.axis_constraint = 'y'
+        # The trailing edge can never go back over the leading edge
+        end.min_x = start_x
         control_y = start.pos().y() - half_dx * math.tan(get(self.inlet.geo.MetalAngle))
         control.setPos(start_x + half_dx, control_y)
         end_y = control_y - half_dx * math.tan(get(self.outlet.geo.MetalAngle))
@@ -1456,12 +1569,28 @@ class BladeRowView:
         if not converged:
             for triangle_view in self.triangle_views:
                 triangle_view.set_failed()
+            self.coefficients_label.setVisible(False)
             return
         get = self.backend.get_value
         for triangle_view, node in zip(self.triangle_views, (self.inlet, self.outlet)):
             triangle_view.set_velocities(
                 get(node.kin.V_tan), get(node.kin.V_mer), get(node.kin.BladeSpeed)
             )
+        self.update_coefficients()
+
+    def update_coefficients(self):
+        """Show the work and flow coefficients and the efficiency of a rotor.
+
+        They divide by the blade speed, so a row on a stationary shaft shows none.
+        """
+        if self.shaft.omega == 0.0:
+            self.coefficients_label.setVisible(False)
+            return
+        work, flow, eta = self.backend.rotor_coefficients(self.index)
+        self.coefficients_label.setText(
+            f'ψ = {work:.3f}   φ = {flow:.3f}   η_tt = {eta:.3f}'
+        )
+        self.coefficients_label.setVisible(True)
 
 
 class MainGuiView(QWidget):
@@ -1471,6 +1600,8 @@ class MainGuiView(QWidget):
     another. Each row has its own pair of velocity triangles. The ``+`` button adds
     a row after the last one.
     """
+
+    _windows: list['MainGuiView'] = []  # imported windows, kept from garbage collection
 
     def __init__(self, backend: RowBackend | None = None):
         super().__init__()
@@ -1488,6 +1619,12 @@ class MainGuiView(QWidget):
         self.profile_view = SyncedView(self.profile_scene)
         self.profile_view.axis_y = RADIUS_ORIGIN_Y  # radius 0, the axis of rotation
         self.parabola_view = SyncedView(self.parabola_scene)
+        fit_button = QPushButton()
+        fit_button.setIcon(_fit_icon())
+        fit_button.setToolTip('Fit both views (Ctrl+0)')
+        fit_button.setFixedSize(FIT_BUTTON_SIZE, FIT_BUTTON_SIZE)
+        fit_button.clicked.connect(lambda _checked=False: self.fit_views())
+        self.profile_view.set_corner_button(fit_button)
         self.row_controls = RowControls(
             self.profile_scene, self.add_row, self.delete_row
         )
@@ -1503,7 +1640,7 @@ class MainGuiView(QWidget):
         self.rotor_shaft = self.shaft_panel.add_shaft(
             'Rotating shaft',
             ROTOR_COLOR,
-            self.backend.get_value(RowBackend.row_nodes(0)[1].kin.Omega),
+            DEFAULT_OMEGA,
         )
         self.fluid_panel = FluidPanel(self.backend.fluid)
         self.fluid_panel.changed.connect(self._on_fluid_changed)
@@ -1537,8 +1674,19 @@ class MainGuiView(QWidget):
         self._root.setHandleWidth(SPLITTER_HANDLE_WIDTH)
         # Button row on the top right
         top_row = QHBoxLayout()
-        self.status_label = QLabel('Initial solution converged')
-        top_row.addWidget(self.status_label)
+        self.status_label = StatusLabel()
+        self.status_label.setWordWrap(True)
+        self.status_label.setText('Initial solution converged')
+        # Manual recovery with Ipopt, only offered after Newton failed
+        self.ipopt_button = QPushButton('Recover with IPOPT')
+        self.ipopt_button.setVisible(False)
+        self.ipopt_button.clicked.connect(
+            lambda _checked=False: self.recover_with_ipopt()
+        )
+        status_row = QHBoxLayout()
+        status_row.addWidget(self.status_label, 1)
+        status_row.addWidget(self.ipopt_button)
+        left_layout.addLayout(status_row)
         top_row.addStretch()
         # Operating conditions, each change schedules a solve
         self.mass_flow_spin = _make_spin(
@@ -1547,12 +1695,18 @@ class MainGuiView(QWidget):
         self.mass_flow_spin.valueChanged.connect(self._schedule_solve)
         top_row.addWidget(QLabel('Mass flow [kg/s]'))
         top_row.addWidget(self.mass_flow_spin)
-        fit_button = QPushButton('Fit both views')
-        fit_button.clicked.connect(lambda _checked=False: self.fit_views())
-        top_row.addWidget(fit_button)
         reset_button = QPushButton('Reset to last converged')
         reset_button.clicked.connect(lambda _checked=False: self.reset_geometry())
         top_row.addWidget(reset_button)
+        initial_button = QPushButton('Reset to initial state')
+        initial_button.clicked.connect(lambda _checked=False: self.reset_to_initial())
+        top_row.addWidget(initial_button)
+        export_button = QPushButton('Export script (Ctrl+E)')
+        export_button.clicked.connect(lambda _checked=False: self.export_setup())
+        top_row.addWidget(export_button)
+        import_button = QPushButton('Import setup (Ctrl+I)')
+        import_button.clicked.connect(lambda _checked=False: self.import_setup())
+        top_row.addWidget(import_button)
         layout.addLayout(top_row)
         views_splitter = QSplitter(Qt.Orientation.Vertical)
         views_splitter.setChildrenCollapsible(False)
@@ -1601,10 +1755,24 @@ class MainGuiView(QWidget):
         self._converged_inlet: dict[VarSpec, float] = {}
         self._converged_fluid: FluidChoice = self.backend.fluid
 
-        self._append_row()
+        # A loaded setup has several rows, each on the shaft that turns at its speed
+        self._syncing = True  # setting the shaft speeds must not schedule a solve
+        for index in range(self.backend.num_rows):
+            omega = self.backend.get_value(self.backend.row_nodes(index)[1].kin.Omega)
+            self._append_row(self._shaft_for_omega(omega))
+        self._syncing = False
         self._fit_triangle_area()
+        extra_columns = min(self.backend.num_rows, MAX_VISIBLE_ROWS) - 1
+        self.resize(self.width() + extra_columns * TRIANGLE_COLUMN_WIDTH, self.height())
         self._update_triangles()
         self._remember_converged()
+        # What the window showed at startup, for the reset button
+        self._initial_state = (
+            self._converged_points,
+            self._converged_angles,
+            self._converged_inlet,
+            self._converged_fluid,
+        )
 
         # Animation runs on the log of the zoom so steps compose smoothly
         self._zoom_applied = 0.0
@@ -1637,10 +1805,89 @@ class MainGuiView(QWidget):
         QShortcut(QKeySequence('Ctrl+0'), self).activated.connect(
             lambda: self.fit_views()
         )
+        QShortcut(QKeySequence('Ctrl+E'), self).activated.connect(
+            lambda: self.export_setup()
+        )
+        QShortcut(QKeySequence('Ctrl+I'), self).activated.connect(
+            lambda: self.import_setup()
+        )
 
-    def _append_row(self):
-        """Draw the last row of the backend after the rows already shown."""
-        # Every new row starts on the stationary casing
+    def export_setup(self):
+        """Save the setup as a Python script, an equivalent TOML file and the solution."""
+        path, _ = QFileDialog.getSaveFileName(
+            self, 'Export setup', 'adet_setup.py', 'Python script (*.py)'
+        )
+        if not path:
+            return
+        # The backend holds what is drawn, converged or not
+        self._solve_timer.stop()
+        self.backend.set_geometry(self.drawn_geometry() | self.operating_conditions())
+        # The files go next to each other in the chosen directory
+        script = Path(path)
+        toml = script.with_suffix('.toml')
+        solution = script.with_name(f'{script.stem}_solution.pkl')
+        try:
+            self.backend.save_solution(solution)
+            script.write_text(
+                self.backend.export_script(solution.name), encoding='utf-8'
+            )
+            toml.write_text(self.backend.to_toml(solution.name), encoding='utf-8')
+        except (OSError, ValueError) as err:
+            logger.warning(f'Could not export the setup: {err}')
+            self.status_label.setText('Could not export the setup')
+            return
+        self.status_label.setText(
+            f'Exported {script.name}, {toml.name} and {solution.name} to {script.parent.name}/'
+        )
+
+    def import_setup(self):
+        """Replace the window by one that shows a setup read from a TOML file."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, 'Import setup', '', 'TOML setup (*.toml)'
+        )
+        if not path:
+            return
+        toml = Path(path)
+        self._solve_timer.stop()
+        try:
+            backend = RowBackend.from_toml(
+                toml.read_text(encoding='utf-8'), toml.parent
+            )
+        except Exception as err:  # bad file, unknown spec or a solve that fails
+            logger.warning(f'Could not import the setup: {err}')
+            self.status_label.setText(f'Could not import {toml.name}')
+            return
+        # The rows, shafts and views are built from the backend, so start a new window
+        window = MainGuiView(backend)
+        window.setGeometry(self.geometry())
+        window.status_label.setText(f'Imported {toml.name}')
+        window.show()
+        # Kept alive by the application through this reference
+        MainGuiView._windows = [window]
+        self.close()
+
+    def _shaft_for_omega(self, omega: float) -> ShaftView:
+        """Shaft turning at ``omega``; a moving shaft is added if none does."""
+        if omega == 0.0:
+            return self.casing_shaft
+        # The unused rotating shaft takes the first speed that is loaded
+        if not self.rows and not math.isclose(
+            self.rotor_shaft.omega, omega, abs_tol=0.05
+        ):
+            self.rotor_shaft.omega_spin.setValue(omega)
+        for shaft in self.shaft_panel.shafts:
+            # The spin boxes round the speed
+            if math.isclose(shaft.omega, omega, abs_tol=0.05):
+                return shaft
+        shaft = self.shaft_panel.add_moving_shaft()
+        shaft.omega_spin.setValue(omega)
+        return shaft
+
+    def _append_row(self, shaft: ShaftView | None = None):
+        """Draw the last row of the backend after the rows already shown.
+
+        The row starts on ``shaft``, by default the stationary casing.
+        """
         row = BladeRowView(
             self.backend,
             len(self.rows),
@@ -1648,7 +1895,7 @@ class MainGuiView(QWidget):
             self.profile_scene,
             self.parabola_scene,
             self.shaft_panel.shafts,
-            self.casing_shaft,
+            shaft or self.casing_shaft,
             self._schedule_solve,
             self._on_angle_mode_changed,
         )
@@ -1660,10 +1907,13 @@ class MainGuiView(QWidget):
 
         # Shaft choice on top of the triangles of the row; all triangles share one scale
         column = QVBoxLayout()
+        column.addWidget(row.row_label)
         column.addWidget(row.shaft_combo)
+        column.addWidget(row.coefficients_label)
         for switch, triangle_view in zip(row.angle_switches, row.triangle_views):
             # Columns keep their width, so extra rows scroll instead of squeezing
             triangle_view.setMinimumWidth(TRIANGLE_COLUMN_WIDTH - ROW_GAP)
+            column.addWidget(triangle_view.title_label)
             column.addWidget(switch)
             column.addWidget(triangle_view)
         self._triangle_layout.addLayout(column)
@@ -1713,7 +1963,7 @@ class MainGuiView(QWidget):
         # point; let them settle, so the fit animation does not start with a stall
         QApplication.processEvents()
         self.profile_view._update_extent()
-        self.fit_views()
+        self.fit_views(horizontal_only=True)
         self._remember_converged()
         self.status_label.setText(f'Row {len(self.rows)} added and converged')
 
@@ -1741,7 +1991,14 @@ class MainGuiView(QWidget):
         row = self.rows.pop()
         row.remove(self._notifiers.pop())
         column = self._row_ui.pop()
-        for widget in (row.shaft_combo, *row.angle_switches, *row.triangle_views):
+        for widget in (
+            row.row_label,
+            row.shaft_combo,
+            row.coefficients_label,
+            *(view.title_label for view in row.triangle_views),
+            *row.angle_switches,
+            *row.triangle_views,
+        ):
             column.removeWidget(widget)
             widget.deleteLater()
         self._triangle_layout.removeItem(column)
@@ -1831,11 +2088,26 @@ class MainGuiView(QWidget):
             self.status_label.setText('Newton converged')
         else:
             self.status_label.setText('Newton failed')
+        self.ipopt_button.setVisible(not converged)
         self._update_triangles(converged)
         if converged:
             self._sync_camber_lines()
             self._remember_converged()
         return converged
+
+    def recover_with_ipopt(self):
+        """Solve the drawn geometry with Ipopt after Newton failed (manual only)."""
+        self._solve_timer.stop()
+        self.backend.set_geometry(self.drawn_geometry() | self.operating_conditions())
+        converged = self.backend.solve_ipopt()
+        self._update_triangles(converged)
+        if not converged:
+            self.status_label.setText('IPOPT failed')
+            return
+        self.ipopt_button.setVisible(False)
+        self._sync_camber_lines()
+        self._remember_converged()
+        self.status_label.setText('IPOPT converged')
 
     def _on_angle_mode_changed(self, row: BladeRowView, node: int, absolute: bool):
         """Make a row impose the absolute or relative flow angle at a node."""
@@ -1879,7 +2151,15 @@ class MainGuiView(QWidget):
         if len(self._converged_points) != len(self.rows):
             return
         for row, angles in zip(self.rows, self._converged_angles):
-            row.flow_angles.update(angles)
+            # Only the angles of the kind the backend imposes now, as the other kind
+            # (switched since the snapshot) is not a boundary condition any more
+            row.flow_angles.update(
+                {
+                    spec: value
+                    for spec, value in angles.items()
+                    if spec in row.flow_angles
+                }
+            )
         self._solve_timer.stop()
         inlet = self._converged_inlet
         self.mass_flow_spin.blockSignals(True)
@@ -1901,6 +2181,23 @@ class MainGuiView(QWidget):
             self._syncing = False
         if self.update_solution():
             self.status_label.setText('Reset to the last converged geometry')
+
+    def reset_to_initial(self):
+        """Go back to the single row, geometry, inlet and fluid shown at startup."""
+        while len(self.rows) > 1:
+            count = len(self.rows)
+            self.delete_row()
+            if len(self.rows) == count:  # the backend could not drop the row
+                return
+        (
+            self._converged_points,
+            self._converged_angles,
+            self._converged_inlet,
+            self._converged_fluid,
+        ) = self._initial_state
+        self.reset_geometry()
+        if self.status_label.text() == 'Reset to the last converged geometry':
+            self.status_label.setText('Reset to the initial state')
 
     def _sync_camber_lines(self):
         """Draw the camber lines of the solved metal angles.
@@ -1959,8 +2256,13 @@ class MainGuiView(QWidget):
             view.scale(factor, factor)
             view.centerOn(center)
 
-    def _fit_target(self) -> list[tuple[float, float, float]]:
-        """Scale and centre (x, y) of every view that fit its own content."""
+    def _fit_target(
+        self, horizontal_only: bool = False
+    ) -> list[tuple[float, float, float]]:
+        """Scale and centre (x, y) of every view that fit its own content.
+
+        With ``horizontal_only`` the scale only makes the content fit the width.
+        """
         for view in self.group:
             view._update_extent()
         targets = []
@@ -1968,9 +2270,9 @@ class MainGuiView(QWidget):
             rect = view.content_rect()
             viewport = view.viewport()
             assert viewport is not None
-            scale = min(
-                viewport.width() / rect.width(), viewport.height() / rect.height()
-            )
+            scale = viewport.width() / rect.width()
+            if not horizontal_only:
+                scale = min(scale, viewport.height() / rect.height())
             targets.append((scale, rect.center().x(), rect.center().y()))
         return targets
 
@@ -1990,14 +2292,15 @@ class MainGuiView(QWidget):
             current.append((view.transform().m11(), center.x(), center.y()))
         return current
 
-    def fit_views(self, animated: bool = True):
+    def fit_views(self, animated: bool = True, horizontal_only: bool = False):
         """Fit the profile and the parabola (not the axis), each to its own content.
 
         With ``animated`` (the default) the views glide to the fit with an ease.
+        With ``horizontal_only`` the fit only considers the width of the content.
         """
         self._zoom_anim.stop()
         self._fit_anim.stop()
-        end = self._fit_target()
+        end = self._fit_target(horizontal_only)
         if not animated:
             self._show_view(end)
             return

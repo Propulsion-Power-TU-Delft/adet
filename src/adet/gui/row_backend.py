@@ -1,10 +1,17 @@
 # === IMPORTS
 import logging
 import math
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+import pickle
+import threading
+import tomllib
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any
 
+import CoolProp as cp
 import numpy as np
+import tomli_w
 from numpy.typing import NDArray
 
 from adet.assemblers import CasadiSystem
@@ -27,6 +34,32 @@ n1 = NodeVariables(1)
 
 logger = logging.getLogger(__name__)
 setup_logger(logger)
+
+
+SOLVER_WALL_TIME = 2.0  # [s] limit for each of ipopt and kinsol in the initial solve
+
+
+def _run_with_timeout(func: Callable[[], Any], timeout: float) -> Any:
+    """Run ``func`` in a daemon thread; raise ``TimeoutError`` if it outlasts ``timeout``.
+
+    A hung thread cannot be killed, it is only abandoned.
+    """
+    result: dict[str, Any] = {}
+
+    def target():
+        try:
+            result['value'] = func()
+        except BaseException as err:
+            result['error'] = err
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join(timeout)
+    if thread.is_alive():
+        raise TimeoutError(f'no result after {timeout} s')
+    if 'error' in result:
+        raise result['error']
+    return result['value']
 
 
 INLET_CONDITIONS: dict[VarSpec, float] = {
@@ -54,7 +87,7 @@ FIRST_ROW_PARAMS: dict[VarSpec, float] = {
 }
 FLOW_TURNING = math.radians(
     10
-)  # outlet minus inlet relative flow angle of an added row
+)  # magnitude of the change in relative flow angle across an added row
 
 
 @dataclass(frozen=True)
@@ -217,19 +250,32 @@ class RowBackend:
         try:
             # Unbounded
             rtfn = system.make_rootfinder(
-                'ipopt', {'error_on_fail': True, 'ipopt.max_wall_time': 5}
+                'ipopt',
+                {'error_on_fail': True, 'ipopt.max_wall_time': SOLVER_WALL_TIME},
             )
             sol = solve_root_problem(rtfn, self.x0, self.kn, suppress_output=True)
         except RuntimeError:
             # Bounded
-            rtfn = system.make_rootfinder('ipopt', {'error_on_fail': False})
+            rtfn = system.make_rootfinder(
+                'ipopt',
+                {'error_on_fail': False, 'ipopt.max_wall_time': SOLVER_WALL_TIME},
+            )
             sol = solve_root_problem(
                 rtfn, self.x0, self.kn, self.bnd, suppress_output=False
             )
 
-        # Kinsol
-        rtfn = system.make_rootfinder('kinsol')
-        sol = solve_root_problem(rtfn, sol, self.kn)
+        # Kinsol, with Newton as a fallback if it fails or hangs
+        # NOTE: CasADi's kinsol has no wall-time option, so it runs in a worker
+        # thread that is abandoned after SOLVER_WALL_TIME
+        rtfn = system.make_rootfinder('kinsol', {'max_iter': 100})
+        try:
+            sol = _run_with_timeout(
+                lambda: solve_root_problem(rtfn, sol, self.kn), SOLVER_WALL_TIME
+            )
+        except (RuntimeError, TimeoutError) as err:
+            logger.warning(f'KINSOL failed ({err}), trying Newton...')
+            rtfn = system.make_rootfinder('newton', {'max_iter': 25})
+            sol = solve_root_problem(rtfn, sol, self.kn)
 
         self._sol: NDArray = sol
         self.sol_dict = system.sol_to_dict(sol)
@@ -247,6 +293,32 @@ class RowBackend:
             idx = self._kn_index[spec]
             return float(self.kn[idx][0] * self.ntw.system.constraints_scaling[idx])
         return float(self.sol_dict[spec][0])
+
+    def rotor_coefficients(self, row: int) -> tuple[float, float, float]:
+        """Work coefficient, flow coefficient and total-total efficiency of a row.
+
+        Post-processing of the current solution, following ``WorkCoefficient``,
+        ``FlowCoefficient`` and ``TotalTotalExpansionEfficiency`` (or the compression
+        one if the row adds enthalpy). The speed is the blade speed at the outlet, so
+        the row must turn.
+        """
+        node0, node1 = self.row_nodes(row)
+        get = self.get_value
+        h0_tot = get(node0.tot.Enthalpy)
+        h1_tot = get(node1.tot.Enthalpy)
+        u1 = get(node1.kin.BladeSpeed)
+        work = (h1_tot - h0_tot) / u1**2
+        flow = get(node0.kin.V_mer) / abs(u1)
+
+        # Outlet enthalpy after an isentropic change to the outlet total pressure
+        state = self.fluid.make_state()
+        state.update(cp.PSmass_INPUTS, get(node1.tot.Pressure), get(node0.stc.Entropy))
+        h_is1 = state.hmass()
+        if h1_tot < h0_tot:
+            eta = (h0_tot - h1_tot) / (h0_tot - h_is1)
+        else:
+            eta = (h_is1 - h0_tot) / (h1_tot - h0_tot)
+        return work, flow, eta
 
     def set_geometry(self, values: Mapping[VarSpec, float]):
         """Overwrite boundary conditions in ``kn`` (base units: m, rad)."""
@@ -275,6 +347,38 @@ class RowBackend:
         self.sol_dict = self.ntw.system.sol_to_dict(sol)
         return True
 
+    def solve_ipopt(self) -> bool:
+        """Recover with Ipopt from the last solution. Returns False if it failed."""
+        system = self.ntw.system
+        try:
+            try:
+                # Unbounded
+                rtfn = system.make_rootfinder(
+                    'ipopt',
+                    {'error_on_fail': True, 'ipopt.max_wall_time': SOLVER_WALL_TIME},
+                )
+                sol = solve_root_problem(rtfn, self._sol, self.kn, suppress_output=True)
+            except RuntimeError:
+                # Bounded
+                rtfn = system.make_rootfinder(
+                    'ipopt',
+                    {'error_on_fail': True, 'ipopt.max_wall_time': SOLVER_WALL_TIME},
+                )
+                sol = solve_root_problem(
+                    rtfn, self._sol, self.kn, self.bnd, suppress_output=True
+                )
+        except RuntimeError as err:
+            logger.warning(f'Ipopt did not converge: {err}')
+            return False
+
+        if not np.all(np.isfinite(sol)):
+            logger.warning('Ipopt returned a non-finite solution')
+            return False
+
+        self._sol = sol
+        self.sol_dict = system.sol_to_dict(sol)
+        return True
+
     # === Adding and removing rows
     def next_row_params(self, omega: float | None = None) -> dict[VarSpec, float]:
         """Boundary conditions of a row that would follow the last one.
@@ -283,8 +387,9 @@ class RowBackend:
         the meridional angle, the height and the chord of the last row, and its
         endwalls stay parallel. It turns at ``omega`` (rad/s), or at the speed of the
         last row if none is given. It imposes relative flow angles, whatever
-        the last row does; its outlet relative flow angle is turned
-        by ``FLOW_TURNING`` from the relative flow angle leaving the last row.
+        the last row does; its outlet relative flow angle is turned by
+        ``FLOW_TURNING`` from the relative flow angle leaving the last row, added or
+        subtracted, whichever gives the smaller absolute angle.
         """
         _, last = self.row_nodes(self.num_rows - 1)
         get = self.get_value
@@ -294,6 +399,11 @@ class RowBackend:
         # centers, is half the height of the station lines
         chord = 0.5 * height
         angle_in = get(last.kin.FlowAngleRel)
+        # Add or subtract the turning, whichever leaves the smaller absolute angle
+        angle_out = min(
+            (angle_in + FLOW_TURNING, angle_in - FLOW_TURNING),
+            key=lambda value: abs(value),
+        )
         return {
             n1.geo.MeridionalAngle: angle,
             n1.geo.Height: height,
@@ -305,7 +415,7 @@ class RowBackend:
             n1.geo.Rmid: get(last.geo.Rmid) - chord * math.sin(angle),
             n1.geo.Chord: chord,
             n1.geo.NumBlades: get(last.geo.NumBlades),
-            n1.kin.FlowAngleRel: angle_in + FLOW_TURNING,
+            n1.kin.FlowAngleRel: angle_out,
             n1.kin.Omega: get(last.kin.Omega) if omega is None else omega,
         }
 
@@ -353,6 +463,194 @@ class RowBackend:
             }
             for index, row_params in enumerate(self.row_params)
         ]
+
+    @staticmethod
+    def _spec_code(spec: VarSpec) -> str:
+        """Source code of a spec of node 0 or 1, like ``n1.geo.Rmid``."""
+        node = (n0, n1)[spec.node]
+        for container in ('kin', 'geo', 'ndim', 'oth', 'tot', 'stc', 'rlt'):
+            instance = getattr(node, container)
+            for name in dir(type(instance)):
+                if isinstance(getattr(type(instance), name), VarSpec) and (
+                    getattr(instance, name) == spec
+                ):
+                    return f'n{spec.node}.{container}.{name}'
+        raise ValueError(f'No source name for {spec}')
+
+    @staticmethod
+    def _spec_from_code(key: str) -> VarSpec:
+        """Inverse of ``_spec_code``: ``'n1.geo.Rmid'`` to its spec."""
+        node, container, name = key.split('.')
+        return getattr(getattr(NodeVariables(int(node[1:])), container), name)
+
+    def save_solution(self, path: Path):
+        """Pickle the converged solution (values by spec), the guess of a rebuild."""
+        with open(path, 'wb') as file:
+            pickle.dump(self.sol_dict, file)
+
+    def to_toml(self, solution_file: str | None = None) -> str:
+        """The current setup as TOML: fluid, inlet conditions and the rows.
+
+        It holds the same data as ``export_script``; ``from_toml`` rebuilds it. With
+        ``solution_file``, a ``[solution]`` section names the pickled solution (see
+        ``save_solution``) that ``from_toml`` starts from, relative to the TOML file.
+        """
+        code = self._spec_code
+        setup = {
+            'fluid': asdict(self.fluid),
+            'inlet': {
+                code(spec): self.get_value(spec) for spec in self.inlet_conditions
+            },
+            'rows': [
+                {code(spec): value for spec, value in params.items()}
+                for params in self._current_row_params()
+            ],
+        }
+        if solution_file is not None:
+            setup['solution'] = {'file': solution_file}
+        return tomli_w.dumps(setup)
+
+    @classmethod
+    def from_toml(cls, text: str, base_dir: Path = Path('.')) -> 'RowBackend':
+        """Build and solve the chain described by TOML written by ``to_toml``.
+
+        The pickled solution of the ``[solution]`` section, if any, is the initial
+        guess; its file is relative to ``base_dir``.
+        """
+        setup = tomllib.loads(text)
+        spec = cls._spec_from_code
+        guess = None
+        if 'solution' in setup:
+            with open(base_dir / setup['solution']['file'], 'rb') as file:
+                guess = pickle.load(file)
+        return cls(
+            row_params=[{spec(k): v for k, v in row.items()} for row in setup['rows']],
+            inlet_conditions={spec(k): v for k, v in setup['inlet'].items()},
+            guess=guess,
+            fluid=FluidChoice(**setup['fluid']),
+        )
+
+    def export_script(self, solution_file: str | None = None) -> str:
+        """Python script that builds and solves the chain as it is now.
+
+        The geometry, flow angles, speeds, inlet conditions and fluid are the current
+        ones. It follows ``_build`` and ``_solve_initial``. With ``solution_file``
+        (see ``save_solution``) it starts from that pickled solution, which it looks
+        for next to the script, and otherwise from a generic guess.
+        """
+        code = self._spec_code
+        fluid = self.fluid
+        if fluid.ideal:
+            state = (
+                f'IdealGasState({fluid.gamma!r}, {fluid.gas_constant!r}, '
+                f'{fluid.viscosity!r})'
+            )
+        else:
+            state = f'AbstractState({fluid.backend!r}, {fluid.name!r})'
+
+        def dict_lines(values: Mapping[VarSpec, float], indent: str) -> str:
+            return ''.join(
+                f'{indent}{code(spec)}: {value!r},\n' for spec, value in values.items()
+            )
+
+        inlet = {spec: self.get_value(spec) for spec in self.inlet_conditions}
+        guess_lines = (
+            [
+                '# Converged solution of the GUI, values by variable',
+                f"with open(Path(__file__).parent / {solution_file!r}, 'rb') as file:",
+                '    guess = pickle.load(file)',
+            ]
+            if solution_file is not None
+            else ['guess = {}']
+        )
+        lines = [
+            '"""Blade row chain exported from the ADeT GUI."""',
+            '',
+            'import pickle',
+            'from pathlib import Path',
+            '',
+            'import CoolProp as cp  # noqa: F401',
+            'from CoolProp import AbstractState  # noqa: F401',
+            '',
+            'from adet.assemblers import CasadiSystem',
+            'from adet.components import BladeRow, Inlet',
+            'from adet.components.connections import Shaft',
+            'from adet.components.network import ComponentNetwork',
+            'from adet.fluid.ideal_eos import IdealGasState  # noqa: F401',
+            'from adet.fluid.settings import FluidSettings',
+            'from adet.losses.basic import TotalPressureLoss, ZeroDeviation',
+            'from adet.solution import solve_root_problem',
+            'from adet.variables import NodeVariables',
+            '',
+            'n0 = NodeVariables(0)',
+            'n1 = NodeVariables(1)',
+            '',
+            '# Inlet total conditions',
+            'INLET_CONDITIONS = {',
+            dict_lines(inlet, '    ').rstrip('\n'),
+            '}',
+            '',
+            '# Boundary conditions of each row in its own nodes (n0 inlet, n1 outlet)',
+            'ROW_PARAMS = [',
+        ]
+        for params in self._current_row_params():
+            lines += ['    {', dict_lines(params, '        ').rstrip('\n'), '    },']
+        lines += [
+            ']',
+            '',
+            f'state = {state}',
+            'inlet = Inlet(boundary_conditions=INLET_CONDITIONS)',
+            '',
+            'rows = []',
+            'for index, params in enumerate(ROW_PARAMS):',
+            '    bound_cond = {s: v for s, v in params.items() if s != n1.kin.Omega}',
+            '    row = BladeRow(',
+            "        name=f'row{index}',",
+            '        shaft=Shaft(params[n1.kin.Omega], is_constrained=True),',
+            '        bound_cond=bound_cond,',
+            '        extra_equations={',
+            '            ZeroDeviation(): 0,',
+            '            TotalPressureLoss(0.9): (0, 1),',
+            '        },',
+            '        spanwise_constants=[n1.geo.ChordAx],',
+            '    )',
+            '    if index == 0:',
+            '        row.set_spanwise_constant(n0.kin.V_mer, n0.geo.HDistr)',
+            '    rows.append(row)',
+            '',
+            'ntw = ComponentNetwork(',
+            '    fluid_settings=FluidSettings(',
+            '        fluid_state=state,',
+            '        update_variables=(n0.stc.Pressure, n0.stc.Temperature),',
+            '    ),',
+            '    inlet=inlet,',
+            '    backend=CasadiSystem(num_span=1),',
+            '    components=rows,',
+            ')',
+            'ntw.build()',
+            '',
+            'system = ntw.system',
+            *guess_lines,
+            'x0 = system.get_guess(guess, fallback=0.8)',
+            'kn = system.get_boundary_conds()',
+            'rootfinder = system.make_rootfinder(',
+            "    'ipopt', {'error_on_fail': True, 'ipopt.max_wall_time': 5.0}",
+            ')',
+            'sol = solve_root_problem(rootfinder, x0, kn, suppress_output=True)',
+            "rootfinder = system.make_rootfinder('newton', {'max_iter': 25})",
+            'sol = solve_root_problem(rootfinder, sol, kn, suppress_output=True)',
+            'sol_dict = system.sol_to_dict(sol)',
+            '',
+            'if __name__ == "__main__":',
+            '    for index in range(len(rows)):',
+            '        node_in, node_out = NodeVariables(2 * index), NodeVariables(2 * index + 1)',
+            '        print(',
+            "            f'row {index}: Vm = {sol_dict[node_out.kin.V_mer][0]:.2f} m/s, '",
+            "            f'Pt out = {sol_dict[node_out.tot.Pressure][0]:.1f} Pa'",
+            '        )',
+            '',
+        ]
+        return '\n'.join(lines)
 
     def set_fluid(self, fluid: FluidChoice):
         """Change the working fluid and solve the chain again from the current one.

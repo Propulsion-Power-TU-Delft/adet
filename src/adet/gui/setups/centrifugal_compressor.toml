@@ -1,0 +1,37 @@
+[fluid]
+ideal = true
+gamma = 1.4
+gas_constant = 287.0
+viscosity = 2e-05
+name = "Air"
+backend = "HEOS"
+
+[inlet]
+"n0.oth.TotMassFlow" = 50.0
+"n0.tot.Pressure" = 1000000.0
+"n0.tot.Temperature" = 500.0
+
+[[rows]]
+"n0.geo.Rmid" = 0.15058410625743693
+"n0.geo.Height" = 0.15374810974571146
+"n0.geo.MeridionalAngle" = 0.0
+"n1.geo.MeridionalAngle" = 1.5707963267948966
+"n1.geo.Height" = 0.022321976778238935
+"n1.geo.Rmid" = 0.4191600845342942
+"n1.geo.Chord" = 0.2949630454932621
+"n1.geo.NumBlades" = 40.0
+"n0.kin.FlowAngleAbs" = 0.0
+"n1.kin.FlowAngleRel" = -0.5235987755982988
+"n1.kin.Omega" = 1150.0
+
+[[rows]]
+"n1.geo.MeridionalAngle" = 1.5707963267948966
+"n1.geo.Height" = 0.022321976778238935
+"n1.geo.Rmid" = 0.5180229076977626
+"n1.geo.Chord" = 0.08886282316346848
+"n1.geo.NumBlades" = 40.0
+"n1.kin.FlowAngleRel" = 0.6749056258003521
+"n1.kin.Omega" = 0.0
+
+[solution]
+file = "centrifugal_compressor_solution.pkl"
