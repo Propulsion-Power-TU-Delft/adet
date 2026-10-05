@@ -1310,7 +1310,7 @@ class BladeRowView:
         start = DraggablePoint(start_x, start_y)
         end = DraggablePoint(start_x + camber_chord, end_y)
         control = DraggablePoint(start_x + half_dx, control_y)
-        self.parabola = ParabolicLine(start, control, end, show_control_polygon=True)
+        self.parabola = ParabolicLine(start, control, end)
         for item in (start, end, control, self.parabola):
             parabola_scene.addItem(item)
         self.camber_points = (start, control, end)
@@ -1319,9 +1319,10 @@ class BladeRowView:
             # The leading edge stays at the height of the previous trailing edge
             self.camber_alignment = AlignedPoints(previous.camber_points[2], start, 'x')
         # The camber line is a result of the solution (``sync_camber``), so none of
-        # its points is draggable
+        # its points is draggable: only the line is shown
         for point in self.camber_points:
             point.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, False)
+            point.setVisible(False)
 
         # Angle counters next to the first and last point of the parabola
         self.inlet_label = AngleLabel(
@@ -1463,6 +1464,9 @@ class BladeRowView:
         ]
         if self.profile.gap_follower is not None:
             owners.append(self.profile.gap_follower)
+        root = self.profile.root
+        if self.profile in root.chained:
+            root.chained.remove(self.profile)
         shared = self.previous.profile
         for point in (shared.center2, shared.line2.end1, shared.line2.end2):
             for owner in owners:
@@ -1959,11 +1963,8 @@ class MainGuiView(QWidget):
         self._fit_triangle_area()
         if len(self.rows) <= MAX_VISIBLE_ROWS:
             self.resize(self.width() + TRIANGLE_COLUMN_WIDTH, self.height())
-        # The solve, the new widgets and the window resize all happen before this
-        # point; let them settle, so the fit animation does not start with a stall
         QApplication.processEvents()
         self.profile_view._update_extent()
-        self.fit_views(horizontal_only=True)
         self._remember_converged()
         self.status_label.setText(f'Row {len(self.rows)} added and converged')
 

@@ -1141,8 +1141,13 @@ class MeridionalProfile:
         # Dragging the first center translates the whole profile vertically; a shared
         # station is moved on its own
         self._last_center1_y = self.center1.pos().y()
+        # The profiles that slide along with the first one (all later rows)
+        self.root: MeridionalProfile = self if previous is None else previous.root
+        self.chained: list[MeridionalProfile] = []
         if previous is None:
             self.center1.add_dependent(self)
+        else:
+            self.root.chained.append(self)
 
     def _snap_center2(self, value: QPointF) -> QPointF:
         """Snap the dragged second center vertically to the first line.
@@ -1280,17 +1285,19 @@ class MeridionalProfile:
             item.update()
 
     def _on_point_moved(self):
-        """Translate the second line by the vertical displacement of the first center.
+        """Translate all rows by the vertical displacement of the first center.
 
         The first line follows its own center; the second center drags its
         endpoints, and the constraints and splines update through their dependencies.
+        The profiles of the later rows slide along, so the whole machine moves.
         """
         dy = self.center1.pos().y() - self._last_center1_y
         if dy == 0:
             return
         self._last_center1_y += dy
-        pos = self.center2.pos()
-        self.center2.setPos(pos.x(), pos.y() + dy)
+        for profile in (self, *self.chained):
+            pos = profile.center2.pos()
+            profile.center2.setPos(pos.x(), pos.y() + dy)
 
     @property
     def perpendiculars(self) -> tuple[PerpendicularPoints, ...]:
