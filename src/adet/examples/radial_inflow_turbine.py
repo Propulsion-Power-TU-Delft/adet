@@ -302,10 +302,7 @@ x0 = ntw.system.get_guess(
         # GammaPV/PBase guesses: their generic defaults are far enough off
         # for this dense organic fluid to push early IPOPT iterates into
         # an out-of-range CoolProp query.
-        n0.oth.GammaPV: 1.05,
-        n1.oth.GammaPV: 1.05,
-        n6.oth.GammaPV: 1.05,
-        n7.oth.GammaPV: 1.05,
+        n0.oth.GammaPV.Glob: 1.05,
         n1.oth.PBase: 0.032e5,
         n7.oth.PBase: 0.38e5,
     },

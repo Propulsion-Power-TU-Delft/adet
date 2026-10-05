@@ -245,7 +245,13 @@ def baumgartner_mixing_zeta(
     incompressible ``Cpb = (p_base - p) / q`` used by
     :func:`incomp_mixing_zeta` with ``q = 0.5 * gamma_pv * p * Mach**2``.
     """
-    mach_capped = safe_min_clip(safe_min(rel_mach0, 1.0), 0.05)
+
+    # TODO:
+    # 1. Remove duplicate clipping -> See equation class below
+    # 2. Check the theory/reason behind this clipping
+
+    # mach_capped = safe_min_clip(safe_min(rel_mach0, 1.0), 0.05)
+    mach_capped = minmax_bound(rel_mach0, 0.05, 1.0)
     thick_by_pitch0 = geo_bld_thick0 / geo_pitch0
     cpb = (
         2
@@ -394,6 +400,9 @@ class DentonBaumgartnerMixingLoss(LossModel):
         s0: n0.stc.Entropy.Hint,
         ds_mixing0: n0.loss.Ds_mixing.Hint,
     ):
+        # TODO:
+        # 1. Remove duplicate clipping
+        # 2. Check the theory/reason behind this clipping
         mach_capped = safe_min_clip(safe_min(rel_mach0, 1.0), 0.05)
         dyn_press = 0.5 * gamma0 * p0 * mach_capped**2  # Compressible dynamic head
 

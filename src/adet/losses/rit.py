@@ -2,7 +2,7 @@ import CoolProp as cp
 import numpy as np
 
 from adet.equations.base_equation import DeviationModel, EquationConfig
-from adet.equations.utils import safe_abs, safe_if_else, safe_max, safe_min_clip
+from adet.equations.utils import safe_abs, safe_if_else, safe_max
 from adet.losses.base_loss import LossModel
 from adet.variables import NodeVariables, ThermoVariables, VarSpec
 
@@ -286,6 +286,10 @@ class EndwallLoss(LossModel):
         ds_ew4: _ds_ew4.Hint,
         Ds_endwall1: n1.loss.Ds_endwall.Hint,
     ):
+        # NOTE: The number of stations influence the number of residuals
+        # we might be able to make this flexible (also the arguments would need
+        # to change
+
         n_stations = self.N_STATIONS
         t_values = [i / n_stations for i in range(n_stations + 1)]
 
@@ -429,7 +433,7 @@ class ImpellerPassageLoss(LossModel):
         s0: n0.stc.Entropy.Hint,
         p1: n1.stc.Pressure.Hint,
         h1_is: n1.oth.Enthalpy_Is.Hint,
-        Ds_prof1: n1.loss.Ds_profile.Hint,
+        ds_prof1: n1.loss.Ds_profile.Hint,
     ):
         # Blade chord along the mean camber line, from the axial chord
         mean_tan_beta = (np.tan(beta2g) + np.tan(beta3g)) / 2
@@ -444,15 +448,15 @@ class ImpellerPassageLoss(LossModel):
 
         loading_term = 0.68 * (1 - (r3m / r2m) ** 2) * np.cos(beta3g) / h3 * chord
 
-        Deltah_base = 0.1 * (hyd_len / hyd_diam + loading_term) * 0.5 * (w0**2 + w1**2)
+        deltah_base = 0.1 * (hyd_len / hyd_diam + loading_term) * 0.5 * (w0**2 + w1**2)
 
         # Higher loss coefficient for a shallow (mostly axial) exducer
-        Deltah = safe_if_else((r2m - r3s) / h3 >= 0.2, Deltah_base, 2 * Deltah_base)
+        deltah = safe_if_else((r2m - r3s) / h3 >= 0.2, deltah_base, 2 * deltah_base)
 
-        h1_lss = h1_is + Deltah
+        h1_lss = h1_is + deltah
         s1_profile = self.eos(h1_lss, p1)
 
-        return Ds_prof1 - (s1_profile - s0)
+        return ds_prof1 - (s1_profile - s0)
 
 
 class ImpellerLeakageLoss(LossModel):
@@ -508,7 +512,7 @@ class ImpellerLeakageLoss(LossModel):
         # from the converged solution, e.g. during the solver's initial
         # iterations): floor it away from 0 to keep its derivative bounded,
         # since d(sqrt(x))/dx diverges as x -> 0
-        cross_term_sq = safe_min_clip(safe_abs(gx_H * h2 * Cx * gr_H * h3 * Cr), 1e-9)
+        cross_term_sq = safe_max(gx_H * h2 * Cx * gr_H * h3 * Cr, 1e-9 / vm0**2)
 
         # Clearance loss coefficient (corrected from [Ref 8]: u0 ** 5 -->
         # u0 ** 3 to obtain a dimensionally correct coefficient)

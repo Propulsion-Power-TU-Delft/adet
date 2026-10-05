@@ -26,7 +26,7 @@ from adet.components.blade_row import RowGeometry
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.definitions import EffectiveBladeNumber
-from adet.equations.geometrical import MerChordByOutRadius
+from adet.equations.geometrical import LaxByOutRadius
 from adet.equations.nondimensional import (
     SwallowingCapacity,
     TotalTotalCompressionEfficiency,
@@ -118,7 +118,7 @@ rotor = BladeRow(
         n0.geo.ShapeCoeff: 0.9,
         n0.ndim.SwallowingCap: 0.05,
         n1.ndim.WorkCoeff: 0.5,
-        n1.ndim.MerChordOutRadRatio: 0.7,
+        n1.ndim.LaxByOutRadius: 0.7,
         n1.tot.Pressure: Quantity(2.025, 'bar'),
         # *** Loss parameters
         n1.oth.BlLoadingCoeff: 0.75,
@@ -128,7 +128,7 @@ rotor = BladeRow(
     },
     extra_equations={
         # *** Design parameters
-        MerChordByOutRadius(): 1,
+        LaxByOutRadius(): 1,
         SwallowingCapacity(): (0, 1),
         WorkCoefficient(): (0, 1),
         CompressorShapeFactor(): 0,
