@@ -178,7 +178,7 @@ class HydraulicQuantities(EquationBase):
         rtip0: n0.geo.Rtip.Hint,
         rhub0: n0.geo.Rhub.Hint,
         hgt1: n1.geo.Height.Hint,
-        chord_ax1: n1.geo.ChordAx.Hint,
+        mer_chord1: n1.geo.MerChord.Hint,
         metal_hub0: n0.geo.MetalAngleHub.Hint,
         metal_tip0: n0.geo.MetalAngleTip.Hint,
         metal_ang1: n1.geo.MetalAngle.Hint,
@@ -189,7 +189,7 @@ class HydraulicQuantities(EquationBase):
         hyd_L = (
             np.pi
             / 8
-            * (2 * rr1 - (rtip0 - rhub0) - hgt1 + 2 * chord_ax1)
+            * (2 * rr1 - (rtip0 - rhub0) - hgt1 + 2 * mer_chord1)
             * (4 / ((np.cos(metal_tip0) + np.cos(metal_hub0)) + 2 * np.cos(metal_ang1)))
         )
 

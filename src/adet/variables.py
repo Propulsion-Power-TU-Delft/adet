@@ -92,7 +92,8 @@ class GeometricVariables(VariableEnum):
     Height = VarSpec('height', 'm', 0.1, bounds=(0.0, 1e2), scalar=True)
     CumArea = VarSpec('cum_area', 'm**2', 0.3, scalar=True)
     EffArea = VarSpec('area_eff', 'm**2', 0.1)
-    ChordAx = VarSpec('chord_ax', 'm', 0.1)
+    MerChord = VarSpec('mer_chord', 'm', 0.1)
+    AxialLength = VarSpec('axial_len', 'm', 0.1)
     Stagger = VarSpec('stag_angle', 'rad', 0.1)
     BldThick = VarSpec('bld_thick', 'm', 0.005)
     Solidity = VarSpec('solidity', '', 1.0)
@@ -128,6 +129,7 @@ class GeometricVariables(VariableEnum):
 
 class Nondimensional(VariableEnum):
     EtaTT = VarSpec('eta_tt', '', 0.9)
+    EtaTS = VarSpec('eta_ts', '', 0.85)
     PRatio = VarSpec('pRatio', '')
     PRatio_choke = VarSpec('pRatio_chk', '')
     VmRatio = VarSpec('VmRatio', '', 1.0)
@@ -145,7 +147,7 @@ class Nondimensional(VariableEnum):
     SwallowingCap = VarSpec('swllCap', '')
     SpecificSpeed = VarSpec('specificSpeed', '')
     SizeParameter = VarSpec('sizeParameter', '')
-    ChAxOutRadRatio = VarSpec('chAx_outRad_Ratio', '')
+    LaxByOutRadius = VarSpec('lax_by_outrad', '')
     DegreeOfReaction = VarSpec('reactDegree', '', scalar=True)
     DegreeOfReactionTS = VarSpec('reactDegree_ts', '', scalar=True)
 
@@ -168,6 +170,8 @@ class Losses(VariableEnum):
     Ds_leakage = VarSpec('ds_leakage', 'J / kg / K')
     Ds_mixing = VarSpec('ds_mixing', 'J / kg / K')
     Ds_profile = VarSpec('ds_profile', 'J / kg / K')
+    Ds_endwall = VarSpec('ds_endwall', 'J / kg / K', guess=1.0, bounds=(0.0, 500.0))
+    Ds_incidence = VarSpec('ds_incidence', 'J / kg / K')
     Ds_secondary = VarSpec('ds_secondary', 'J / kg / K')
     Ds_total = VarSpec('ds_total', 'J / kg / K')
     Ds_main = VarSpec('ds_main', 'J / kg / K')

@@ -12,3 +12,9 @@ wheels/
 # Claude code
 .claude*
 CLAUDE.md
+
+# macOS
+.DS_Store
+
+# Generated example outputs (design maps, plots)
+outputs/
