@@ -230,13 +230,16 @@ def _line_geometry(center: QPointF, end: QPointF) -> tuple[float, float]:
     """Height (m) and tilt from the vertical (rad) of a station line."""
     dx = end.x() - center.x()
     dy_up = center.y() - end.y()
-    # Either end can be the upper one; fold the direction into the upper half plane.
-    # A horizontal line (+-90 degrees) is folded to +90 whatever the rounding noise
-    # of the scene coordinates, which would otherwise flip it to -90
-    horizontal = abs(dy_up) <= 1e-9 * max(1.0, abs(dx))
-    if (horizontal and dx < 0) or (not horizontal and dy_up < 0):
+    height = 2 * math.hypot(dx, dy_up) / SCENE_PER_METER
+    # A horizontal line (radial station) keeps the side its end is on: +90 degrees to
+    # the right, -90 to the left. The sign is the flow direction (see ``_line_points``,
+    # the normal is (cos, sin) in the scene), so the rounding noise in y is dropped
+    if abs(dy_up) <= 1e-9 * max(1.0, abs(dx)):
+        return height, math.copysign(math.pi / 2, dx)
+    # Either end can be the upper one; fold the direction into the upper half plane
+    if dy_up < 0:
         dx, dy_up = -dx, -dy_up
-    return 2 * math.hypot(dx, dy_up) / SCENE_PER_METER, math.atan2(dx, dy_up)
+    return height, math.atan2(dx, dy_up)
 
 
 def _make_spin(
@@ -1248,9 +1251,13 @@ class BladeRowView:
             * math.sin(get(self.outlet.geo.MeridionalAngle))
         )
         axial_length = max(axial_length, abs(outlet_half_x - inlet_half_x))
+        # The row extends from its leading edge by the radius change of the solution.
+        # The leading edge of a following row is moved by the visual gap, which the
+        # solution ignores, so the drawn radius is not the solved one
+        drawn_inlet_radius = (RADIUS_ORIGIN_Y - start_y) / SCENE_PER_METER
         center2, end2 = _line_points(
             start_x + axial_length,
-            get(self.outlet.geo.Rmid),
+            drawn_inlet_radius + get(self.outlet.geo.Rmid) - get(self.inlet.geo.Rmid),
             get(self.outlet.geo.Height),
             get(self.outlet.geo.MeridionalAngle),
         )
@@ -1504,6 +1511,22 @@ class BladeRowView:
             self.flow_angles[spec] = angle
             self.on_flow_changed()
 
+    def _solved_outlet_radius(self) -> float:
+        """Radius (m) of the outlet center as the solution sees it.
+
+        The row is as long as it is drawn from its leading edge to its trailing edge,
+        and starts at the outlet radius of the previous row, so the visual gap between
+        the rows does not change the radius.
+        """
+        if self.previous is None:
+            inlet_radius = (RADIUS_ORIGIN_Y - self.profile.center1.pos().y()) / (
+                SCENE_PER_METER
+            )
+        else:
+            inlet_radius = self.previous._solved_outlet_radius()
+        drawn_change = self.profile.center1.pos().y() - self.profile.center2.pos().y()
+        return inlet_radius + drawn_change / SCENE_PER_METER
+
     def drawn_geometry(self) -> dict[VarSpec, float]:
         """Geometry currently drawn, as boundary conditions of the row (m, rad).
 
@@ -1514,7 +1537,7 @@ class BladeRowView:
         center2 = profile.center2.get_position()
         height1, mer_angle1 = _line_geometry(center2, profile.end2.get_position())
         geometry = {
-            self.outlet.geo.Rmid: (RADIUS_ORIGIN_Y - center2.y()) / SCENE_PER_METER,
+            self.outlet.geo.Rmid: self._solved_outlet_radius(),
             self.outlet.geo.Height: height1,
             self.outlet.geo.MeridionalAngle: mer_angle1,
             # The gap lies before center1, so it is not part of the axial length, which

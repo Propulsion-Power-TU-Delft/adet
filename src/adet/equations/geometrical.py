@@ -381,9 +381,9 @@ class MinimalMeridional(MeridionalChannel):
         r_in: n0.geo.Rmid.Hint,
         r_out: n1.geo.Rmid.Hint,
     ):
-        cone_angle = np.arctan(safe_abs((r_in - r_out) / ax_len))
-
-        return mer_chord1 * np.cos(cone_angle) - ax_len
+        # Distance between the centers of the stations. Written without dividing by
+        # the axial length, which is zero for a purely radial row
+        return mer_chord1 - (ax_len**2 + (r_out - r_in) ** 2) ** 0.5
 
 
 class TwoSegmentCamberline(CamberLineGeom):
