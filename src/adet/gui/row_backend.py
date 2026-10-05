@@ -1,7 +1,10 @@
 # === IMPORTS
+import copy
+import importlib
 import logging
 import math
 import pickle
+import re
 import threading
 import tomllib
 from collections.abc import Callable, Mapping, Sequence
@@ -21,10 +24,6 @@ from adet.components.network import ComponentNetwork
 from adet.equations.fundamental import FreeVortexDistribution
 from adet.fluid.ideal_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import (
-    TotalPressureLoss,
-    ZeroDeviation,
-)
 from adet.solution import solve_root_problem
 from adet.tools.loggers import setup_logger
 from adet.variables import NodeVariables, VarSpec
@@ -36,11 +35,14 @@ logger = logging.getLogger(__name__)
 setup_logger(logger)
 
 
+NODE_NAMES = ('inlet', 'outlet')  # TOML names of the nodes n0 and n1 of a row
+CASING = 'casing'  # name of the non-rotating shaft
 SOLVER_WALL_TIME = 2.0  # [s] limit for each of ipopt and kinsol in the initial solve
 
 
 def _run_with_timeout(func: Callable[[], Any], timeout: float) -> Any:
-    """Run ``func`` in a daemon thread; raise ``TimeoutError`` if it outlasts ``timeout``.
+    """Run ``func`` in a daemon thread; raise ``TimeoutError``
+    if it outlasts ``timeout``.
 
     A hung thread cannot be killed, it is only abandoned.
     """
@@ -60,6 +62,53 @@ def _run_with_timeout(func: Callable[[], Any], timeout: float) -> Any:
     if 'error' in result:
         raise result['error']
     return result['value']
+
+
+def _split_equation(path: str) -> tuple[str, str]:
+    """``'losses.basic.ZeroDeviation'`` to the module ``adet.losses.basic`` and the
+    class name ``ZeroDeviation``."""
+    module, _, name = path.rpartition('.')
+    if not module:
+        raise ValueError(
+            f'Equation {path!r} needs its module, like "losses.basic.{path}"'
+        )
+    return f'adet.{module}', name
+
+
+def _eval_equations(equations: Sequence[Mapping[str, Any]]) -> dict[Any, Any]:
+    """Extra equations of a row from TOML-like specs to ``{equation: nodes}``.
+
+    Each spec has ``equation`` (class path inside ``adet``, like
+    ``losses.basic.TotalPressureLoss``), ``position`` (an int or a sequence of
+    nodes) and optionally ``parameters`` (positional list or keyword table).
+    """
+    built = {}
+    for spec in equations:
+        module, name = _split_equation(spec['equation'])
+        try:
+            cls = getattr(importlib.import_module(module), name)
+        except (ImportError, AttributeError):
+            raise ValueError(f'Unknown equation {spec["equation"]!r}') from None
+        params = spec.get('parameters', [])
+        if isinstance(params, Mapping):
+            equation = cls(**params)
+        else:
+            equation = cls(*params)
+        position = spec['position']
+        built[equation] = (
+            tuple(position) if isinstance(position, Sequence) else position
+        )
+    return built
+
+
+def _equation_code(spec: Mapping[str, Any]) -> str:
+    """Source of the key of an extra equation, like ``TotalPressureLoss(0.9)``."""
+    params = spec.get('parameters', [])
+    if isinstance(params, Mapping):
+        args = ', '.join(f'{k}={v!r}' for k, v in params.items())
+    else:
+        args = ', '.join(repr(v) for v in params)
+    return f'{_split_equation(spec["equation"])[1]}({args})'
 
 
 INLET_CONDITIONS: dict[VarSpec, float] = {
@@ -85,6 +134,16 @@ FIRST_ROW_PARAMS: dict[VarSpec, float] = {
     # *** Rotational speed of the row
     n1.kin.Omega: 0.0,
 }
+# Extra equations of a new row: no incidence (the inlet metal angle follows the
+# imposed relative flow angle), no deviation, and a total pressure loss
+DEFAULT_EXTRA_EQUATIONS: list[dict[str, Any]] = [
+    {'equation': 'losses.basic.ZeroDeviation', 'position': 0},
+    {
+        'equation': 'losses.basic.TotalPressureLoss',
+        'position': [0, 1],
+        'parameters': [0.9],
+    },
+]
 FLOW_TURNING = math.radians(
     10
 )  # magnitude of the change in relative flow angle across an added row
@@ -127,11 +186,20 @@ class RowBackend:
         inlet_conditions: Mapping[VarSpec, float] | None = None,
         guess: Mapping[VarSpec, NDArray] | None = None,
         fluid: FluidChoice | None = None,
+        extra_equations: Sequence[Sequence[Mapping[str, Any]]] | None = None,
     ):
         # Boundary conditions of each row, with the specs of the row's own nodes
         # (n0 = inlet, n1 = outlet) and values in base units. A row imposes either its
         # relative or its absolute flow angles, whichever specs it holds
         self.row_params = [dict(p) for p in row_params or [FIRST_ROW_PARAMS]]
+        # Extra equations of each row as a list of {equation, position, parameters}
+        # (the TOML form), padded with the defaults or cut to the number of rows
+        extra = [[dict(s) for s in e] for e in extra_equations or []]
+        extra += [
+            copy.deepcopy(DEFAULT_EXTRA_EQUATIONS)
+            for _ in range(len(self.row_params) - len(extra))
+        ]
+        self.extra_equations = extra[: len(self.row_params)]
         self.inlet_conditions = dict(inlet_conditions or INLET_CONDITIONS)
         # Values by spec (not by position) used as the initial guess where available
         self._guess: Mapping[VarSpec, NDArray] = guess or {}
@@ -191,13 +259,7 @@ class RowBackend:
                 name=f'row{index}',
                 shaft=Shaft(params[n1.kin.Omega], is_constrained=True),
                 bound_cond=bound_cond,
-                extra_equations={
-                    # No incidence: the inlet metal angle follows the flow, which the
-                    # imposed relative flow angles set. No deviation either (base)
-                    ZeroDeviation(): 0,
-                    TotalPressureLoss(0.9): (0, 1),  # Loss coefficient
-                    # ModifiedZweifel(): (0, 1),
-                },
+                extra_equations=_eval_equations(self.extra_equations[index]),
                 spanwise_constants=[n1.geo.ChordAx],
             )
             if index == 0:
@@ -427,6 +489,7 @@ class RowBackend:
         solved, the error is raised and this backend stays as it was.
         """
         self._rebuild([*self._current_row_params(), dict(params)])
+        # Constructor pads the new row with no extra equations
 
     def remove_last_row(self):
         """Drop the last row and solve the shorter chain from scratch.
@@ -481,7 +544,55 @@ class RowBackend:
     def _spec_from_code(key: str) -> VarSpec:
         """Inverse of ``_spec_code``: ``'n1.geo.Rmid'`` to its spec."""
         node, container, name = key.split('.')
-        return getattr(getattr(NodeVariables(int(node[1:])), container), name)
+        try:
+            return getattr(getattr(NodeVariables(int(node[1:])), container), name)
+        except AttributeError:
+            raise ValueError(f'Unknown variable {key!r} in the TOML') from None
+
+    @classmethod
+    def _nest(cls, values: Mapping[VarSpec, float]) -> dict[str, Any]:
+        """Values by spec as ``{node: {container: {name: value}}}``, for TOML tables."""
+        nested: dict[str, Any] = {}
+        for spec, value in values.items():
+            node, container, name = cls._spec_code(spec).split('.')
+            node = NODE_NAMES[int(node[1:])]
+            nested.setdefault(node, {}).setdefault(container, {})[name] = value
+        return nested
+
+    @staticmethod
+    def _node_index(name: str) -> int:
+        if name not in NODE_NAMES:
+            raise ValueError(f'Unknown node {name!r} in the TOML, use {NODE_NAMES}')
+        return NODE_NAMES.index(name)
+
+    @classmethod
+    def _unnest(cls, nested: Mapping[str, Any]) -> dict[VarSpec, float]:
+        """Inverse of ``_nest``."""
+        return {
+            cls._spec_from_code(f'n{cls._node_index(node)}.{container}.{name}'): value
+            for node, containers in nested.items()
+            for container, names in containers.items()
+            for name, value in names.items()
+        }
+
+    def _shaft_groups(
+        self, rows: Sequence[Mapping[VarSpec, float]]
+    ) -> tuple[dict[str, float], list[str]]:
+        """Shafts of the rows: speed by shaft name, and the shaft name of each row.
+
+        Rows that do not turn sit on the casing, rows with the same speed share a
+        shaft, named ``shaft0``, ``shaft1``... in order of appearance.
+        """
+        shafts = {CASING: 0.0}
+        names = []
+        for params in rows:
+            omega = params[n1.kin.Omega]
+            name = next((n for n, value in shafts.items() if value == omega), None)
+            if name is None:
+                name = f'shaft{len(shafts) - 1}'
+                shafts[name] = omega
+            names.append(name)
+        return shafts, names
 
     def save_solution(self, path: Path):
         """Pickle the converged solution (values by spec), the guess of a rebuild."""
@@ -495,20 +606,45 @@ class RowBackend:
         ``solution_file``, a ``[solution]`` section names the pickled solution (see
         ``save_solution``) that ``from_toml`` starts from, relative to the TOML file.
         """
-        code = self._spec_code
+        rows = self._current_row_params()
+        shafts, row_shafts = self._shaft_groups(rows)
         setup = {
             'fluid': asdict(self.fluid),
-            'inlet': {
-                code(spec): self.get_value(spec) for spec in self.inlet_conditions
+            # The inlet conditions are all at the inlet node, so it is left implicit
+            'inlet': self._nest(
+                {spec: self.get_value(spec) for spec in self.inlet_conditions}
+            )[NODE_NAMES[0]],
+            # Written as [shaft.casing], [shaft.shaft0]...; the rows refer to them
+            'shaft': {
+                name: {'Omega': omega, 'fixed': True} for name, omega in shafts.items()
             },
-            'rows': [
-                {code(spec): value for spec, value in params.items()}
-                for params in self._current_row_params()
+            # Written as [[row]] with sub-tables like [row.outlet.kin]. The speed of
+            # the row is that of its shaft
+            'row': [
+                {
+                    'shaft': shaft,
+                    # Written as [[row.extra_equations]] with equation, position
+                    # and optionally parameters
+                    'extra_equations': extra,
+                    **self._nest(
+                        {s: v for s, v in params.items() if s != n1.kin.Omega}
+                    ),
+                }
+                for shaft, params, extra in zip(row_shafts, rows, self.extra_equations)
             ],
         }
         if solution_file is not None:
             setup['solution'] = {'file': solution_file}
-        return tomli_w.dumps(setup)
+        text = tomli_w.dumps(setup)
+        # tomli_w writes every array one item per line with a trailing comma, which
+        # TOML formatters keep split; short lists like [0, 1] are put back inline
+        return re.sub(
+            r'\[\n((?:[ \t]+[^\[\]\n]+,\n)+)\]',
+            lambda m: '['
+            + ', '.join(v.strip().rstrip(',') for v in m[1].split('\n')[:-1])
+            + ']',
+            text,
+        )
 
     @classmethod
     def from_toml(cls, text: str, base_dir: Path = Path('.')) -> 'RowBackend':
@@ -518,16 +654,31 @@ class RowBackend:
         guess; its file is relative to ``base_dir``.
         """
         setup = tomllib.loads(text)
-        spec = cls._spec_from_code
         guess = None
         if 'solution' in setup:
             with open(base_dir / setup['solution']['file'], 'rb') as file:
                 guess = pickle.load(file)
+        shafts = setup['shaft']
+        row_params = []
+        extra_equations = []
+        for index, row in enumerate(setup['row']):
+            row = dict(row)
+            # A row without the key has no extra equations (not the defaults)
+            extra_equations.append(row.pop('extra_equations', []))
+            name = row.pop('shaft', CASING)
+            if name not in shafts:
+                raise ValueError(f'Row {index} is on unknown shaft {name!r}')
+            if not shafts[name].get('fixed', True):
+                raise ValueError(f'Shaft {name!r}: only fixed speeds are supported')
+            params = cls._unnest(row)
+            params[n1.kin.Omega] = shafts[name]['Omega']
+            row_params.append(params)
         return cls(
-            row_params=[{spec(k): v for k, v in row.items()} for row in setup['rows']],
-            inlet_conditions={spec(k): v for k, v in setup['inlet'].items()},
+            row_params=row_params,
+            inlet_conditions=cls._unnest({NODE_NAMES[0]: setup['inlet']}),
             guess=guess,
             fluid=FluidChoice(**setup['fluid']),
+            extra_equations=extra_equations,
         )
 
     def export_script(self, solution_file: str | None = None) -> str:
@@ -538,7 +689,11 @@ class RowBackend:
         (see ``save_solution``) it starts from that pickled solution, which it looks
         for next to the script, and otherwise from a generic guess.
         """
-        code = self._spec_code
+
+        def code(spec: VarSpec) -> str:
+            node, rest = self._spec_code(spec).split('.', 1)
+            return f'{("inlet", "outlet")[spec.node]}.{rest}'
+
         fluid = self.fluid
         if fluid.ideal:
             state = (
@@ -554,6 +709,21 @@ class RowBackend:
             )
 
         inlet = {spec: self.get_value(spec) for spec in self.inlet_conditions}
+        current = self._current_row_params()
+        shafts, row_shafts = self._shaft_groups(current)
+        rows = [
+            {s: v for s, v in params.items() if s != n1.kin.Omega} for params in current
+        ]
+        # One import per module, with the classes of all the rows
+        by_module: dict[str, set[str]] = {}
+        for extra in self.extra_equations:
+            for spec in extra:
+                module, name = _split_equation(spec['equation'])
+                by_module.setdefault(module, set()).add(name)
+        equation_imports = [
+            f'from {module} import {", ".join(sorted(names))}'
+            for module, names in sorted(by_module.items())
+        ]
         guess_lines = (
             [
                 '# Converged solution of the GUI, values by variable',
@@ -566,6 +736,7 @@ class RowBackend:
         lines = [
             '"""Blade row chain exported from the ADeT GUI."""',
             '',
+            'import logging',
             'import pickle',
             'from pathlib import Path',
             '',
@@ -576,54 +747,81 @@ class RowBackend:
             'from adet.components import BladeRow, Inlet',
             'from adet.components.connections import Shaft',
             'from adet.components.network import ComponentNetwork',
+            'from adet.equations import EquationBase',
             'from adet.fluid.ideal_eos import IdealGasState  # noqa: F401',
             'from adet.fluid.settings import FluidSettings',
-            'from adet.losses.basic import TotalPressureLoss, ZeroDeviation',
+            *equation_imports,
             'from adet.solution import solve_root_problem',
+            'from adet.tools.loggers import setup_logger',
             'from adet.variables import NodeVariables',
             '',
-            'n0 = NodeVariables(0)',
-            'n1 = NodeVariables(1)',
+            'logger = logging.getLogger(__name__)',
+            'setup_logger(logger)',
+            '',
+            'inlet = NodeVariables(0)',
+            'outlet = NodeVariables(1)',
             '',
             '# Inlet total conditions',
             'INLET_CONDITIONS = {',
             dict_lines(inlet, '    ').rstrip('\n'),
             '}',
             '',
-            '# Boundary conditions of each row in its own nodes (n0 inlet, n1 outlet)',
+            '# Shafts: rotational speed [rad/s] and whether it is imposed',
+            'SHAFTS = {',
+            *(f'    {name!r}: ({omega!r}, True),' for name, omega in shafts.items()),
+            '}',
+            '',
+            '# Shaft of each row',
+            f'ROW_SHAFTS = {row_shafts!r}',
+            '',
+            '# Boundary conditions of each row in its own nodes (inlet inlet, outlet outlet)',
             'ROW_PARAMS = [',
         ]
-        for params in self._current_row_params():
+        for params in rows:
             lines += ['    {', dict_lines(params, '        ').rstrip('\n'), '    },']
         lines += [
             ']',
             '',
-            f'state = {state}',
-            'inlet = Inlet(boundary_conditions=INLET_CONDITIONS)',
+            '# Extra equations of each row, {Equation(): nodes}',
+            'ROW_EXTRA_EQUATIONS: list[dict[EquationBase, int | tuple[int, ...]]] = [',
+            *(
+                '    {'
+                + ', '.join(
+                    f'{_equation_code(spec)}: '
+                    f'{tuple(spec["position"]) if isinstance(spec["position"], Sequence) else spec["position"]!r}'
+                    for spec in extra
+                )
+                + '},'
+                for extra in self.extra_equations
+            ),
+            ']',
             '',
+            f'state = {state}',
+            'inlet_comp = Inlet(boundary_conditions=INLET_CONDITIONS)',
+            '',
+            'shafts = {',
+            '    name: Shaft(omega, is_constrained=fixed)',
+            '    for name, (omega, fixed) in SHAFTS.items()',
+            '}',
             'rows = []',
             'for index, params in enumerate(ROW_PARAMS):',
-            '    bound_cond = {s: v for s, v in params.items() if s != n1.kin.Omega}',
             '    row = BladeRow(',
             "        name=f'row{index}',",
-            '        shaft=Shaft(params[n1.kin.Omega], is_constrained=True),',
-            '        bound_cond=bound_cond,',
-            '        extra_equations={',
-            '            ZeroDeviation(): 0,',
-            '            TotalPressureLoss(0.9): (0, 1),',
-            '        },',
-            '        spanwise_constants=[n1.geo.ChordAx],',
+            '        shaft=shafts[ROW_SHAFTS[index]],',
+            '        bound_cond=params,',
+            '        extra_equations=ROW_EXTRA_EQUATIONS[index],',
+            '        spanwise_constants=[outlet.geo.ChordAx],',
             '    )',
             '    if index == 0:',
-            '        row.set_spanwise_constant(n0.kin.V_mer, n0.geo.HDistr)',
+            '        row.set_spanwise_constant(inlet.kin.V_mer, inlet.geo.HDistr)',
             '    rows.append(row)',
             '',
             'ntw = ComponentNetwork(',
             '    fluid_settings=FluidSettings(',
             '        fluid_state=state,',
-            '        update_variables=(n0.stc.Pressure, n0.stc.Temperature),',
+            '        update_variables=(inlet.stc.Pressure, inlet.stc.Temperature),',
             '    ),',
-            '    inlet=inlet,',
+            '    inlet=inlet_comp,',
             '    backend=CasadiSystem(num_span=1),',
             '    components=rows,',
             ')',
@@ -670,7 +868,11 @@ class RowBackend:
         # The positions of the knowns and of the free variables change with the nodes,
         # so the converged solution goes in by spec as the initial guess
         new = RowBackend(
-            rows, inlet_conditions, guess=self.sol_dict, fluid=fluid or self.fluid
+            rows,
+            inlet_conditions,
+            guess=self.sol_dict,
+            fluid=fluid or self.fluid,
+            extra_equations=self.extra_equations,
         )
         # Only reached when the new network solved, so nothing is half updated
         self.__dict__.update(new.__dict__)
