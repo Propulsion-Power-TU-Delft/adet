@@ -81,6 +81,53 @@ class BackstromSlip(DeviationModel):
         return r1, r2, r3
 
 
+class QiuSlip(DeviationModel):
+    """
+    Qiu et al. (2011) - Analysis and Validation of a Unified Slip Factor Model
+    for Impellers at Design and Off-Design Conditions.
+
+    Simplified form for a radial impeller outlet, with the blade turning and
+    passage width variation are neglected. The pitch is evaluated at the impeller
+    exit.
+
+    - shape: F-factor, Eq. (6)
+    - r1: simplified radial slip-factor residual, Eq. (8), retaining only
+        the radial term in Eq. (10a)
+    - slip_velocity: American slip-factor definition
+    - r2: exit velocity-triangle closure
+    """
+
+    def residual(
+        self,
+        slip1: n1.oth.SlipFactor.Hint,
+        metal_ang1: n1.geo.MetalAngle.Hint,
+        n_bl_eff1: n1.geo.NumBladesEff.Hint,
+        bld_thick1: n1.geo.BldThick.Hint,
+        pitch0: n0.geo.Pitch.Hint,
+        u1: n1.kin.BladeSpeed.Hint,
+        wm1: n1.kin.W_mer.Hint,
+        wt1: n1.kin.W_tan.Hint,
+    ):
+        shape = (
+            1
+            - 2
+            * np.sin(np.pi / n_bl_eff1)
+            * np.sin(np.pi / n_bl_eff1 + metal_ang1)
+            * np.cos(metal_ang1)
+            - bld_thick1 / (pitch0 * np.cos(metal_ang1))
+        )
+
+        r1 = slip1 - (1 - shape * np.pi * np.cos(metal_ang1) / n_bl_eff1)
+
+        slip_velocity = u1 * (1 - slip1)
+
+        wt_noslip = wm1 * np.tan(metal_ang1)
+
+        r2 = wt1 - (wt_noslip - slip_velocity)
+
+        return r1, r2
+
+
 class BladeLoadingCoppage(LossModel):
     def residual(
         self,
@@ -493,7 +540,7 @@ class AmiranteDiffuserMomentum(EquationBase):
     config = EquationConfig(
         input_pair=cp.PSmass_INPUTS,
         out_properties=(thrm.Enthalpy,),
-        manual_units=('m^2 / s', 'K'),
+        manual_units=("m^2 / s", "K"),
     )
 
     def residual(
@@ -539,7 +586,7 @@ class AmiranteDiffuserMomentum(EquationBase):
 
 class JansenDiffuserLoss(LossModel):
     config = EquationConfig(
-        manual_units=('dimensionless', 'J/kg'),
+        manual_units=("dimensionless", "J/kg"),
     )
 
     def residual(
