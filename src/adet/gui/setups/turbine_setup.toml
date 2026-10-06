@@ -1,0 +1,121 @@
+[fluid]
+ideal = true
+gamma = 1.4
+gas_constant = 287.0
+viscosity = 2e-05
+name = "Air"
+backend = "HEOS"
+
+[inlet.oth]
+TotMassFlow = 50.0
+
+[inlet.tot]
+Pressure = 1000000.0
+Temperature = 500.0
+
+[shaft.casing]
+Omega = 0.0
+fixed = true
+
+[shaft.shaft0]
+Omega = 1000.0
+fixed = true
+
+[[row]]
+shaft = "casing"
+
+[[row.extra_equations]]
+equation = "losses.basic.ZeroDeviation"
+position = 0
+
+[[row.extra_equations]]
+equation = "losses.basic.TotalPressureLoss"
+position = [0, 1]
+parameters = [0.9]
+
+[row.inlet.geo]
+Rmid = 0.2
+Height = 0.1
+MeridionalAngle = 0.0
+
+[row.inlet.kin]
+FlowAngleAbs = -6.899860102164783e-23
+
+[row.outlet.geo]
+MeridionalAngle = 0.0
+Height = 0.10389999999999999
+Rmid = 0.2
+AxialLength = 0.04225000000000018
+NumBlades = 40.0
+
+[row.outlet.kin]
+FlowAngleRel = 1.3089969389957472
+
+[[row]]
+shaft = "shaft0"
+
+[[row.extra_equations]]
+equation = "losses.basic.ZeroDeviation"
+position = 0
+
+[[row.extra_equations]]
+equation = "losses.basic.TotalPressureLoss"
+position = [0, 1]
+parameters = [0.9]
+
+[row.outlet.geo]
+MeridionalAngle = 0.0
+Height = 0.11020000000000002
+Rmid = 0.2
+AxialLength = 0.0425000000000001
+NumBlades = 40.0
+
+[row.outlet.kin]
+FlowAngleRel = -1.2217304763960306
+
+[[row]]
+shaft = "casing"
+
+[[row.extra_equations]]
+equation = "losses.basic.ZeroDeviation"
+position = 0
+
+[[row.extra_equations]]
+equation = "losses.basic.TotalPressureLoss"
+position = [0, 1]
+parameters = [0.9]
+
+[row.outlet.geo]
+MeridionalAngle = 0.0
+Height = 0.11649999999999994
+Rmid = 0.2
+AxialLength = 0.043900000000000064
+NumBlades = 40.0
+
+[row.outlet.kin]
+FlowAngleAbs = 1.2217304763960306
+
+[[row]]
+shaft = "shaft0"
+
+[[row.extra_equations]]
+equation = "losses.basic.ZeroDeviation"
+position = 0
+
+[[row.extra_equations]]
+equation = "losses.basic.TotalPressureLoss"
+position = [0, 1]
+parameters = [0.9]
+
+[row.outlet.geo]
+MeridionalAngle = 0.0
+Height = 0.12560780230543
+Rmid = 0.2
+AxialLength = 0.04389999999999989
+NumBlades = 40.0
+
+[row.outlet.kin]
+FlowAngleAbs = 0.0
+
+[solution]
+file = "turbine_setup_solution.pkl"

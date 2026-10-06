@@ -325,15 +325,23 @@ class RowBackend:
                 rtfn, self.x0, self.kn, self.bnd, suppress_output=False
             )
 
-        # Kinsol, with Newton as a fallback if it fails or hangs
+        # The bounded Ipopt does not raise on failure, so a bad result is caught here
+        if not np.all(np.isfinite(sol)):
+            raise RuntimeError('Ipopt returned a non-finite solution')
+
+        # Kinsol, with Newton as a fallback if it fails
         # NOTE: CasADi's kinsol has no wall-time option, so it runs in a worker
-        # thread that is abandoned after SOLVER_WALL_TIME
+        # thread that is abandoned after SOLVER_WALL_TIME. The abandoned thread keeps
+        # using the fluid state (CoolProp is not thread-safe), so on a timeout the
+        # solve fails instead of running Newton next to it, which crashes the process
         rtfn = system.make_rootfinder('kinsol', {'max_iter': 100})
         try:
             sol = _run_with_timeout(
                 lambda: solve_root_problem(rtfn, sol, self.kn), SOLVER_WALL_TIME
             )
-        except (RuntimeError, TimeoutError) as err:
+        except TimeoutError as err:
+            raise RuntimeError(f'KINSOL timed out ({err})') from err
+        except RuntimeError as err:
             logger.warning(f'KINSOL failed ({err}), trying Newton...')
             rtfn = system.make_rootfinder('newton', {'max_iter': 25})
             sol = solve_root_problem(rtfn, sol, self.kn)
@@ -385,6 +393,11 @@ class RowBackend:
         """Overwrite boundary conditions in ``kn`` (base units: m, rad)."""
         scales = self.ntw.system.constraints_scaling
         for spec, value in values.items():
+            # A loaded setup may impose other variables than the GUI draws, like the
+            # (meridional) chord instead of the axial length; those cannot be dragged
+            if spec not in self._kn_index:
+                logger.debug(f'{spec} is not a boundary condition, not overwritten')
+                continue
             idx = self._kn_index[spec]
             self.kn[idx] = (
                 np.atleast_1d(value) / scales[idx] * np.ones_like(self.kn[idx])

@@ -2138,7 +2138,7 @@ class MainGuiView(QWidget):
             return
         try:
             self.backend.set_angle_mode(row.index, node, absolute)
-        except RuntimeError as err:
+        except Exception as err:
             logger.warning(f'Could not switch the flow angle: {err}')
             self.status_label.setText('Could not solve with the other flow angle')
             row.set_angle_mode()

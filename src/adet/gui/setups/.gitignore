@@ -1,0 +1,5 @@
+# Python setup files
+*.py
+
+# Solution files
+*.pkl

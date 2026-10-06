@@ -1,0 +1,81 @@
+[fluid]
+ideal = true
+gamma = 1.4
+gas_constant = 287.0
+viscosity = 2e-05
+name = "Air"
+backend = "HEOS"
+
+[inlet.oth]
+TotMassFlow = 9.0
+
+[inlet.tot]
+Pressure = 100000.0
+Temperature = 570.0
+
+[shaft.casing]
+Omega = 0.0
+fixed = true
+
+[shaft.shaft0]
+Omega = 700.0
+fixed = true
+
+[shaft.shaft1]
+Omega = -700.0
+fixed = true
+
+[[row]]
+shaft = "shaft0"
+
+[[row.extra_equations]]
+equation = "losses.basic.ZeroDeviation"
+position = 0
+
+[[row.extra_equations]]
+equation = "losses.basic.TotalPressureLoss"
+position = [0, 1]
+parameters = [0.9]
+
+[row.inlet.geo]
+Rmid = 0.18039793999999987
+Height = 0.15992882416875337
+MeridionalAngle = 0.0
+
+[row.inlet.kin]
+FlowAngleAbs = 0.0
+
+[row.outlet.geo]
+MeridionalAngle = 0.0
+Height = 0.15216116319972886
+Rmid = 0.18039793999999987
+AxialLength = 0.03932000000000005
+NumBlades = 40.0
+
+[row.outlet.kin]
+FlowAngleRel = -0.44974000377228
+
+[[row]]
+shaft = "shaft1"
+
+[[row.extra_equations]]
+equation = "losses.basic.ZeroDeviation"
+position = 0
+
+[[row.extra_equations]]
+equation = "losses.basic.TotalPressureLoss"
+position = [0, 1]
+parameters = [0.9]
+
+[row.outlet.geo]
+MeridionalAngle = 0.0
+Height = 0.14152202237739547
+Rmid = 0.18039793999999987
+AxialLength = 0.03762999999999985
+NumBlades = 40.0
+
+[row.outlet.kin]
+FlowAngleAbs = 0.0
+
+[solution]
+file = "counter_rotating_compressor_solution.pkl"
