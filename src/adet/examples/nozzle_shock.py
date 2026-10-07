@@ -100,8 +100,8 @@ abs_state = DebugAbstractState('HEOS', 'Air')
 idl_state = IdealGasState(1.4, 287, 2e-5)
 
 system.fluid_settings = FluidSettings(
-    fluid_state=abs_state,
-    update_variables=(n0.stc.Pressure.Glob, n0.stc.Temperature.Glob),
+    fluid_state=idl_state,
+    update_variables=(n0.stc.Pressure, n0.stc.Temperature),
 )
 
 
@@ -258,28 +258,5 @@ if SWEEP:
     cb.set_label(r'$p_{\mathrm{e}} / p_{t,0}$')
 
     fig_m.show()
-
-    # fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 10), sharex=True)
-    #
-    # ax1.plot(SPACE, massflows, linewidth=2, color='#8800bb')
-    # ax1.grid(alpha=0.4)
-    # ax1.set_ylabel(r'$\dot{m} / \mathrm{[kgs^{-1}]}$')
-    #
-    # ax2.plot(p_ratios, out_machs, linewidth=2, color='#880022')
-    # ax2.grid(alpha=0.4)
-    # ax2.set_xlabel(r'$p_3 / \mathrm{[Pa]}$')
-    # ax2.set_ylabel(r'$M_3$')
-
-    # fig, ax = plt.subplots(figsize=(8, 3))
-    # ax.set_xlim(0.0, np.max(mervels))
-    # ax.set_ylim(0.0, np.max(tanvels))
-    # ax.set_aspect('equal')
-    # ax.set_xlabel(r'$V_m$')
-    # ax.set_ylabel(r'$V_t$')
-    # ax.grid(alpha=0.3)
-    # cmap = plt.get_cmap('plasma')
-    # colors = cmap(np.linspace(0, 1, N_PTS))
-    # for i, (vm, vt) in enumerate(zip(mervels, tanvels)):
-    #     ax.quiver(0, 0, vm, vt, scale_units='xy', scale=1, angles='xy', color=colors[i])
 
     plt.show()

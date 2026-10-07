@@ -39,7 +39,7 @@ class EosFactory:
             return self._make_symbolic_eos(
                 eos_obj,
                 input_pair,
-                out_props_names,
+                out_properties,
                 length,
                 name,
             )
@@ -56,7 +56,7 @@ class EosFactory:
         self,
         fl_state: AnalyticalFluidState,
         input_pair: int,
-        output_quantities: tuple[str, ...] | list[str],
+        output_specs: Sequence[VarSpec],
         length: int,
         name: str,
     ) -> cs.Function:
@@ -64,11 +64,15 @@ class EosFactory:
 
         input_syms = [cs.MX.sym(var, length) for var in pair_vars]
         fl_state.update(input_pair, *input_syms)  # Update with symbols
-        # Extract symbols
-        output_syms = [getattr(fl_state, qty)() for qty in output_quantities]
+        # Extract symbols, constants are broadcast to the span length
+        output_syms = [
+            cs.repmat(cs.MX(prop), length, 1) if cs.MX(prop).numel() == 1 else prop
+            for prop in (fl_state.get_property(spec) for spec in output_specs)
+        ]
+        output_names = [spec.symbol for spec in output_specs]
         # Create updater func
         updater_func = cs.Function(
-            name, input_syms, output_syms, pair_vars, output_quantities
+            name, input_syms, output_syms, pair_vars, output_names
         )
 
         return updater_func

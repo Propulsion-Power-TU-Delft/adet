@@ -19,7 +19,7 @@ from numpy.typing import NDArray
 from pint import Quantity, Unit
 from pint.facets.plain import PlainQuantity
 
-from adet.constants import AdetArray
+from adet.constants import IPOPT_DEFAULTS, AdetArray
 from adet.equations.base_equation import EquationBase
 from adet.errors import ExistingEquationError
 from adet.fluid.casadi_eos import CasadiEos
@@ -36,25 +36,6 @@ logger = logging.getLogger(__name__)
 THERMO_CONST_SUFFIX = '__thrmCNS'
 
 _scale_reg = ScalingRegistry()
-
-
-IPOPT_DEFAULTS = {
-    'error_on_fail': True,
-    # Reasonable defaults for IPOPT, overwritten by user
-    'ipopt.print_level': 3,
-    'ipopt.max_iter': 6000,
-    'ipopt.max_wall_time': 60,
-    'ipopt.tol': 1e-8,
-    'ipopt.acceptable_constr_viol_tol': 1e-10,
-    'ipopt.bound_frac': 0.1,  # Relative initial push < 0.5
-    'ipopt.mu_init': 0.3,  # Initial barrier param
-    'ipopt.mu_strategy': 'adaptive',
-    'ipopt.linear_solver': 'spral',
-    # Lower = stricter restoration (def = 100 * tol)
-    'ipopt.resto_failure_feasibility_threshold': 1e-7,
-    'ipopt.expect_infeasible_problem': 'yes',
-    'ipopt.hessian_approximation': 'limited-memory',  # Less updates
-}
 
 
 class SystemSharedData:
@@ -615,7 +596,6 @@ class SystemAssembler(ABC):
             'equations',
             'boundary_conditions',
             'fluid_settings',
-            'global_constraints',
             'equalities',
         ]
 
@@ -1043,12 +1023,17 @@ class CasadiSystem(SystemAssembler):
             int,
             dict[NodeStates, list[VarSpec]],
         ] = {}
+
         # build output properties
         for spec in discarded_vars:
             if spec.node not in sorted_discarded:
                 sorted_discarded[spec.node] = {state: [] for state in NodeStates}
-            if spec.state and spec not in self.data.boun_cond:
-                sorted_discarded[spec.node][spec.state].append(spec)
+            if spec.state:
+                if spec not in self.data.boun_cond:
+                    sorted_discarded[spec.node][spec.state].append(spec)
+                else:
+                    if spec.Glob not in self.data.fluid_settings.update_variables:
+                        sorted_discarded[spec.node][spec.state].append(spec)
 
         for node_idx in range(self.first_node, self.last_node + 1):
             # If there is no need for any update variables, move to next node

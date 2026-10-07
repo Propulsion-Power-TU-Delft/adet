@@ -1,111 +1,179 @@
-from abc import ABC, abstractmethod
 import logging
-from inspect import getfullargspec
-from typing import Any, Callable
+from abc import ABC, abstractmethod
+from inspect import signature
+from typing import Annotated, Any, get_args, get_origin, get_type_hints
 
-import CoolProp as cp
-import sympy as sm
+import casadi as cs
+import numpy as np
+from pint import DimensionalityError, Quantity
+from pint.facets.plain import PlainQuantity
 
-from adet.constants import COOLPROP_PAIRS
 from adet.tools.coolprop_utils import pair_tuple_from_id
+from adet.variables import ThermoVariables
+from adet.varspec import VarSpec
 
 logger = logging.getLogger(__name__)
 
-UNSUPPORTED_PAIRS = [13, 17, 30, 32]
+_thrm = ThermoVariables()
+
+# Cache key: (class, input pair, gamma, gas constant)
+# Cache value: scalar rootfinder, input variables, (ordered) unknown variables
+# and the initial guess of the unknowns
+_CacheValue = tuple[cs.Function, list[VarSpec], list[VarSpec], list[float]]
 
 
 class AnalyticalFluidState(ABC):
-    solution_cache: dict[tuple[int, float, float], dict[str, Callable]] = {}
+    solution_cache: dict[int, _CacheValue] = {}
 
-    def __init__(self, gamma, gas_constant, viscosity):
-        # TODO: Add extra optional manual properties input, e.g. viscosity
-        # Move gamma and gas_constant to subclasses, make this general
-        self.current_state: dict[str, Any] = {}
-
-        # Round otherwise sympy shits itself
-        self._gamma: float = round(gamma, 1)
-        self._gas_constant: float = round(gas_constant, 1)
-
-        self._viscosity = viscosity
-        self._cvmass = self._gas_constant / (self._gamma - 1)
-        self._cpmass = self._cvmass * self._gamma
+    def __init__(self):
+        self.current_state: dict[VarSpec, Any] = {}
 
     @abstractmethod
     def eos(self, *args):
-        pass
+        """
+        Residuals of the equation of state. The arguments must be annotated
+        with `<ThermoVariable>.Hint`, which defines the variable each
+        argument stands for. Returns a sequence of residuals, equal in number
+        to the arguments, which are zero at a thermodynamically consistent state.
+        """
 
     @property
-    def arguments(self):
-        return getfullargspec(self.eos).args[1:]
+    def arguments(self) -> list[VarSpec]:
+        """Variables of the eos, in the order of the signature hints"""
+        hints = get_type_hints(self.eos, include_extras=True)
+        specs = []
+        for name in signature(self.eos).parameters:
+            hint = hints.get(name)
+            if get_origin(hint) is not Annotated:
+                raise TypeError(f'Argument {name} of eos is missing a variable hint')
+
+            spec = get_args(hint)[1]
+            if spec is None or not isinstance(spec, VarSpec):
+                raise TypeError(f'Hint of argument {name} contains no VarSpec')
+            specs.append(spec)
+
+        return specs
+
+    @staticmethod
+    def _as_row(value, length: int):
+        """Convert a value to a 1 x length row, broadcasting scalars"""
+        if not isinstance(value, cs.MX):
+            value = cs.DM(np.asarray(value, dtype=float).ravel())
+        value = cs.vec(value).T
+        return cs.repmat(value, 1, length) if value.numel() == 1 else value
+
+    def check_units(self):
+        """
+        Evaluate the eos once with unit-carrying quantities, so that any
+        dimensionally inconsistent residual raises a pint DimensionalityError.
+        """
+        quantities = [Quantity(1.0, spec.unit) for spec in self.arguments]
+        try:
+            self.eos(*quantities)
+        except DimensionalityError as err:
+            raise TypeError(
+                f'Unit check of {type(self).__name__}.eos failed: {err}'
+            ) from err
+
+    def _build_rootfinder(
+        self, input_vars: list[VarSpec]
+    ) -> tuple[cs.Function, list[VarSpec]]:
+        self.check_units()
+        arguments = self.arguments
+        unknowns = [spec for spec in arguments if spec not in input_vars]
+
+        syms = {spec: cs.MX.sym(spec.symbol) for spec in arguments}
+        residuals = self.eos(*(syms[spec] for spec in arguments))
+
+        problem = {
+            'p': cs.vertcat(*(syms[spec] for spec in input_vars)),
+            'x': cs.vertcat(*(syms[spec] for spec in unknowns)),
+            'g': cs.vertcat(*residuals),
+        }
+
+        rtfn = cs.rootfinder(
+            'analytical_eos',
+            'newton',
+            problem,
+            {'error_on_fail': False},
+        )
+        return rtfn, unknowns
+
+    def _build_entry(self, input_pair: int) -> _CacheValue:
+        spec_by_symbol = {spec.symbol: spec for spec in self.arguments}
+
+        input_vars = [spec_by_symbol[name] for name in pair_tuple_from_id(input_pair)]
+
+        rtfn, unknowns = self._build_rootfinder(input_vars)
+
+        # Variable guesses are just unity
+        # guess = [2.0 if s.guess is None else s.guess for s in unknowns]
+        guess = [2.0 for _ in unknowns]
+
+        return rtfn, input_vars, unknowns, guess
 
     def update(self, input_pair: int, value0, value1):
-        if input_pair in UNSUPPORTED_PAIRS:
-            pair_name = COOLPROP_PAIRS[input_pair]
-            raise NotImplementedError(f'Unsupported pair {pair_name}')
+        entry = self.solution_cache.get(input_pair)
 
-        input_vars = pair_tuple_from_id(input_pair)
-        other_vars = set(self.arguments).difference(input_vars)
-        logger.debug(f'Updating {self} with {input_vars}')
+        if entry is None:
+            logger.debug('Cache miss for %s, building rootfinder', input_pair)
+            entry = self.solution_cache[input_pair] = self._build_entry(input_pair)
 
-        function_inputs = {
-            input_vars[0]: value0,
-            input_vars[1]: value1,
-        }
+        rtfn, input_vars, unknowns, guess = entry
 
-        cache_key = (input_pair, self._gamma, self._gas_constant)
-        cache_hit = cache_key in self.solution_cache
-        key_name = f'{input_vars}, gamma{self._gamma}, gas_const{self._gas_constant}'
-
-        if cache_hit:
-            logger.debug(f'Cache hit for {key_name}')
-            solution_funcs = self.__class__.solution_cache[cache_key]
+        if isinstance(value0, cs.MX):
+            rtfn = rtfn.map(max(value0.shape), [True, False])
+            knowns = cs.horzcat(value0, value1).T
+        elif isinstance(value0, PlainQuantity):
+            # rtfn = rtfn.map(max(value0.shape), [False, False])
+            knowns = [value0, value1]
         else:
-            logger.debug(f'Cache miss for {key_name}, building symbolic solution')
-            symbols = {arg: sm.Symbol(arg) for arg in self.arguments}
-            symbolic_func = self.eos(**symbols)
-            symbolic_solution = sm.solve(symbolic_func, other_vars)
+            knowns = [value0, value1]
 
-            if isinstance(symbolic_solution, list):
-                symbolic_solution = symbolic_solution[0]
+        solution = rtfn(guess, knowns)
 
-            for name in input_vars:
-                symbol = symbols[name]
-                symbolic_solution[symbol] = symbol
+        for spec, value in zip(input_vars, (value0, value1)):
+            self.current_state[spec] = (
+                cs.vec(value) if isinstance(value, cs.MX) else value
+            )
 
-            solution_funcs = {
-                symbol.name: sm.lambdify(input_vars, expr)
-                for symbol, expr in symbolic_solution.items()
-            }
+        for i, spec in enumerate(unknowns):
+            self.current_state[spec] = solution[i, :].T
 
-        self.current_state = {
-            sym: func(**function_inputs) for sym, func in solution_funcs.items()
-        }
+    def constraints(self) -> dict[VarSpec, float]:
+        """Properties which are constant for the fluid, keyed by global spec"""
+        return {}
 
-        self.__class__.solution_cache[cache_key] = solution_funcs
+    def get_property(self, spec: VarSpec):
+        """Value of a property, regardless of the node and state of the spec"""
+        key = spec.Glob
+        if key in self.current_state:
+            return self.current_state[key]
+
+        constants = self.constraints()
+        if key in constants:
+            return constants[key]
+
+        method = getattr(self, spec.symbol, None)
+        if callable(method):
+            return method()
+
+        raise KeyError(f'Property {spec.symbol} not available in {type(self).__name__}')
 
     def p(self):
-        return self.current_state['p']
+        return self.current_state[_thrm.Pressure]
 
     def T(self):
-        return self.current_state['T']
+        return self.current_state[_thrm.Temperature]
 
     def rhomass(self):
-        return self.current_state['rhomass']
+        return self.current_state[_thrm.Density]
 
     def hmass(self):
-        return self.current_state['hmass']
+        return self.current_state[_thrm.Enthalpy]
 
     def smass(self):
-        return self.current_state['smass']
-
-    def cpmass(self):
-        return self._cpmass
-
-    def cvmass(self):
-        return self._cvmass
-
-    def viscosity(self):
-        return self._viscosity
+        return self.current_state[_thrm.Entropy]
 
     def p_critical(self):
         return 1
@@ -114,7 +182,7 @@ class AnalyticalFluidState(ABC):
         return 1
 
     def speed_sound(self):
-        return self.current_state['speed_sound']
+        return self.current_state[_thrm.SpeedSound]
 
     def gas_constant(self):
         return 8.31451
@@ -124,31 +192,76 @@ class AnalyticalFluidState(ABC):
 
 
 class IdealGasState(AnalyticalFluidState):
-    def eos(self, p, T, rhomass, hmass, umass, smass, speed_sound):
-        r1 = p - self._gas_constant * rhomass * T
-        r2 = hmass - self._cpmass * T
-        r3 = umass - self._cvmass * T
-        r4 = speed_sound - (self._gamma * self._gas_constant * T) ** 0.5
-        r5 = smass - self._cpmass * sm.log(T) + self._gas_constant * sm.log(p)
+    def __init__(self, gamma: float, sp_gas_constant: float, viscosity: float):
+        super().__init__()
+        self._gamma: float = gamma
+        self._sp_gas_constant: float = sp_gas_constant
 
-        return r1, r2, r3, r4, r5
+        self.viscosity = viscosity
+        self.cvmass = self._sp_gas_constant / (self._gamma - 1)
+        self.cpmass = self.cvmass * self._gamma
+
+    def constraints(self):
+        return {
+            _thrm.Cp: self.cpmass,
+            _thrm.Cv: self.cvmass,
+            _thrm.Viscosity: self.viscosity,
+        }
+
+    def eos(
+        self,
+        p: _thrm.Pressure.Hint,
+        T: _thrm.Temperature.Hint,
+        rhomass: _thrm.Density.Hint,
+        hmass: _thrm.Enthalpy.Hint,
+        umass: _thrm.IntEnergy.Hint,
+        smass: _thrm.Entropy.Hint,
+        speed_sound: _thrm.SpeedSound.Hint,
+    ):
+        # Constants carry units only when called with quantities (unit check)
+        def const(value: float, unit: str):
+            return Quantity(value, unit) if isinstance(T, PlainQuantity) else value
+
+        gas_constant = const(self._sp_gas_constant, 'J / kg / K')
+        gamma = self._gamma
+        cp = const(self.cpmass, 'J / kg / K')
+        cv = const(self.cvmass, 'J / kg / K')
+        T_ref = const(1.0, 'K')
+        p_ref = const(1.0, 'Pa')
+
+        r0 = p - gas_constant * rhomass * T
+        r1 = hmass - cp * T
+        r2 = umass - cv * T
+        r3 = speed_sound**2 - (gamma * gas_constant * T)
+        r4 = smass - cp * np.log(T / T_ref) + gas_constant * np.log(p / p_ref)
+
+        return r0, r1, r2, r3, r4
 
 
 if __name__ == '__main__':
-    import casadi as cs
+    import CoolProp as cp
 
-    eos = IdealGasState(
+    ideal_state = IdealGasState(
         gamma=1.4,
-        gas_constant=287.0,
+        sp_gas_constant=287.0,
         viscosity=2e-5,
     )
 
-    # Polymorphic!
-    eos.update(
-        cp.PT_INPUTS,
-        cs.MX.sym('p'),
-        cs.MX.sym('T'),
-    )
+    # Numeric update
+    abs_state = cp.AbstractState('HEOS', 'Air')
+    abs_state.update(cp.PSmass_INPUTS, 3e5, 1000)
+    ideal_state.update(cp.PSmass_INPUTS, 3e5, 1000)
 
-    print(f'Hmass is {eos.hmass()}')
-    print(f'Smass is {eos.smass()}')
+    print(f'Hmass is {ideal_state.hmass()}')
+    print(f'Temperature is {ideal_state.T()}')
+
+    # Symbolic (differentiable) update
+    p = cs.MX.sym('p', 3)
+    T = cs.MX.sym('T', 3)
+    ideal_state.update(cp.PT_INPUTS, p, T)
+
+    func = cs.Function('func', [p, T], [ideal_state.hmass(), ideal_state.rhomass()])
+    jac_func = cs.Function('drho_dT', [p, T], [cs.jacobian(ideal_state.rhomass(), T)])
+
+    print(func([1e5, 2e5, 3e5], [300, 400, 500]))
+    print(jac_func([1e5, 2e5, 3e5], [300, 400, 500]))
