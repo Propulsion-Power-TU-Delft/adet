@@ -86,7 +86,7 @@ rotor = BladeRow(
         n1.geo.MeridionalAngle: Quantity(0, 'deg'),
         n1.geo.NumBlades: 10.0,
         # Blade chord
-        n1.geo.ChordAx: 0.05,
+        n1.geo.MerChord: 0.05,
         DeflectionMidspan: Quantity(60, 'deg'),
         n1.kin.Beta_mid: Quantity(0, 'deg'),
         n1.kin.V_merMid: MERIDIONAL_VEL,
@@ -109,7 +109,7 @@ stator = BladeRow(
         # Blade thickness
         n1.geo.NumBlades: 10.0,
         # Blade chord
-        n1.geo.ChordAx: 0.05,
+        n1.geo.MerChord: 0.05,
         n1.kin.FlowAngleAbs: 0.0,
         n1.kin.V_mer: MERIDIONAL_VEL,
     },

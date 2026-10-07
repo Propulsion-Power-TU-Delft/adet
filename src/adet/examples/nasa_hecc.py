@@ -273,7 +273,7 @@ impeller = BladeRow(
         n1.geo.Height: Quantity(0.01524, 'm'),
         n1.geo.MetalAngle: Quantity(-30, 'deg'),
         n1.geo.ThickByPitch: 0.02,
-        n1.geo.ChordAx: Quantity(0.133879895, 'm'),
+        n1.geo.MerChord: Quantity(0.133879895, 'm'),
         n1.geo.NumBlades: NUM_BLADES,
         n1.geo.NumSplitters: NUM_BLADES,
         # > Loss coefficients contributors
@@ -860,7 +860,7 @@ if RUN_MULTI:
                     ax,
                 )
 
-        fig, ax = plt.subplots(figsize=(12, 7))
+        fig, ax = plt.subplots(figsize=(5, 6))
         ax.set_aspect('equal')
 
         # Plot meridional profile for impeller only
@@ -873,7 +873,7 @@ if RUN_MULTI:
         height_out = float(sol_multi_dict[outlet_n.geo.Height][0])
         mer_angle_in = float(sol_multi_dict[inlet_n.geo.MeridionalAngle][0])
         mer_angle_out = float(sol_multi_dict[outlet_n.geo.MeridionalAngle][0])
-        axial_chord = float(sol_multi_dict[outlet_n.geo.ChordAx][0])
+        axial_chord = float(sol_multi_dict[outlet_n.geo.MerChord][0])
 
         geom = RowGeometry(
             r_in=r_in,
@@ -884,11 +884,14 @@ if RUN_MULTI:
             mer_angle_out=mer_angle_out,
             axial_chord=axial_chord,
         )
-        geom.plot_meridional_profile(color='k', ax=ax)
+        lines = geom.plot_meridional_profile(color='k', ax=ax)
+        [ln.set_linewidth(2.0) for ln in lines]
 
-        ax.set_title('Meridional profile')
+        # ax.set_title('Meridional profile')
         ax.set_xlabel(r'$z$ / [m]')
         ax.set_ylabel(r'$r$ / [m]')
+        ax.set_ylim(-0.01, 1.02 * r_out)
+        ax.hlines(0.0, 0.0, axial_chord, linestyles='-.', linewidth=1.5)
         ax.grid(True, alpha=0.3)
 
         fig.tight_layout()
