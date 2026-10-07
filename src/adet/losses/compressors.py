@@ -86,44 +86,57 @@ class QiuSlip(DeviationModel):
     Qiu et al. (2011) - Analysis and Validation of a Unified Slip Factor Model
     for Impellers at Design and Off-Design Conditions.
 
-    Simplified form for a radial impeller outlet, with the blade turning and
-    passage width variation are neglected. The pitch is evaluated at the impeller
-    exit.
+    Valid for radial and mixed-flow impeller outlets: the meridional inclination
+    angle at the exit (MeridionalAngle, 0 = axial, 90 deg = radial) enters the
+    F-factor and the radial term. The blade turning and passage width variation
+    terms, Eqs. (10b) and (10c), are neglected.
 
-    - shape: F-factor, Eq. (6)
-    - r1: simplified radial slip-factor residual, Eq. (8), retaining only
-        the radial term in Eq. (10a)
+    Conventions as in the paper:
+    - Metal angle from the meridional direction, negative if backswept
+    - Exit pitch s2 = 2 pi r2 / Z2, evaluated at each spanwise station, with the
+        same blade number Z2 used in the radial term (effective blade number)
+    - Trailing edge thickness normal to the blade
+    - shape: F-factor, Eq. (6), with the factor 2 of the derivation in the appendix
+    - r1: slip-factor residual, Eq. (8), retaining only the radial term in Eq. (10a)
     - slip_velocity: American slip-factor definition
     - r2: exit velocity-triangle closure
+
+    Single-node equation: all quantities belong to the impeller outlet, apply it
+    at the outlet node of the blade row, e.g. `QiuSlip(): 1`.
     """
 
     def residual(
         self,
-        slip1: n1.oth.SlipFactor.Hint,
-        metal_ang1: n1.geo.MetalAngle.Hint,
-        n_bl_eff1: n1.geo.NumBladesEff.Hint,
-        bld_thick1: n1.geo.BldThick.Hint,
-        pitch0: n0.geo.Pitch.Hint,
-        u1: n1.kin.BladeSpeed.Hint,
-        wm1: n1.kin.W_mer.Hint,
-        wt1: n1.kin.W_tan.Hint,
+        slip0: n0.oth.SlipFactor.Hint,
+        metal_ang0: n0.geo.MetalAngle.Hint,
+        mer_angle0: n0.geo.MeridionalAngle.Hint,
+        n_bl_eff0: n0.geo.NumBladesEff.Hint,
+        bld_thick0: n0.geo.BldThick.Hint,
+        rr0: n0.geo.RDistr.Hint,
+        u0: n0.kin.BladeSpeed.Hint,
+        wm0: n0.kin.W_mer.Hint,
+        wt0: n0.kin.W_tan.Hint,
     ):
+        sin_incl = np.sin(mer_angle0)
+        exit_pitch = 2 * np.pi * rr0 / n_bl_eff0
+
         shape = (
             1
             - 2
-            * np.sin(np.pi / n_bl_eff1)
-            * np.sin(np.pi / n_bl_eff1 + metal_ang1)
-            * np.cos(metal_ang1)
-            - bld_thick1 / (pitch0 * np.cos(metal_ang1))
+            * np.sin(np.pi / n_bl_eff0)
+            * np.sin(np.pi / n_bl_eff0 + metal_ang0)
+            * np.cos(metal_ang0)
+            * sin_incl
+            - bld_thick0 / (exit_pitch * np.cos(metal_ang0))
         )
 
-        r1 = slip1 - (1 - shape * np.pi * np.cos(metal_ang1) / n_bl_eff1)
+        r1 = slip0 - (1 - shape * np.pi * np.cos(metal_ang0) * sin_incl / n_bl_eff0)
 
-        slip_velocity = u1 * (1 - slip1)
+        slip_velocity = u0 * (1 - slip0)
 
-        wt_noslip = wm1 * np.tan(metal_ang1)
+        wt_noslip = wm0 * np.tan(metal_ang0)
 
-        r2 = wt1 - (wt_noslip - slip_velocity)
+        r2 = wt0 - (wt_noslip - slip_velocity)
 
         return r1, r2
 
