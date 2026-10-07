@@ -232,6 +232,13 @@ class ClearanceBrasz(LossModel):
 
 
 class HydraulicQuantities(EquationBase):
+    """
+    W. Jansen, A method for calculating the flow in a centrifugal
+    impeller when entropy gradients are present, in: Royal Society
+    conference on internal aerodynamics (turbomachinery), 19-21
+    July, Cambridge, UK, 1967, pp. 133-146
+    """
+
     def residual(
         self,
         rr1: n1.geo.RDistr.Hint,
@@ -249,7 +256,7 @@ class HydraulicQuantities(EquationBase):
         hyd_L = (
             np.pi
             / 8
-            * (2 * rr1 - (rtip0 - rhub0) - hgt1 + 2 * chord_ax1)
+            * (2 * rr1 - (rtip0 + rhub0) - hgt1 + 2 * chord_ax1)
             * (4 / ((np.cos(metal_tip0) + np.cos(metal_hub0)) + 2 * np.cos(metal_ang1)))
         )
 
