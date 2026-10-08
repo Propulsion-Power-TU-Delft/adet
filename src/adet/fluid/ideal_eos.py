@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 import logging
 from inspect import getfullargspec
 from typing import Any, Callable
@@ -13,10 +14,17 @@ logger = logging.getLogger(__name__)
 UNSUPPORTED_PAIRS = [13, 17, 30, 32]
 
 
-# TODO: Make a base class to inherit
-class IdealGasState:
+# TODO: Make this base class actually have
+# shared mechanisms for other equations of state
+class AnalyticalFluidState(ABC):
     solution_cache: dict[tuple[int, float, float], dict[str, Callable]] = {}
 
+    @abstractmethod
+    def eos(self):
+        raise NotImplementedError
+
+
+class IdealGasState(AnalyticalFluidState):
     def __init__(self, gamma, sp_gas_constant, viscosity):
         self.current_state: dict[str, Any] = {}
 
