@@ -100,7 +100,7 @@ abs_state = DebugAbstractState('HEOS', 'Air')
 idl_state = IdealGasState(1.4, 287, 2e-5)
 
 system.fluid_settings = FluidSettings(
-    fluid_state=abs_state,
+    fluid_state=idl_state,
     update_variables=(n0.stc.Pressure.Glob, n0.stc.Temperature.Glob),
 )
 
