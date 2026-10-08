@@ -1,4 +1,3 @@
-from abc import ABC, abstractmethod
 import logging
 from inspect import getfullargspec
 from typing import Any, Callable
@@ -14,25 +13,19 @@ logger = logging.getLogger(__name__)
 UNSUPPORTED_PAIRS = [13, 17, 30, 32]
 
 
-class AnalyticalFluidState(ABC):
+# TODO: Make a base class to inherit
+class IdealGasState:
     solution_cache: dict[tuple[int, float, float], dict[str, Callable]] = {}
 
-    def __init__(self, gamma, gas_constant, viscosity):
-        # TODO: Add extra optional manual properties input, e.g. viscosity
-        # Move gamma and gas_constant to subclasses, make this general
+    def __init__(self, gamma, sp_gas_constant, viscosity):
         self.current_state: dict[str, Any] = {}
 
-        # Round otherwise sympy shits itself
-        self._gamma: float = round(gamma, 1)
-        self._gas_constant: float = round(gas_constant, 1)
+        self._gamma: float = gamma
+        self._gas_constant: float = sp_gas_constant
 
         self._viscosity = viscosity
         self._cvmass = self._gas_constant / (self._gamma - 1)
         self._cpmass = self._cvmass * self._gamma
-
-    @abstractmethod
-    def eos(self, *args):
-        pass
 
     @property
     def arguments(self):
@@ -44,12 +37,15 @@ class AnalyticalFluidState(ABC):
             raise NotImplementedError(f'Unsupported pair {pair_name}')
 
         input_vars = pair_tuple_from_id(input_pair)
+        input_vars.extend(['cp', 'cv'])
         other_vars = set(self.arguments).difference(input_vars)
         logger.debug(f'Updating {self} with {input_vars}')
 
         function_inputs = {
             input_vars[0]: value0,
             input_vars[1]: value1,
+            'cp': self._cpmass,
+            'cv': self._cvmass,
         }
 
         cache_key = (input_pair, self._gamma, self._gas_constant)
@@ -122,14 +118,15 @@ class AnalyticalFluidState(ABC):
     def molar_mass(self):
         return 0.0287
 
+    def eos(self, p, T, rhomass, hmass, umass, smass, speed_sound, cp, cv):
+        gamma = cp / cv
+        sp_gas_const = cp - cv
 
-class IdealGasState(AnalyticalFluidState):
-    def eos(self, p, T, rhomass, hmass, umass, smass, speed_sound):
-        r1 = p - self._gas_constant * rhomass * T
-        r2 = hmass - self._cpmass * T
-        r3 = umass - self._cvmass * T
-        r4 = speed_sound - (self._gamma * self._gas_constant * T) ** 0.5
-        r5 = smass - self._cpmass * sm.log(T) + self._gas_constant * sm.log(p)
+        r1 = p - sp_gas_const * rhomass * T
+        r2 = hmass - cp * T
+        r3 = umass - cv * T
+        r4 = speed_sound - (gamma * sp_gas_const * T) ** 0.5
+        r5 = smass - cp * sm.log(T) + sp_gas_const * sm.log(p)
 
         return r1, r2, r3, r4, r5
 
@@ -138,8 +135,8 @@ if __name__ == '__main__':
     import casadi as cs
 
     eos = IdealGasState(
-        gamma=1.4,
-        gas_constant=287.0,
+        gamma=1.412739124,
+        sp_gas_constant=287.20394134205,
         viscosity=2e-5,
     )
 
