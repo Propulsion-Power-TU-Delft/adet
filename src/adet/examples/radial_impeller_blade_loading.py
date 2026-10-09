@@ -1,33 +1,5 @@
 """
 Meanline blade-to-blade loading of a radial impeller.
-
-Implements, at the meanline only, the inviscid quasi-3D flow model of
-Van den Braembussche, *Design and Analysis of Centrifugal Compressors*
-(2019), Chapter 3, Section 3.1 "Inviscid Impeller Flow Calculation",
-Eqs. (3.1)-(3.20). Plots the resulting suction-side (SS) / pressure-side
-(PS) relative velocity and static pressure distribution along the
-meanline of a prescribed impeller geometry.
-
-Only the blade-to-blade part of the model (Eqs. 3.7, 3.13-3.15) is
-implemented -- the meridional (hub-to-shroud) problem (Eqs. 3.1-3.6)
-collapses to a single meanline value since there's no hub/shroud split
-here. The general loading form (3.13) is used, not its axial/2D/
-straight-channel special cases (3.16-3.18), since none apply to a real
-curved rotating radial passage. The slip/deviation model (Eqs. 3.8-3.12)
-is approximated by ``SlipTransition``: zero deviation up to a transition
-point, then a quadratic blend to the trailing edge whose free coefficient
-is set by the Kutta condition (zero blade loading at exit) rather than an
-empirical slip correlation, since ADeT has none built in. Blade-surface
-static pressure (not explicit in the book, but a direct consequence of
-its equations) follows from rothalpy conservation (Eq. 1.68) plus the
-inviscid/isentropic assumption shared by both surfaces.
-
-The meanline is discretized into ``N_STATIONS`` nodes from the leading
-edge (node 0) to the trailing edge. Standard ADeT equations (Kinematics,
-AnnulusAreas, MassAreaRelation, ZeroBlockage, TotalStaticMatching,
-ZeroDeviation, MassConservation, IsentropicLink) are reused unmodified;
-only the physics specific to this chapter is added as custom equations
-and variables.
 """
 
 import logging
@@ -47,14 +19,19 @@ from adet.equations.fundamental import (
     ZeroBlockage,
 )
 from adet.equations.geometrical import AnnulusAreas
+from adet.equations.throughflow import (
+    BladeLoadingVariables,
+    BladeToBladeLoading,
+    SlipTransition,
+    SuctionPressureVelocities,
+)
 from adet.fluid.ideal_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
 from adet.geometry import BezierCurve
 from adet.losses.basic import IsentropicLink, ZeroDeviation
 from adet.solution import solve_root_problem
 from adet.tools.loggers import setup_logger
-from adet.variables import NodeVariables, ThermoVariables, VariableEnum
-from adet.varspec import VarSpec
+from adet.variables import NodeVariables, ThermoVariables
 
 logger = logging.getLogger(__name__)
 setup_logger(logger)
@@ -64,7 +41,7 @@ thrm = ThermoVariables()
 # ============================================================
 # 1. Impeller geometry and operating point (all prescribed)
 # ============================================================
-N_STATIONS = 20  # LE = station 0, TE = station N_STATIONS - 1
+N_STATIONS = 10  # LE = station 0, TE = station N_STATIONS - 1
 
 R_IN = 0.055  # [m] meanline radius at the leading edge (inducer)
 R_OUT = 0.130  # [m] meanline radius at the trailing edge
@@ -72,9 +49,6 @@ Z_LENGTH = 0.090  # [m] axial extent of the meridional path (for plotting)
 
 # Meridional flow (tangent) angle at each end (BezierCurve convention:
 # 0 deg = axial +z, +90 deg = radial outward, -90 deg = radial inward).
-# Angles are the physical direction of travel, not mirrored between ends
-# -- getting the sign wrong makes the meanline radius overshoot
-# non-monotonically (checked below).
 MERID_ANGLE_IN = np.radians(0.0)  # [rad] purely axial at the inlet
 MERID_ANGLE_OUT = np.radians(90.0)  # [rad] purely radial (outward) at the outlet
 
@@ -90,14 +64,13 @@ BLADE_THICKNESS = 0.0015  # [m], constant along the streamline
 RPM = 16_000.0
 OMEGA = RPM * 2 * np.pi / 60  # [rad/s]
 
-MASS_FLOW = 0.5  # [kg/s]
+MASS_FLOW = 0.8  # [kg/s]
 P0_TOT = 101_325.0  # [Pa]
 T0_TOT = 293.15  # [K]
 
 # ============================================================
-# 2. Precompute the meanline geometry (purely descriptive, not
-#    part of the nonlinear system: R, H and beta_bl are boundary
-#    conditions of the equation system, not unknowns)
+# 2. Precompute the meanline geometry (R, H, beta_bl are boundary
+#    conditions, not unknowns)
 # ============================================================
 _meridional_path = BezierCurve(
     z_in=0.0,
@@ -148,32 +121,8 @@ DELTA_S = np.diff(_s_stations)  # streamwise spacing of each interval
 # ============================================================
 nodes = [NodeVariables(i) for i in range(N_STATIONS)]
 
-# Local node placeholders (upstream/downstream) for residual() hints,
-# unrelated to absolute station index -- the standard n0/n1 convention.
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)
-
-
-class BladeLoadingVariables(VariableEnum):
-    """
-    Custom variables for the blade-to-blade loading (Section 3.1.2) that
-    are not part of ADeT's built-in variable library.
-    """
-
-    W_ss = VarSpec('W_ss', 'm / s', 120.0, (0.0, 2e3))
-    """Relative velocity on the suction side, :math:`W_{SS}`."""
-
-    W_ps = VarSpec('W_ps', 'm / s', 80.0, (0.0, 2e3))
-    """Relative velocity on the pressure side, :math:`W_{PS}`."""
-
-    DeltaW = VarSpec('delta_W', 'm / s', 20.0, (-1e3, 1e3))
-    """Blade loading :math:`W_{SS} - W_{PS}`, Eq. (3.13)."""
-
-    P_ss = VarSpec('p_ss', 'Pa', 8e4, (1e2, 2e7))
-    """Static pressure on the suction side."""
-
-    P_ps = VarSpec('p_ps', 'Pa', 1.2e5, (1e2, 2e7))
-    """Static pressure on the pressure side."""
 
 
 bl_nodes = [BladeLoadingVariables(i) for i in range(N_STATIONS)]
@@ -202,122 +151,6 @@ class RothalpyConservation(EquationBase):
         rothalpy0 = h_rel0 - u0**2 / 2
         rothalpy1 = h_rel1 - u1**2 / 2
         return rothalpy1 - rothalpy0
-
-
-class BladeToBladeLoading(EquationBase):
-    """General blade-to-blade suction-to-pressure side velocity
-    difference (Van den Braembussche Eq. 3.13):
-
-    .. math::
-        W_{SS} - W_{PS} = \\left(\\frac{2\\pi}{Z_r} -
-        \\frac{\\delta_{bl}}{R \\cos\\beta_{fl}}\\right)
-        \\frac{d}{ds}\\left(\\Omega R^2 -
-        \\widetilde{W}_m R \\tan\\beta_{fl}\\right)
-
-    The streamwise derivative is a backward finite difference between the
-    upstream (node 0) and downstream (node 1) stations (``delta_s``).
-    """
-
-    config = EquationConfig(manual_units=('m / s',))
-
-    def __init__(self, delta_s: float, **kwargs):
-        super().__init__(**kwargs)
-        self.delta_s = delta_s
-
-    def residual(
-        self,
-        omega0: n0.kin.Omega.Hint,
-        r0: n0.geo.RDistr.Hint,
-        wm0: n0.kin.W_mer.Hint,
-        beta0: n0.kin.FlowAngleRel.Hint,
-        omega1: n1.kin.Omega.Hint,
-        r1: n1.geo.RDistr.Hint,
-        wm1: n1.kin.W_mer.Hint,
-        beta1: n1.kin.FlowAngleRel.Hint,
-        z_r1: n1.geo.NumBlades.Hint,
-        delta_bl1: n1.geo.BldThick.Hint,
-        delta_w1: bl1.DeltaW.Hint,
-    ):
-        rotation_term = (omega1 * r1**2 - omega0 * r0**2) / self.delta_s  # Eq. (3.14)
-        turning_term = (
-            wm1 * r1 * np.tan(beta1) - wm0 * r0 * np.tan(beta0)
-        ) / self.delta_s  # Eq. (3.15)
-
-        pitch_minus_thickness = 2 * np.pi / z_r1 - delta_bl1 / (r1 * np.cos(beta1))
-
-        loading = pitch_minus_thickness * (rotation_term - turning_term)
-
-        return delta_w1 - loading
-
-
-class SlipTransition(EquationBase):
-    """Simplified stand-in for the flow-angle/blade-angle deviation model
-    of Van den Braembussche Eqs. (3.9)-(3.12), used approaching the
-    trailing edge where the loading must relax to zero (Kutta condition).
-
-    Downstream of a transition point :math:`s^*`, the flow angle follows
-    a quadratic blend continuous in value and slope with the blade metal
-    angle at :math:`s^*` (Eqs. 3.9-3.11):
-
-    .. math::
-        \\beta_{fl}(s) = A (s - s^*)^2 +
-        \\left.\\frac{d\\beta_{bl}}{ds}\\right|_{s^*} (s - s^*) +
-        \\beta_{bl}(s^*)
-
-    Rather than fixing :math:`A` from an empirical slip correlation
-    (Eq. 3.12, absent in ADeT), the trailing-edge angle is left free and
-    determined by the Kutta condition elsewhere.
-    """
-
-    config = EquationConfig(manual_units=('rad',))
-
-    def __init__(
-        self,
-        s_i: float,
-        s_star: float,
-        s_end: float,
-        beta_bl_star: float,
-        slope_star: float,
-        **kwargs,
-    ):
-        super().__init__(**kwargs)
-        self.s_i = s_i
-        self.s_star = s_star
-        self.s_end = s_end
-        self.beta_bl_star = beta_bl_star
-        self.slope_star = slope_star
-
-    def residual(
-        self,
-        beta0: n0.kin.FlowAngleRel.Hint,
-        beta_slip1: n1.kin.FlowAngleRel.Hint,
-    ):
-        span = self.s_end - self.s_star
-        a_coeff = (beta_slip1 - self.beta_bl_star - self.slope_star * span) / span**2
-
-        beta_target = (
-            a_coeff * (self.s_i - self.s_star) ** 2
-            + self.slope_star * (self.s_i - self.s_star)
-            + self.beta_bl_star
-        )
-        return beta0 - beta_target
-
-
-class SuctionPressureVelocities(EquationBase):
-    """Superpose the blade-to-blade loading on the pitchwise-averaged
-    relative velocity to recover SS/PS velocities (Van den Braembussche,
-    text below Eq. 3.13)."""
-
-    def residual(
-        self,
-        w_mean0: n0.kin.W_mag.Hint,
-        delta_w0: bl0.DeltaW.Hint,
-        w_ss0: bl0.W_ss.Hint,
-        w_ps0: bl0.W_ps.Hint,
-    ):
-        r1 = w_ss0 - (w_mean0 + delta_w0 / 2)
-        r2 = w_ps0 - (w_mean0 - delta_w0 / 2)
-        return r1, r2
 
 
 class BladeSurfacePressures(EquationBase):
@@ -432,7 +265,12 @@ system.add_boundary_conditions(BOUNDARY_CONDITIONS)
 # ============================================================
 system.build()
 
-x0 = system.get_guess(fallback=0.6)
+manual_guess = {}
+for i in range(N_STATIONS):
+    manual_guess[bl_nodes[i].P_ss] = 8e4
+    manual_guess[bl_nodes[i].P_ps] = 1.2e5
+
+x0 = system.get_guess(manual_guess, fallback=0.6)
 kn = system.get_boundary_conds()
 bnd = system.get_bounds()
 

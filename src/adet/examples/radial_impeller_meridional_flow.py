@@ -1,110 +1,14 @@
 """
 Meridional (hub-to-shroud) velocity field of a radial impeller.
 
-Implements, via ADeT's equation-based system-building logic, Van den
-Braembussche, *Design and Analysis of Centrifugal Compressors* (2019),
-Section 3.1.1 "Meridional Velocity Calculation", full Eq. (3.3) -- not
-its ``beta = 0`` special case (Eq. 3.4). The flow angle ``beta`` is a
-*prescribed* input field here -- hub/shroud values given at the inlet
-and at the outlet, each linearly distributed across the span, then
-used as the streamwise endpoints of a parabola at each spanwise
-station -- not solved for, consistent with the book's own model, where
-the blade-to-blade split (Section 3.1.2, implemented separately in
-``radial_impeller_blade_loading.py``) is what would actually determine
-it from the blade geometry. See :func:`parabolic_beta_field`.
-
-Equations
----------
-Eq. (3.3), the hub-to-shroud force balance along a quasi-orthogonal
-(:math:`n` runs from hub to shroud), **with the Coriolis term's sign
-corrected** relative to how it is printed in the book:
-
-.. math::
-    \\frac{\\partial \\widetilde{W}}{\\partial n} =
-    \\widetilde{W}\\frac{\\cos^2\\beta}{\\mathfrak{R}_n} -
-    \\cos\\gamma \\sin\\beta
-    \\left(2\\Omega + \\frac{\\widetilde{W}\\sin\\beta}{R}\\right)
-
-The book's Eq. (3.3) has ``+cos(gamma)*sin(beta)*(2*Omega - ...)``, i.e.
-the opposite sign on the ``2*Omega`` term. Re-deriving the normal-to-
-streamline special case directly from Katsanis (1964) -- the paper the
-book itself cites for this equation (``docs/Katsanis1964.pdf``, Eqs.
-B10-B16, specialized to ``s = n``: ``dr/ds = cos(alpha)``,
-``dz/ds = -sin(alpha)``, uniform rothalpy/prerotation across span) gives
-
-.. math::
-    \\frac{dW}{dn} = \\frac{W\\cos^2\\beta}{r_c} -
-    \\cos\\alpha \\sin\\beta \\left(2\\omega + \\frac{W\\sin\\beta}{r}\\right)
-
-(Katsanis's :math:`\\alpha` is the book's :math:`\\gamma`.) The
-curvature and swirl terms match the book exactly; only the Coriolis
-term's sign differs, which rules out a global convention difference
-(e.g. a flipped :math:`n` direction would flip all three terms, not
-one) -- it looks like a sign slip in the book's own eq. (3.3), not in
-this transcription of it. Implemented (trapezoidal, between two
-neighboring spanwise grid points) as :class:`MeridionalMomentumMarch`.
-
-Eq. (3.6), mass conservation across a quasi-orthogonal. Rather than a
-single sum, it is encoded as a spanwise *chain* of cumulative-flow
-equations (:class:`MassFluxAccumulation`, trapezoidal), with the
-cumulative flow pinned to 0 at the hub and to :math:`\\dot m` at the
-shroud -- the ADeT-idiomatic way to express an integral constraint as
-per-interval node equations (cf. ``nozzle_shock.py``).
-
-Local density (:class:`LocalThermoState`) follows from rothalpy
-conservation (Eq. 1.68), :math:`h = I_0 + U^2/2 - \\widetilde{W}^2/2`,
-and the ideal-gas EOS at constant entropy (isentropic assumption),
-:math:`\\rho = \\rho_{EOS}(h, s_{in})`, evaluated with ADeT's own
-``adet.fluid.ideal_eos.IdealGasState`` (called directly, as a plain
-(h, s) -> rho callable -- see the note below). Because the whole
-system (every node, every equation) is solved simultaneously and
-implicitly, the manual iterative procedure the book describes for the
-compressible case is unnecessary here -- it's just what the nonlinear
-solver is doing internally.
-
-``IdealGasState`` is used directly (``.update()`` + ``.rhomass()``)
-rather than through ADeT's ``FluidSettings``/``CasadiSystem`` EOS
-wiring: that wiring declares pressure and temperature at every static/
-total/relative-total state of every node as soon as ``fluid_settings``
-is set on the system (it assumes the usual meanline P/T bookkeeping),
-which would add thousands of unused variables/equations to this
-span-only, custom problem. ``IdealGasState`` itself is fluid-model
-agnostic about *how* it's called, so this still goes through the same
-symbolic (sympy-derived, CasADi-compatible) solution the rest of ADeT
-uses -- only the surrounding per-node bookkeeping is skipped.
-
-Hypotheses and assumptions
----------------------------
-* :math:`\\gamma` (local meridional streamline inclination) and
-  :math:`\\mathfrak{R}_n` (meridional curvature) are purely geometric,
-  computed once from the prescribed hub/shroud contours and held fixed.
-* :math:`\\beta` follows a prescribed field (a stand-in for whatever the
-  blade-to-blade solution would otherwise supply): linear hub-to-shroud
-  interpolation of the given inlet value and of the given outlet value,
-  then a streamwise parabola (with a spanwise-uniform mid-passage
-  bulge) between those two local values at each spanwise station.
-* Rothalpy and entropy are uniform, global constants, fixed by the
-  inlet total conditions with no inlet prewhirl assumed (so that
-  :math:`I_0 = h_{0,in}`), per the book's own simplifying assumption
-  that rothalpy is uniform at the inlet and thus constant everywhere
-  (text below Eq. 3.2).
-* Ideal-gas air (:math:`\\gamma = 1.4`, :math:`R_{gas} = 287.05` J/(kg K)),
-  via ``adet.fluid.ideal_eos.IdealGasState``.
-* Quasi-orthogonals connecting hub and shroud are straight lines
-  (Figure 3.5), and the intermediate "quasi streamsurfaces" are
-  obtained by linear interpolation between the hub and shroud
-  meridional contours, exactly as described below Eq. (3.5).
-* Hub and shroud contours are generated as cubic Bezier splines (4
-  control points: start, 2 intermediate, end -- ``adet.geometry.BezierCurve``).
-  Each endpoint is the mean-line point (inlet: on axis z=0 at radius
-  ``R_MEAN_IN``; outlet: at z=``AXIAL_LENGTH``, radius ``R_MEAN_OUT``)
-  offset by +-H/2 along the local normal to the prescribed meridional
-  angle there, so the inlet/outlet channel height is always measured
-  perpendicular to the flow direction, not hard-coded as purely radial
-  or purely axial -- this is what lets ``MERID_ANGLE_IN``/``_OUT`` alone
-  reshape the channel consistently (it reduces to the "same z at inlet,
-  same R at outlet" picture only in the special case
-  ``MERID_ANGLE_IN = 0``, ``MERID_ANGLE_OUT = 90 deg``).
+Implements Van den Braembussche, *Design and Analysis of Centrifugal
+Compressors* (2019), Section 3.1.1, full Eq. (3.3) (Coriolis-term sign
+corrected against Katsanis (1964), see :class:`MeridionalMomentumMarch`)
++ Eq. (3.6). The flow angle ``beta`` is a *prescribed* field here (see
+:func:`parabolic_beta_field`), not solved for -- see
+``radial_impeller_blade_loading.py``/``radial_impeller_blade_to_blade_flow.py``
+for the blade-to-blade split that would actually determine it. Geometry
+helpers live in ``adet.equations.throughflow``.
 """
 
 import CoolProp as cp
@@ -113,11 +17,17 @@ from matplotlib import pyplot as plt
 
 from adet.assemblers import CasadiSystem
 from adet.equations.base_equation import EquationBase, EquationConfig
+from adet.equations.throughflow import (
+    MeridionalFlowVariables,
+    build_meridional_grid,
+    midline_tangent_angle,
+    resample_by_arc_length,
+    spanwise_normal_curvature,
+)
 from adet.fluid.ideal_eos import IdealGasState
 from adet.geometry import BezierCurve
 from adet.solution import solve_root_problem
-from adet.variables import NodeVariables, VariableEnum
-from adet.varspec import VarSpec
+from adet.variables import NodeVariables
 
 # ============================================================
 # 1. User settings and problem data
@@ -141,7 +51,7 @@ AXIAL_LENGTH = 0.08  # [m] axial length of the mean line (z=0 to z=AXIAL_LENGTH)
 N_STREAM = 21  # number of streamwise stations (inlet to outlet)
 N_SPAN = 9  # number of spanwise stations (hub to shroud)
 
-RPM = 10_000.0  # [rev/min]
+RPM = 40_000.0  # [rev/min]
 OMEGA = RPM * 2 * np.pi / 60  # [rad/s]
 
 MASS_FLOW = 1.0  # [kg/s]
@@ -161,8 +71,8 @@ VISCOSITY_AIR = 1.8e-5  # [Pa s], unused here but required by IdealGasState
 # (with an adjustable, spanwise-uniform mid-passage bulge).
 BETA_HUB_IN = np.radians(-10.0)  # [rad] beta at the hub, inlet
 BETA_SHROUD_IN = np.radians(-50.0)  # [rad] beta at the shroud, inlet
-BETA_HUB_OUT = np.radians(-14.0)  # [rad] beta at the hub, outlet
-BETA_SHROUD_OUT = np.radians(-14.0)  # [rad] beta at the shroud, outlet
+BETA_HUB_OUT = np.radians(-22.0)  # [rad] beta at the hub, outlet
+BETA_SHROUD_OUT = np.radians(-22.0)  # [rad] beta at the shroud, outlet
 BETA_BULGE = np.radians(-25.0)  # [rad] extra mid-passage deviation
 
 # Hub and shroud are the mean line offset by +-H/2 along its local
@@ -185,88 +95,6 @@ R_SHROUD_OUT = R_MEAN_OUT + 0.5 * H_OUT * np.cos(MERID_ANGLE_OUT)
 # ============================================================
 # 2. Custom classes and functions
 # ============================================================
-
-
-def resample_by_arc_length(
-    curve: BezierCurve, n_points: int
-) -> tuple[np.ndarray, np.ndarray]:
-    """Resample a (finely discretized) curve at ``n_points`` equally
-    spaced arc-length stations."""
-    ds = np.hypot(np.diff(curve.z_coords), np.diff(curve.r_coords))
-    s = np.concatenate([[0.0], np.cumsum(ds)])
-    s_stations = np.linspace(0.0, s[-1], n_points)
-    z = np.interp(s_stations, s, curve.z_coords)
-    r = np.interp(s_stations, s, curve.r_coords)
-    return z, r
-
-
-def build_meridional_grid(
-    hub_z: np.ndarray,
-    hub_r: np.ndarray,
-    shroud_z: np.ndarray,
-    shroud_r: np.ndarray,
-    n_span: int,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Grid of intermediate quasi streamsurfaces (Figure 3.5), obtained
-    by linear interpolation along the hub-to-shroud quasi-orthogonals.
-
-    Returns
-    -------
-    Z, R : ndarray, shape (n_stream, n_span)
-        Meridional-plane coordinates; axis 0 is streamwise (hub/shroud
-        curve direction), axis 1 is spanwise (hub -> shroud).
-    """
-    eta = np.linspace(0.0, 1.0, n_span)[None, :]
-    z = hub_z[:, None] * (1.0 - eta) + shroud_z[:, None] * eta
-    r = hub_r[:, None] * (1.0 - eta) + shroud_r[:, None] * eta
-    return z, r
-
-
-def spanwise_normal_curvature(z: np.ndarray, r: np.ndarray) -> np.ndarray:
-    """Normal curvature :math:`1/\\mathfrak{R}_n` of each quasi
-    streamsurface (fixed spanwise index), projected onto the local
-    hub-to-shroud direction -- the signed quantity entering Eq. (3.3).
-
-    Parameters
-    ----------
-    z, r : ndarray, shape (n_stream, n_span)
-        Meridional grid coordinates.
-
-    Returns
-    -------
-    inv_Rn : ndarray, shape (n_stream, n_span)
-    """
-    n_stream, n_span = z.shape
-
-    # Local hub -> shroud unit direction at each streamwise station.
-    n_z = z[:, -1] - z[:, 0]
-    n_r = r[:, -1] - r[:, 0]
-    n_mag = np.hypot(n_z, n_r)
-    n_z, n_r = n_z / n_mag, n_r / n_mag
-
-    inv_Rn = np.empty((n_stream, n_span))
-    for j in range(n_span):
-        ds = np.hypot(np.diff(z[:, j]), np.diff(r[:, j]))
-        s = np.concatenate([[0.0], np.cumsum(ds)])
-        dz_ds = np.gradient(z[:, j], s)
-        dr_ds = np.gradient(r[:, j], s)
-        d2z_ds2 = np.gradient(dz_ds, s)
-        d2r_ds2 = np.gradient(dr_ds, s)
-        inv_Rn[:, j] = d2z_ds2 * n_z + d2r_ds2 * n_r
-
-    return inv_Rn
-
-
-def midline_tangent_angle(z_mid: np.ndarray, r_mid: np.ndarray) -> np.ndarray:
-    """Local meridional streamline tangent angle :math:`\\gamma(s)`
-    (0 = axial, 90 deg = radial), evaluated on the midspan track and
-    used -- spanwise-uniform -- as the :math:`\\cos\\gamma` projection
-    in Eq. (3.1)/(3.3)."""
-    ds = np.hypot(np.diff(z_mid), np.diff(r_mid))
-    s = np.concatenate([[0.0], np.cumsum(ds)])
-    dz_ds = np.gradient(z_mid, s)
-    dr_ds = np.gradient(r_mid, s)
-    return np.arctan2(dr_ds, dz_ds)
 
 
 def parabolic_beta_field(
@@ -297,15 +125,6 @@ def parabolic_beta_field(
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)
-
-
-class MeridionalFlowVariables(VariableEnum):
-    """Custom variable for the Eq. (3.6) mass-flow closure, not part of
-    ADeT's built-in variable library."""
-
-    CumFlow = VarSpec('cum_mdot', 'kg / s', 0.5)
-    """Mass flow accumulated from the hub up to this spanwise station."""
-
 
 mf0 = MeridionalFlowVariables(0)
 mf1 = MeridionalFlowVariables(1)
@@ -595,10 +414,47 @@ GAS_STATE.update(cp.HmassSmass_INPUTS, H0_ABS_grid, ENTROPY_IN)
 T0_ABS_grid = GAS_STATE.T()
 P0_ABS_grid = GAS_STATE.p()
 
-print(
-    f'Meridional velocity: hub mean = {Wm_grid[:, 0].mean():.2f} m/s, '
-    f'shroud mean = {Wm_grid[:, -1].mean():.2f} m/s'
-)
+# Euler's turbomachinery equation, from the mass-flux-weighted spanwise
+# average of R*Vu at the inlet and outlet stations (weight = rho*Wm*R,
+# proportional to the local dmdot/dn, consistent with Eq. 3.6).
+N_COORD = np.concatenate([np.zeros((N_STREAM, 1)), np.cumsum(DELTA_N, axis=1)], axis=1)
+RVu_grid = R * Vu_grid
+
+
+def mass_weighted_mean(field_row: np.ndarray, i: int) -> float:
+    """Mass-flux-weighted spanwise average of ``field_row`` (full
+    (N_STREAM, N_SPAN) array) at streamwise station ``i``."""
+    flux = RHO_grid[i, :] * Wm_grid[i, :] * R[i, :]
+    return np.trapezoid(field_row[i, :] * flux, N_COORD[i, :]) / np.trapezoid(
+        flux, N_COORD[i, :]
+    )
+
+
+RVu_IN = mass_weighted_mean(RVu_grid, 0)
+RVu_OUT = mass_weighted_mean(RVu_grid, -1)
+
+EULER_WORK = OMEGA * (RVu_OUT - RVu_IN)  # [J/kg]
+EULER_POWER = MASS_FLOW * EULER_WORK  # [W]
+EULER_TORQUE = EULER_POWER / OMEGA  # [N m]
+
+print(f'Euler work:   {EULER_WORK / 1e3:.3f} kJ/kg')
+print(f'Euler power:  {EULER_POWER / 1e3:.3f} kW')
+print(f'Euler torque: {EULER_TORQUE:.3f} N.m')
+
+# Overall pressure ratios and total-to-total temperature lift, from the
+# same mass-flux-weighted outlet average, against the prescribed
+# (absolute-total) inlet boundary conditions P0_IN, T0_IN.
+P_STATIC_OUT = mass_weighted_mean(P_grid, -1)
+P0_ABS_OUT = mass_weighted_mean(P0_ABS_grid, -1)
+T0_ABS_OUT = mass_weighted_mean(T0_ABS_grid, -1)
+
+PR_TS = P_STATIC_OUT / P0_IN  # total-to-static pressure ratio
+PR_TT = P0_ABS_OUT / P0_IN  # total-to-total pressure ratio
+DT0_TT = T0_ABS_OUT - T0_IN  # total-to-total temperature lift [K]
+
+print(f'Total-to-static pressure ratio: {PR_TS:.4f}')
+print(f'Total-to-total pressure ratio:  {PR_TT:.4f}')
+print(f'Total-to-total temperature lift: {DT0_TT:.2f} K')
 
 # ============================================================
 # 4. Diagnostic plots
@@ -677,24 +533,26 @@ if __name__ == '__main__':
     )
 
     # --- Figure 2: the three RHS terms of Eq. (3.3), plus their sum ---
+    # Suppressed for now (left in place, commented out) -- uncomment to
+    # restore the diagnostic plot.
     # dW/dn = [curvature] - [Coriolis] - [swirl], see the module docstring
     # (Coriolis sign corrected against Katsanis 1964).
-    CURV_grid = W_grid * np.cos(BETA) ** 2 * INV_RN
-    CORIOLIS_grid = -np.cos(GAMMA)[:, None] * np.sin(BETA) * 2 * OMEGA
-    SWIRL_grid = -np.cos(GAMMA)[:, None] * np.sin(BETA) ** 2 * W_grid / R
-    NET_grid = CURV_grid + CORIOLIS_grid + SWIRL_grid  # = dW/dn
-
-    fig_terms, axs_terms = plot_contour_row(
-        [
-            (CURV_grid, r'Curvature: $\widetilde{W}\cos^2\!\beta/\mathfrak{R}_n$'),
-            (CORIOLIS_grid, r'Coriolis: $-2\Omega\cos\gamma\sin\beta$'),
-            (SWIRL_grid, r'Swirl: $-\cos\gamma\sin^2\!\beta\,\widetilde{W}/R$'),
-            (NET_grid, r'Sum: $\partial \widetilde{W}/\partial n$'),
-        ],
-        suptitle='Eq. (3.3) term breakdown (Coriolis sign per Katsanis 1964)',
-        cbar_label=r'[1/s]',
-        shared_scale=False,
-    )
+    # CURV_grid = W_grid * np.cos(BETA) ** 2 * INV_RN
+    # CORIOLIS_grid = -np.cos(GAMMA)[:, None] * np.sin(BETA) * 2 * OMEGA
+    # SWIRL_grid = -np.cos(GAMMA)[:, None] * np.sin(BETA) ** 2 * W_grid / R
+    # NET_grid = CURV_grid + CORIOLIS_grid + SWIRL_grid  # = dW/dn
+    #
+    # fig_terms, axs_terms = plot_contour_row(
+    #     [
+    #         (CURV_grid, r'Curvature: $\widetilde{W}\cos^2\!\beta/\mathfrak{R}_n$'),
+    #         (CORIOLIS_grid, r'Coriolis: $-2\Omega\cos\gamma\sin\beta$'),
+    #         (SWIRL_grid, r'Swirl: $-\cos\gamma\sin^2\!\beta\,\widetilde{W}/R$'),
+    #         (NET_grid, r'Sum: $\partial \widetilde{W}/\partial n$'),
+    #     ],
+    #     suptitle='Eq. (3.3) term breakdown (Coriolis sign per Katsanis 1964)',
+    #     cbar_label=r'[1/s]',
+    #     shared_scale=False,
+    # )
 
     # --- Figure 3: computational grid and the prescribed beta(s) law ---
     fig2, axs2 = plt.subplots(1, 2, figsize=(2 * PANEL_W, PANEL_H))
