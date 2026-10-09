@@ -1,11 +1,9 @@
-"""Custom equations shared by the quasi-3D throughflow examples: the
-hub-to-shroud force balance + mass conservation (Van den Braembussche,
-*Design and Analysis of Centrifugal Compressors*, 2019, Section 3.1.1,
-Eqs. 3.3/3.6) coupled to the blade-to-blade loading (Section 3.1.2, Eqs.
-3.13-3.15), both evaluated with a directly-called ``IdealGasState``
-(rothalpy conservation + constant inlet entropy) rather than ADeT's
-``FluidSettings``/``CasadiEos`` wiring, to avoid adding per-node P/T
-variables across a full streamwise x spanwise grid.
+"""
+Custom equations for quasi-3d throughflow modeling solving the isentropic,
+homorothalpic radial equilibrium and mass conservation in the meridional
+plane (Van den Braembussche,*Design and Analysis of Centrifugal Compressors*, 2019,
+Section 3.1.1, Eqs. 3.3/3.6), and the blade-to-blade flow (Section 3.1.2, Eqs.
+3.13-3.15).
 """
 
 import CoolProp as cp
