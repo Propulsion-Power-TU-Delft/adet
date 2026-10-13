@@ -15,6 +15,7 @@ State:
 import logging
 import math
 
+import CoolProp as cp
 import matplotlib.pyplot as plt
 import numpy as np
 from pint import Quantity
@@ -46,6 +47,7 @@ from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 from adet.tools.plotting import plot_velocity_triangles
 from adet.variables import NodeVariables
+from adet.equations.utils import residual_debugger
 
 logger = logging.getLogger(__name__)
 setup_logger(logger)
@@ -68,9 +70,11 @@ class AddImpellerLosses(LossApplier):
         ds_leakage1: _n1.loss.Ds_leakage.Hint,
         ds_incidence1: _n1.loss.Ds_incidence.Hint,
         ds_endwall1: _n1.loss.Ds_endwall.Hint,
-        # ds_mixing1: _n1.loss.Ds_mixing.Hint,
+        ds_mixing1: _n1.loss.Ds_mixing.Hint,
     ):
-        return s1 - (s0 + ds_profile1 + ds_leakage1 + ds_incidence1 + ds_endwall1)
+        return s1 - (
+            s0 + ds_profile1 + ds_leakage1 + ds_incidence1 + ds_endwall1 + ds_mixing1
+        )
 
 
 class AddStatorLosses(LossApplier):
@@ -83,9 +87,9 @@ class AddStatorLosses(LossApplier):
         s1: _n1.stc.Entropy.Hint,
         ds_profile1: _n1.loss.Ds_profile.Hint,
         ds_endwall1: _n1.loss.Ds_endwall.Hint,
-        # ds_mixing1: _n1.loss.Ds_mixing.Hint,
+        ds_mixing1: _n1.loss.Ds_mixing.Hint,
     ):
-        return s1 - (s0 + ds_profile1 + ds_endwall1)
+        return s1 - (s0 + ds_profile1 + ds_endwall1 + ds_mixing1)
 
 
 # |> Machine stations, in the order the components are chained below (each
@@ -170,9 +174,9 @@ stator = BladeRow(
         BoundaryLayerRatios(): 1,
         GammaPV(): 0,
         GammaPV(): 1,
-        # SieverdingBasePressure(): (0, 1),
+        SieverdingBasePressure(): (0, 1),
         # DentonMixingLoss(): 1,
-        # DentonBaumgartnerMixingLoss(): 1,
+        DentonBaumgartnerMixingLoss(): 1,
     },
 )
 
@@ -234,11 +238,11 @@ rotor = BladeRow(
         ImpellerIncidenceLoss(): (0, 1),
         EndwallLoss(): (0, 1),
         BoundaryLayerRatios(): 1,
-        # GammaPV(): 0,
-        # GammaPV(): 1,
-        # SieverdingBasePressure(): (0, 1),
+        GammaPV(): 0,
+        GammaPV(): 1,
+        SieverdingBasePressure(): (0, 1),
         # DentonMixingLoss(): 1,
-        # DentonBaumgartnerMixingLoss(): 1,
+        DentonBaumgartnerMixingLoss(): 1,
     },
 )
 
@@ -306,12 +310,12 @@ x0 = ntw.system.get_guess(
         # GammaPV/PBase guesses: their generic defaults are far enough off
         # for this dense organic fluid to push early IPOPT iterates into
         # an out-of-range CoolProp query.
-        # n0.oth.GammaPV: 1.05,
-        # n1.oth.GammaPV: 1.05,
-        # n6.oth.GammaPV: 1.05,
-        # n7.oth.GammaPV: 1.05,
-        # n1.oth.PBase: 0.032e5,
-        # n7.oth.PBase: 0.38e5,
+        n0.oth.GammaPV: 1.05,
+        n1.oth.GammaPV: 1.05,
+        n6.oth.GammaPV: 1.025,
+        n7.oth.GammaPV: 1.025,
+        n1.oth.PBase: 1.7e5,
+        n7.oth.PBase: 0.7e5,
     },
     fallback=0.5,
 )
@@ -343,7 +347,7 @@ bnd = ntw.system.get_bounds(
     }
 )
 
-sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=False)
+sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=True)
 
 # Kinsol pass
 rtfn = ntw.system.make_rootfinder('kinsol')
@@ -423,14 +427,14 @@ LOSS_MECHANISMS = {
     'Stator': [
         ('Profile', lambda n: n.loss.Ds_profile),
         ('Endwall', lambda n: n.loss.Ds_endwall),
-        # ('Mixing', lambda n: n.loss.Ds_mixing),
+        ('Mixing', lambda n: n.loss.Ds_mixing),
     ],
     'Rotor': [
         ('Profile', lambda n: n.loss.Ds_profile),
         ('Leakage', lambda n: n.loss.Ds_leakage),
         ('Incidence', lambda n: n.loss.Ds_incidence),
         ('Endwall', lambda n: n.loss.Ds_endwall),
-        # ('Mixing', lambda n: n.loss.Ds_mixing),
+        ('Mixing', lambda n: n.loss.Ds_mixing),
     ],
 }
 COMPONENT_NODES = {
@@ -464,6 +468,14 @@ print(
         tablefmt='github',
     )
 )
+
+# ============================================================
+# Total-to-static expansion efficiency (stator inlet -> rotor outlet)
+# ============================================================
+abs_state.update(cp.PSmass_INPUTS, _val(n7.stc.Pressure), _val(n0.stc.Entropy))
+h7_is = abs_state.hmass()
+eta_ts = (_val(n0.tot.Enthalpy) - _val(n7.tot.Enthalpy)) / (_val(n0.tot.Enthalpy) - h7_is)
+print(f'\nTotal-to-static expansion efficiency (eta_ts, station 0 -> 7): {eta_ts:.4f}')
 
 # ============================================================
 # Velocity triangle plots at each station

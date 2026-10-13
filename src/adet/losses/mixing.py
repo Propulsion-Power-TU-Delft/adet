@@ -246,12 +246,11 @@ def baumgartner_mixing_zeta(
     :func:`incomp_mixing_zeta` with ``q = 0.5 * gamma_pv * p * Mach**2``.
     """
     # Floor only, to avoid division by zero at stagnation; no upper cap
-    mach_floored = safe_min_clip(rel_mach0, 0.05)
     thick_by_pitch0 = geo_bld_thick0 / geo_pitch0
     cpb = (
         2
         * (oth_p_base0 / stc_p0 - 1)
-        * (2 / (gamma_pv0 * mach_floored**2) * thick_by_pitch0)
+        * (2 / (gamma_pv0 * rel_mach0**2) * thick_by_pitch0)
     )
 
     w = geo_pitch0 * np.cos(geo_metal_angle0)  # outlet throat
@@ -396,13 +395,13 @@ class DentonBaumgartnerMixingLoss(LossModel):
         ds_mixing0: n0.loss.Ds_mixing.Hint,
     ):
         # Floor only, to avoid division by zero at stagnation; no upper cap
-        mach_floored = safe_min_clip(rel_mach0, 0.05)
+        mach_floored = safe_min(rel_mach0, 0.05)
         dyn_press = 0.5 * gamma0 * p0 * mach_floored**2  # Compressible dynamic head
 
         zeta = baumgartner_mixing_zeta(
             p0,
             gamma0,
-            rel_mach0,
+            mach_floored,
             beta0,
             pitch0,
             t0,
