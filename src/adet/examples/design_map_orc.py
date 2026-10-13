@@ -10,8 +10,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Literal, Type
 
-import CoolProp as cp
 import CoolProp
+import CoolProp as cp
 
 CoolProp.CoolProp.set_config_string(
     CoolProp.ALTERNATIVE_REFPROP_PATH, '/Users/matteomajer/Applications/REFPROP'
@@ -39,7 +39,6 @@ from adet.equations.geometrical import (
 )
 from adet.equations.nondimensional import (
     FlowCoefficient,
-    GammaPV,
     StaticTotalDegreeOfReaction,
     TotalStaticLoadingCoefficient,
     TotalTotalExpansionEfficiency,
@@ -50,7 +49,6 @@ from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation  # noqa: F401
 from adet.losses.leakage import DentonTrapLeakage
 from adet.losses.mixing import (
-    DentonBaumgartnerMixingLoss,
     DentonMixingLoss,
     SieverdingBasePressure,
 )

@@ -31,11 +31,11 @@ from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation
 from adet.losses.mixing import DentonBaumgartnerMixingLoss, SieverdingBasePressure
 from adet.losses.rit import (
-    StatorProfileLoss,
     EndwallLoss,
     ImpellerIncidenceLoss,
     ImpellerLeakageLoss,
     ImpellerPassageLoss,
+    StatorProfileLoss,
 )
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState

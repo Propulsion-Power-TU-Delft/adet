@@ -265,20 +265,14 @@ class DentonRectProfile(LossModel):
         # Entropy generation from 2D viscous dissipation
         # [ kg / m^3 ] * [ m^3 / s^3 ] / [K] * [m]
         # = [ kg * m / s^3 / K ] = [ N / s / K ]
-        entropy_integral_ps = (
-            cd_prof1 * rho_ps * W_ps**3 / temp_ps * camb_len1
-        )
-        entropy_integral_ss = (
-            cd_prof1 * rho_ss * W_ss**3 / temp_ss * camb_len1
-        )
+        entropy_integral_ps = cd_prof1 * rho_ps * W_ps**3 / temp_ps * camb_len1
+        entropy_integral_ss = cd_prof1 * rho_ss * W_ss**3 / temp_ss * camb_len1
 
         entropy_integral = entropy_integral_ps + entropy_integral_ss
 
         # 1. Tangential momentum balance [N]
         delta_Vt = cs.fabs(Vt1 - Vt0)
-        r1 = ch_mf1 * delta_Vt - pressure_integral * h1 * np.cos(
-            stag1
-        )
+        r1 = ch_mf1 * delta_Vt - pressure_integral * h1 * np.cos(stag1)
 
         # 2. SPECIFIC entropy generation [J / kg / K]
         r2 = ds_prof1 - entropy_integral * h1 / ch_mf1

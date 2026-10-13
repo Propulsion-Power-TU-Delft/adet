@@ -221,14 +221,14 @@ def calc_saturation_curves(
                 pass
 
         dic.update(
-            dict(
-                T=np.array(T),
-                p=np.array(p),
-                rhomass=np.array(rhomass),
-                hmass=np.array(hmass),
-                smass=np.array(smass),
-                umass=np.array(umass),
-            )
+            {
+                'T': np.array(T),
+                'p': np.array(p),
+                'rhomass': np.array(rhomass),
+                'hmass': np.array(hmass),
+                'smass': np.array(smass),
+                'umass': np.array(umass),
+            }
         )
 
     return dictL, dictV
@@ -261,14 +261,14 @@ def calc_Tmax_curves(eos: cp.AbstractState, n_points: int = 500) -> dict[str, ND
         except ValueError:
             pass
 
-    Tmax = dict(
-        T=np.array(T),
-        p=np.array(p),
-        rhomass=np.array(rhomass),
-        hmass=np.array(hmass),
-        smass=np.array(smass),
-        umass=np.array(umass),
-    )
+    Tmax = {
+        'T': np.array(T),
+        'p': np.array(p),
+        'rhomass': np.array(rhomass),
+        'hmass': np.array(hmass),
+        'smass': np.array(smass),
+        'umass': np.array(umass),
+    }
 
     return Tmax
 

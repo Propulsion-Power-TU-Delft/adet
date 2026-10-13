@@ -847,7 +847,7 @@ if RUN_MULTI:
             (n0, n1),
             # (n1, n2),
         ]
-        for plot_idx, (inlet_n, outlet_n) in enumerate(node_pairs):
+        for _plot_idx, (inlet_n, outlet_n) in enumerate(node_pairs):
             for node_idx, n in enumerate([inlet_n, outlet_n]):
                 ax = axs[node_idx]
                 ax.set_aspect('equal')

@@ -68,7 +68,6 @@ class LimitedMassflow(EquationBase):
         mf_actual: n0.oth.StreamMassFlow.Hint,
         mf_choke: n0.oth.ChokeMassflow.Hint,
     ):
-
         return mf_actual - safe_min(mf_target, mf_choke)
 
 

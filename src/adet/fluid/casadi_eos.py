@@ -2,9 +2,9 @@ import logging
 from typing import Any, overload
 
 import casadi as cs
-from casadi import MX, Sparsity
 import CoolProp as cp
 import jax
+from casadi import MX, Sparsity
 
 from adet.constants import COOLPROP_NAMES_MAP
 from adet.tools.coolprop_utils import DebugAbstractState, inames_from_id

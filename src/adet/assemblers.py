@@ -19,7 +19,7 @@ from numpy.typing import NDArray
 from pint import Quantity, Unit
 from pint.facets.plain import PlainQuantity
 
-from adet.constants import AdetArray, IPOPT_DEFAULTS
+from adet.constants import IPOPT_DEFAULTS, AdetArray
 from adet.equations.base_equation import EquationBase
 from adet.errors import ExistingEquationError
 from adet.fluid.casadi_eos import CasadiEos
@@ -760,7 +760,6 @@ class SystemAssembler(ABC):
     def _compute_secondary_thermo(
         self, sol_data: dict[VarSpec, NDArray]
     ) -> dict[VarSpec, NDArray]:
-
         if self.data.fluid_settings is None:
             return {}
 
@@ -988,7 +987,6 @@ class CasadiSystem(SystemAssembler):
     def _build_equations_of_state(
         self, all_args_products: dict[VarSpec, cs.MX]
     ) -> dict[VarSpec, cs.MX]:
-
         # TODO: Refactor this whole method, it is quite messy
         if self.data.fluid_settings is None:
             return {}

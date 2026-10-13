@@ -1,5 +1,5 @@
-from abc import ABC, abstractmethod
 import logging
+from abc import ABC, abstractmethod
 from inspect import getfullargspec
 from typing import Any, Callable
 
