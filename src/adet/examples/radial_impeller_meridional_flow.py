@@ -8,7 +8,7 @@ corrected against Katsanis (1964), see :class:`MeridionalMomentumMarch`)
 :func:`parabolic_beta_field`), not solved for -- see
 ``radial_impeller_blade_loading.py``/``radial_impeller_blade_to_blade_flow.py``
 for the blade-to-blade split that would actually determine it. Geometry
-helpers live in ``adet.equations.throughflow``.
+helpers live in ``adet.equations.streamline_curvature``.
 """
 
 import CoolProp as cp
@@ -17,7 +17,7 @@ from matplotlib import pyplot as plt
 
 from adet.assemblers import CasadiSystem
 from adet.equations.base_equation import EquationBase, EquationConfig
-from adet.equations.throughflow import (
+from adet.equations.streamline_curvature import (
     MeridionalFlowVariables,
     build_meridional_grid,
     midline_tangent_angle,

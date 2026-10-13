@@ -1,5 +1,5 @@
 """Meridional-grid and blade-angle-law helpers shared by the quasi-3D
-throughflow examples (hub-to-shroud + blade-to-blade coupled models)."""
+streamline-curvature examples (hub-to-shroud + blade-to-blade coupled models)."""
 
 import numpy as np
 

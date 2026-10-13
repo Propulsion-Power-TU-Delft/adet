@@ -1,4 +1,4 @@
-"""Custom per-node variables shared by the quasi-3D throughflow examples."""
+"""Custom per-node variables shared by the quasi-3D streamline-curvature examples."""
 
 from adet.variables import VariableEnum
 from adet.varspec import VarSpec

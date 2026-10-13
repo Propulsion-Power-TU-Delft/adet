@@ -23,7 +23,7 @@ from adet.equations.fundamental import (
     ZeroBlockage,
 )
 from adet.equations.geometrical import AnnulusAreas
-from adet.equations.throughflow import (
+from adet.equations.streamline_curvature import (
     BladeLoadingVariables,
     BladeToBladeLoading,
     SlipTransition,

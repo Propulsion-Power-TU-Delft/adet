@@ -10,7 +10,7 @@ from matplotlib import pyplot as plt
 
 from adet.assemblers import CasadiSystem
 from adet.equations.fundamental import Kinematics
-from adet.equations.throughflow import (
+from adet.equations.streamline_curvature import (
     BladeLoadingVariables,
     BladeSurfacePressures,
     BladeToBladeLoading,
@@ -430,9 +430,7 @@ if __name__ == '__main__':
         )
     ax_beta.set_xlabel(r'Streamwise fraction $s/s_{max}$')
     ax_beta.set_ylabel(r'Flow angle $\beta$ [deg]')
-    ax_beta.set_title(
-        'Blade metal angle (dashed) vs. solved flow angle (Eqs. 3.9-3.15)'
-    )
+    ax_beta.set_title('Blade metal angle (dashed) vs. solved flow angle')
     ax_beta.legend()
     ax_beta.grid(True, alpha=0.3)
 
@@ -462,9 +460,7 @@ if __name__ == '__main__':
         ax.set_title(title)
         fig2.colorbar(contour, ax=ax, label='Velocity [m/s]')
 
-    fig2.suptitle(
-        'Hub-to-shroud velocity distribution (Eq. 3.3, coupled with Eq. 3.13)'
-    )
+    fig2.suptitle('Hub-to-shroud velocity distribution')
     fig2.tight_layout(rect=(0.0, 0.0, 1.0, 0.94))
 
     # --- Figure 3: blade-to-blade velocity distribution (required) --------
@@ -478,7 +474,7 @@ if __name__ == '__main__':
         ax.grid(True, alpha=0.3)
         ax.legend()
     axs3[0].set_ylabel(r'$W$ [m/s]')
-    fig3.suptitle('Blade-to-blade velocity distribution (Eq. 3.13), hub to shroud')
+    fig3.suptitle('Blade-to-blade velocity distribution, hub to shroud')
     fig3.tight_layout(rect=(0.0, 0.0, 1.0, 0.92))
 
     # --- Figure 4: blade surface pressure distribution (required) ---------

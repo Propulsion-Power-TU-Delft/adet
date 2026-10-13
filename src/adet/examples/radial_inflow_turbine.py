@@ -29,7 +29,11 @@ from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
 from adet.equations.nondimensional import GammaPV
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation
-from adet.losses.mixing import DentonBaumgartnerMixingLoss, SieverdingBasePressure
+from adet.losses.mixing import (
+    DentonBaumgartnerMixingLoss,
+    DentonMixingLoss,
+    SieverdingBasePressure,
+)
 from adet.losses.rit import (
     StatorProfileLoss,
     EndwallLoss,
@@ -53,8 +57,8 @@ _n1 = NodeVariables(1)
 
 
 class AddImpellerLosses(LossApplier):
-    """Apply the rotor's passage + leakage + incidence + endwall + mixing
-    losses to the static entropy rise."""
+    """Apply the rotor's passage + leakage + incidence + endwall losses to
+    the static entropy rise."""
 
     def residual(
         self,
@@ -64,16 +68,14 @@ class AddImpellerLosses(LossApplier):
         ds_leakage1: _n1.loss.Ds_leakage.Hint,
         ds_incidence1: _n1.loss.Ds_incidence.Hint,
         ds_endwall1: _n1.loss.Ds_endwall.Hint,
-        ds_mixing1: _n1.loss.Ds_mixing.Hint,
+        # ds_mixing1: _n1.loss.Ds_mixing.Hint,
     ):
-        return s1 - (
-            s0 + ds_profile1 + ds_leakage1 + ds_incidence1 + ds_endwall1 + ds_mixing1
-        )
+        return s1 - (s0 + ds_profile1 + ds_leakage1 + ds_incidence1 + ds_endwall1)
 
 
 class AddStatorLosses(LossApplier):
-    """Apply the stator's profile + endwall + mixing losses to the static
-    entropy rise."""
+    """Apply the stator's profile + endwall losses to the static entropy
+    rise."""
 
     def residual(
         self,
@@ -81,9 +83,9 @@ class AddStatorLosses(LossApplier):
         s1: _n1.stc.Entropy.Hint,
         ds_profile1: _n1.loss.Ds_profile.Hint,
         ds_endwall1: _n1.loss.Ds_endwall.Hint,
-        ds_mixing1: _n1.loss.Ds_mixing.Hint,
+        # ds_mixing1: _n1.loss.Ds_mixing.Hint,
     ):
-        return s1 - (s0 + ds_profile1 + ds_endwall1 + ds_mixing1)
+        return s1 - (s0 + ds_profile1 + ds_endwall1)
 
 
 # |> Machine stations, in the order the components are chained below (each
@@ -168,8 +170,9 @@ stator = BladeRow(
         BoundaryLayerRatios(): 1,
         GammaPV(): 0,
         GammaPV(): 1,
-        SieverdingBasePressure(): (0, 1),
-        DentonBaumgartnerMixingLoss(): 1,
+        # SieverdingBasePressure(): (0, 1),
+        # DentonMixingLoss(): 1,
+        # DentonBaumgartnerMixingLoss(): 1,
     },
 )
 
@@ -231,10 +234,11 @@ rotor = BladeRow(
         ImpellerIncidenceLoss(): (0, 1),
         EndwallLoss(): (0, 1),
         BoundaryLayerRatios(): 1,
-        GammaPV(): 0,
-        GammaPV(): 1,
-        SieverdingBasePressure(): (0, 1),
-        DentonBaumgartnerMixingLoss(): 1,
+        # GammaPV(): 0,
+        # GammaPV(): 1,
+        # SieverdingBasePressure(): (0, 1),
+        # DentonMixingLoss(): 1,
+        # DentonBaumgartnerMixingLoss(): 1,
     },
 )
 
@@ -302,12 +306,12 @@ x0 = ntw.system.get_guess(
         # GammaPV/PBase guesses: their generic defaults are far enough off
         # for this dense organic fluid to push early IPOPT iterates into
         # an out-of-range CoolProp query.
-        n0.oth.GammaPV: 1.05,
-        n1.oth.GammaPV: 1.05,
-        n6.oth.GammaPV: 1.05,
-        n7.oth.GammaPV: 1.05,
-        n1.oth.PBase: 0.032e5,
-        n7.oth.PBase: 0.38e5,
+        # n0.oth.GammaPV: 1.05,
+        # n1.oth.GammaPV: 1.05,
+        # n6.oth.GammaPV: 1.05,
+        # n7.oth.GammaPV: 1.05,
+        # n1.oth.PBase: 0.032e5,
+        # n7.oth.PBase: 0.38e5,
     },
     fallback=0.5,
 )
@@ -419,14 +423,14 @@ LOSS_MECHANISMS = {
     'Stator': [
         ('Profile', lambda n: n.loss.Ds_profile),
         ('Endwall', lambda n: n.loss.Ds_endwall),
-        ('Mixing', lambda n: n.loss.Ds_mixing),
+        # ('Mixing', lambda n: n.loss.Ds_mixing),
     ],
     'Rotor': [
         ('Profile', lambda n: n.loss.Ds_profile),
         ('Leakage', lambda n: n.loss.Ds_leakage),
         ('Incidence', lambda n: n.loss.Ds_incidence),
         ('Endwall', lambda n: n.loss.Ds_endwall),
-        ('Mixing', lambda n: n.loss.Ds_mixing),
+        # ('Mixing', lambda n: n.loss.Ds_mixing),
     ],
 }
 COMPONENT_NODES = {

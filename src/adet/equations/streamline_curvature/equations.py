@@ -1,5 +1,5 @@
 """
-Custom equations for quasi-3d throughflow modeling solving the isentropic,
+Custom equations for quasi-3D streamline-curvature modeling solving the isentropic,
 homorothalpic radial equilibrium and mass conservation in the meridional
 plane (Van den Braembussche,*Design and Analysis of Centrifugal Compressors*, 2019,
 Section 3.1.1, Eqs. 3.3/3.6), and the blade-to-blade flow (Section 3.1.2, Eqs.
@@ -10,7 +10,7 @@ import CoolProp as cp
 import numpy as np
 
 from adet.equations.base_equation import EquationBase, EquationConfig
-from adet.equations.throughflow.variables import (
+from adet.equations.streamline_curvature.variables import (
     BladeLoadingVariables,
     MeridionalFlowVariables,
 )
@@ -31,7 +31,13 @@ class LocalThermoState(EquationBase):
 
     config = EquationConfig(manual_units=('kg / m**3',))
 
-    def __init__(self, rothalpy: float, entropy: float, gas_state: IdealGasState, **kw):
+    def __init__(
+        self,
+        rothalpy: float,
+        entropy: float,
+        gas_state: IdealGasState,
+        **kw,
+    ):
         super().__init__(**kw)
         self.rothalpy = rothalpy
         self.entropy = entropy
@@ -72,7 +78,13 @@ class MeridionalMomentumMarch(EquationBase):
         self.omega = omega
         self.inv_rn0, self.inv_rn1 = inv_rn0, inv_rn1
 
-    def _rhs(self, w, beta, inv_rn: float, r: float):
+    def _rhs(
+        self,
+        w,
+        beta,
+        inv_rn: float,
+        r: float,
+    ):
         return w * np.cos(beta) ** 2 * inv_rn - np.cos(self.gamma) * np.sin(beta) * (
             2 * self.omega + w * np.sin(beta) / r
         )
@@ -95,10 +107,16 @@ class MassFluxAccumulation(EquationBase):
 
     config = EquationConfig(manual_units=('kg / s',))
 
-    def __init__(self, delta_n: float, r0: float, r1: float, **kw):
+    def __init__(
+        self,
+        delta_n: float,
+        r0: float,
+        r1: float,
+        **kw,
+    ):
         super().__init__(**kw)
-        self.delta_n = delta_n
-        self.r0, self.r1 = r0, r1
+        self.delta_n = delta_n  # spanwise spacing between two subsequent stremlines
+        self.r0, self.r1 = r0, r1  # local radii of the two subsequent streamlines
 
     def residual(
         self,
@@ -118,18 +136,20 @@ class MassFluxAccumulation(EquationBase):
 
 class BladeToBladeLoading(EquationBase):
     """Blade-to-blade suction-to-pressure side velocity difference (Eq.
-    3.13), from Stokes' theorem applied to the relative-flow curl (Eq.
-    1.71). ``rotation_sign=-1`` flips only the Coriolis/rotation term
-    (Eq. 3.14), not the camber-turning term (Eq. 3.15) -- the radial
-    turbine convention (radially-inward flow puts the Coriolis
-    contribution on the opposite blade face); ``+1`` is the compressor
-    convention."""
+    3.13). ``rotation_sign=-1`` flips the Coriolis/rotation term. Use
+    ``rotation_sign=-1`` for turbines, and ``rotation_sign=+1`` for
+    compressors."""
 
     config = EquationConfig(manual_units=('m / s',))
 
-    def __init__(self, delta_s: float, rotation_sign: float = 1.0, **kw):
+    def __init__(
+        self,
+        delta_s: float,
+        rotation_sign: float = 1.0,
+        **kw,
+    ):
         super().__init__(**kw)
-        self.delta_s = delta_s
+        self.delta_s = delta_s  # s coordinate increment for two points along streamline
         self.rotation_sign = rotation_sign
 
     def residual(
@@ -161,7 +181,7 @@ class BladeToBladeLoading(EquationBase):
 
 
 class SlipTransition(EquationBase):
-    """Stand-in for the empirical slip correlation, Eqs. (3.9)-(3.12):
+    """Empirical slip correlation by Stanitz, Eqs. (3.9)-(3.12):
     downstream of a transition point :math:`s^*`, the flow angle follows
     a quadratic blend continuous in value and slope with the blade metal
     angle at :math:`s^*`, with the remaining free coefficient implicitly
@@ -204,10 +224,15 @@ class SlipTransition(EquationBase):
 class CarryLoadingToLE(EquationBase):
     """Alternative to the zero-loading LE boundary condition: no equation
     otherwise ties the leading-edge loading to anything (no edge exists
-    upstream of it), so carry the first interval's loading back to the
-    LE (zero-gradient extrapolation) instead."""
+    upstream of it), so with this class the loading of the first node
+    downstream of the LE is carried back to the LE itself (zero-gradient
+    extrapolation)."""
 
-    def residual(self, delta_w0: bl0.DeltaW.Hint, delta_w1: bl1.DeltaW.Hint):
+    def residual(
+        self,
+        delta_w0: bl0.DeltaW.Hint,
+        delta_w1: bl1.DeltaW.Hint,
+    ):
         return delta_w0 - delta_w1
 
 
@@ -233,7 +258,13 @@ class BladeSurfacePressures(EquationBase):
 
     config = EquationConfig(manual_units=('Pa', 'Pa'))
 
-    def __init__(self, rothalpy: float, entropy: float, gas_state: IdealGasState, **kw):
+    def __init__(
+        self,
+        rothalpy: float,
+        entropy: float,
+        gas_state: IdealGasState,
+        **kw,
+    ):
         super().__init__(**kw)
         self.rothalpy = rothalpy
         self.entropy = entropy

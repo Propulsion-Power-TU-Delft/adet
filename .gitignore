@@ -17,7 +17,8 @@ CLAUDE.md
 .DS_Store
 
 # Reference PDFs
-docs/*.pdf
+notes/
+refs/
 
 # Generated example outputs (design maps, plots)
 outputs/

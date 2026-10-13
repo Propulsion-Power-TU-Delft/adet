@@ -11,7 +11,7 @@ from matplotlib import pyplot as plt
 
 from adet.assemblers import CasadiSystem
 from adet.equations.fundamental import Kinematics
-from adet.equations.throughflow import (
+from adet.equations.streamline_curvature import (
     BladeLoadingVariables,
     BladeSurfacePressures,
     BladeToBladeLoading,
@@ -404,13 +404,9 @@ solution = solve_root_problem(rootfinder, x0, kn, bnd, suppress_output=False)
 # Polish with a second, tighter bounded IPOPT solve rather than the usual
 # unconstrained KINSOL pass
 rootfinder_polish = system.make_rootfinder(
-    'ipopt',
+    'kinsol',
     opts={
-        'error_on_fail': False,
-        'ipopt.tol': 1e-10,
-        'ipopt.max_iter': 1000,
-        'ipopt.mu_strategy': 'adaptive',
-        'ipopt.warm_start_init_point': 'yes',
+        'error_on_fail': True,
     },
 )
 solution = solve_root_problem(rootfinder_polish, solution, kn, bnd)
