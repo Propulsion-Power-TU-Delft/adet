@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from matplotlib.lines import Line2D
 
-from adet.components import BaseComponent, Shaft
+from adet.components.base_component import BaseComponent
+from adet.components.connections import Shaft
 from adet.equations import EquationBase
 from adet.equations.control_volumes import OptimalIncidenceRadialInflowTurbine
 from adet.equations.fundamental import (
