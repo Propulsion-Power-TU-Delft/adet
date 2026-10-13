@@ -3,12 +3,11 @@ Simple quantity defintions, for defining differences or ratios rather than
 the single quantities
 """
 
-from adet.equations.utils import get_midspan_idx
-
 import CoolProp as cp
 import numpy as np
 
 from adet.equations.base_equation import EquationBase, EquationConfig
+from adet.equations.utils import get_midspan_idx
 from adet.variables import NodeVariables, ThermoVariables
 
 n0 = NodeVariables(0)

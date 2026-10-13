@@ -8,8 +8,8 @@ variables of either the inlet or outlet node
 import CoolProp as cp
 import numpy as np
 
-from adet.equations.base_equation import EquationBase, EquationConfig
-from adet.equations.utils import safe_min
+from adet.equations.base_equation import DeviationModel, EquationBase, EquationConfig
+from adet.equations.utils import safe_abs, safe_min
 from adet.variables import NodeVariables, ThermoVariables
 from adet.varspec import VarSpec
 
@@ -149,7 +149,6 @@ class LeadingEdgeThroat(EquationBase):
         met_angle: n0.geo.MetalAngle.Hint,
         bld_thick: n0.geo.BldThick.Hint,
     ):
-
         # TODO: Make some throat geometry spec
         rr_th = ((rr_hub**2 + rr_tip**2) / 2) ** 0.5
         U_th = omega * rr_th
@@ -196,7 +195,6 @@ class SimpleThroat(EquationBase):
         mach_th: n0.kin.MachThroat.Hint,
         T_th: n0.oth.ThrTemperature.Hint,
     ):
-
         U_th = omega * rr_th
 
         a_th, rho_th, s_th, h_th = self.eos(p_th, T_th)
@@ -239,7 +237,6 @@ class ChokingArea(EquationBase):
         p_chk: n0.oth.ChkPressure.Hint,
         T_chk: n0.oth.ChkTemperature.Hint,
     ):
-
         rr_chk = ((rr_hub**2 + rr_tip**2) / 2) ** 0.5
         U_chk = omega * rr_chk
         # ---
@@ -256,3 +253,65 @@ class ChokingArea(EquationBase):
         r3 = roth0 - roth_chk
 
         return r1, r2, r3
+
+
+# *** Rotor inlet incidence (design correlation, not a loss)
+class OptimalIncidenceRadialInflowTurbine(DeviationModel):
+    """Rotor-inlet incidence for radial/mixed-flow turbines accounting for
+    flow slip, from H. Chen and N. C. Baines, "The aerodynamic loading of
+    radial and mixed-flow turbines," Int. J. Mech. Sci. 36(1), pp. 63-79
+    (1994), Eqs. (3)-(5), (8). Replaces the usual zero-incidence
+    assumption (``ZeroDeviation``): the flow slips relative to the
+    blades, as at a centrifugal compressor impeller exit.
+
+    ``correlation`` selects the slip-factor formula: ``'chen'`` (default,
+    Eq. 8, eddy contained within the blade passage) or ``'stanitz'``
+    (Eq. 4, the original centrifugal-compressor correlation).
+
+    Given the slip factor :math:`\\mu`, Eq. (5) reworked for
+    :math:`C_{\\theta 2}` gives the classic Wiesner-style form
+    :math:`C_{\\theta 2} = C_{\\theta 2,\\mathrm{ideal}} - (1-\\mu) U_2`
+    (cf. ``adet.losses.compressors.BackstromSlip``).
+    """
+
+    def __init__(self, correlation: str = 'chen', **kwargs):
+        super().__init__(**kwargs)
+        if correlation not in ('chen', 'stanitz'):
+            raise ValueError(
+                f"correlation must be 'chen' or 'stanitz', got {correlation!r}"
+            )
+        self.correlation = correlation
+
+    def residual(
+        self,
+        beta0: n0.kin.FlowAngleRel.Hint,
+        metal_ang0: n0.geo.MetalAngle.Hint,
+        mer_angle0: n0.geo.MeridionalAngle.Hint,
+        n_bl0: n0.geo.NumBlades.Hint,
+        wm0: n0.kin.W_mer.Hint,
+        u0: n0.kin.BladeSpeed.Hint,
+        slip0: n0.oth.SlipFactor.Hint,
+    ):
+        sin_cone = safe_abs(np.sin(mer_angle0))  # sin(gamma), Fig. 2
+        cos_metal = np.cos(metal_ang0)
+        sin_pitch = np.sin(np.pi / n_bl0)
+
+        if self.correlation == 'stanitz':
+            # Eq. (4)
+            slip_target = 1 - 0.63 * np.pi / n_bl0 * sin_cone * cos_metal
+        else:
+            # Eq. (8) -- eddy contained within the blade passage
+            slip_target = (
+                1 - (2 * sin_pitch / (np.pi * (1 + sin_pitch))) * sin_cone * cos_metal
+            )
+
+        r_slip = slip0 - slip_target
+
+        # Eq. (5), reworked for the actual tangential velocity (see class
+        # docstring): ideal relative Wt minus the Wiesner-style slip
+        # deficit (1 - mu) * U.
+        wt_ideal = wm0 * np.tan(metal_ang0)
+        wt_actual = wt_ideal - (1 - slip0) * u0
+        r_incidence = wm0 * np.tan(beta0) - wt_actual
+
+        return r_slip, r_incidence

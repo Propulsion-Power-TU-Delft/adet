@@ -245,7 +245,7 @@ class HydraulicQuantities(EquationBase):
         rtip0: n0.geo.Rtip.Hint,
         rhub0: n0.geo.Rhub.Hint,
         hgt1: n1.geo.Height.Hint,
-        chord_ax1: n1.geo.ChordAx.Hint,
+        mer_chord1: n1.geo.MerChord.Hint,
         metal_hub0: n0.geo.MetalAngleHub.Hint,
         metal_tip0: n0.geo.MetalAngleTip.Hint,
         metal_ang1: n1.geo.MetalAngle.Hint,
@@ -560,7 +560,7 @@ class AmiranteDiffuserMomentum(EquationBase):
     config = EquationConfig(
         input_pair=cp.PSmass_INPUTS,
         out_properties=(thrm.Enthalpy,),
-        manual_units=("m^2 / s", "K"),
+        manual_units=('m^2 / s', 'K'),
     )
 
     def residual(
@@ -606,7 +606,7 @@ class AmiranteDiffuserMomentum(EquationBase):
 
 class JansenDiffuserLoss(LossModel):
     config = EquationConfig(
-        manual_units=("dimensionless", "J/kg"),
+        manual_units=('dimensionless', 'J/kg'),
     )
 
     def residual(

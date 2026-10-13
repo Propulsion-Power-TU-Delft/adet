@@ -13,6 +13,7 @@ from adet.equations.utils import (
     safe_abs,
     safe_if_else,
     safe_min,
+    safe_min_clip,
 )
 from adet.losses.base_loss import LossModel
 from adet.tools.interpolation import make_casadi_interpolant
@@ -55,6 +56,8 @@ class SieverdingBasePressure(EquationBase):
         # Hardcoded blade parameter (=2)-> Check meaning
         # Add support for other blade parameters
 
+        # Linearly extrapolates below the table's p1/pt0=0.25 lower bound
+        # instead of clamping (validated against CFD by the model's author).
         first_param = p1 / pt0
         second_param = BLADE_PARAM * (p1**0)  # it's just an array of 2s
         table_entry = cs.horzcat(first_param, second_param).T
@@ -226,6 +229,44 @@ def incomp_mixing_zeta(
     )
 
 
+def baumgartner_mixing_zeta(
+    stc_p0,
+    gamma_pv0,
+    rel_mach0,
+    geo_metal_angle0,
+    geo_pitch0,
+    geo_bld_thick0,
+    oth_p_base0,
+    oth_mom_thick0,
+    oth_disp_thick0,
+):
+    """Denton mixing-loss coefficient with Baumgartner et al. (2020)'s
+    compressible base-pressure-coefficient correction, replacing the raw
+    incompressible ``Cpb = (p_base - p) / q`` used by
+    :func:`incomp_mixing_zeta` with ``q = 0.5 * gamma_pv * p * Mach**2``.
+    """
+
+    # TODO:
+    # 1. Remove duplicate clipping -> See equation class below
+    # 2. Check the theory/reason behind this clipping
+
+    # mach_capped = safe_min_clip(safe_min(rel_mach0, 1.0), 0.05)
+    mach_capped = minmax_bound(rel_mach0, 0.05, 1.0)
+    thick_by_pitch0 = geo_bld_thick0 / geo_pitch0
+    cpb = (
+        2
+        * (oth_p_base0 / stc_p0 - 1)
+        * (2 / (gamma_pv0 * mach_capped**2) * thick_by_pitch0)
+    )
+
+    w = geo_pitch0 * np.cos(geo_metal_angle0)  # outlet throat
+    return (
+        -(cpb * geo_bld_thick0) / w
+        + 2 * oth_mom_thick0 / w
+        + ((oth_disp_thick0 + geo_bld_thick0) / w) ** 2
+    )
+
+
 class AungierDeviationModel(DeviationModel):
     """Only valid for subsonic deviation"""
 
@@ -317,6 +358,58 @@ class DentonMixingLoss(LossModel):
         zeta = incomp_mixing_zeta(
             dyn_press,
             p0,
+            beta0,
+            pitch0,
+            t0,
+            p_base0,
+            mom_thick0,
+            disp_thick0,
+        )
+        zeta = minmax_bound(zeta, 0.0, 1.0)
+
+        rlt_p1_loss = p_rlt0 - dyn_press * zeta
+        smass1_loss = self.eos(h_rlt0, rlt_p1_loss)
+
+        return ds_mixing0 - (smass1_loss - s0)
+
+
+class DentonBaumgartnerMixingLoss(LossModel):
+    """Denton's trailing-edge mixing loss using
+    :func:`baumgartner_mixing_zeta`'s compressible base-pressure
+    coefficient in place of :class:`DentonMixingLoss`'s incompressible
+    Cpb."""
+
+    config = EquationConfig(
+        input_pair=cp.HmassP_INPUTS,
+        out_properties=(thrm.Entropy,),
+    )
+
+    def residual(
+        self,
+        p0: n0.stc.Pressure.Hint,
+        p_rlt0: n0.rlt.Pressure.Hint,
+        gamma0: n0.oth.GammaPV.Hint,
+        rel_mach0: n0.kin.RelMach.Hint,
+        beta0: n0.geo.MetalAngle.Hint,
+        pitch0: n0.geo.Pitch.Hint,
+        t0: n0.geo.BldThick.Hint,
+        p_base0: n0.oth.PBase.Hint,
+        mom_thick0: n0.oth.MomThick.Hint,
+        disp_thick0: n0.oth.DispThick.Hint,
+        h_rlt0: n0.rlt.Enthalpy.Hint,
+        s0: n0.stc.Entropy.Hint,
+        ds_mixing0: n0.loss.Ds_mixing.Hint,
+    ):
+        # TODO:
+        # 1. Remove duplicate clipping
+        # 2. Check the theory/reason behind this clipping
+        mach_capped = safe_min_clip(safe_min(rel_mach0, 1.0), 0.05)
+        dyn_press = 0.5 * gamma0 * p0 * mach_capped**2  # Compressible dynamic head
+
+        zeta = baumgartner_mixing_zeta(
+            p0,
+            gamma0,
+            rel_mach0,
             beta0,
             pitch0,
             t0,
