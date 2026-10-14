@@ -87,6 +87,34 @@ class TotalTotalExpansionEfficiency(EquationBase):
         return eta_tt1 - (h0_tot - h1_tot) / (h0_tot - h_is1)
 
 
+class TotalStaticExpansionEfficiency(EquationBase):
+    """Total-to-static isentropic expansion efficiency (cf. Chen & Baines
+    1994, Eq. 10):
+
+    .. math::
+        \\eta_{ts} = \\frac{h_{t0} - h_{t1}}{h_{t0} - h_{1,s}}
+
+    :math:`h_{1,s}` is the enthalpy at the actual static exit pressure and
+    the inlet entropy.
+    """
+
+    config = EquationConfig(
+        input_pair=cp.PSmass_INPUTS,
+        out_properties=(thrm.Enthalpy,),
+    )
+
+    def residual(
+        self,
+        s0: n0.stc.Entropy.Hint,
+        p1: n1.stc.Pressure.Hint,
+        h0_tot: n0.tot.Enthalpy.Hint,
+        h1_tot: n1.tot.Enthalpy.Hint,
+        eta_ts1: n1.ndim.EtaTS.Hint,
+    ):
+        h_is1 = self.eos(p1, s0)
+        return eta_ts1 - (h0_tot - h1_tot) / (h0_tot - h_is1)
+
+
 class TotalTotalCompressionEfficiency(EquationBase):
     config = EquationConfig(
         input_pair=cp.PSmass_INPUTS,
@@ -195,7 +223,6 @@ class FlowCoefficient(EquationBase):
         u1: n1.kin.BladeSpeed.Hint,
         flow_coeff1: n1.ndim.FlowCoeff.Hint,
     ):
-
         return safe_abs(u1) * flow_coeff1 - vm0
 
 
@@ -233,7 +260,6 @@ class WorkCoefficient(EquationBase):
         u1: n1.kin.BladeSpeed.Hint,
         work_coeff1: n1.ndim.WorkCoeff.Hint,
     ):
-
         return u1**2 * work_coeff1 - (h1_tot - h0_tot)
 
 

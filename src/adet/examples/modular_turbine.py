@@ -81,7 +81,7 @@ stator = BladeRow(
         ModifiedZweifel(): (0, 1),
     },
     constant_variables=[n0.geo.Rmid],
-    spanwise_constants=[n1.geo.ChordAx],
+    spanwise_constants=[n1.geo.MerChord],
 )
 
 # > Modify the rotor
@@ -234,7 +234,7 @@ if PLOTS:
             sol_dict[nodes[1].geo.Height][0],
             sol_dict[nodes[0].geo.MeridionalAngle][0],
             sol_dict[nodes[1].geo.MeridionalAngle][0],
-            sol_dict[nodes[1].geo.ChordAx][0],
+            sol_dict[nodes[1].geo.MerChord][0],
             axial_offset=offset,
             force_straight=True,
         )
@@ -253,11 +253,11 @@ if PLOTS:
             color_val = cmap((span_idx + 1) / num_span)
             inlet_angle = sol_dict[nodes[0].geo.MetalAngle][span_idx]
             outlet_angle = sol_dict[nodes[1].geo.MetalAngle][span_idx]
-            chord_ax = sol_dict[nodes[1].geo.ChordAx][span_idx]
+            mer_chord = sol_dict[nodes[1].geo.MerChord][span_idx]
             plot_camberline(
                 inlet_angle,
                 outlet_angle,
-                chord_ax,
+                mer_chord,
                 ax=ax_cbl,
                 color=color_val,
                 axial_offset=offset,
@@ -266,7 +266,7 @@ if PLOTS:
             plot_camberline(
                 inlet_angle,
                 outlet_angle,
-                chord_ax,
+                mer_chord,
                 ax=ax_cbl,
                 color=color_val,
                 axial_offset=offset,
@@ -285,7 +285,7 @@ if PLOTS:
         )
 
         # Add 10% offset for plotting
-        offset += 1.1 * sol_dict[nodes[1].geo.ChordAx][0]
+        offset += 1.1 * sol_dict[nodes[1].geo.MerChord][0]
         comp_idx += 1
 
     ax_mer.hlines(0.0, 0.0, offset, color='k', linestyles='-.')

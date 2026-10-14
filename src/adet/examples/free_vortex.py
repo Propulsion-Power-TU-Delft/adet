@@ -6,7 +6,6 @@ This shows how to fully define a spanwise annular problem.
 
 import logging
 
-
 import matplotlib.pyplot as plt
 from pint import Quantity
 
@@ -15,9 +14,9 @@ from adet.equations.fundamental import (
     FreeVortexDistribution,
     Kinematics,
     MassAreaRelation,
+    TotalMassFlow,
     TotalStaticMatching,
     ZeroBlockage,
-    TotalMassFlow,
 )
 from adet.equations.geometrical import (
     AnnulusAreas,

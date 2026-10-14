@@ -3,8 +3,7 @@ Basic tools for string manipulation
 """
 
 import re
-from typing import cast, get_args, Literal
-
+from typing import Literal, cast, get_args
 
 NodeStatesNames = Literal['stc', 'tot', 'rlt', 'kin', 'geo', 'oth']
 STATE_NAMES = get_args(NodeStatesNames)
