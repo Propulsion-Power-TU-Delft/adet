@@ -25,7 +25,7 @@ from adet.equations.geometrical import (
 )
 from adet.geometry import BezierCurve, StraightLine
 from adet.losses.basic import ZeroDeviation
-from adet.losses.compressors import AmiranteDiffuserMomentum
+from adet.losses.compressors import AmiranteDiffuserMomentum, StanitzDiffuserMomentum
 from adet.variables import (
     GeometricVariables,
     KinematicVariables,
@@ -224,6 +224,43 @@ class VanelessDiffuser(BaseComponent):
         self._boundary_conditions[n1.kin.Omega] = 0
         # NOTE: Null axial chord => exactly radial diffuser
         self._boundary_conditions[n1.geo.ChordAx] = 0.0
+
+
+class StanitzVanelessDiffuser(VanelessDiffuser):
+    """
+    One radial step of a vaneless diffuser with the one-zone model of Stanitz
+    (1952) as written by Dubitsky and Japikse (2008), see StanitzDiffuserMomentum.
+    The diffuser is modelled by a sequence of these components.
+
+    The skin friction coefficient DiffFricCoeff is required at the inlet of each
+    step, either as a boundary condition (n0.oth.DiffFricCoeff) or from the
+    correlation, extra_equations={DiffuserFrictionCoefficient(): 0} with the
+    boundary conditions n0.oth.DiffFricConst and n0.geo.HydDiam.
+    """
+
+    base_equations = [
+        # Fundamental equations
+        (ConstRelEnthalpy, (0, 1)),
+        (StanitzDiffuserMomentum, (0, 1)),
+        (MassConservation, (0, 1)),
+        # Meridional Geometry
+        (MeridionalGeometry, 1),
+        # No blades
+        (ZeroBlockage, 0),
+        (ZeroBlockage, 1),
+        # Extra definitions
+        (RadialGeometry, (0, 1)),
+    ]
+
+    # NOTE: The wake fraction is not used by the Stanitz model
+    from_previous_node = (
+        ABSOLUTE_LINK
+        + GEOM_LINK
+        + [
+            _geo.HDistr,
+            _geo.RDistr,
+        ]
+    )
 
 
 class Interspace(BaseComponent):

@@ -560,7 +560,7 @@ class AmiranteDiffuserMomentum(EquationBase):
     config = EquationConfig(
         input_pair=cp.PSmass_INPUTS,
         out_properties=(thrm.Enthalpy,),
-        manual_units=("m^2 / s", "K"),
+        manual_units=('m^2 / s', 'K'),
     )
 
     def residual(
@@ -604,9 +604,95 @@ class AmiranteDiffuserMomentum(EquationBase):
         return r1, r2
 
 
+class StanitzDiffuserMomentum(EquationBase):
+    """
+    Dubitsky and Japikse (2008) - Vaneless Diffuser Advanced Model, Eqs. (1)-(2),
+    adapted from Stanitz (1952) - NACA TN 2610, Eqs. (8)-(9).
+
+    Meridional and tangential momentum of the one-zone vaneless diffuser model
+    over one radial step between the inlet (0) and outlet (1) of the component.
+    Valid for radial and mixed-flow diffusers. The two-zone (jet/wake) model of
+    Dubitsky and Japikse, Eqs. (7)-(22), is not implemented: the authors use it
+    only together with a two-zone impeller model (not coded into adet).
+
+    Notation, Dubitsky and Japikse -> adet:
+    - C, C_m, C_theta -> V_mag, V_mer, V_tan
+    - alpha           -> FlowAngleAbs, from the meridional direction
+    - phi             -> MeridionalAngle, diffuser inclination, 90 deg = radial
+    - b               -> Height, passage depth
+    - C_f             -> DiffFricCoeff, wall shear C_f rho C^2 / 2 on both walls
+
+    Discretisation: backward difference over the step, with the
+    coefficients evaluated at the outlet of the step (first order), multiplied
+    by dr.
+
+    - r1: meridional momentum, Eq. (1), multiplied by dr
+    - r2: tangential momentum, Eq. (2), multiplied by dr
+
+    Note: C_f is an input, given at the inlet of the step, either as a boundary
+    condition or from DiffuserFrictionCoefficient, Eq. (6).
+    """
+
+    def residual(
+        self,
+        vm0: n0.kin.V_mer.Hint,
+        vm1: n1.kin.V_mer.Hint,
+        vt0: n0.kin.V_tan.Hint,
+        vt1: n1.kin.V_tan.Hint,
+        v1: n1.kin.V_mag.Hint,
+        p0: n0.stc.Pressure.Hint,
+        p1: n1.stc.Pressure.Hint,
+        rho1: n1.stc.Density.Hint,
+        rr0: n0.geo.RDistr.Hint,
+        rr1: n1.geo.RDistr.Hint,
+        hgt1: n1.geo.Height.Hint,
+        mer_angle1: n1.geo.MeridionalAngle.Hint,
+        cf0: n0.oth.DiffFricCoeff.Hint,
+    ):
+        dr = rr1 - rr0
+        wall1 = hgt1 * np.sin(mer_angle1)
+
+        r1 = (
+            vm1 * (vm1 - vm0)
+            - vt1**2 / rr1 * dr
+            + cf0 * v1 * vm1 / wall1 * dr
+            + (p1 - p0) / rho1
+        )
+
+        r2 = vm1 * (vt1 - vt0) + vm1 * vt1 / rr1 * dr + cf0 * v1 * vt1 / wall1 * dr
+
+        return r1, r2
+
+
+class DiffuserFrictionCoefficient(EquationBase):
+    """
+    Dubitsky and Japikse (2008) - Vaneless Diffuser Advanced Model, Eq. (6),
+    attributed there to Japikse (1996). Skin friction coefficient of the
+    vaneless diffuser, C_f in StanitzDiffuserMomentum.
+
+    The Reynolds number is not defined in the paper Re = m_dot / (mu D_hyd),
+    with D_hyd the hydraulic diameter of the impeller exit passage given as
+    an input.
+
+    - r1: friction coefficient, Eq. (6)
+    """
+
+    def residual(
+        self,
+        cf0: n0.oth.DiffFricCoeff.Hint,
+        k_diff0: n0.oth.DiffFricConst.Hint,
+        cum_mf0: n0.oth.TotMassFlow.Hint,
+        visc0: n0.stc.Viscosity.Hint,
+        hyd_diam0: n0.geo.HydDiam.Hint,
+    ):
+        reynolds = cum_mf0 / (visc0 * hyd_diam0)
+
+        return cf0 - k_diff0 * (1.8e5 / reynolds) ** 0.2
+
+
 class JansenDiffuserLoss(LossModel):
     config = EquationConfig(
-        manual_units=("dimensionless", "J/kg"),
+        manual_units=('dimensionless', 'J/kg'),
     )
 
     def residual(

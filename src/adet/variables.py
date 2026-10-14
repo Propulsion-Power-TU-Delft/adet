@@ -219,6 +219,8 @@ class OtherVariables(VariableEnum):
     ProfileLoading = VarSpec('k_prof', '', 0.3)
     CdProfile = VarSpec('cd_profile', '')
     DischCoeff = VarSpec('disch_coeff', '')
+    DiffFricCoeff = VarSpec('cf_diff', '', 0.005)
+    DiffFricConst = VarSpec('k_diff', '')
 
 
 class NodeVariables:
