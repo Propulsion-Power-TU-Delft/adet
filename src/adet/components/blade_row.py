@@ -27,7 +27,12 @@ from adet.equations.geometrical import (
 )
 from adet.geometry import BezierCurve, StraightLine
 from adet.losses.basic import ZeroDeviation
-from adet.losses.compressors import AmiranteDiffuserMomentum, StanitzDiffuserMomentum
+from adet.losses.compressors import (
+    AmiranteDiffuserMomentum,
+    ExitConeLoss,
+    StanitzDiffuserMomentum,
+    VoluteLossJapikse,
+)
 from adet.variables import (
     GeometricVariables,
     KinematicVariables,
@@ -263,6 +268,82 @@ class StanitzVanelessDiffuser(VanelessDiffuser):
             _geo.RDistr,
         ]
     )
+
+
+class Volute(BaseComponent):
+    """
+    Overhung volute downstream of a vaneless diffuser.
+    """
+
+    base_equations = [
+        # Fundamental equations
+        (ConstRelEnthalpy, (0, 1)),
+        (MassConservation, (0, 1)),
+        (VoluteLossJapikse, (0, 1)),
+        # Meridional Geometry (equivalent annulus)
+        (MeridionalGeometry, 1),
+        # No blades
+        (ZeroBlockage, 0),
+        (ZeroBlockage, 1),
+        # Extra definitions
+        (RadialGeometry, (0, 1)),
+    ]
+
+    constant_variables = [
+        _kin.Omega,
+    ]
+
+    from_previous_node = (
+        ABSOLUTE_LINK
+        + GEOM_LINK
+        + [
+            _geo.HDistr,
+            _geo.RDistr,
+        ]
+    )
+
+    def _post_init(self):
+        self._boundary_conditions[n1.kin.Omega] = 0
+        # Swirl collected by the volute
+        self._boundary_conditions[n1.kin.FlowAngleAbs] = 0.0
+
+
+class ExitCone(BaseComponent):
+    """
+    Conical diffuser downstream of the volute.
+    """
+
+    base_equations = [
+        # Fundamental equations
+        (ConstRelEnthalpy, (0, 1)),
+        (MassConservation, (0, 1)),
+        (ExitConeLoss, (0, 1)),
+        # Meridional Geometry (equivalent annulus)
+        (MeridionalGeometry, 1),
+        # No blades
+        (ZeroBlockage, 0),
+        (ZeroBlockage, 1),
+        # Extra definitions
+        (RadialGeometry, (0, 1)),
+    ]
+
+    constant_variables = [
+        _kin.Omega,
+    ]
+
+    from_previous_node = (
+        ABSOLUTE_LINK
+        + GEOM_LINK
+        + [
+            _geo.HDistr,
+            _geo.RDistr,
+        ]
+    )
+
+    def _post_init(self):
+        self._boundary_conditions[n1.kin.Omega] = 0
+        # Axial flow in the cone
+        self._boundary_conditions[n1.kin.FlowAngleAbs] = 0.0
 
 
 class Interspace(BaseComponent):
