@@ -74,6 +74,62 @@ def midline_tangent_angle(z_mid: np.ndarray, r_mid: np.ndarray) -> np.ndarray:
     return np.arctan2(dr_ds, dz_ds)
 
 
+def linear_beta_law(
+    s_hat: np.ndarray, beta_in: float, beta_out: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Blade-angle law beta(s_hat): plain linear interpolation between
+    ``beta_in`` and ``beta_out`` (constant curvature, dbeta/ds_hat).
+
+    Returns
+    -------
+    beta, dbeta_dshat : ndarray
+        Both evaluated at ``s_hat``; ``dbeta_dshat`` is d(beta)/d(s_hat),
+        not yet converted to the physical d(beta)/ds.
+    """
+    beta = beta_in + (beta_out - beta_in) * s_hat
+    dbeta_dshat = np.full_like(s_hat, beta_out - beta_in, dtype=float)
+    return beta, dbeta_dshat
+
+
+def parabolic_beta_law(
+    s_hat: np.ndarray, beta_in: float, beta_out: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Blade-angle law beta(s_hat): quadratic, tangent to the meridional
+    direction at the leading edge (dbeta/ds_hat = 0 at s_hat=0), with
+    curvature increasing toward the trailing edge.
+
+    Returns
+    -------
+    beta, dbeta_dshat : ndarray
+        See :func:`linear_beta_law`.
+    """
+    beta = beta_in + (beta_out - beta_in) * s_hat**2
+    dbeta_dshat = 2.0 * (beta_out - beta_in) * s_hat
+    return beta, dbeta_dshat
+
+
+def circular_beta_law(
+    s_hat: np.ndarray, beta_in: float, beta_out: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """Blade-angle law beta(s_hat): quarter-circle, tangent to the
+    meridional direction at the leading edge (dbeta/ds_hat = 0 at
+    s_hat=0), steepening sharply (dbeta/ds_hat -> infinity) toward the
+    trailing edge.
+
+    Returns
+    -------
+    beta, dbeta_dshat : ndarray
+        See :func:`linear_beta_law`.
+    """
+    root = np.sqrt(np.clip(1.0 - s_hat**2, 0.0, None))
+    beta = beta_in + (beta_out - beta_in) * (1.0 - root)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        dbeta_dshat = (beta_out - beta_in) * np.divide(
+            s_hat, root, out=np.full_like(s_hat, np.inf, dtype=float), where=root != 0
+        )
+    return beta, dbeta_dshat
+
+
 def front_loaded_beta_law(
     s_hat: np.ndarray,
     beta_in: float,

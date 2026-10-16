@@ -1,9 +1,17 @@
 """
-Custom equations for quasi-3D streamline-curvature modeling solving the isentropic,
-homorothalpic radial equilibrium and mass conservation in the meridional
-plane (Van den Braembussche,*Design and Analysis of Centrifugal Compressors*, 2019,
-Section 3.1.1, Eqs. 3.3/3.6), and the blade-to-blade flow (Section 3.1.2, Eqs.
+Custom equations for quasi-3D streamline-curvature modeling solving the isentropic
+radial equilibrium and mass conservation in the meridional plane (Van den
+Braembussche, *Design and Analysis of Centrifugal Compressors*, 2019, Section
+3.1.1, Eqs. 3.3/3.6), and the blade-to-blade flow (Section 3.1.2, Eqs.
 3.13-3.15).
+
+The flow is isentropic (globally uniform entropy, legitimate given uniform
+upstream total conditions and no loss model) but *not* homorothalpic: rothalpy
+:math:`I = h + W^2/2 - U^2/2` (Eq. 1.68) is only conserved *along* each
+streamline (:class:`RothalpyConservation`), anchored at its own leading-edge
+velocity triangle (:class:`AbsoluteEnergyClosure`) -- it generally differs
+*between* streamlines (spanwise stations), and must not be approximated as a
+single constant shared by the whole domain.
 """
 
 import CoolProp as cp
@@ -26,32 +34,84 @@ bl1 = BladeLoadingVariables(1)
 
 
 class LocalThermoState(EquationBase):
-    """Static density from rothalpy conservation (Eq. 1.68) and the
-    ideal-gas EOS at constant (inlet) entropy."""
+    """Static density from the local static enthalpy -- a free, solved
+    quantity (see :class:`RothalpyConservation`/:class:`AbsoluteEnergyClosure`
+    for how it's tied to the velocity triangle) -- and the shared
+    (globally uniform, isentropic) entropy."""
 
     config = EquationConfig(manual_units=('kg / m**3',))
 
     def __init__(
         self,
-        rothalpy: float,
         entropy: float,
         gas_state: IdealGasState,
         **kw,
     ):
         super().__init__(**kw)
-        self.rothalpy = rothalpy
         self.entropy = entropy
         self.gas_state = gas_state
 
     def residual(
         self,
-        w0: n0.kin.W_mag.Hint,
-        u0: n0.kin.BladeSpeed.Hint,
+        h0: n0.stc.Enthalpy.Hint,
         rho0: n0.stc.Density.Hint,
     ):
-        h_static = self.rothalpy + u0**2 / 2 - w0**2 / 2
-        self.gas_state.update(cp.HmassSmass_INPUTS, h_static, self.entropy)
+        self.gas_state.update(cp.HmassSmass_INPUTS, h0, self.entropy)
         return rho0 - self.gas_state.rhomass()
+
+
+class RothalpyConservation(EquationBase):
+    """Conservation of rothalpy (Eq. 1.68), :math:`I = h + W^2/2 - U^2/2`,
+    along a streamline (same spanwise station, between two neighboring
+    streamwise stations): with no external work or heat addition outside
+    the blade passage, :math:`I` cannot change along ``s`` -- but it
+    generally differs *between* streamlines (spanwise stations), since
+    each one's own leading-edge velocity triangle differs (see
+    :class:`AbsoluteEnergyClosure`, which anchors it there). It must
+    **not** be approximated as a single global constant shared by the
+    whole domain."""
+
+    def residual(
+        self,
+        h0: n0.stc.Enthalpy.Hint,
+        w0: n0.kin.W_mag.Hint,
+        u0: n0.kin.BladeSpeed.Hint,
+        h1: n1.stc.Enthalpy.Hint,
+        w1: n1.kin.W_mag.Hint,
+        u1: n1.kin.BladeSpeed.Hint,
+    ):
+        rothalpy0 = h0 + w0**2 / 2 - u0**2 / 2
+        rothalpy1 = h1 + w1**2 / 2 - u1**2 / 2
+        return rothalpy1 - rothalpy0
+
+
+class AbsoluteEnergyClosure(EquationBase):
+    """Anchors the local static enthalpy at the leading edge of a
+    streamline from the (globally uniform) upstream absolute total
+    enthalpy and the *local* absolute velocity magnitude:
+    :math:`h = H_{0,abs} - V^2/2`. ``total_enthalpy`` is the same
+    upstream absolute stagnation enthalpy at every span position (e.g.
+    ``gas_state.hmass()`` at the inlet total pressure/temperature); the
+    local static enthalpy -- and hence the rothalpy
+    (:class:`RothalpyConservation`) that gets conserved from here on --
+    still varies with span through the local, solved ``V_mag``."""
+
+    config = EquationConfig(manual_units=('J / kg',))
+
+    def __init__(
+        self,
+        total_enthalpy: float,
+        **kw,
+    ):
+        super().__init__(**kw)
+        self.total_enthalpy = total_enthalpy
+
+    def residual(
+        self,
+        h0: n0.stc.Enthalpy.Hint,
+        v0: n0.kin.V_mag.Hint,
+    ):
+        return h0 - (self.total_enthalpy - v0**2 / 2)
 
 
 class MeridionalMomentumMarch(EquationBase):
@@ -253,33 +313,37 @@ class SuctionPressureVelocities(EquationBase):
 
 
 class BladeSurfacePressures(EquationBase):
-    """Static pressure on the SS/PS blade surfaces, from rothalpy
-    conservation plus the shared static entropy."""
+    """Static pressure on the SS/PS blade surfaces, from the local
+    static enthalpy/entropy plus the blade loading's kinetic-energy
+    split. At fixed rothalpy (hence fixed ``U``), Eq. 1.68 gives
+    :math:`h_{ss/ps} = I + U^2/2 - W_{ss/ps}^2/2 = h + (W^2 -
+    W_{ss/ps}^2)/2` -- ``U`` cancels out, so only the local static
+    enthalpy ``h`` and pitchwise-mean relative velocity ``W`` (both
+    already solved quantities) are needed, not the rothalpy itself."""
 
     config = EquationConfig(manual_units=('Pa', 'Pa'))
 
     def __init__(
         self,
-        rothalpy: float,
         entropy: float,
         gas_state: IdealGasState,
         **kw,
     ):
         super().__init__(**kw)
-        self.rothalpy = rothalpy
         self.entropy = entropy
         self.gas_state = gas_state
 
     def residual(
         self,
+        h0: n0.stc.Enthalpy.Hint,
+        w0: n0.kin.W_mag.Hint,
         w_ss0: bl0.W_ss.Hint,
         w_ps0: bl0.W_ps.Hint,
-        u0: n0.kin.BladeSpeed.Hint,
         p_ss0: bl0.P_ss.Hint,
         p_ps0: bl0.P_ps.Hint,
     ):
-        h_ss = self.rothalpy + u0**2 / 2 - w_ss0**2 / 2
-        h_ps = self.rothalpy + u0**2 / 2 - w_ps0**2 / 2
+        h_ss = h0 + (w0**2 - w_ss0**2) / 2
+        h_ps = h0 + (w0**2 - w_ps0**2) / 2
 
         self.gas_state.update(cp.HmassSmass_INPUTS, h_ss, self.entropy)
         p_ss_eos = self.gas_state.p()

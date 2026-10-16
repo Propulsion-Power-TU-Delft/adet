@@ -9,30 +9,17 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 from adet.assemblers import CasadiSystem
-from adet.equations.fundamental import Kinematics
 from adet.equations.streamline_curvature import (
-    BladeLoadingVariables,
-    BladeSurfacePressures,
-    BladeToBladeLoading,
-    CarryLoadingToLE,
-    LocalThermoState,
-    MassFluxAccumulation,
-    MeridionalFlowVariables,
-    MeridionalMomentumMarch,
-    SlipTransition,
-    SuctionPressureVelocities,
+    SurfaceFlow,
     build_meridional_grid,
-    front_loaded_beta_law,
     midline_tangent_angle,
     resample_by_arc_length,
     spanwise_normal_curvature,
 )
 from adet.fluid.ideal_eos import IdealGasState
 from adet.geometry import BezierCurve
-from adet.losses.basic import ZeroDeviation
 from adet.solution import solve_root_problem
 from adet.tools.loggers import setup_logger
-from adet.variables import NodeVariables
 
 logger = logging.getLogger(__name__)
 setup_logger(logger)
@@ -44,24 +31,24 @@ R_MEAN_IN = 0.055  # [m] mean-line radius at the channel inlet
 R_MEAN_OUT = 0.130  # [m] mean-line radius at the channel outlet
 
 H_IN = 0.026  # [m] inlet channel height
-H_OUT = 0.012  # [m] exit channel height
+H_OUT = 0.008  # [m] exit channel height
 
 MERID_ANGLE_IN = np.radians(0.0)  # [rad] BezierCurve convention (0 = axial)
 MERID_ANGLE_OUT = np.radians(90.0)  # [rad] (90 = radial outward)
 
 AXIAL_LENGTH = 0.08  # [m] axial length of the mean line (z=0 to z=AXIAL_LENGTH)
 
-N_STREAM = 13  # number of streamwise stations (LE = 0, TE = N_STREAM - 1)
-N_SPAN = 5  # number of spanwise stations (hub to shroud)
+N_STREAM = 26  # number of streamwise stations (LE = 0, TE = N_STREAM - 1)
+N_SPAN = 7  # number of spanwise stations (hub to shroud)
 
-RPM = 18_000.0  # [rev/min]
+RPM = 50_000.0  # [rev/min]
 OMEGA = RPM * 2 * np.pi / 60  # [rad/s]
 
 # Kept modest relative to radial_impeller_meridional_flow.py: the coupled
 # hub-to-shroud/blade-to-blade system is considerably more sensitive to
 # aggressive loading than either sub-model alone.
-MASS_FLOW = 0.6  # [kg/s]
-T0_IN = 293.15  # [K] inlet total temperature
+MASS_FLOW = 0.75  # [kg/s]
+T0_IN = 273.15  # [K] inlet total temperature
 P0_IN = 101_325.0  # [Pa] inlet total pressure
 
 GAMMA_AIR = 1.4
@@ -71,18 +58,37 @@ VISCOSITY_AIR = 1.8e-5  # [Pa s], unused but required by IdealGasState
 # Blade geometry (Section 3.1.2): hub/shroud metal angle, LE and TE, each
 # linearly interpolated across the span (ETA, below). Set hub == shroud (as
 # here, by default) to recover a spanwise-uniform, lean-free law.
-BETA_HUB_IN = np.radians(-42.0)  # [rad] blade metal angle at the hub, LE
-BETA_SHROUD_IN = np.radians(-42.0)  # [rad] blade metal angle at the shroud, LE
-BETA_HUB_OUT = np.radians(-18.0)  # [rad] blade metal angle at the hub, TE
-BETA_SHROUD_OUT = np.radians(-18.0)  # [rad] blade metal angle at the shroud, TE
+BETA_HUB_IN = np.radians(-48.0)  # [rad] blade metal angle at the hub, LE
+BETA_SHROUD_IN = np.radians(-48.0)  # [rad] blade metal angle at the shroud, LE
+BETA_HUB_OUT = np.radians(-10.0)  # [rad] blade metal angle at the hub, TE
+BETA_SHROUD_OUT = np.radians(-10.0)  # [rad] blade metal angle at the shroud, TE
 
-# FRONT-LOADED TWO-SLOPE BLADE-ANGLE LAW (see front_loaded_beta_law())
-PIECEWISE_SPLIT_FRAC = 0.5  # [s_hat] where the slope changes
-PIECEWISE_FRAC_AT_SPLIT = 0.88  # fraction of (beta_out - beta_in) covered by the split
-PIECEWISE_BLEND_HALF_WIDTH = 0.12  # [s_hat] half-width of the smoothing window
+# Blade-angle law: one of 'linear', 'parabolic', 'circular', 'front_loaded'
+# (see adet.equations.streamline_curvature.components.BETA_LAWS /
+# .geometry) or a custom callable. Only 'front_loaded' takes extra
+# parameters (split_frac/frac_at_split/half_width); the other three
+# don't, so BETA_LAW_KWARGS is derived from BETA_LAW rather than set
+# independently -- switching BETA_LAW above is then a one-line change.
+BETA_LAW = 'linear'
+BETA_LAW_KWARGS = (
+    {
+        'split_frac': 0.4,  # [s_hat] where the slope changes
+        'frac_at_split': 0.48,  # fraction of (beta_out - beta_in) covered by the split
+        'half_width': 0.12,  # [s_hat] half-width of the smoothing window
+    }
+    if BETA_LAW == 'front_loaded'
+    else {}
+)
 
 NUM_BLADES = 24
 BLADE_THICKNESS = 0.0015  # [m]
+
+# Whether to solve the blade-to-blade plane at all (SurfaceFlow's
+# include_blade_to_blade). With it False, the LE/TE closure toggles below
+# are unused (see SurfaceFlow's docstring), and every blade-loading-only
+# guess/post-processing/plot block (W_ss/W_ps/P_ss/P_ps, Figures 3-4) is
+# automatically skipped instead of needing to be commented out by hand.
+INCLUDE_BLADE_TO_BLADE = True
 
 # ------------------------------------------------------------
 # LE/TE closure toggles, independently switchable at each end
@@ -154,155 +160,74 @@ S_HAT = S_STATIONS / S_MAX[None, :]  # streamwise fraction, per span
 BETA_IN_SPAN = BETA_HUB_IN + (BETA_SHROUD_IN - BETA_HUB_IN) * ETA  # (N_SPAN,)
 BETA_OUT_SPAN = BETA_HUB_OUT + (BETA_SHROUD_OUT - BETA_HUB_OUT) * ETA  # (N_SPAN,)
 
-BETA_BL = np.empty((N_STREAM, N_SPAN))
-_BETA_BL_DSHAT = np.empty((N_STREAM, N_SPAN))
-for _j in range(N_SPAN):
-    BETA_BL[:, _j], _BETA_BL_DSHAT[:, _j] = front_loaded_beta_law(
-        S_HAT[:, _j],
-        BETA_IN_SPAN[_j],
-        BETA_OUT_SPAN[_j],
-        PIECEWISE_SPLIT_FRAC,
-        PIECEWISE_FRAC_AT_SPLIT,
-        PIECEWISE_BLEND_HALF_WIDTH,
-    )
+surface = SurfaceFlow(
+    N_STREAM,
+    N_SPAN,
+    use_slip_transition_le=USE_SLIP_TRANSITION_LE,
+    use_slip_transition_te=USE_SLIP_TRANSITION_TE,
+    use_kutta_le=USE_KUTTA_LE,
+    use_kutta_te=USE_KUTTA_TE,
+    transition_frac_le=TRANSITION_FRAC_LE,
+    transition_frac_te=TRANSITION_FRAC_TE,
+    beta_law=BETA_LAW,
+    beta_law_kwargs=BETA_LAW_KWARGS,
+    include_blade_to_blade=INCLUDE_BLADE_TO_BLADE,
+    axial_absolute_inflow=True,
+)
+TRAILING_EDGE = surface.trailing_edge
+
+BETA_BL, _BETA_BL_DSHAT = surface.beta_field(
+    S_STATIONS, S_MAX, BETA_IN_SPAN, BETA_OUT_SPAN
+)
 
 U = OMEGA * R  # [m/s], for guesses/plots only (also enforced by Kinematics)
 
 GAS_STATE = IdealGasState(gamma=GAMMA_AIR, gas_constant=R_AIR, viscosity=VISCOSITY_AIR)
 GAS_STATE.update(cp.PT_INPUTS, P0_IN, T0_IN)
-ROTHALPY = GAS_STATE.hmass()  # [J/kg], no inlet prewhirl assumed
+# Upstream absolute total enthalpy (same at every span position) and the
+# shared, globally uniform isentropic entropy -- NOT a rothalpy: rothalpy
+# depends on the local velocity triangle (varies with span) and is
+# conserved per-streamline by SurfaceFlow itself (RothalpyConservation),
+# anchored here only at the leading edge (AbsoluteEnergyClosure).
+TOTAL_ENTHALPY_IN = GAS_STATE.hmass()  # [J/kg]
 ENTROPY_IN = GAS_STATE.smass()  # [J/(kg K)]
 
-
-def node_index(i: int, j: int) -> int:
-    return i * N_SPAN + j
-
-
-N_NODES = N_STREAM * N_SPAN
-nodes = [NodeVariables(k) for k in range(N_NODES)]
-mf_nodes = [MeridionalFlowVariables(k) for k in range(N_NODES)]
-bl_nodes = [BladeLoadingVariables(k) for k in range(N_NODES)]
-
-TRAILING_EDGE = N_STREAM - 1
-
-TRANSITION_STAR = int(round(TRANSITION_FRAC_TE * TRAILING_EDGE))
-TRANSITION_STAR_IN = max(1, int(round(TRANSITION_FRAC_LE * TRAILING_EDGE)))
-
-LE_BLEND_END = TRANSITION_STAR_IN if USE_SLIP_TRANSITION_LE else 0
-
-LAST_FIXED_BETA_STATION = TRAILING_EDGE - 1 if USE_KUTTA_TE else TRAILING_EDGE
-TE_BLEND_START = (
-    TRANSITION_STAR + 1
-    if (USE_SLIP_TRANSITION_TE and USE_KUTTA_TE)
-    else LAST_FIXED_BETA_STATION + 1
-)
-
-_BETA_BL_SLOPE = _BETA_BL_DSHAT[TRANSITION_STAR, :] / S_MAX
-_BETA_BL_SLOPE_IN = _BETA_BL_DSHAT[TRANSITION_STAR_IN, :] / S_MAX
 
 # ============================================================
 # 3. Assemble the system
 # ============================================================
 system = CasadiSystem(num_span=1)
-
-EQUATIONS = {}
-for j in range(N_SPAN):
-    for i in range(N_STREAM):
-        k = node_index(i, j)
-        EQUATIONS[Kinematics()] = k
-        EQUATIONS[
-            LocalThermoState(rothalpy=ROTHALPY, entropy=ENTROPY_IN, gas_state=GAS_STATE)
-        ] = k
-        EQUATIONS[SuctionPressureVelocities()] = k
-        EQUATIONS[
-            BladeSurfacePressures(
-                rothalpy=ROTHALPY, entropy=ENTROPY_IN, gas_state=GAS_STATE
-            )
-        ] = k
-
-        if i == 0:
-            # LE flow angle is always a direct boundary condition
-            # (BETA_BL[0] + INCIDENCE_LE, see BOUNDARY_CONDITIONS below).
-            pass
-        elif i <= LE_BLEND_END:
-            EQUATIONS[
-                SlipTransition(
-                    s_i=S_STATIONS[i, j],
-                    s_star=S_STATIONS[TRANSITION_STAR_IN, j],
-                    s_end=0.0,
-                    beta_bl_star=BETA_BL[TRANSITION_STAR_IN, j],
-                    slope_star=_BETA_BL_SLOPE_IN[j],
-                )
-            ] = (k, node_index(0, j))
-        elif i <= LAST_FIXED_BETA_STATION and i < TE_BLEND_START:
-            EQUATIONS[ZeroDeviation()] = k
-        elif i <= LAST_FIXED_BETA_STATION:
-            EQUATIONS[
-                SlipTransition(
-                    s_i=S_STATIONS[i, j],
-                    s_star=S_STATIONS[TRANSITION_STAR, j],
-                    s_end=S_MAX[j],
-                    beta_bl_star=BETA_BL[TRANSITION_STAR, j],
-                    slope_star=_BETA_BL_SLOPE[j],
-                )
-            ] = (k, node_index(TRAILING_EDGE, j))
-
-    for i in range(1, N_STREAM):
-        EQUATIONS[BladeToBladeLoading(delta_s=DELTA_S[i - 1, j])] = (
-            node_index(i - 1, j),
-            node_index(i, j),
-        )
-
-    if not USE_KUTTA_LE:
-        EQUATIONS[CarryLoadingToLE()] = (node_index(0, j), node_index(1, j))
-
-for i in range(N_STREAM):
-    for j in range(1, N_SPAN):
-        k0, k1 = node_index(i, j - 1), node_index(i, j)
-        EQUATIONS[
-            MeridionalMomentumMarch(
-                delta_n=DELTA_N[i, j - 1],
-                r0=R[i, j - 1],
-                r1=R[i, j],
-                gamma=GAMMA[i],
-                omega=OMEGA,
-                inv_rn0=INV_RN[i, j - 1],
-                inv_rn1=INV_RN[i, j],
-            )
-        ] = (k0, k1)
-        EQUATIONS[
-            MassFluxAccumulation(delta_n=DELTA_N[i, j - 1], r0=R[i, j - 1], r1=R[i, j])
-        ] = (k0, k1)
-
-for eq, pos in EQUATIONS.items():
-    system.add_equation(eq, pos)
+surface.assemble(
+    system,
+    total_enthalpy=TOTAL_ENTHALPY_IN,
+    entropy=ENTROPY_IN,
+    gas_state=GAS_STATE,
+    omega=OMEGA,
+    r=R,
+    gamma=GAMMA,
+    inv_rn=INV_RN,
+    delta_n=DELTA_N,
+    delta_s=DELTA_S,
+    s_stations=S_STATIONS,
+    s_max=S_MAX,
+    beta_bl=BETA_BL,
+    beta_bl_dshat=_BETA_BL_DSHAT,
+)
 
 # ============================================================
 # 4. Boundary conditions
 # ============================================================
-BOUNDARY_CONDITIONS = {}
+BOUNDARY_CONDITIONS = surface.closure_boundary_conditions(
+    beta_bl=BETA_BL, mass_flow=MASS_FLOW, incidence_le=INCIDENCE_LE
+)
 for i in range(N_STREAM):
     for j in range(N_SPAN):
-        k = node_index(i, j)
-        n = nodes[k]
+        n = surface.nodes[surface.node_index(i, j)]
         BOUNDARY_CONDITIONS[n.geo.RDistr] = R[i, j]
         BOUNDARY_CONDITIONS[n.kin.Omega] = OMEGA
         BOUNDARY_CONDITIONS[n.geo.NumBlades] = NUM_BLADES
         BOUNDARY_CONDITIONS[n.geo.BldThick] = BLADE_THICKNESS
         BOUNDARY_CONDITIONS[n.geo.MetalAngle] = BETA_BL[i, j]
-
-    BOUNDARY_CONDITIONS[mf_nodes[node_index(i, 0)].CumFlow] = 0.0
-    BOUNDARY_CONDITIONS[mf_nodes[node_index(i, N_SPAN - 1)].CumFlow] = MASS_FLOW
-
-for j in range(N_SPAN):
-    BOUNDARY_CONDITIONS[nodes[node_index(0, j)].kin.FlowAngleRel] = (
-        BETA_BL[0, j] + INCIDENCE_LE
-    )
-
-    if USE_KUTTA_LE:
-        BOUNDARY_CONDITIONS[bl_nodes[node_index(0, j)].DeltaW] = 0.0
-    if USE_KUTTA_TE:
-        BOUNDARY_CONDITIONS[bl_nodes[node_index(TRAILING_EDGE, j)].DeltaW] = 0.0
 
 system.add_boundary_conditions(BOUNDARY_CONDITIONS)
 
@@ -317,30 +242,39 @@ w_guess = MASS_FLOW / (1.2 * area_in_est)
 manual_guess = {}
 for i in range(N_STREAM):
     for j in range(N_SPAN):
-        k = node_index(i, j)
+        k = surface.node_index(i, j)
         beta_guess = BETA_BL[i, j]
         wm_guess = w_guess * np.cos(beta_guess)
         wt_guess = w_guess * np.sin(beta_guess)
         u_guess = U[i, j]
 
-        manual_guess[nodes[k].kin.W_mag] = w_guess
-        manual_guess[nodes[k].kin.W_mer] = wm_guess
-        manual_guess[nodes[k].kin.W_tan] = wt_guess
-        manual_guess[nodes[k].kin.FlowAngleRel] = beta_guess
-        manual_guess[nodes[k].kin.BladeSpeed] = u_guess
-        manual_guess[nodes[k].kin.V_mer] = wm_guess
-        manual_guess[nodes[k].kin.V_tan] = wt_guess + u_guess
-        manual_guess[nodes[k].kin.V_mag] = np.hypot(wm_guess, wt_guess + u_guess)
-        manual_guess[nodes[k].kin.FlowAngleAbs] = np.arctan2(
+        manual_guess[surface.nodes[k].kin.W_mag] = w_guess
+        manual_guess[surface.nodes[k].kin.W_mer] = wm_guess
+        manual_guess[surface.nodes[k].kin.W_tan] = wt_guess
+        manual_guess[surface.nodes[k].kin.FlowAngleRel] = beta_guess
+        manual_guess[surface.nodes[k].kin.BladeSpeed] = u_guess
+        manual_guess[surface.nodes[k].kin.V_mer] = wm_guess
+        manual_guess[surface.nodes[k].kin.V_tan] = wt_guess + u_guess
+        v_mag_guess = np.hypot(wm_guess, wt_guess + u_guess)
+        manual_guess[surface.nodes[k].kin.V_mag] = v_mag_guess
+        manual_guess[surface.nodes[k].kin.FlowAngleAbs] = np.arctan2(
             wt_guess + u_guess, wm_guess
         )
-        manual_guess[nodes[k].stc.Density] = 1.2
-        manual_guess[mf_nodes[k].CumFlow] = MASS_FLOW * j / (N_SPAN - 1)
-        manual_guess[bl_nodes[k].W_ss] = w_guess + 20.0
-        manual_guess[bl_nodes[k].W_ps] = w_guess - 20.0
-        manual_guess[bl_nodes[k].DeltaW] = 10.0
-        manual_guess[bl_nodes[k].P_ss] = 9e4
-        manual_guess[bl_nodes[k].P_ps] = 1.1e5
+        manual_guess[surface.nodes[k].stc.Density] = 1.2
+        # Floored: at high blade speed this crude guess (V ~ U) can
+        # exceed TOTAL_ENTHALPY_IN, giving a negative/non-physical
+        # static-enthalpy guess that breaks the EOS at the first solver
+        # call -- the floor only matters for the initial guess itself.
+        manual_guess[surface.nodes[k].stc.Enthalpy] = max(
+            TOTAL_ENTHALPY_IN - 0.5 * v_mag_guess**2, 0.3 * TOTAL_ENTHALPY_IN
+        )
+        manual_guess[surface.mf_nodes[k].CumFlow] = MASS_FLOW * j / (N_SPAN - 1)
+        if INCLUDE_BLADE_TO_BLADE:
+            manual_guess[surface.bl_nodes[k].W_ss] = w_guess + 20.0
+            manual_guess[surface.bl_nodes[k].W_ps] = w_guess - 20.0
+            manual_guess[surface.bl_nodes[k].DeltaW] = 10.0
+            manual_guess[surface.bl_nodes[k].P_ss] = 9e4
+            manual_guess[surface.bl_nodes[k].P_ps] = 1.1e5
 
 x0 = system.get_guess(manual_guess, fallback=w_guess)
 kn = system.get_boundary_conds()
@@ -368,27 +302,59 @@ def grid_field(spec_lookup) -> np.ndarray:
     )
 
 
-W_grid = grid_field(lambda i, j: sol_dict[nodes[node_index(i, j)].kin.W_mag])
-BETA_grid = grid_field(lambda i, j: sol_dict[nodes[node_index(i, j)].kin.FlowAngleRel])
-RHO_grid = grid_field(lambda i, j: sol_dict[nodes[node_index(i, j)].stc.Density])
-W_ss_grid = grid_field(lambda i, j: sol_dict[bl_nodes[node_index(i, j)].W_ss])
-W_ps_grid = grid_field(lambda i, j: sol_dict[bl_nodes[node_index(i, j)].W_ps])
-P_ss_grid = grid_field(lambda i, j: sol_dict[bl_nodes[node_index(i, j)].P_ss])
-P_ps_grid = grid_field(lambda i, j: sol_dict[bl_nodes[node_index(i, j)].P_ps])
+W_grid = grid_field(
+    lambda i, j: sol_dict[surface.nodes[surface.node_index(i, j)].kin.W_mag]
+)
+BETA_grid = grid_field(
+    lambda i, j: sol_dict[surface.nodes[surface.node_index(i, j)].kin.FlowAngleRel]
+)
+RHO_grid = grid_field(
+    lambda i, j: sol_dict[surface.nodes[surface.node_index(i, j)].stc.Density]
+)
+if INCLUDE_BLADE_TO_BLADE:
+    W_ss_grid = grid_field(
+        lambda i, j: sol_dict[surface.bl_nodes[surface.node_index(i, j)].W_ss]
+    )
+    W_ps_grid = grid_field(
+        lambda i, j: sol_dict[surface.bl_nodes[surface.node_index(i, j)].W_ps]
+    )
+    P_ss_grid = grid_field(
+        lambda i, j: sol_dict[surface.bl_nodes[surface.node_index(i, j)].P_ss]
+    )
+    P_ps_grid = grid_field(
+        lambda i, j: sol_dict[surface.bl_nodes[surface.node_index(i, j)].P_ps]
+    )
 
 Wm_grid = W_grid * np.cos(BETA_grid)
 Wt_grid = W_grid * np.sin(BETA_grid)
+Vm_grid = Wm_grid  # absolute = relative meridional component, always
+Vt_grid = Wt_grid + U  # absolute tangential component
+V_grid = np.hypot(Vm_grid, Vt_grid)
 
-H_STATIC_grid = ROTHALPY + U**2 / 2 - W_grid**2 / 2
+# Static enthalpy is now a per-node solved quantity (see
+# RothalpyConservation/AbsoluteEnergyClosure), not recomputed from a
+# single rothalpy constant -- read it straight from the solution.
+H_STATIC_grid = grid_field(
+    lambda i, j: sol_dict[surface.nodes[surface.node_index(i, j)].stc.Enthalpy]
+)
 GAS_STATE.update(cp.HmassSmass_INPUTS, H_STATIC_grid, ENTROPY_IN)
 P_grid = GAS_STATE.p()
 
+# Rothalpy (Eq. 1.68), conserved along each streamline but generally
+# varying across span -- see RothalpyConservation/AbsoluteEnergyClosure.
+ROTHALPY_grid = H_STATIC_grid + W_grid**2 / 2 - U**2 / 2
+# Absolute total enthalpy H0 = h + V^2/2 -- uniform at the LE by
+# construction (TOTAL_ENTHALPY_IN), generally not downstream of it, since
+# work is done on/by the flow (Euler's turbomachinery equation).
+H0_ABS_grid = H_STATIC_grid + V_grid**2 / 2
+
 logger.info(f'Flow angle at LE (hub -> shroud): {np.degrees(BETA_grid[0, :])} deg')
 logger.info(f'Flow angle at TE (hub -> shroud): {np.degrees(BETA_grid[-1, :])} deg')
-logger.info(
-    'Max blade loading W_ss - W_ps (hub -> shroud): '
-    f'{(W_ss_grid - W_ps_grid).max(axis=0)}'
-)
+if INCLUDE_BLADE_TO_BLADE:
+    logger.info(
+        'Max blade loading W_ss - W_ps (hub -> shroud): '
+        f'{(W_ss_grid - W_ps_grid).max(axis=0)}'
+    )
 
 # ============================================================
 # 7. Plots
@@ -463,32 +429,71 @@ if __name__ == '__main__':
     fig2.suptitle('Hub-to-shroud velocity distribution')
     fig2.tight_layout(rect=(0.0, 0.0, 1.0, 0.94))
 
-    # --- Figure 3: blade-to-blade velocity distribution (required) --------
-    fig3, axs3 = plt.subplots(1, 3, figsize=(3 * PANEL_W, PANEL_H), sharey=True)
-    for ax, (j, label) in zip(axs3, span_stations):
-        ax.plot(S_HAT[:, j], W_ss_grid[:, j], '-o', label=r'$W_{SS}$')
-        ax.plot(S_HAT[:, j], W_grid[:, j], '--', color='k', label=r'$\widetilde{W}$')
-        ax.plot(S_HAT[:, j], W_ps_grid[:, j], '-o', label=r'$W_{PS}$')
-        ax.set_xlabel(r'$s / s_{max}$')
-        ax.set_title(f'{label} ($\\eta$={ETA[j]:.2f})')
-        ax.grid(True, alpha=0.3)
-        ax.legend()
-    axs3[0].set_ylabel(r'$W$ [m/s]')
-    fig3.suptitle('Blade-to-blade velocity distribution, hub to shroud')
-    fig3.tight_layout(rect=(0.0, 0.0, 1.0, 0.92))
+    if INCLUDE_BLADE_TO_BLADE:
+        # --- Figure 3: blade-to-blade velocity distribution ----------------
+        fig3, axs3 = plt.subplots(1, 3, figsize=(3 * PANEL_W, PANEL_H), sharey=True)
+        for ax, (j, label) in zip(axs3, span_stations):
+            ax.plot(S_HAT[:, j], W_ss_grid[:, j], '-o', label=r'$W_{SS}$')
+            ax.plot(
+                S_HAT[:, j], W_grid[:, j], '--', color='k', label=r'$\widetilde{W}$'
+            )
+            ax.plot(S_HAT[:, j], W_ps_grid[:, j], '-o', label=r'$W_{PS}$')
+            ax.set_xlabel(r'$s / s_{max}$')
+            ax.set_title(f'{label} ($\\eta$={ETA[j]:.2f})')
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+        axs3[0].set_ylabel(r'$W$ [m/s]')
+        fig3.suptitle('Blade-to-blade velocity distribution, hub to shroud')
+        fig3.tight_layout(rect=(0.0, 0.0, 1.0, 0.92))
 
-    # --- Figure 4: blade surface pressure distribution (required) ---------
-    fig4, axs4 = plt.subplots(1, 3, figsize=(3 * PANEL_W, PANEL_H), sharey=True)
-    for ax, (j, label) in zip(axs4, span_stations):
-        ax.plot(S_HAT[:, j], P_ss_grid[:, j] / 1e3, '-o', label=r'$p_{SS}$')
-        ax.plot(S_HAT[:, j], P_grid[:, j] / 1e3, '--', color='k', label=r'$p$ (mean)')
-        ax.plot(S_HAT[:, j], P_ps_grid[:, j] / 1e3, '-o', label=r'$p_{PS}$')
-        ax.set_xlabel(r'$s / s_{max}$')
-        ax.set_title(f'{label} ($\\eta$={ETA[j]:.2f})')
-        ax.grid(True, alpha=0.3)
-        ax.legend()
-    axs4[0].set_ylabel(r'$p$ [kPa]')
-    fig4.suptitle('Blade surface pressure distribution, hub to shroud')
-    fig4.tight_layout(rect=(0.0, 0.0, 1.0, 0.92))
+        # --- Figure 4: blade surface pressure distribution ------------------
+        fig4, axs4 = plt.subplots(1, 3, figsize=(3 * PANEL_W, PANEL_H), sharey=True)
+        for ax, (j, label) in zip(axs4, span_stations):
+            ax.plot(S_HAT[:, j], P_ss_grid[:, j] / 1e3, '-o', label=r'$p_{SS}$')
+            ax.plot(
+                S_HAT[:, j], P_grid[:, j] / 1e3, '--', color='k', label=r'$p$ (mean)'
+            )
+            ax.plot(S_HAT[:, j], P_ps_grid[:, j] / 1e3, '-o', label=r'$p_{PS}$')
+            ax.set_xlabel(r'$s / s_{max}$')
+            ax.set_title(f'{label} ($\\eta$={ETA[j]:.2f})')
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+        axs4[0].set_ylabel(r'$p$ [kPa]')
+        fig4.suptitle('Blade surface pressure distribution, hub to shroud')
+        fig4.tight_layout(rect=(0.0, 0.0, 1.0, 0.92))
+
+    def plot_meridional_contour(field, title, cbar_label):
+        fig, ax = plt.subplots(figsize=(PANEL_W, PANEL_H))
+        contour = ax.contourf(Z, R, field, levels=30, cmap='viridis')
+        ax.plot(hub_z, hub_r, color='k', linewidth=1.5)
+        ax.plot(shroud_z, shroud_r, color='k', linewidth=1.5, linestyle='--')
+        for i in range(0, N_STREAM, max(1, N_STREAM // 10)):
+            ax.plot(Z[i, :], R[i, :], color='white', linewidth=0.4)
+        ax.set_xlabel('z [m]')
+        ax.set_ylabel('R [m]')
+        ax.set_aspect('equal')
+        ax.set_title(title)
+        fig.colorbar(contour, ax=ax, label=cbar_label)
+        fig.tight_layout()
+        return fig, ax
+
+    # --- Figure 5: meridional-plane static pressure contour ---------------
+    plot_meridional_contour(
+        P_grid / 1e3, 'Meridional-plane static pressure', 'Static pressure $p$ [kPa]'
+    )
+
+    # --- Figure 6: meridional-plane rothalpy contour -----------------------
+    plot_meridional_contour(
+        ROTHALPY_grid / 1e3,
+        'Meridional-plane rothalpy',
+        'Rothalpy $I = h + W^2/2 - U^2/2$ [kJ/kg]',
+    )
+
+    # --- Figure 7: meridional-plane absolute total enthalpy contour --------
+    plot_meridional_contour(
+        H0_ABS_grid / 1e3,
+        'Meridional-plane absolute total enthalpy',
+        'Absolute total enthalpy $H_0 = h + V^2/2$ [kJ/kg]',
+    )
 
     plt.show()

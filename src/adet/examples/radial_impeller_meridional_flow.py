@@ -32,7 +32,7 @@ from adet.variables import NodeVariables
 # ============================================================
 # 1. User settings and problem data
 # ============================================================
-R_MEAN_IN = 0.05  # [m] mean-line radius at the channel inlet
+R_MEAN_IN = 0.055  # [m] mean-line radius at the channel inlet
 R_MEAN_OUT = 0.130  # [m] mean-line radius at the channel outlet
 
 # Channel (blade) height, measured perpendicular to the local meridional
@@ -48,14 +48,14 @@ MERID_ANGLE_OUT = np.radians(90.0)  # [rad]
 
 AXIAL_LENGTH = 0.08  # [m] axial length of the mean line (z=0 to z=AXIAL_LENGTH)
 
-N_STREAM = 21  # number of streamwise stations (inlet to outlet)
-N_SPAN = 9  # number of spanwise stations (hub to shroud)
+N_STREAM = 39  # number of streamwise stations (inlet to outlet)
+N_SPAN = 8  # number of spanwise stations (hub to shroud)
 
 RPM = 40_000.0  # [rev/min]
 OMEGA = RPM * 2 * np.pi / 60  # [rad/s]
 
-MASS_FLOW = 1.0  # [kg/s]
-T0_IN = 293.15  # [K] inlet total temperature
+MASS_FLOW = 0.75  # [kg/s]
+T0_IN = 263.15  # [K] inlet total temperature
 P0_IN = 101_325.0  # [Pa] inlet total pressure
 
 # Ideal-gas air.

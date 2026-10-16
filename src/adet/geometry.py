@@ -293,19 +293,50 @@ class GenericCurve(ABC):
         return line
 
 
+def _max_handle_length(z0, r0, dz, dr, z_bounds, r_bounds, eps=1e-12):
+    """Largest non-negative distance ``h`` such that ``(z0 + h*dz, r0 + h*dr)``
+    stays within the axis-aligned box ``z_bounds x r_bounds``.
+
+    ``(dz, dr)`` need not be a unit vector. Returns ``np.inf`` if ``(dz, dr)``
+    never leaves the box (e.g. a zero component moving along an axis the
+    point is already centered on).
+    """
+    h = np.inf
+    if dz > eps:
+        h = min(h, (z_bounds[1] - z0) / dz)
+    elif dz < -eps:
+        h = min(h, (z_bounds[0] - z0) / dz)
+    if dr > eps:
+        h = min(h, (r_bounds[1] - r0) / dr)
+    elif dr < -eps:
+        h = min(h, (r_bounds[0] - r0) / dr)
+    return max(h, 0.0)
+
+
 class BezierCurve(GenericCurve):
     """
     Creates a cubic Bezier curve between two points with specified tangent angles.
     The curve is defined by four control points:
 
     1. Start point
-    2. Point along inlet tangent line at 1/3 chord distance
-    3. Point along outlet tangent line at 1/3 chord distance
+    2. Point along inlet tangent line, at most 1/3 chord distance
+    3. Point along outlet tangent line, at most 1/3 chord distance
     4. End point
 
     .. image:: ../svg/bezier_curve.svg
         :width: 400
         :alt: Bezier curve control points
+
+    The 1/3-chord handle length is clamped, independently for each of the two
+    middle control points, to whatever is needed to keep that control point
+    within the axis-aligned (z, R) box spanned by the start/end points. A
+    cubic Bezier curve always lies in the convex hull of its four control
+    points, so once all four are inside that box the curve itself cannot
+    over/undershoot past either endpoint's R (or z) coordinate -- which
+    otherwise happens whenever the inlet/outlet tangent angles differ a lot
+    (e.g. a radial-inflow turbine's hub/shroud going from a ~-90 deg radial
+    inlet to a ~0 deg axial outlet), and is what breaks the solver downstream
+    (a non-monotonic meridional curve where the geometry doesn't expect one).
 
     Uses the bezier library to create and evaluate the curve.
     """
@@ -317,11 +348,30 @@ class BezierCurve(GenericCurve):
         # 1/3rd of the distance along the segment between start and end
         chord_third = start_point.distance_towards(end_point, 1 / 3)
 
-        inlet_line = Line(start_point, np.cos(self.angle_in), np.sin(self.angle_in))
-        outlet_line = Line(end_point, np.cos(self.angle_out), np.sin(self.angle_out))
+        z_bounds = (min(self.z_in, self.z_out), max(self.z_in, self.z_out))
+        r_bounds = (min(self.r_in, self.r_out), max(self.r_in, self.r_out))
 
-        middle_point1 = inlet_line(chord_third)
-        middle_point2 = outlet_line(-chord_third)
+        cos_in, sin_in = np.cos(self.angle_in), np.sin(self.angle_in)
+        cos_out, sin_out = np.cos(self.angle_out), np.sin(self.angle_out)
+
+        handle_in = min(
+            chord_third,
+            _max_handle_length(
+                self.z_in, self.r_in, cos_in, sin_in, z_bounds, r_bounds
+            ),
+        )
+        handle_out = min(
+            chord_third,
+            _max_handle_length(
+                self.z_out, self.r_out, -cos_out, -sin_out, z_bounds, r_bounds
+            ),
+        )
+
+        inlet_line = Line(start_point, cos_in, sin_in)
+        outlet_line = Line(end_point, cos_out, sin_out)
+
+        middle_point1 = inlet_line(handle_in)
+        middle_point2 = outlet_line(-handle_out)
 
         control_points = [start_point, middle_point1, middle_point2, end_point]
 
