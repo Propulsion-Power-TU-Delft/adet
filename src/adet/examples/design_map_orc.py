@@ -10,12 +10,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Literal, Type
 
-import CoolProp
 import CoolProp as cp
-
-CoolProp.CoolProp.set_config_string(
-    CoolProp.ALTERNATIVE_REFPROP_PATH, '/Users/matteomajer/Applications/REFPROP'
-)
 import matplotlib.pyplot as plt
 import numpy as np
 from pint import Quantity
