@@ -35,9 +35,11 @@ This project uses [uv](https://docs.astral.sh/uv) for packaging and dependency m
    ```
 > **Note**: To access [REFPROP](https://www.nist.gov/srd/refprop) through CoolProp, see the [integration guide](https://coolprop.org/coolprop/REFPROP.html).
 
-## Development
+## Contributing
 
-We use the following development tools:
+Join the development team or ask for help on [Zulip](https://adet.zulipchat.com/), everyone is welcome!
+
+We use the following tools:
 
 - **[Ruff](https://docs.astral.sh/ruff)**: Linting and formatting
 - **[ty](https://github.com/bnemetis/ty)**: Static type checking
