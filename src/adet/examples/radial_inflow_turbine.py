@@ -3,13 +3,8 @@ Supersonic ORC Radial Inflow turbine (ORCHID, TU Delft) design
 
 State:
 ------
-- Stator basic setup is working
-- Most losses are missing
-- Missing stator-rotor row gap
+- Missing stator-rotor row gap loss (currently purely isentropic, free-vortex flow)
 - Volute not integrated
-- A fictitious, zero-length ``SlipGap`` component upstream of the rotor
-  accounts for rotor-inlet flow slip (Chen & Baines 1994) -- see
-  ``adet.components.blade_row.SlipGap``.
 """
 
 import logging
@@ -22,7 +17,7 @@ from pint import Quantity
 from tabulate import tabulate
 
 from adet.assemblers import CasadiSystem
-from adet.components.blade_row import BladeRow, Interspace, SlipGap
+from adet.components.blade_row import BladeRow, Interspace
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.base_equation import LossApplier
@@ -37,6 +32,8 @@ from adet.losses.mixing import (
 )
 from adet.losses.rit import (
     StatorProfileLoss,
+    StanitzSlip,
+    ChenSlip,
     EndwallLoss,
     ImpellerIncidenceLoss,
     ImpellerLeakageLoss,
@@ -46,13 +43,14 @@ from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
 from adet.tools.plotting import plot_velocity_triangles
-from adet.variables import NodeVariables
+from adet.variables import KinematicVariables, NodeVariables
+from adet.varspec import DEF_NODE
 from adet.equations.utils import residual_debugger
 
 logger = logging.getLogger(__name__)
 setup_logger(logger)
 PLOTS = True
-
+USE_SLIP_MODEL = True
 
 _n0 = NodeVariables(0)
 _n1 = NodeVariables(1)
@@ -92,17 +90,13 @@ class AddStatorLosses(LossApplier):
         return s1 - (s0 + ds_profile1 + ds_endwall1 + ds_mixing1)
 
 
-# |> Machine stations, in the order the components are chained below (each
-# component owns two fresh global nodes: inlet, outlet)
 STATION_LABELS = {
     0: 'Stator inlet',
     1: 'Stator outlet',
     2: 'Interspace inlet',
     3: 'Interspace outlet',
-    4: 'Slip gap inlet',
-    5: 'Slip gap outlet',
-    6: 'Rotor inlet',
-    7: 'Rotor outlet',
+    4: 'Rotor inlet',
+    5: 'Rotor outlet',
 }
 
 # |> Stator 0 - 1
@@ -111,22 +105,16 @@ n1 = NodeVariables(1)
 # |> Inters 2 - 3
 n2 = NodeVariables(2)
 n3 = NodeVariables(3)
-# |> Slip gap 4 - 5
+# |> Rotor  4 - 5
 n4 = NodeVariables(4)
 n5 = NodeVariables(5)
-# |> Rotor  6 - 7
-n6 = NodeVariables(6)
-n7 = NodeVariables(7)
 
 inl = Inlet(
     {
-        # *** Total conditions
         n0.tot.Pressure: Quantity(18.1, 'bar'),
         n0.tot.Temperature: Quantity(300, 'degC'),
-        # ***
         n0.oth.TotMassFlow: 0.132,
         n0.kin.FlowAngleRel: Quantity(65, 'deg'),
-        # *** Geometrical
         n0.geo.Height: Quantity(2, 'mm'),
         n0.geo.MeridionalAngle: Quantity(-90, 'deg'),
     }
@@ -148,20 +136,14 @@ stator = BladeRow(
         n1.geo.RadiusRatio: 0.75,
         n1.geo.Rmid: Quantity(26.1, 'mm'),
         n1.geo.MeridionalAngle: Quantity(-90, 'deg'),
-        # *** Outlet
         n1.geo.MetalAngle: Quantity(78, 'deg'),
-        # n1.kin.FlowAngleRel: Quantity(78, 'deg'),
-        # n1.kin.Mach: 2.2,
-        # *** Blades
         n0.geo.ThickByPitch: 0.05,
         n1.geo.ThickByPitch: 0.05,
         n1.geo.NumBlades: 12,
         n1.geo.MerChord: Quantity(0.01, 'mm'),
-        # *** Boundary Layer
         n1.oth.MomByBld: 0.075,
         n1.oth.DispByMom: 2.0,
         n1.oth.DispByHgt: 0.09,
-        # *** Shock
     },
     shaft=casing,
     extra_equations={
@@ -175,7 +157,6 @@ stator = BladeRow(
         GammaPV(): 0,
         GammaPV(): 1,
         SieverdingBasePressure(): (0, 1),
-        # DentonMixingLoss(): 1,
         DentonBaumgartnerMixingLoss(): 1,
     },
 )
@@ -192,39 +173,20 @@ interspace = Interspace(
     },
 )
 
-# Fictitious, zero-length lumped station for rotor-inlet flow slip (Chen &
-# Baines 1994) -- see adet.components.blade_row.SlipGap.
-slip_gap = SlipGap(
-    'slip_gap',
-    shaft=shaft,
-    bound_cond={
-        n1.geo.NumBlades: 13,
-        n1.geo.MetalAngle: Quantity(45, 'deg'),  # rotor's real LE blade angle
-    },
-    extra_equations={
-        IsentropicLink(): (0, 1),
-    },
-)
-
 rotor = BladeRow(
     'impeller',
     bound_cond={
-        # *** Meridional Geometry
         n1.geo.Rhub: Quantity(8.2, 'mm'),
         n1.geo.Height: Quantity(12.3, 'mm'),
         n1.geo.MeridionalAngle: Quantity(0, 'deg'),
-        # *** Blade Geometry
         n0.geo.BldThick: 0.0003,
         n0.geo.MetalAngle: Quantity(45, 'deg'),
         n1.geo.BldThick: 0.0003,
         n1.geo.MerChord: Quantity(10.2, 'mm'),
         n1.geo.NumBlades: 13,
-        # *** Outlet condition
         n1.stc.Pressure: Quantity(0.443, 'bar'),
-        # *** Tip clearance
         n0.geo.TipClearance: Quantity(0.2, 'mm'),
         n1.geo.TipClearance: Quantity(0.2, 'mm'),
-        # *** Boundary Layer
         n1.oth.MomByBld: 0.075,
         n1.oth.DispByMom: 2.0,
         n1.oth.DispByHgt: 0.09,
@@ -232,6 +194,8 @@ rotor = BladeRow(
     shaft=shaft,
     extra_equations={
         AddImpellerLosses(): (0, 1),
+        **({ChenSlip(): 0} if USE_SLIP_MODEL else {}),
+        # *** Losses
         IsentropicProperties(): (0, 1),
         ImpellerPassageLoss(): (0, 1),
         ImpellerLeakageLoss(): (0, 1),
@@ -241,10 +205,17 @@ rotor = BladeRow(
         GammaPV(): 0,
         GammaPV(): 1,
         SieverdingBasePressure(): (0, 1),
-        # DentonMixingLoss(): 1,
         DentonBaumgartnerMixingLoss(): 1,
     },
 )
+
+if USE_SLIP_MODEL:
+    # ``ChenSlip`` sets the rotor's own inlet tangential velocity (hence its
+    # relative flow angle) directly, so it must stop being a hard copy of the
+    # interspace's exit value -- the usual ``BladeRow`` behavior via
+    # ``ABSOLUTE_LINK``. Meridional velocity (mass continuity) is still
+    # inherited unchanged.
+    rotor._from_prev_node.discard(KinematicVariables(DEF_NODE).V_tan)
 
 abs_state = DebugAbstractState('HEOS', 'MM')
 
@@ -263,7 +234,6 @@ ntw = ComponentNetwork(
     [
         stator,
         interspace,
-        slip_gap,
         rotor,
     ],
 )
@@ -276,12 +246,9 @@ rtfn = ntw.system.make_rootfinder(
 )
 x0 = ntw.system.get_guess(
     {
-        # Keep the incidence loss's fractional-power terms away from the
-        # |incidence| = 90 deg singularity during early iterations.
         n4.kin.FlowAngleRel: Quantity(48, 'deg').to('rad').magnitude,
-        n5.kin.FlowAngleRel: Quantity(48, 'deg').to('rad').magnitude,
-        n6.kin.FlowAngleRel: Quantity(48, 'deg').to('rad').magnitude,
-        # Seed close to a known-good solution: this fluid's EOS validity
+        n4.oth.SlipFactor: 0.9,
+        # Seed close to a known-good solution: MM's EOS validity
         # domain is narrow, and the loss equations add several EOS calls.
         n0.stc.Pressure: 18.07e5,
         n0.stc.Temperature: 573.1,
@@ -298,49 +265,31 @@ x0 = ntw.system.get_guess(
         n4.stc.Pressure: 1.51e5,
         n4.stc.Temperature: 534.8,
         n4.stc.Entropy: 1177.4,
-        n5.stc.Pressure: 1.51e5,
-        n5.stc.Temperature: 534.8,
-        n5.stc.Entropy: 1177.4,
-        n6.stc.Pressure: 1.51e5,
-        n6.stc.Temperature: 534.8,
-        n6.stc.Entropy: 1177.4,
-        n7.stc.Pressure: 0.443e5,
-        n7.stc.Temperature: 519.7,
-        n7.stc.Entropy: 1183.1,
-        # GammaPV/PBase guesses: their generic defaults are far enough off
-        # for this dense organic fluid to push early IPOPT iterates into
-        # an out-of-range CoolProp query.
+        n5.stc.Pressure: 0.443e5,
+        n5.stc.Temperature: 519.7,
+        n5.stc.Entropy: 1183.1,
         n0.oth.GammaPV: 1.05,
         n1.oth.GammaPV: 1.05,
-        n6.oth.GammaPV: 1.025,
-        n7.oth.GammaPV: 1.025,
+        n4.oth.GammaPV: 1.025,
+        n5.oth.GammaPV: 1.025,
         n1.oth.PBase: 1.7e5,
-        n7.oth.PBase: 0.7e5,
+        n5.oth.PBase: 0.7e5,
     },
     fallback=0.5,
 )
 kn = ntw.system.get_boundary_conds()
 bnd = ntw.system.get_bounds(
     {
-        # Force the supersonic solution
         n1.kin.Mach: (1.01, 4.0),
         n0.stc.Temperature.Glob: (300, 580),
         n0.stc.Pressure.Glob: (1e3, 1e9),
         n1.stc.Pressure: (0.3e5, 20e5),
         n0.stc.Entropy.Glob: (200.0, 3000.0),
-        # Rotor outlet static pressure is fixed, so FlowAngleAbs is free and
-        # multi-rooted; bound it around the physical branch.
-        n7.kin.FlowAngleAbs: (
+        n5.kin.FlowAngleAbs: (
             Quantity(-20, 'deg').to('rad').magnitude,
             Quantity(60, 'deg').to('rad').magnitude,
         ),
-        # Keep the incidence loss's fractional-power terms away from the
-        # |incidence| = 90 deg singularity throughout the search.
-        n5.kin.FlowAngleRel: (
-            Quantity(0, 'deg').to('rad').magnitude,
-            Quantity(90, 'deg').to('rad').magnitude,
-        ),
-        n6.kin.FlowAngleRel: (
+        n4.kin.FlowAngleRel: (
             Quantity(0, 'deg').to('rad').magnitude,
             Quantity(90, 'deg').to('rad').magnitude,
         ),
@@ -440,8 +389,7 @@ LOSS_MECHANISMS = {
 COMPONENT_NODES = {
     'Stator': (0, 1),
     'Interspace': (2, 3),
-    'Slip gap': (4, 5),
-    'Rotor': (6, 7),
+    'Rotor': (4, 5),
 }
 
 loss_rows = []
@@ -459,7 +407,7 @@ for component, (inlet_idx, outlet_idx) in COMPONENT_NODES.items():
 
     loss_rows.append([component, 'Subtotal (s_out - s_in)', f'{ds_component:.3f}'])
 
-loss_rows.append(['All components', 'TOTAL (s7 - s0)', f'{ds_total_all:.3f}'])
+loss_rows.append(['All components', 'TOTAL (s5 - s0)', f'{ds_total_all:.3f}'])
 
 print(
     tabulate(
@@ -472,10 +420,12 @@ print(
 # ============================================================
 # Total-to-static expansion efficiency (stator inlet -> rotor outlet)
 # ============================================================
-abs_state.update(cp.PSmass_INPUTS, _val(n7.stc.Pressure), _val(n0.stc.Entropy))
-h7_is = abs_state.hmass()
-eta_ts = (_val(n0.tot.Enthalpy) - _val(n7.tot.Enthalpy)) / (_val(n0.tot.Enthalpy) - h7_is)
-print(f'\nTotal-to-static expansion efficiency (eta_ts, station 0 -> 7): {eta_ts:.4f}')
+abs_state.update(cp.PSmass_INPUTS, _val(n5.stc.Pressure), _val(n0.stc.Entropy))
+h5_is = abs_state.hmass()
+eta_ts = (_val(n0.tot.Enthalpy) - _val(n5.tot.Enthalpy)) / (
+    _val(n0.tot.Enthalpy) - h5_is
+)
+print(f'\nTotal-to-static expansion efficiency (eta_ts, station 0 -> 5): {eta_ts:.4f}')
 
 # ============================================================
 # Velocity triangle plots at each station
