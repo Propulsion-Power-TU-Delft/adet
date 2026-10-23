@@ -364,6 +364,83 @@ class EndwallLoss(LossModel):
 
 
 # *** Impeller
+class ChenSlip(DeviationModel):
+    """
+    Rotor-inlet flow slip for radial/mixed-flow turbines, from H. Chen and
+    N. C. Baines, "The aerodynamic loading of radial and mixed-flow
+    turbines," Int. J. Mech. Sci. 36(1), pp. 63-79 (1994), Eq. (8) (eddy
+    contained within the blade passage). Meant to be attached directly to
+    a rotor ``BladeRow``'s own inlet node (position 0, i.e. ``ChenSlip(): 0``
+    in its ``extra_equations``) -- see ``StanitzSlip`` for the alternate
+    Stanitz (Eq. 4) correlation.
+    """
+
+    def residual(
+        self,
+        beta0: n0.kin.FlowAngleRel.Hint,
+        metal_ang0: n0.geo.MetalAngle.Hint,
+        mer_angle0: n0.geo.MeridionalAngle.Hint,
+        n_bl0: n0.geo.NumBlades.Hint,
+        wm0: n0.kin.W_mer.Hint,
+        u0: n0.kin.BladeSpeed.Hint,
+        slip0: n0.oth.SlipFactor.Hint,
+    ):
+        sin_cone = safe_abs(np.sin(mer_angle0))  # sin(gamma), Fig. 2
+        cos_metal = np.cos(metal_ang0)
+        sin_pitch = np.sin(np.pi / n_bl0)
+
+        # Eq. (8)
+        slip_target = (
+            1 - (2 * sin_pitch / (np.pi * (1 + sin_pitch))) * sin_cone * cos_metal
+        )
+        r_slip = slip0 - slip_target
+
+        # Eq. (5), reworked for the actual tangential velocity: ideal
+        # relative Wt minus the Wiesner-style slip deficit (1 - mu) * U.
+        wt_ideal = wm0 * np.tan(metal_ang0)
+        wt_actual = wt_ideal - (1 - slip0) * u0
+        r_incidence = wm0 * np.tan(beta0) - wt_actual
+
+        return r_slip, r_incidence
+
+
+class StanitzSlip(DeviationModel):
+    """
+    Rotor-inlet flow slip for radial/mixed-flow turbines, from the
+    original centrifugal-compressor Stanitz correlation, Eq. (4) in H.
+    Chen and N. C. Baines, "The aerodynamic loading of radial and
+    mixed-flow turbines," Int. J. Mech. Sci. 36(1), pp. 63-79 (1994).
+    Meant to be attached directly to a rotor ``BladeRow``'s own inlet node
+    (position 0, i.e. ``StanitzSlip(): 0`` in its ``extra_equations``) --
+    see ``ChenSlip`` for the alternate Chen & Baines (Eq. 8) correlation.
+    """
+
+    def residual(
+        self,
+        beta0: n0.kin.FlowAngleRel.Hint,
+        metal_ang0: n0.geo.MetalAngle.Hint,
+        mer_angle0: n0.geo.MeridionalAngle.Hint,
+        n_bl0: n0.geo.NumBlades.Hint,
+        wm0: n0.kin.W_mer.Hint,
+        u0: n0.kin.BladeSpeed.Hint,
+        slip0: n0.oth.SlipFactor.Hint,
+    ):
+        sin_cone = safe_abs(np.sin(mer_angle0))  # sin(gamma), Fig. 2
+        cos_metal = np.cos(metal_ang0)
+
+        # Eq. (4)
+        slip_target = 1 - 0.63 * np.pi / n_bl0 * sin_cone * cos_metal
+        r_slip = slip0 - slip_target
+
+        # Eq. (5), reworked for the actual tangential velocity: ideal
+        # relative Wt minus the Wiesner-style slip deficit (1 - mu) * U.
+        wt_ideal = wm0 * np.tan(metal_ang0)
+        wt_actual = wt_ideal - (1 - slip0) * u0
+        r_incidence = wm0 * np.tan(beta0) - wt_actual
+
+        return r_slip, r_incidence
+
+
 class ImpellerIncidenceLoss(LossModel):
     """
     Rotor incidence loss model for radial-inflow turbines from `Small High
