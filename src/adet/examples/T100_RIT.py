@@ -157,9 +157,6 @@ R3_HUB = 0.01524
 R3_TIP = 0.03683
 H3 = R3_TIP - R3_HUB
 
-# Rotor exit mean relative flow angle (Sauret Fig. 8(c), Present/RITAL)
-BETA3_MEAN = Quantity(-57.3, 'deg')
-
 # Rotor blade geometry (Sauret Table 2 "Rotor" + Appendix Tables 9-10)
 ROTOR_AXIAL_LENGTH = 0.0389
 ROTOR_TE_THICKNESS = 0.00076
@@ -200,109 +197,202 @@ inl = Inlet(
 casing = Shaft(Quantity(0, 'rpm'), is_constrained=True)
 shaft = Shaft(N_RPM, is_constrained=True)
 
-stator = BladeRow(
-    'nozzle',
-    bound_cond={
-        n1.geo.HeightRatio: NOZZLE_HEIGHT_RATIO,
-        n1.geo.RadiusRatio: NOZZLE_RADIUS_RATIO,
-        n1.geo.Rmid: Quantity(NOZZLE_R_OUT, 'm'),
-        n1.geo.MeridionalAngle: Quantity(-90, 'deg'),
-        n1.geo.MetalAngle: NOZZLE_EXIT_ANGLE,
-        n0.geo.BldThick: Quantity(NOZZLE_LE_THICKNESS, 'm'),
-        n1.geo.BldThick: Quantity(NOZZLE_TE_THICKNESS, 'm'),
-        n1.geo.NumBlades: NOZZLE_NUM_BLADES,
-        n1.geo.MerChord: Quantity(0.01, 'mm'),  # TODO: check what this is doing
-        n1.oth.MomByBld: 0.075,
-        n1.oth.DispByMom: 2.0,
-        n1.oth.DispByHgt: 0.09,
-    },
-    shaft=casing,
-    extra_equations={
-        AddStatorLosses(): (0, 1),
-        ZeroDeviation(): 0,  # No incidence
-        StatorProfileLoss(): (0, 1),
-        EndwallLoss(): (0, 1),
-        IsentropicProperties(): (0, 1),
-        BoundaryLayerRatios(): 1,
-        GammaPV(): 0,
-        GammaPV(): 1,
-        SieverdingBasePressure(): (0, 1),
-        DentonBaumgartnerMixingLoss(): 1,
-    },
-)
 
-interspace = Interspace(
-    'intrspc',
-    {
-        n1.geo.RadiusRatio: VANELESS_GAP_RATIO,
-        n1.geo.HeightRatio: VANELESS_HEIGHT_RATIO,
-    },
-    extra_equations={
-        IsentropicLink(): (0, 1),
-    },
-)
+def build_network(include_losses: bool) -> ComponentNetwork:
+    """Build the nozzle/interspace/rotor network.
 
-rotor = BladeRow(
-    'impeller',
-    bound_cond={
-        n1.geo.Rhub: Quantity(R3_HUB, 'm'),
-        n1.geo.Height: Quantity(H3, 'm'),
-        n1.geo.MeridionalAngle: Quantity(0, 'deg'),  # axial exducer exit
-        n0.geo.BldThick: Quantity(ROTOR_LE_THICKNESS, 'm'),
-        n0.geo.MetalAngle: Quantity(0, 'deg'),  # purely radial LE blades
-        n1.geo.BldThick: Quantity(ROTOR_TE_THICKNESS, 'm'),
-        n1.geo.MerChord: Quantity(ROTOR_AXIAL_LENGTH, 'm'),
-        n1.geo.NumBlades: ROTOR_NUM_BLADES,
-        n1.stc.Pressure: Quantity(P5_STATIC, 'Pa'),
-        n0.geo.TipClearance: Quantity(ROTOR_INLET_CLEARANCE, 'm'),
-        n1.geo.TipClearance: Quantity(ROTOR_EXDUCER_CLEARANCE, 'm'),
-        n1.oth.MomByBld: 0.075,
-        n1.oth.DispByMom: 2.0,
-        n1.oth.DispByHgt: 0.09,
-    },
-    shaft=shaft,
-    extra_equations={
-        AddImpellerLosses(): (0, 1),
-        **({ChenSlip(): 0} if USE_SLIP_MODEL else {}),
-        IsentropicProperties(): (0, 1),
-        ImpellerPassageLoss(): (0, 1),
-        ImpellerLeakageLoss(): (0, 1),
-        ImpellerIncidenceLoss(): (0, 1),
-        EndwallLoss(): (0, 1),
-        BoundaryLayerRatios(): 1,
-        GammaPV(): 0,
-        GammaPV(): 1,
-        SieverdingBasePressure(): (0, 1),
-        DentonBaumgartnerMixingLoss(): 1,
-    },
-)
+    With ``include_losses=False`` every entropy-generating loss mechanism is
+    replaced by an ``IsentropicLink`` (s_out = s_in), giving a much
+    easier-to-solve system whose solution is used as the initial guess for
+    the full, lossy system (see below).
+    """
+    stator_extra_equations: dict = {ZeroDeviation(): 0}  # No incidence
+    rotor_extra_equations: dict = {}
+    if USE_SLIP_MODEL:
+        rotor_extra_equations[ChenSlip()] = 0
 
-if USE_SLIP_MODEL:
-    # ``ChenSlip`` sets the rotor inlet tangential velocity (hence its
-    # relative flow angle) directly
-    rotor._from_prev_node.discard(KinematicVariables(DEF_NODE).V_tan)
+    if include_losses:
+        stator_extra_equations.update(
+            {
+                AddStatorLosses(): (0, 1),
+                StatorProfileLoss(): (0, 1),
+                EndwallLoss(): (0, 1),
+                IsentropicProperties(): (0, 1),
+                BoundaryLayerRatios(): 1,
+                GammaPV(): 0,
+                GammaPV(): 1,
+                SieverdingBasePressure(): (0, 1),
+                DentonBaumgartnerMixingLoss(): 1,
+            }
+        )
+        rotor_extra_equations.update(
+            {
+                AddImpellerLosses(): (0, 1),
+                IsentropicProperties(): (0, 1),
+                ImpellerPassageLoss(): (0, 1),
+                ImpellerLeakageLoss(): (0, 1),
+                ImpellerIncidenceLoss(): (0, 1),
+                EndwallLoss(): (0, 1),
+                BoundaryLayerRatios(): 1,
+                GammaPV(): 0,
+                GammaPV(): 1,
+                SieverdingBasePressure(): (0, 1),
+                DentonBaumgartnerMixingLoss(): 1,
+            }
+        )
+    else:
+        stator_extra_equations[IsentropicLink()] = (0, 1)
+        rotor_extra_equations[IsentropicLink()] = (0, 1)
 
-abs_state = DebugAbstractState('HEOS', 'Air')
+    stator = BladeRow(
+        'nozzle',
+        bound_cond={
+            n1.geo.HeightRatio: NOZZLE_HEIGHT_RATIO,
+            n1.geo.RadiusRatio: NOZZLE_RADIUS_RATIO,
+            n1.geo.Rmid: Quantity(NOZZLE_R_OUT, 'm'),
+            n1.geo.MeridionalAngle: Quantity(-90, 'deg'),
+            n1.geo.MetalAngle: NOZZLE_EXIT_ANGLE,
+            n0.geo.BldThick: Quantity(NOZZLE_LE_THICKNESS, 'm'),
+            n1.geo.BldThick: Quantity(NOZZLE_TE_THICKNESS, 'm'),
+            n1.geo.NumBlades: NOZZLE_NUM_BLADES,
+            n1.geo.MerChord: Quantity(0.01, 'mm'),  # TODO: check what this is doing
+            n1.oth.MomByBld: 0.075,
+            n1.oth.DispByMom: 2.0,
+            n1.oth.DispByHgt: 0.09,
+        },
+        shaft=casing,
+        extra_equations=stator_extra_equations,
+    )
 
-fluid_settings = FluidSettings(
-    fluid_state=abs_state,
-    update_variables=(
-        n0.stc.Pressure.Glob,
-        n0.stc.Temperature.Glob,
+    interspace = Interspace(
+        'intrspc',
+        {
+            n1.geo.RadiusRatio: VANELESS_GAP_RATIO,
+            n1.geo.HeightRatio: VANELESS_HEIGHT_RATIO,
+        },
+        extra_equations={
+            IsentropicLink(): (0, 1),
+        },
+    )
+
+    rotor = BladeRow(
+        'impeller',
+        bound_cond={
+            n1.geo.Rhub: Quantity(R3_HUB, 'm'),
+            n1.geo.Height: Quantity(H3, 'm'),
+            n1.geo.MeridionalAngle: Quantity(0, 'deg'),  # axial exducer exit
+            n0.geo.BldThick: Quantity(ROTOR_LE_THICKNESS, 'm'),
+            n0.geo.MetalAngle: Quantity(0, 'deg'),  # purely radial LE blades
+            n1.geo.BldThick: Quantity(ROTOR_TE_THICKNESS, 'm'),
+            n1.geo.MerChord: Quantity(ROTOR_AXIAL_LENGTH, 'm'),
+            n1.geo.NumBlades: ROTOR_NUM_BLADES,
+            n1.stc.Pressure: Quantity(P5_STATIC, 'Pa'),
+            n0.geo.TipClearance: Quantity(ROTOR_INLET_CLEARANCE, 'm'),
+            n1.geo.TipClearance: Quantity(ROTOR_EXDUCER_CLEARANCE, 'm'),
+            n1.oth.MomByBld: 0.075,
+            n1.oth.DispByMom: 2.0,
+            n1.oth.DispByHgt: 0.09,
+        },
+        shaft=shaft,
+        extra_equations=rotor_extra_equations,
+    )
+
+    if USE_SLIP_MODEL:
+        # ``ChenSlip`` sets the rotor inlet tangential velocity (hence its
+        # relative flow angle) directly
+        rotor._from_prev_node.discard(KinematicVariables(DEF_NODE).V_tan)
+
+    abs_state = DebugAbstractState('HEOS', 'Air')
+
+    fluid_settings = FluidSettings(
+        fluid_state=abs_state,
+        update_variables=(
+            n0.stc.Pressure.Glob,
+            n0.stc.Temperature.Glob,
+        ),
+    )
+
+    return ComponentNetwork(
+        fluid_settings,
+        inl,
+        CasadiSystem(1),
+        [
+            stator,
+            interspace,
+            rotor,
+        ],
+    )
+
+
+# ============================================================
+# Bounds -- the isentropic initialization and the full, lossy system are
+# both seeded from adet's own default guesses (no hand-picked values); only
+# bounds are supplied to keep the solve on the physical branch.
+# ============================================================
+U2 = 649.224  # rotor inlet tip speed [m/s] (= 2130 ft/s, Jones Fig. 2(a))
+VTHETA4_OVER_U = 0.882  # Jones Fig. 4 inlet triangle
+
+BOUNDS = {
+    n1.kin.Mach: (0.3, 1.05),
+    n0.stc.Temperature.Glob: (300, 1300),
+    n0.stc.Pressure.Glob: (1e3, 2e6),
+    n1.stc.Pressure: (0.3e5, 8e5),
+    n0.stc.Entropy.Glob: (3000.0, 7000.0),
+    n5.kin.FlowAngleAbs: (
+        Quantity(-20, 'deg').to('rad').magnitude,
+        Quantity(20, 'deg').to('rad').magnitude,
     ),
+    n4.kin.FlowAngleRel: (
+        Quantity(-89, 'deg').to('rad').magnitude,
+        Quantity(0, 'deg').to('rad').magnitude,
+    ),
+}
+
+# ============================================================
+# Stage 1: isentropic initialization (no loss models) -- cheap to solve
+# from the crude hand-tuned guess above, and gives a physically consistent
+# starting point for the full, lossy system below.
+# ============================================================
+ntw_isen = build_network(include_losses=False)
+ntw_isen.build()
+
+rtfn_isen = ntw_isen.system.make_rootfinder('ipopt', opts={'error_on_fail': False})
+x0_isen = ntw_isen.system.get_guess(fallback=0.5)
+kn_isen = ntw_isen.system.get_boundary_conds()
+bnd_isen = ntw_isen.system.get_bounds(BOUNDS)
+
+sol_isen = solve_root_problem(
+    rtfn_isen, x0_isen, kn_isen, bnd_isen, suppress_output=False
+)
+rtfn_isen = ntw_isen.system.make_rootfinder('kinsol')
+sol_isen = solve_root_problem(rtfn_isen, sol_isen, kn_isen, bnd_isen)
+
+isen_data = ntw_isen.system.sol_to_dict(sol_isen)
+logger.info(
+    'Isentropic initialization solved; seeding the full (lossy) system with it.'
 )
 
-ntw = ComponentNetwork(
-    fluid_settings,
-    inl,
-    CasadiSystem(1),
-    [
-        stator,
-        interspace,
-        rotor,
-    ],
-)
+# The full system's ``IsentropicProperties`` equation (per row) introduces
+# isentropic enthalpy/temperature unknowns (default guesses ~300 K / 6e5
+# J/kg, far from these stations' actual ~900-1050 K); since stage 1 is
+# itself isentropic, its own enthalpy/temperature *are* the isentropic ones,
+# and make a much better guess for these.
+isen_property_guess = {}
+for _n in (n1, n5):
+    isen_property_guess.update(
+        {
+            _n.oth.Tis_tot: isen_data[_n.tot.Temperature],
+            _n.oth.Enthalpy_totIs: isen_data[_n.tot.Enthalpy],
+            _n.oth.Tis_stc: isen_data[_n.stc.Temperature],
+            _n.oth.Enthalpy_Is: isen_data[_n.stc.Enthalpy],
+        }
+    )
 
+# ============================================================
+# Stage 2: full system, with loss models, seeded from the isentropic
+# solution above instead of the hand-tuned guess.
+# ============================================================
+ntw = build_network(include_losses=True)
 ntw.build()
 
 rtfn = ntw.system.make_rootfinder(
@@ -310,59 +400,9 @@ rtfn = ntw.system.make_rootfinder(
     opts={'error_on_fail': False},
 )
 
-# ============================================================
-# Initial guess -- Sauret Table 4's "Present" (RITAL) 1D meanline P_S/T_S
-# ============================================================
-U2 = 649.224  # rotor inlet tip speed [m/s] (= 2130 ft/s, Jones Fig. 2(a))
-VTHETA4_OVER_U = 0.882  # Jones Fig. 4 inlet triangle
-# Rotor inlet relative flow angle (Sauret Fig. 8(b), Present/RITAL);
-# blades are purely radial at the LE, so this is also the incidence.
-BETA4_GUESS = Quantity(-32.7, 'deg')
-
-x0 = ntw.system.get_guess(
-    {
-        n4.kin.FlowAngleRel: BETA4_GUESS.to('rad').magnitude,
-        n5.kin.FlowAngleRel: BETA3_MEAN.to('rad').magnitude,
-        n4.oth.SlipFactor: 0.9,
-        n0.stc.Pressure: 5.78e5,
-        n0.stc.Temperature: 1050.0,
-        n0.stc.Entropy: 4708.1,
-        n1.stc.Pressure: 3.284e5,
-        n1.stc.Temperature: 931.8,
-        n1.stc.Entropy: 4735.6,
-        n2.stc.Pressure: 3.284e5,
-        n2.stc.Temperature: 931.8,
-        n2.stc.Entropy: 4735.6,
-        n3.stc.Pressure: 2.948e5,
-        n3.stc.Temperature: 906.7,
-        n3.stc.Entropy: 4735.8,
-        n4.stc.Pressure: 2.948e5,
-        n4.stc.Temperature: 906.7,
-        n4.stc.Entropy: 4735.8,
-        n5.stc.Pressure: P5_STATIC,
-        n5.stc.Temperature: 713.9,
-        n5.stc.Entropy: 4798.9,
-    },
-    fallback=0.5,
-)
+x0 = ntw.system.get_guess({**isen_data, **isen_property_guess}, fallback=0.5)
 kn = ntw.system.get_boundary_conds()
-bnd = ntw.system.get_bounds(
-    {
-        n1.kin.Mach: (0.3, 1.05),
-        n0.stc.Temperature.Glob: (300, 1300),
-        n0.stc.Pressure.Glob: (1e3, 2e6),
-        n1.stc.Pressure: (0.3e5, 8e5),
-        n0.stc.Entropy.Glob: (3000.0, 7000.0),
-        n5.kin.FlowAngleAbs: (
-            Quantity(-20, 'deg').to('rad').magnitude,
-            Quantity(20, 'deg').to('rad').magnitude,
-        ),
-        n4.kin.FlowAngleRel: (
-            Quantity(-89, 'deg').to('rad').magnitude,
-            Quantity(0, 'deg').to('rad').magnitude,
-        ),
-    }
-)
+bnd = ntw.system.get_bounds(BOUNDS)
 
 sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=False)
 
