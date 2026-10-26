@@ -93,6 +93,7 @@ class GeometricVariables(VariableEnum):
     CumArea = VarSpec('cum_area', 'm**2', 0.3, scalar=True)
     EffArea = VarSpec('area_eff', 'm**2', 0.1)
     MerChord = VarSpec('mer_chord', 'm', 0.1)
+    AxialLength = VarSpec('axial_len', 'm', 0.1)
     Stagger = VarSpec('stag_angle', 'rad', 0.1)
     BldThick = VarSpec('bld_thick', 'm', 0.005)
     Solidity = VarSpec('solidity', '', 1.0)
@@ -146,7 +147,7 @@ class Nondimensional(VariableEnum):
     SwallowingCap = VarSpec('swllCap', '')
     SpecificSpeed = VarSpec('specificSpeed', '')
     SizeParameter = VarSpec('sizeParameter', '')
-    MerChordOutRadRatio = VarSpec('mer_chord_outRad_Ratio', '')
+    LaxByOutRadius = VarSpec('lax_by_outrad', '')
     DegreeOfReaction = VarSpec('reactDegree', '', scalar=True)
     DegreeOfReactionTS = VarSpec('reactDegree_ts', '', scalar=True)
 
@@ -222,6 +223,10 @@ class OtherVariables(VariableEnum):
     ProfileLoading = VarSpec('k_prof', '', 0.3)
     CdProfile = VarSpec('cd_profile', '')
     DischCoeff = VarSpec('disch_coeff', '')
+    DiffFricCoeff = VarSpec('cf_diff', '', 0.005)
+    DiffFricConst = VarSpec('k_diff', '')
+    VoluteF1 = VarSpec('f1_vol', '', 0.8)
+    VoluteF2 = VarSpec('f2_vol', '', 0.8)
 
 
 class NodeVariables:

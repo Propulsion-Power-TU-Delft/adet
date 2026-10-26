@@ -1,4 +1,3 @@
-from adet.equations.utils import safe_min_clip
 import logging
 from pathlib import Path
 from typing import Any, Callable, Sequence
@@ -13,6 +12,7 @@ from matplotlib.colors import Normalize
 from matplotlib.figure import Figure
 from matplotlib.ticker import FuncFormatter
 
+from adet.equations.utils import safe_min_clip
 from adet.varspec import VarSpec
 
 logger = logging.getLogger(__name__)
@@ -24,13 +24,14 @@ def setup_mpl(fontdict: dict[str, Any] = {}):
     add fonts from system directories
     """
     try:
-        repo_root = Path(__file__).parents[4]
+        repo_root = Path(__file__).parents[3]
         font_path = repo_root / 'fonts' / 'EBGaramond-Regular.ttf'
         fm.fontManager.addfont(path=str(font_path))
     except FileNotFoundError:
         pass
 
     custom_params = {
+        # 'text.usetex': True,
         'font.family': 'serif',
         'mathtext.fontset': 'cm',
         'font.weight': 'regular',

@@ -11,11 +11,6 @@ from pathlib import Path
 from typing import Literal, Type
 
 import CoolProp as cp
-import CoolProp
-
-CoolProp.CoolProp.set_config_string(
-    CoolProp.ALTERNATIVE_REFPROP_PATH, '/Users/matteomajer/Applications/REFPROP'
-)
 import matplotlib.pyplot as plt
 import numpy as np
 from pint import Quantity
@@ -39,7 +34,6 @@ from adet.equations.geometrical import (
 )
 from adet.equations.nondimensional import (
     FlowCoefficient,
-    GammaPV,
     StaticTotalDegreeOfReaction,
     TotalStaticLoadingCoefficient,
     TotalTotalExpansionEfficiency,
@@ -50,7 +44,6 @@ from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation  # noqa: F401
 from adet.losses.leakage import DentonTrapLeakage
 from adet.losses.mixing import (
-    DentonBaumgartnerMixingLoss,
     DentonMixingLoss,
     SieverdingBasePressure,
 )
@@ -174,7 +167,7 @@ DUTY_COEFFS = {
 }
 
 PHI_SPAN = np.linspace(0.4, 1.5, MAP_POINTS)
-PSI_SPAN = np.linspace(3.0, 10.0, MAP_POINTS)
+PSI_SPAN = np.linspace(2.0, 10.0, MAP_POINTS)
 
 INLET_PRESSURE = 1.3 * abs_state.p_critical()
 INLET_TEMPERATURE = 1.045 * abs_state.T_critical()
@@ -439,7 +432,7 @@ rootfinder_loss = ntw.system.make_rootfinder(
 rtfn_kn = ntw.system.make_rootfinder('kinsol')
 
 try:
-    solution = solve_root_problem(rootfinder_loss, x0_loss, kn_loss, bnd_loss)
+    solution = solve_root_problem(rootfinder_loss, x0_loss, kn_loss)
 except RuntimeError:
     solution = solve_root_problem(rootfinder_loss, x0_loss, kn_loss)
 

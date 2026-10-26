@@ -13,7 +13,6 @@ from adet.equations.utils import (
     safe_abs,
     safe_if_else,
     safe_min,
-    safe_min_clip,
 )
 from adet.losses.base_loss import LossModel
 from adet.tools.interpolation import make_casadi_interpolant
@@ -245,7 +244,6 @@ def baumgartner_mixing_zeta(
     incompressible ``Cpb = (p_base - p) / q`` used by
     :func:`incomp_mixing_zeta` with ``q = 0.5 * gamma_pv * p * Mach**2``.
     """
-    # Floor only, to avoid division by zero at stagnation; no upper cap
     thick_by_pitch0 = geo_bld_thick0 / geo_pitch0
     cpb = (
         2

@@ -1,9 +1,11 @@
 from pprint import pprint
+
+from numpy import sin
+
 from adet.assemblers import CasadiSystem
 from adet.equations.base_equation import EquationBase
 from adet.solution import solve_root_problem
 from adet.varspec import VarSpec
-from numpy import sin
 
 # Define variables
 x_spec = VarSpec('x', 'dimensionless', guess=1.0, bounds=(-1000, 1000))

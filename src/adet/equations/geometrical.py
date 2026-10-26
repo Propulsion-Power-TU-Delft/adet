@@ -273,14 +273,21 @@ class EndwallProperties(EquationBase):
         return r1, r2, r3, r4, r5, r6, r7, r8, r9, r10
 
 
-class MerChordByOutRadius(EquationBase):
+class LaxByOutRadius(EquationBase):
+    # TODO: Harmonize the axial length of centrifugal
+    # compressor and their definition in the meridional
+    # and bl-to-bl plane
     def residual(
         self,
         rr_mid0: n0.geo.Rmid.Hint,
+        ax_len0: n0.geo.AxialLength.Hint,
+        lax_by_outrad0: n0.ndim.LaxByOutRadius.Hint,
         mer_chord0: n0.geo.MerChord.Hint,
-        mer_chord_rad_ratio0: n0.ndim.MerChordOutRadRatio.Hint,
     ):
-        return rr_mid0 * mer_chord_rad_ratio0 - mer_chord0
+        r1 = rr_mid0 * lax_by_outrad0 - ax_len0
+        r2 = ax_len0 - mer_chord0
+
+        return r1, r2
 
 
 class CamberFunction(EquationBase):
@@ -329,18 +336,6 @@ class OptNumBlades(EquationBase):
         n_bl_opt: n0.geo.NumBladesOpt.Hint,
     ):
         return n_bl - n_bl_opt
-
-
-def glassman_num_blades(alpha2_deg):
-    """Glassman (1976, NASA TN D-8164) minimum-blade-number correlation for
-    a radial-inflow turbine rotor:
-
-    .. math::
-        Z = \\frac{\\pi}{30} (110 - \\alpha_2) \\tan(\\alpha_2)
-
-    :math:`\\alpha_2` (rotor inlet absolute flow angle) in degrees.
-    """
-    return (np.pi / 30) * (110 - alpha2_deg) * np.tan(np.radians(alpha2_deg))
 
 
 class GlassmanNumBlades(EquationBase):
