@@ -12,6 +12,7 @@ from adet.equations.utils import (
     minmax_bound,
     safe_abs,
     safe_if_else,
+    safe_max,
     safe_min,
 )
 from adet.losses.base_loss import LossModel
@@ -393,7 +394,7 @@ class DentonBaumgartnerMixingLoss(LossModel):
         ds_mixing0: n0.loss.Ds_mixing.Hint,
     ):
         # Floor only, to avoid division by zero at stagnation; no upper cap
-        mach_floored = safe_min(rel_mach0, 0.05)
+        mach_floored = safe_max(rel_mach0, 0.05)
         dyn_press = 0.5 * gamma0 * p0 * mach_floored**2  # Compressible dynamic head
 
         zeta = baumgartner_mixing_zeta(
@@ -407,7 +408,6 @@ class DentonBaumgartnerMixingLoss(LossModel):
             mom_thick0,
             disp_thick0,
         )
-        zeta = minmax_bound(zeta, 0.0, 1.0)
 
         rlt_p1_loss = p_rlt0 - dyn_press * zeta
         smass1_loss = self.eos(h_rlt0, rlt_p1_loss)
