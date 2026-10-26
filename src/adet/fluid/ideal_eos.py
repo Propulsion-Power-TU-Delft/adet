@@ -42,7 +42,7 @@ class IdealGasState(AnalyticalFluidState):
     def update(self, input_pair: int, value0, value1):
         if input_pair in UNSUPPORTED_PAIRS:
             pair_name = COOLPROP_PAIRS[input_pair]
-            raise NotImplementedError(f'Unsupported pair {pair_name}')
+            raise NotImplementedError(f'Unsupported pair {pair_name} for ideal gas')
 
         input_vars = pair_tuple_from_id(input_pair)
         input_vars.extend(['cp', 'cv'])

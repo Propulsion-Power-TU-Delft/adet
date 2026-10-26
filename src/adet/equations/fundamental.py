@@ -40,6 +40,29 @@ class ConstantAngMomentum(EquationBase):
         return rr0 * vt0 - rr1 * vt1
 
 
+class InterspaceLoss(EquationBase):
+    # Needed due to rounding errors
+    config = EquationConfig(manual_units=('dimensionless',))
+
+    def residual(
+        self,
+        rr0: n0.geo.RDistr.Hint,
+        rr1: n1.geo.RDistr.Hint,
+        vt0: n0.kin.V_tan.Hint,
+        vt1: n1.kin.V_tan.Hint,
+        rho1: n1.stc.Density.Hint,
+        massflow: n1.oth.TotMassFlow.Hint,
+        mu: n1.stc.Viscosity.Hint,
+    ):
+
+        # Radial gap Reynolds
+        Re = massflow / mu / rr0
+        Cf = 0.035 * (1.8e5 / Re) ** 0.2
+
+        loss_term = (2 * np.pi * Cf * rho1 * vt1 * (rr0**2 - rr0 * rr1)) / massflow
+        return vt0 / vt1 - (rr1 / rr0 + loss_term)
+
+
 class ConstRelEnthalpy(EquationBase):
     def residual(self, h0: n0.rlt.Enthalpy.Hint, h1: n1.rlt.Enthalpy.Hint):
         return h0 - h1
