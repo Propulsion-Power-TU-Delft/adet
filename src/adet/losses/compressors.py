@@ -368,6 +368,43 @@ class IncidenceGalvas(LossModel):
 
 
 class MixingJohnstonDean(LossModel):
+    """
+    Johnston and Dean (1966) - Losses in Vaneless Diffusers of Centrifugal
+    Compressors and Pumps: Analysis, Experiment, and Design.
+
+    Sudden-expansion mixing loss of the impeller discharge wakes at the
+    diffuser inlet: a square-wave jet-wake profile leaving the blade passages
+    mixes out suddenly to a uniform, axisymmetric flow (Sudden Expansion
+    Analysis). Only the meridional velocity component is mixed out, the
+    tangential component is preserved.
+
+    Notation, Johnston and Dean -> adet:
+    - C_i         -> V_mag, impeller outlet (diffuser inlet) velocity
+    - lambda_i    -> tan(FlowAngleAbs), swirl parameter C_theta / C_m
+    - eps         -> WakeFrac, fraction of the blade-to-blade spacing
+                     occupied by the wake
+    - B = b_i/b_t -> MixDepthRatio, diffuser inlet depth / impeller tip depth
+
+    Assumptions of the paper: no relative flow in the wake (W_w = 0), constant
+    static pressure around the impeller rim, Z >= 10 blades, incompressible
+    flow, B >= 1 (footnote 12). The loss is applied as an enthalpy loss.
+
+    NB: Wake fraction computation is NOT from Johnston and Dean. The paper
+    takes eps as an input and states that its prediction is intentionally
+    ignored (footnote 23); its only indications relate significant wakes
+    (eps > 0.25) to low flow, near surge (p. 58), and mixing losses to a
+    swirl parameter above a critical value (pp. 59-60).
+
+    Single-node equation at the impeller outlet, e.g. `MixingJohnstonDean(): 1`
+    or `MixingJohnstonDean(ramp='geometric'): 1`.
+    """
+
+    def __init__(self, ramp: str = 'linear', **kwargs):
+        super().__init__(**kwargs)
+        if ramp not in ('linear', 'geometric'):
+            raise ValueError(f"ramp must be 'linear' or 'geometric', got {ramp!r}")
+        self.ramp = ramp
+
     def residual(
         self,
         v0: n0.kin.V_mag.Hint,
@@ -377,24 +414,31 @@ class MixingJohnstonDean(LossModel):
         wake_frac0: n0.oth.WakeFrac.Hint,
         min_wake0: n0.oth.MinWakeFrac.Hint,
         max_wake0: n0.oth.MaxWakeFrac.Hint,
+        mf_thres0: n0.oth.WakeFracThres.Hint,
+        depth_ratio0: n0.oth.MixDepthRatio.Hint,
         dht_mix0: n0.loss.Dht_mixing.Hint,
     ):
-        MF_THRES = 0.75
-        B = 1
-
-        slope_eps_mf = (max_wake0 - min_wake0) / ((1 - MF_THRES) * mf_choke0)
-        offset_eps_mf = max_wake0 - slope_eps_mf * mf_choke0
-        linear_wake_frac = offset_eps_mf + slope_eps_mf * cum_mf0
+        # Wake fraction ramp, MinWakeFrac at WakeFracThres ChokeMassflow (ramp
+        # position 0) and MaxWakeFrac at ChokeMassflow (ramp position 1)
+        ramp_pos = (cum_mf0 - mf_thres0 * mf_choke0) / ((1 - mf_thres0) * mf_choke0)
+        if self.ramp == 'geometric':
+            # Ramp position limited to [0, 1]: both if_else branches are evaluated,
+            # the power would otherwise overflow far from the solution
+            ramp_pos_lim = safe_max(0.0, safe_min(ramp_pos, 1.0))
+            ramp_wake_frac = min_wake0 * (max_wake0 / min_wake0) ** ramp_pos_lim
+        else:
+            ramp_wake_frac = min_wake0 + (max_wake0 - min_wake0) * ramp_pos
 
         wake_frac_lo = min_wake0
-        wake_frac_hi = safe_min(linear_wake_frac, max_wake0)
+        wake_frac_hi = safe_min(ramp_wake_frac, max_wake0)
 
         r_wake = wake_frac0 - safe_if_else(
-            cum_mf0 < MF_THRES * mf_choke0,
+            cum_mf0 < mf_thres0 * mf_choke0,
             wake_frac_lo,
             wake_frac_hi,
         )
-        k1 = (1 - wake_frac0 - B) / (1 - wake_frac0)
+
+        k1 = (1 - wake_frac0 - depth_ratio0) / (1 - wake_frac0)
         k2 = 1 + np.tan(alpha0) ** 2
         dht = (1 / k2) * k1**2 * v0**2 / 2
 

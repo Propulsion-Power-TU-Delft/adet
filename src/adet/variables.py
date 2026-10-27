@@ -216,6 +216,8 @@ class OtherVariables(VariableEnum):
     WakeFrac = VarSpec('wake_frac', '')
     MinWakeFrac = VarSpec('minWake_frac', '')
     MaxWakeFrac = VarSpec('maxWake_frac', '')
+    WakeFracThres = VarSpec('wake_frac_thres', '')
+    MixDepthRatio = VarSpec('mix_depth_ratio', '')
     IncCoeff = VarSpec('incCoeff', '')
     WorkLossCoeff = VarSpec('worklossCoeff', '')
     XiCambLenA = VarSpec('xi_camb_len_A', '')
