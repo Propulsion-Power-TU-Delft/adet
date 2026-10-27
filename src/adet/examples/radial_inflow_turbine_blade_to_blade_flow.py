@@ -81,14 +81,14 @@ BETA_SHROUD_OUT = np.radians(-57.3)  # [rad] blade metal angle at the shroud, TE
 # parameters (split_frac/frac_at_split/half_width); the other three
 # don't, so BETA_LAW_KWARGS is derived from BETA_LAW rather than set
 # independently -- switching BETA_LAW above is then a one-line change.
-BETA_LAW = 'linear'
+BETA_LAW = 'rear_loaded'
 BETA_LAW_KWARGS = (
     {
         'split_frac': 0.5,  # [s_hat] where the slope changes
         'frac_at_split': 0.88,  # fraction of (beta_out - beta_in) covered by the split
         'half_width': 0.12,  # [s_hat] half-width of the smoothing window
     }
-    if BETA_LAW == 'front_loaded'
+    if BETA_LAW in ['front_loaded', 'rear_loaded']
     else {}
 )
 

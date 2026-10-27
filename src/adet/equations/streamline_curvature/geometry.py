@@ -144,6 +144,20 @@ def front_loaded_beta_law(
     ``beta_out`` at s_hat=1, blended smoothly (cubic smoothstep) across
     the split so beta and d(beta)/d(s_hat) are both continuous.
 
+    The blend is done on the *slope* (d(beta)/d(s_hat) is a convex
+    combination of ``slope1``/``slope2``, both of which share the sign of
+    ``beta_out - beta_in`` whenever ``frac_at_split`` is in ``(0, 1)``) and
+    ``beta`` itself is then recovered by exact integration, rather than
+    blending the two straight lines' *values* directly -- the latter is
+    what the original implementation did, and it isn't the same thing:
+    away from ``s_hat=split_frac`` the two lines diverge, so interpolating
+    their values (with a weight function whose own derivative is nonzero
+    inside the window) injects a spurious extra slope term that can -- and
+    for a large ``slope1``/``slope2`` ratio, as here, does -- overshoot
+    past ``beta_out``/``beta_in`` and bend back, i.e. a visible non-monotonic
+    bump right where the slope changes. Blending the slopes and integrating
+    instead guarantees a monotonic beta(s_hat) by construction.
+
     Returns
     -------
     beta, dbeta_dshat : ndarray
@@ -154,14 +168,58 @@ def front_loaded_beta_law(
     slope1 = (beta_split - beta_in) / split_frac
     slope2 = (beta_out - beta_split) / (1.0 - split_frac)
 
-    line1 = beta_in + slope1 * s_hat
-    line2 = beta_split + slope2 * (s_hat - split_frac)
+    s0 = split_frac - half_width
+    s1 = split_frac + half_width
 
-    t_w = np.clip((s_hat - (split_frac - half_width)) / (2 * half_width), 0.0, 1.0)
+    t_w = np.clip((s_hat - s0) / (2.0 * half_width), 0.0, 1.0)
     w = t_w * t_w * (3.0 - 2.0 * t_w)
-    in_window = (t_w > 0.0) & (t_w < 1.0)
-    dw_dshat = np.where(in_window, 6.0 * t_w * (1.0 - t_w) / (2 * half_width), 0.0)
 
-    beta = (1.0 - w) * line1 + w * line2
-    dbeta_dshat = (1.0 - w) * slope1 + w * slope2 + dw_dshat * (line2 - line1)
+    # Closed-form cumulative integral of w(x) dx from 0 to s_hat. Exploits
+    # the smoothstep's point symmetry about its own midpoint, so its
+    # integral over the full window is exactly half the window width --
+    # this is what makes beta(1) == beta_out exactly below, independent of
+    # half_width.
+    w_integral = np.where(
+        s_hat <= s0,
+        0.0,
+        np.where(
+            s_hat <= s1,
+            2.0 * half_width * (t_w**3 - 0.5 * t_w**4),
+            half_width + (s_hat - s1),
+        ),
+    )
+
+    dbeta_dshat = slope1 + (slope2 - slope1) * w
+    beta = beta_in + slope1 * s_hat + (slope2 - slope1) * w_integral
     return beta, dbeta_dshat
+
+
+def rear_loaded_beta_law(
+    s_hat: np.ndarray,
+    beta_in: float,
+    beta_out: float,
+    split_frac: float,
+    frac_at_split: float,
+    half_width: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Rear-loaded, two-slope blade-angle law beta(s_hat): an almost linear,
+    low-slope turn away from ``beta_in`` over most of the chord, with the
+    sharp turn concentrated near the trailing edge instead.
+
+    Exact mirror image of :func:`front_loaded_beta_law` -- evaluated at the
+    chordwise-reflected coordinate ``1 - s_hat`` and then value-reflected
+    about the ``beta_in``/``beta_out`` midpoint, which swaps which end
+    carries the sharp turn while keeping both endpoints and continuity in
+    beta and d(beta)/d(s_hat) exactly as before.
+
+    Returns
+    -------
+    beta, dbeta_dshat : ndarray
+        Both evaluated at ``s_hat``; ``dbeta_dshat`` is d(beta)/d(s_hat),
+        not yet converted to the physical d(beta)/ds.
+    """
+    beta_mirror, dbeta_mirror_dshat = front_loaded_beta_law(
+        1.0 - s_hat, beta_in, beta_out, split_frac, frac_at_split, half_width
+    )
+    beta = beta_in + beta_out - beta_mirror
+    return beta, dbeta_mirror_dshat

@@ -61,9 +61,10 @@ IMPELLER_DISK_TIP_THICKNESS = 0.001  # [m], not specified by the user; axial gap
 # left between the compressor's trailing edge and the pump-out-vane cavity in
 # the combined plot (Section 4), so the two meridional grids don't overlap
 
-# Front-loaded blade-angle law parameters shared by the compressor and the
-# turbine (not specified by the user; the pump-out vane uses a trivial,
-# constant-zero law instead).
+# Two-slope blade-angle law parameters shared by the compressor
+# (front-loaded) and the turbine (rear-loaded -- the mirror image of the
+# same two-slope shape, see rear_loaded_beta_law) -- not specified by the
+# user; the pump-out vane uses a trivial, constant-zero law instead.
 FRONT_LOADED_KWARGS = {
     'split_frac': 0.5,
     'frac_at_split': 0.88,
@@ -274,6 +275,7 @@ comp_rootfinder_kinsol = comp_system.make_rootfinder(
     'kinsol', opts={'error_on_fail': False}
 )
 comp_solution = solve_root_problem(comp_rootfinder_kinsol, comp_solution, comp_kn)
+COMP_KINSOL_SUCCESS = cast(Any, comp_rootfinder_kinsol).stats()['success']
 comp_sol = comp_system.sol_to_dict(comp_solution)
 
 COMP_W = grid_field(
@@ -505,6 +507,7 @@ pov_rootfinder_kinsol = pov_system.make_rootfinder(
     'kinsol', opts={'error_on_fail': False}
 )
 pov_solution = solve_root_problem(pov_rootfinder_kinsol, pov_solution, pov_kn)
+POV_KINSOL_SUCCESS = cast(Any, pov_rootfinder_kinsol).stats()['success']
 pov_sol = pov_system.sol_to_dict(pov_solution)
 
 POV_H_STATIC = grid_field(
@@ -555,22 +558,23 @@ logger.info(f'[Pump-out vane] Outlet static p (mid-span): {_pov_p_out_mid:.1f} k
 # 3. Turbine rotor (radial inflow, mounted facing the opposite direction)
 # ============================================================
 TURB_N_STREAM = 40
-TURB_N_SPAN = 7
+TURB_N_SPAN = 14
 
 TURB_R_MEAN_IN = 0.063  # [m] inlet (inducer) tip radius
 TURB_H_IN = 0.016  # [m] inlet blade height
 
 TURB_R_MEAN_OUT = 0.040  # [m] exducer mean radius
-TURB_H_OUT = 0.037  # [m] exducer blade height
+TURB_H_OUT = 0.030  # [m] exducer blade height
 
 TURB_AXIAL_LENGTH = 0.039  # [m], not specified by the user
 
-TURB_MERID_ANGLE_IN = np.radians(-75.0)  # radial inflow
+TURB_MERID_ANGLE_IN = np.radians(-90.0)  # radial inflow
 TURB_MERID_ANGLE_OUT = np.radians(0.0)  # axial outflow (exducer)
 
 TURB_MASS_FLOW = 0.75  # [kg/s], same as the compressor
 TURB_T0_IN = 363.0  # [K]
-TURB_P0_IN = 1.4e5  # [Pa]
+TURB_P0_IN = 1.45e5  # [Pa]
+TURB_P_IN = 0.88e5
 
 TURB_BETA_IN = np.radians(-25.0)  # radial at the inlet
 TURB_BETA_OUT = np.radians(-55.0)
@@ -652,9 +656,10 @@ surface_turb = SurfaceFlow(
     TURB_N_STREAM,
     TURB_N_SPAN,
     rotation_sign=-1.0,
-    beta_law='front_loaded',
+    beta_law='rear_loaded',
     beta_law_kwargs=FRONT_LOADED_KWARGS,
     include_blade_to_blade=False,
+    # axial_absolute_inflow=True,
 )
 TURB_BETA_BL, _TURB_BETA_BL_DSHAT = surface_turb.beta_field(
     TURB_S_STATIONS, TURB_S_MAX, TURB_BETA_IN_SPAN, TURB_BETA_OUT_SPAN
@@ -668,6 +673,8 @@ TURB_GAS_STATE = IdealGasState(
 TURB_GAS_STATE.update(cp.PT_INPUTS, TURB_P0_IN, TURB_T0_IN)
 TURB_TOTAL_ENTHALPY_IN = TURB_GAS_STATE.hmass()
 TURB_ENTROPY_IN = TURB_GAS_STATE.smass()
+
+TURB_GAS_STATE.update(cp.PSmass_INPUTS, TURB_P_IN, TURB_ENTROPY_IN)
 TURB_RHO_GUESS = TURB_GAS_STATE.rhomass()
 
 turb_system = CasadiSystem(num_span=1)
@@ -709,6 +716,7 @@ for i in range(TURB_N_STREAM):
         k = surface_turb.node_index(i, j)
         beta_guess = TURB_BETA_BL[i, j]
         wm_guess = turb_w_guess * np.cos(beta_guess)
+
         wt_guess = turb_w_guess * np.sin(beta_guess)
         u_guess = TURB_U[i, j]
 
@@ -725,9 +733,8 @@ for i in range(TURB_N_STREAM):
             wt_guess + u_guess, wm_guess
         )
         turb_manual_guess[surface_turb.nodes[k].stc.Density] = TURB_RHO_GUESS
-        turb_manual_guess[surface_turb.nodes[k].stc.Enthalpy] = max(
-            TURB_TOTAL_ENTHALPY_IN - 0.5 * turb_v_mag_guess**2,
-            0.3 * TURB_TOTAL_ENTHALPY_IN,
+        turb_manual_guess[surface_turb.nodes[k].stc.Enthalpy] = (
+            TURB_TOTAL_ENTHALPY_IN - 0.5 * turb_v_mag_guess**2
         )
         turb_manual_guess[surface_turb.mf_nodes[k].CumFlow] = (
             TURB_MASS_FLOW * j / (TURB_N_SPAN - 1)
@@ -756,6 +763,7 @@ turb_rootfinder_polish = turb_system.make_rootfinder(
 turb_solution = solve_root_problem(
     turb_rootfinder_polish, turb_solution, turb_kn, turb_bnd
 )
+TURB_KINSOL_SUCCESS = cast(Any, turb_rootfinder_polish).stats()['success']
 turb_sol = turb_system.sol_to_dict(turb_solution)
 
 TURB_H_STATIC = grid_field(
@@ -935,6 +943,39 @@ if __name__ == '__main__':
     )
     plot_meridional_field('Relative velocity $W$', 'm/s', COMP_W, POV_W, TURB_W)
 
+    # Blade metal angle distribution vs. the normalized meridional (streamwise)
+    # coordinate s/s_max, one subplot per component -- the boundary condition
+    # each node's FlowAngleRel is pinned to (meridional-only mode), rather than
+    # a field read back from the solution.
+    _SPAN_SERIES = (('hub', '#2a78d6'), ('mean', '#eb6834'), ('shroud', '#1baf7a'))
+
+    def plot_blade_angle(ax, s_stations, s_max, beta_bl, title):
+        n_span_local = beta_bl.shape[1]
+        span_idx = (0, (n_span_local - 1) // 2, n_span_local - 1)
+        s_norm = s_stations / s_max
+        for j, (label, color) in zip(span_idx, _SPAN_SERIES):
+            ax.plot(s_norm[:, j], np.degrees(beta_bl[:, j]), color=color, label=label)
+        ax.set_xlabel('Normalized meridional coordinate $s/s_{max}$ [-]')
+        ax.set_ylabel(r'Blade metal angle $\beta_{bl}$ [deg]')
+        ax.set_title(title)
+        ax.legend()
+        ax.grid(True, color='#e1e0d9', linewidth=0.8)
+
+    fig_blade, (ax_blade_comp, ax_blade_pov, ax_blade_turb) = plt.subplots(
+        1, 3, figsize=(3 * PANEL_W, PANEL_H)
+    )
+    plot_blade_angle(
+        ax_blade_comp, COMP_S_STATIONS, COMP_S_MAX, COMP_BETA_BL, 'Compressor'
+    )
+    plot_blade_angle(
+        ax_blade_pov, POV_S_STATIONS, POV_S_MAX, POV_BETA_BL, 'Pump-out vane'
+    )
+    plot_blade_angle(
+        ax_blade_turb, TURB_S_STATIONS, TURB_S_MAX, TURB_BETA_BL, 'Turbine'
+    )
+    fig_blade.suptitle('Blade metal angle distribution')
+    fig_blade.tight_layout()
+
     plt.show()
 
 # ============================================================
@@ -1007,20 +1048,20 @@ logger.info(
 )
 
 # ============================================================
-# 6. Convergence summary -- IPOPT's own verdict on the main (non-polish)
-# solve of each component, so it's obvious at a glance which block(s)
-# need attention.
+# 6. Convergence summary -- the reported verdict is KINSOL's own exit
+# status on the polish step (the solution actually used downstream), with
+# IPOPT's status on the main (non-polish) solve that fed it also shown in
+# brackets for context, so it's obvious at a glance which block(s) need
+# attention.
 # ============================================================
-_CONVERGED_STATUSES = {
-    'Solve_Succeeded',
-    'Solved_To_Acceptable_Level',
-    'Feasible_Point_Found',
-}
 logger.info('=== Convergence summary ===')
-for _name, _status in (
-    ('Compressor', COMP_STATUS),
-    ('Pump-out vane', POV_STATUS),
-    ('Turbine', TURB_STATUS),
+for _name, _status, _kinsol_ok in (
+    ('Compressor', COMP_STATUS, COMP_KINSOL_SUCCESS),
+    ('Pump-out vane', POV_STATUS, POV_KINSOL_SUCCESS),
+    ('Turbine', TURB_STATUS, TURB_KINSOL_SUCCESS),
 ):
-    _verdict = 'yes' if _status in _CONVERGED_STATUSES else 'NO'
-    logger.info(f'{_name}: converged={_verdict} (ipopt status: {_status})')
+    _verdict = 'yes' if _kinsol_ok else 'NO'
+    logger.info(
+        f'{_name}: converged={_verdict} '
+        f'(kinsol success: {_kinsol_ok}, ipopt status: {_status})'
+    )

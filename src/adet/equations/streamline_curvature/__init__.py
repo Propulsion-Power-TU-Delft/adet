@@ -18,6 +18,7 @@ from adet.equations.streamline_curvature.geometry import (
     linear_beta_law,
     midline_tangent_angle,
     parabolic_beta_law,
+    rear_loaded_beta_law,
     resample_by_arc_length,
     spanwise_normal_curvature,
 )
@@ -46,6 +47,7 @@ __all__ = [
     'linear_beta_law',
     'midline_tangent_angle',
     'parabolic_beta_law',
+    'rear_loaded_beta_law',
     'resample_by_arc_length',
     'spanwise_normal_curvature',
 ]

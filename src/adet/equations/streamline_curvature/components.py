@@ -28,6 +28,7 @@ from adet.equations.streamline_curvature.geometry import (
     front_loaded_beta_law,
     linear_beta_law,
     parabolic_beta_law,
+    rear_loaded_beta_law,
 )
 from adet.equations.streamline_curvature.variables import (
     BladeLoadingVariables,
@@ -45,11 +46,13 @@ BETA_LAWS: dict[str, BetaLaw] = {
     'parabolic': parabolic_beta_law,
     'circular': circular_beta_law,
     'front_loaded': front_loaded_beta_law,
+    'rear_loaded': rear_loaded_beta_law,
 }
 """Blade-angle laws selectable by name through ``SurfaceFlow(beta_law=...)``,
 see ``adet.equations.streamline_curvature.geometry`` for each one's
-definition. ``'front_loaded'`` needs extra ``split_frac``/``frac_at_split``/
-``half_width`` parameters, passed via ``beta_law_kwargs``."""
+definition. ``'front_loaded'``/``'rear_loaded'`` need extra
+``split_frac``/``frac_at_split``/``half_width`` parameters, passed via
+``beta_law_kwargs``."""
 
 
 class SurfaceFlow:
