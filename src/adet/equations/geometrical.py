@@ -174,6 +174,43 @@ class RadialGeometry(EquationBase):
         return r1, r2, r3, r4
 
 
+class MeridionalChord(EquationBase):
+    """
+    Meridional chord as the vector composition of the midspan radius
+    change and the midspan axial-coordinate change between the inlet
+    (node 0) and outlet (node 1) of a row.
+
+    Reduces to the pure radius change for a simple radial cascade
+    (``ax_len1 == 0``), and to the pure axial length for a simple axial
+    cascade (``rr_mid1 == rr_mid0``).
+    """
+
+    def residual(
+        self,
+        rr_mid0: n0.geo.Rmid.Hint,
+        rr_mid1: n1.geo.Rmid.Hint,
+        ax_len1: n1.geo.AxialLength.Hint,
+        mer_chord1: n1.geo.MerChord.Hint,
+    ):
+        return mer_chord1 - np.sqrt(ax_len1**2 + (rr_mid1 - rr_mid0) ** 2)
+
+
+class AxialLengthToRadiusChange(EquationBase):
+    """
+    Sets the cascade axial length proportional to its midspan radius
+    change.
+    """
+
+    def residual(
+        self,
+        rr_mid0: n0.geo.Rmid.Hint,
+        rr_mid1: n1.geo.Rmid.Hint,
+        ax_len1: n1.geo.AxialLength.Hint,
+        ax_len_ratio1: n1.ndim.AxLenToRadChangeRatio.Hint,
+    ):
+        return ax_len1 - ax_len_ratio1 * (rr_mid1 - rr_mid0)
+
+
 class BladePitch(EquationBase):
     """
     Define pitch as circumference / num_blades and the massflow per blade channel
@@ -271,23 +308,6 @@ class EndwallProperties(EquationBase):
         r10 = a_sound0[-1] * rel_mach_tip0 - w_tip0
 
         return r1, r2, r3, r4, r5, r6, r7, r8, r9, r10
-
-
-class LaxByOutRadius(EquationBase):
-    # TODO: Harmonize the axial length of centrifugal
-    # compressor and their definition in the meridional
-    # and bl-to-bl plane
-    def residual(
-        self,
-        rr_mid0: n0.geo.Rmid.Hint,
-        ax_len0: n0.geo.AxialLength.Hint,
-        lax_by_outrad0: n0.ndim.LaxByOutRadius.Hint,
-        mer_chord0: n0.geo.MerChord.Hint,
-    ):
-        r1 = rr_mid0 * lax_by_outrad0 - ax_len0
-        r2 = ax_len0 - mer_chord0
-
-        return r1, r2
 
 
 class CamberFunction(EquationBase):

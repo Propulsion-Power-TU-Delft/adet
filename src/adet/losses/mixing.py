@@ -12,8 +12,8 @@ from adet.equations.utils import (
     minmax_bound,
     safe_abs,
     safe_if_else,
+    safe_max,
     safe_min,
-    safe_min_clip,
 )
 from adet.losses.base_loss import LossModel
 from adet.tools.interpolation import make_casadi_interpolant
@@ -400,11 +400,9 @@ class DentonBaumgartnerMixingLoss(LossModel):
         s0: n0.stc.Entropy.Hint,
         ds_mixing0: n0.loss.Ds_mixing.Hint,
     ):
-        # TODO:
-        # 1. Remove duplicate clipping
-        # 2. Check the theory/reason behind this clipping
-        mach_capped = safe_min_clip(safe_min(rel_mach0, 1.0), 0.05)
-        dyn_press = 0.5 * gamma0 * p0 * mach_capped**2  # Compressible dynamic head
+        # Floor only, to avoid division by zero at stagnation; no upper cap
+        mach_floored = safe_max(rel_mach0, 0.05)
+        dyn_press = 0.5 * gamma0 * p0 * mach_floored**2  # Compressible dynamic head
 
         zeta = baumgartner_mixing_zeta(
             p0,

@@ -93,7 +93,7 @@ class GeometricVariables(VariableEnum):
     CumArea = VarSpec('cum_area', 'm**2', 0.3, scalar=True)
     EffArea = VarSpec('area_eff', 'm**2', 0.1)
     MerChord = VarSpec('mer_chord', 'm', 0.1)
-    AxialLength = VarSpec('axial_len', 'm', 0.1)
+    AxialLength = VarSpec('ax_length', 'm', 0.1, scalar=True)
     Stagger = VarSpec('stag_angle', 'rad', 0.1)
     BldThick = VarSpec('bld_thick', 'm', 0.005)
     Solidity = VarSpec('solidity', '', 1.0)
@@ -148,6 +148,10 @@ class Nondimensional(VariableEnum):
     SpecificSpeed = VarSpec('specificSpeed', '')
     SizeParameter = VarSpec('sizeParameter', '')
     LaxByOutRadius = VarSpec('lax_by_outrad', '')
+    MerChordOutRadRatio = VarSpec('mer_chord_outRad_Ratio', '')
+    AxLenToRadChangeRatio = VarSpec(
+        'ax_len_to_radChange_ratio', '', 1.0, scalar=True
+    )
     DegreeOfReaction = VarSpec('reactDegree', '', scalar=True)
     DegreeOfReactionTS = VarSpec('reactDegree_ts', '', scalar=True)
 
@@ -203,6 +207,9 @@ class OtherVariables(VariableEnum):
     ChkTemperature = VarSpec('chk_temp', 'K', 500)
     DispThickEW = VarSpec('disp_thick_ew', 'm', 2e-5, scalar=True)
     Enthalpy_Is = VarSpec('stc_hmass_is', 'J / kg', 6e5)
+    W_Is = VarSpec('w_is', 'm / s', 0.5, (0.0, 2e3))
+    EulerWork = VarSpec('euler_work', 'J / kg', 2e5)
+    EulerWorkIs = VarSpec('euler_work_is', 'J / kg', 2e5)
     ShockAngle = VarSpec('sh_angle', 'rad', 0.9, (0.0, 1.6))
     ShockDeflection = VarSpec('sh_deflec', 'rad', -0.8, (-1.5, 1.5))
     EntropyPresh = VarSpec('s_presh', 'J / kg / K', 1e3)

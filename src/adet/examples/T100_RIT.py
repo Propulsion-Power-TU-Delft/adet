@@ -22,7 +22,8 @@ State:
 - Design point only (50 hp rating)
 - No exhaust diffuser
 - Zero-deviation at every row exit
-- Currently not running without initial guess
+- Missing stator-rotor row gap loss (currently purely isentropic, free-vortex flow)
+- Volute not integrated
 """
 
 import logging
@@ -30,6 +31,7 @@ import math
 
 import matplotlib.pyplot as plt
 import numpy as np
+from adet.equations.geometrical import AxialLengthToRadiusChange, MeridionalChord
 from pint import Quantity
 from tabulate import tabulate
 
@@ -38,9 +40,21 @@ from adet.components.blade_row import BladeRow, Interspace
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.base_equation import LossApplier
-from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
-from adet.equations.nondimensional import GammaPV
+from adet.equations.definitions import (
+    BoundaryLayerRatios,
+    EulerWork,
+    IsentropicEulerWork,
+    IsentropicProperties,
+)
+from adet.equations.nondimensional import (
+    EfficiencyDeficit,
+    GammaPV,
+    LossCoefficient,
+    TotalStaticExpansionEfficiency,
+    TotalTotalExpansionEfficiency,
+)
 from adet.fluid.settings import FluidSettings
+from adet.losses.base_loss import collect_loss_mechanisms
 from adet.losses.basic import IsentropicLink, ZeroDeviation
 from adet.losses.mixing import DentonBaumgartnerMixingLoss, SieverdingBasePressure
 from adet.losses.rit import (
@@ -102,10 +116,7 @@ class AddStatorLosses(LossApplier):
         return s1 - (s0 + ds_profile1 + ds_endwall1 + ds_mixing1)
 
 
-# |> Machine stations, in the order the components are chained below (each
-# component owns two fresh global nodes: inlet, outlet). No separate
-# slip-gap stations: the rotor's own inlet node (4) carries the slip
-# correction directly.
+# |> Machine stations (for terminal output / plotting)
 STATION_LABELS = {
     0: 'Nozzle inlet',
     1: 'Nozzle outlet',
@@ -125,183 +136,262 @@ n5 = NodeVariables(5)
 # ============================================================
 # Geometry and boundary conditions. Radii/heights/lengths/angles are
 # Sauret Table 2 and Appendix A (Tables 6-11) unless noted otherwise;
-# cycle boundary conditions are Sauret Table 1.
+# cycle boundary conditions are Sauret Table 1. Set directly as component
+# constraints below -- ratios/differences are computed inline from the
+# same Sauret source values rather than through standalone variables.
 # ============================================================
-
-# Nozzle radii [m] (Sauret Table 2, "Nozzle")
-NOZZLE_R_IN = 0.074
-NOZZLE_R_OUT = 0.0635
-NOZZLE_RADIUS_RATIO = NOZZLE_R_OUT / NOZZLE_R_IN  # n1(exit)/n0(inlet)
-
-# Nozzle heights [m] (Sauret Table 2)
-NOZZLE_HEIGHT_IN = 0.00635
-NOZZLE_HEIGHT_OUT = 0.006
-NOZZLE_HEIGHT_RATIO = NOZZLE_HEIGHT_OUT / NOZZLE_HEIGHT_IN
-
-# Nozzle blade geometry (Sauret Table 2 "Nozzle" + Appendix Table 6, m=0%)
-NOZZLE_TE_THICKNESS = 0.00051
-NOZZLE_LE_THICKNESS = 0.000661
-NOZZLE_CHORD = 0.0229
-NOZZLE_NUM_BLADES = 19  # Sauret Table 1
-
-# Rotor inlet (inducer) tip radius [m] (Sauret Table 2, "Rotor" R_in);
-R2_TIP = 0.0582
-
-# Vaneless-space (nozzle exit -> rotor inlet) radius/height ratios (Sauret
-# Table 2)
-VANELESS_GAP_RATIO = R2_TIP / NOZZLE_R_OUT  # rotor inlet R / nozzle exit R
-VANELESS_HEIGHT_RATIO = 0.00635 / NOZZLE_HEIGHT_OUT
-
-# Exducer (rotor exit) hub/tip radii [m] (Sauret Table 8, m=100%)
-R3_HUB = 0.01524
-R3_TIP = 0.03683
-H3 = R3_TIP - R3_HUB
-
-# Rotor exit mean relative flow angle (Sauret Fig. 8(c), Present/RITAL)
-BETA3_MEAN = Quantity(-57.3, 'deg')
-
-# Rotor blade geometry (Sauret Table 2 "Rotor" + Appendix Tables 9-10)
-ROTOR_AXIAL_LENGTH = 0.0389
-ROTOR_TE_THICKNESS = 0.00076
-ROTOR_LE_THICKNESS = 0.00086
-ROTOR_CHORD = 0.0457
-ROTOR_INLET_CLEARANCE = 0.0004
-ROTOR_EXDUCER_CLEARANCE = 0.00023
-ROTOR_NUM_BLADES = 16  # Sauret Table 1 / Jones text
-
-# Cycle boundary conditions at the engine design point (Sauret Table 1)
-T0_TOT = Quantity(1056.5, 'K')
-P0_TOT = Quantity(580400, 'Pa')
-MDOT = Quantity(0.33, 'kg/s')
-N_RPM = Quantity(106588, 'rpm')
-
-# Rotor exit static pressure: Sauret Table 4, "Present" (RITAL) column,
-# engine conditions
-P5_STATIC = 94700.0
-
-# NOTE (assumed / Jones-only): Sauret doesn't tabulate nozzle inlet
-# swirl; Jones gives a 20-40 deg range, midpoint used here.
-NOZZLE_INLET_SWIRL = Quantity(30.0, 'deg')
-
-# Nozzle exit angle (Sauret Fig. 8(a), Present/RITAL)
-NOZZLE_EXIT_ANGLE = Quantity(78.1, 'deg')
 
 inl = Inlet(
     {
-        n0.tot.Pressure: P0_TOT,
-        n0.tot.Temperature: T0_TOT,
-        n0.oth.TotMassFlow: MDOT.magnitude,
-        n0.kin.FlowAngleRel: NOZZLE_INLET_SWIRL,
-        n0.geo.Height: Quantity(NOZZLE_HEIGHT_IN, 'm'),
+        # Cycle boundary conditions at the engine design point (Sauret Table 1)
+        n0.tot.Pressure: Quantity(580400, 'Pa'),
+        n0.tot.Temperature: Quantity(1056.5, 'K'),
+        n0.oth.TotMassFlow: Quantity(0.33, 'kg/s').magnitude,
+        # NOTE (assumed / Jones-only): Sauret doesn't tabulate nozzle inlet
+        # swirl; Jones gives a 20-40 deg range, midpoint used here.
+        n0.kin.FlowAngleRel: Quantity(30.0, 'deg'),
+        # Nozzle inlet height [m] (Sauret Table 2)
+        n0.geo.Height: Quantity(0.00635, 'm'),
         n0.geo.MeridionalAngle: Quantity(-90, 'deg'),
     }
 )
 
 casing = Shaft(Quantity(0, 'rpm'), is_constrained=True)
-shaft = Shaft(N_RPM, is_constrained=True)
+shaft = Shaft(Quantity(106588, 'rpm'), is_constrained=True)
 
-stator = BladeRow(
-    'nozzle',
-    bound_cond={
-        n1.geo.HeightRatio: NOZZLE_HEIGHT_RATIO,
-        n1.geo.RadiusRatio: NOZZLE_RADIUS_RATIO,
-        n1.geo.Rmid: Quantity(NOZZLE_R_OUT, 'm'),
-        n1.geo.MeridionalAngle: Quantity(-90, 'deg'),
-        n1.geo.MetalAngle: NOZZLE_EXIT_ANGLE,
-        n0.geo.BldThick: Quantity(NOZZLE_LE_THICKNESS, 'm'),
-        n1.geo.BldThick: Quantity(NOZZLE_TE_THICKNESS, 'm'),
-        n1.geo.NumBlades: NOZZLE_NUM_BLADES,
-        n1.geo.MerChord: Quantity(0.01, 'mm'),  # TODO: check what this is doing
-        n1.oth.MomByBld: 0.075,
-        n1.oth.DispByMom: 2.0,
-        n1.oth.DispByHgt: 0.09,
-    },
-    shaft=casing,
-    extra_equations={
-        AddStatorLosses(): (0, 1),
-        ZeroDeviation(): 0,  # No incidence
-        StatorProfileLoss(): (0, 1),
-        EndwallLoss(): (0, 1),
-        IsentropicProperties(): (0, 1),
-        BoundaryLayerRatios(): 1,
-        GammaPV(): 0,
-        GammaPV(): 1,
-        SieverdingBasePressure(): (0, 1),
-        DentonBaumgartnerMixingLoss(): 1,
-    },
-)
 
-interspace = Interspace(
-    'intrspc',
-    {
-        n1.geo.RadiusRatio: VANELESS_GAP_RATIO,
-        n1.geo.HeightRatio: VANELESS_HEIGHT_RATIO,
-    },
-    extra_equations={
-        IsentropicLink(): (0, 1),
-    },
-)
+def build_network(include_losses: bool) -> ComponentNetwork:
+    """Build the nozzle/interspace/rotor network.
 
-rotor = BladeRow(
-    'impeller',
-    bound_cond={
-        n1.geo.Rhub: Quantity(R3_HUB, 'm'),
-        n1.geo.Height: Quantity(H3, 'm'),
-        n1.geo.MeridionalAngle: Quantity(0, 'deg'),  # axial exducer exit
-        n0.geo.BldThick: Quantity(ROTOR_LE_THICKNESS, 'm'),
-        n0.geo.MetalAngle: Quantity(0, 'deg'),  # purely radial LE blades
-        n1.geo.BldThick: Quantity(ROTOR_TE_THICKNESS, 'm'),
-        n1.geo.MerChord: Quantity(ROTOR_AXIAL_LENGTH, 'm'),
-        n1.geo.NumBlades: ROTOR_NUM_BLADES,
-        n1.stc.Pressure: Quantity(P5_STATIC, 'Pa'),
-        n0.geo.TipClearance: Quantity(ROTOR_INLET_CLEARANCE, 'm'),
-        n1.geo.TipClearance: Quantity(ROTOR_EXDUCER_CLEARANCE, 'm'),
-        n1.oth.MomByBld: 0.075,
-        n1.oth.DispByMom: 2.0,
-        n1.oth.DispByHgt: 0.09,
-    },
-    shaft=shaft,
-    extra_equations={
-        AddImpellerLosses(): (0, 1),
-        **({ChenSlip(): 0} if USE_SLIP_MODEL else {}),
-        IsentropicProperties(): (0, 1),
-        ImpellerPassageLoss(): (0, 1),
-        ImpellerLeakageLoss(): (0, 1),
-        ImpellerIncidenceLoss(): (0, 1),
-        EndwallLoss(): (0, 1),
-        BoundaryLayerRatios(): 1,
-        GammaPV(): 0,
-        GammaPV(): 1,
-        SieverdingBasePressure(): (0, 1),
-        DentonBaumgartnerMixingLoss(): 1,
-    },
-)
+    With ``include_losses=False`` every entropy-generating loss mechanism is
+    replaced by an ``IsentropicLink`` (s_out = s_in), giving a much
+    easier-to-solve system whose solution is used as the initial guess for
+    the full, lossy system (see below).
+    """
+    stator_extra_equations: dict = {
+        ZeroDeviation(): 0,
+        MeridionalChord(): (0, 1),
+    }  # No incidence
+    rotor_extra_equations: dict = {
+        MeridionalChord(): (0, 1),
+        AxialLengthToRadiusChange(): (0, 1),
+    }
+    if USE_SLIP_MODEL:
+        rotor_extra_equations[ChenSlip()] = 0
 
-if USE_SLIP_MODEL:
-    # ``ChenSlip`` sets the rotor inlet tangential velocity (hence its
-    # relative flow angle) directly
-    rotor._from_prev_node.discard(KinematicVariables(DEF_NODE).V_tan)
+    if include_losses:
+        stator_extra_equations.update(
+            {
+                AddStatorLosses(): (0, 1),
+                StatorProfileLoss(): (0, 1),
+                EndwallLoss(): (0, 1),
+                IsentropicProperties(): (0, 1),
+                BoundaryLayerRatios(): 1,
+                GammaPV(): 0,
+                GammaPV(): 1,
+                SieverdingBasePressure(): (0, 1),
+                DentonBaumgartnerMixingLoss(): 1,
+            }
+        )
+        rotor_extra_equations.update(
+            {
+                AddImpellerLosses(): (0, 1),
+                IsentropicProperties(): (0, 1),
+                ImpellerPassageLoss(): (0, 1),
+                ImpellerLeakageLoss(): (0, 1),
+                ImpellerIncidenceLoss(): (0, 1),
+                EndwallLoss(): (0, 1),
+                BoundaryLayerRatios(): 1,
+                GammaPV(): 0,
+                GammaPV(): 1,
+                SieverdingBasePressure(): (0, 1),
+                DentonBaumgartnerMixingLoss(): 1,
+            }
+        )
+    else:
+        stator_extra_equations[IsentropicLink()] = (0, 1)
+        rotor_extra_equations[IsentropicLink()] = (0, 1)
 
-abs_state = DebugAbstractState('HEOS', 'Air')
+    stator = BladeRow(
+        'nozzle',
+        bound_cond={
+            # Nozzle heights [m] (Sauret Table 2): 0.006 / 0.00635
+            n1.geo.HeightRatio: 0.006 / 0.00635,
+            # Nozzle radii [m] (Sauret Table 2, "Nozzle"): 0.0635 / 0.074
+            # (n1(exit)/n0(inlet))
+            n1.geo.RadiusRatio: 0.0635 / 0.074,
+            n1.geo.Rmid: Quantity(0.0635, 'm'),
+            n1.geo.MeridionalAngle: Quantity(-90, 'deg'),
+            # Nozzle exit angle (Sauret Fig. 8(a), Present/RITAL)
+            n1.geo.MetalAngle: Quantity(78.1, 'deg'),
+            # Nozzle blade geometry (Sauret Table 2 "Nozzle" + Appendix
+            # Table 6, m=0%)
+            n0.geo.BldThick: Quantity(0.000661, 'm'),
+            n1.geo.BldThick: Quantity(0.00051, 'm'),
+            n1.geo.NumBlades: 19,  # Sauret Table 1
+            # Planar stator: zero axial length, meridional chord reduces
+            # to the inlet/outlet radius change (Table 2)
+            n1.geo.AxialLength: Quantity(0.0, 'm'),
+            n1.oth.MomByBld: 0.075,
+            n1.oth.DispByMom: 2.0,
+            n1.oth.DispByHgt: 0.09,
+        },
+        shaft=casing,
+        extra_equations=stator_extra_equations,
+    )
 
-fluid_settings = FluidSettings(
-    fluid_state=abs_state,
-    update_variables=(
-        n0.stc.Pressure.Glob,
-        n0.stc.Temperature.Glob,
+    interspace = Interspace(
+        'intrspc',
+        {
+            # Vaneless-space (nozzle exit -> rotor inlet) radius/height
+            # ratios (Sauret Table 2): rotor inlet R (0.0582) / nozzle
+            # exit R (0.0635), and 0.00635 / nozzle exit height (0.006)
+            n1.geo.RadiusRatio: 0.0582 / 0.0635,
+            n1.geo.HeightRatio: 0.00635 / 0.006,
+        },
+        extra_equations={
+            IsentropicLink(): (0, 1),
+        },
+    )
+
+    rotor = BladeRow(
+        'impeller',
+        bound_cond={
+            # Exducer (rotor exit) hub/tip radii [m] (Sauret Table 8, m=100%)
+            n1.geo.Rmid: Quantity(0.02604, 'm'),
+            n1.geo.Height: Quantity(0.03683 - 0.01524, 'm'),
+            n1.geo.MeridionalAngle: Quantity(0, 'deg'),  # axial exducer exit
+            # Rotor blade geometry (Sauret Table 2 "Rotor" + Appendix
+            # Tables 9-10)
+            n0.geo.BldThick: Quantity(0.00086, 'm'),
+            n0.geo.MetalAngle: Quantity(0, 'deg'),  # purely radial LE blades
+            n1.geo.BldThick: Quantity(0.00076, 'm'),
+            n1.ndim.AxLenToRadChangeRatio: 0.67,
+            n1.geo.NumBlades: 16,  # Sauret Table 1 / Jones text
+            # Rotor exit static pressure: Sauret Table 4, "Present"
+            # (RITAL) column, engine conditions
+            n1.stc.Pressure: Quantity(94700.0, 'Pa'),
+            n0.geo.TipClearance: Quantity(0.0004, 'm'),
+            n1.geo.TipClearance: Quantity(0.00023, 'm'),
+            n1.oth.MomByBld: 0.075,
+            n1.oth.DispByMom: 2.0,
+            n1.oth.DispByHgt: 0.09,
+        },
+        shaft=shaft,
+        extra_equations=rotor_extra_equations,
+    )
+
+    if USE_SLIP_MODEL:
+        # ``ChenSlip`` sets the rotor inlet tangential velocity (hence its
+        # relative flow angle) directly
+        rotor._from_prev_node.discard(KinematicVariables(DEF_NODE).V_tan)
+
+    abs_state = DebugAbstractState('HEOS', 'Air')
+
+    fluid_settings = FluidSettings(
+        fluid_state=abs_state,
+        update_variables=(
+            n0.stc.Pressure.Glob,
+            n0.stc.Temperature.Glob,
+        ),
+    )
+
+    return ComponentNetwork(
+        fluid_settings,
+        inl,
+        CasadiSystem(1),
+        [
+            stator,
+            interspace,
+            rotor,
+        ],
+    )
+
+
+# ============================================================
+# Bounds
+# ============================================================
+
+BOUNDS = {
+    n1.kin.Mach: (0.5, 1.05),
+    n0.stc.Temperature.Glob: (300, 1300),
+    n0.stc.Pressure.Glob: (1e3, 2e6),
+    # n1.stc.Pressure: (0.3e5, 8e5),
+    # n0.stc.Entropy.Glob: (3000.0, 7000.0),
+    n5.kin.FlowAngleAbs: (
+        Quantity(-20, 'deg').to('rad').magnitude,
+        Quantity(20, 'deg').to('rad').magnitude,
     ),
+    n4.kin.FlowAngleRel: (
+        Quantity(-89, 'deg').to('rad').magnitude,
+        Quantity(0, 'deg').to('rad').magnitude,
+    ),
+}
+
+# ============================================================
+# Part 1: isentropic initialization (no loss models)
+# ============================================================
+ntw_isen = build_network(include_losses=False)
+ntw_isen.build()
+
+rtfn_isen = ntw_isen.system.make_rootfinder('ipopt', opts={'error_on_fail': False})
+x0_isen = ntw_isen.system.get_guess(fallback=0.5)
+kn_isen = ntw_isen.system.get_boundary_conds()
+bnd_isen = ntw_isen.system.get_bounds(BOUNDS)
+
+sol_isen = solve_root_problem(
+    rtfn_isen, x0_isen, kn_isen, bnd_isen, suppress_output=False
+)
+rtfn_isen = ntw_isen.system.make_rootfinder('kinsol')
+sol_isen = solve_root_problem(rtfn_isen, sol_isen, kn_isen, bnd_isen)
+
+isen_data = ntw_isen.system.sol_to_dict(sol_isen)
+logger.info(
+    'Isentropic initialization solved; seeding the full (lossy) system with it.'
 )
 
-ntw = ComponentNetwork(
-    fluid_settings,
-    inl,
-    CasadiSystem(1),
-    [
-        stator,
-        interspace,
-        rotor,
-    ],
-)
+isen_property_guess = {}
+for _n in (n1, n5):
+    isen_property_guess.update(
+        {
+            _n.oth.Tis_tot: isen_data[_n.tot.Temperature],
+            _n.oth.Enthalpy_totIs: isen_data[_n.tot.Enthalpy],
+            _n.oth.Tis_stc: isen_data[_n.stc.Temperature],
+            _n.oth.Enthalpy_Is: isen_data[_n.stc.Enthalpy],
+        }
+    )
+
+# ============================================================
+# Part 2: real system (with loss models)
+# ============================================================
+ntw = build_network(include_losses=True)
+ntw.system.add_equation(TotalStaticExpansionEfficiency(), (0, 5))
+ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 5))
+ntw.system.add_equation(EulerWork(), (0, 5))
+ntw.system.add_equation(IsentropicEulerWork(), (0, 5))
+
+COMPONENT_NODES = {
+    'Nozzle': (0, 1),
+    'Interspace': (2, 3),
+    'Rotor': (4, 5),
+}
+MACHINE_EXIT_NODE = 5
+
+component_losses: dict[str, tuple[int, LossCoefficient, EfficiencyDeficit]] = {}
+for component, (_, outlet_idx) in COMPONENT_NODES.items():
+    mechanisms = collect_loss_mechanisms(ntw.system, outlet_idx)
+    loss_coeff = LossCoefficient(mechanisms)
+    eff_deficit = EfficiencyDeficit(mechanisms)
+    ntw.system.add_equation(loss_coeff, outlet_idx)
+    # EfficiencyDeficit drops the machine-reference node entirely when
+    # there are no mechanisms (nothing to weigh work_is by), so size the
+    # position tuple from its actual arg_nodes rather than assuming 2.
+    eff_deficit_position = tuple(
+        outlet_idx if local_node == 0 else MACHINE_EXIT_NODE
+        for local_node in eff_deficit.arg_nodes
+    )
+    ntw.system.add_equation(eff_deficit, eff_deficit_position)
+    component_losses[component] = (outlet_idx, loss_coeff, eff_deficit)
 
 ntw.build()
 
@@ -309,62 +399,11 @@ rtfn = ntw.system.make_rootfinder(
     'ipopt',
     opts={'error_on_fail': False},
 )
-
-# ============================================================
-# Initial guess -- Sauret Table 4's "Present" (RITAL) 1D meanline P_S/T_S
-# ============================================================
-U2 = 649.224  # rotor inlet tip speed [m/s] (= 2130 ft/s, Jones Fig. 2(a))
-VTHETA4_OVER_U = 0.882  # Jones Fig. 4 inlet triangle
-# Rotor inlet relative flow angle (Sauret Fig. 8(b), Present/RITAL);
-# blades are purely radial at the LE, so this is also the incidence.
-BETA4_GUESS = Quantity(-32.7, 'deg')
-
-x0 = ntw.system.get_guess(
-    {
-        n4.kin.FlowAngleRel: BETA4_GUESS.to('rad').magnitude,
-        n5.kin.FlowAngleRel: BETA3_MEAN.to('rad').magnitude,
-        n4.oth.SlipFactor: 0.9,
-        n0.stc.Pressure: 5.78e5,
-        n0.stc.Temperature: 1050.0,
-        n0.stc.Entropy: 4708.1,
-        n1.stc.Pressure: 3.284e5,
-        n1.stc.Temperature: 931.8,
-        n1.stc.Entropy: 4735.6,
-        n2.stc.Pressure: 3.284e5,
-        n2.stc.Temperature: 931.8,
-        n2.stc.Entropy: 4735.6,
-        n3.stc.Pressure: 2.948e5,
-        n3.stc.Temperature: 906.7,
-        n3.stc.Entropy: 4735.8,
-        n4.stc.Pressure: 2.948e5,
-        n4.stc.Temperature: 906.7,
-        n4.stc.Entropy: 4735.8,
-        n5.stc.Pressure: P5_STATIC,
-        n5.stc.Temperature: 713.9,
-        n5.stc.Entropy: 4798.9,
-    },
-    fallback=0.5,
-)
+x0 = ntw.system.get_guess({**isen_data, **isen_property_guess}, fallback=0.5)
 kn = ntw.system.get_boundary_conds()
-bnd = ntw.system.get_bounds(
-    {
-        n1.kin.Mach: (0.3, 1.05),
-        n0.stc.Temperature.Glob: (300, 1300),
-        n0.stc.Pressure.Glob: (1e3, 2e6),
-        n1.stc.Pressure: (0.3e5, 8e5),
-        n0.stc.Entropy.Glob: (3000.0, 7000.0),
-        n5.kin.FlowAngleAbs: (
-            Quantity(-20, 'deg').to('rad').magnitude,
-            Quantity(20, 'deg').to('rad').magnitude,
-        ),
-        n4.kin.FlowAngleRel: (
-            Quantity(-89, 'deg').to('rad').magnitude,
-            Quantity(0, 'deg').to('rad').magnitude,
-        ),
-    }
-)
+bnd = ntw.system.get_bounds(BOUNDS)
 
-sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=False)
+sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=True)
 
 # Kinsol pass
 rtfn = ntw.system.make_rootfinder('kinsol')
@@ -435,66 +474,80 @@ print(
 )
 
 # ============================================================
-# Loss breakdown and comparison against Jones (1996) Table 2/3
+# Loss breakdown: Denton-style loss coefficient (zeta) and the
+# resulting efficiency deficit, per mechanism
 # ============================================================
-LOSS_MECHANISMS = {
-    'Nozzle': [
-        ('Profile', lambda n: n.loss.Ds_profile),
-        ('Endwall', lambda n: n.loss.Ds_endwall),
-        ('Mixing', lambda n: n.loss.Ds_mixing),
-    ],
-    'Rotor': [
-        ('Profile', lambda n: n.loss.Ds_profile),
-        ('Leakage', lambda n: n.loss.Ds_leakage),
-        ('Incidence', lambda n: n.loss.Ds_incidence),
-        ('Endwall', lambda n: n.loss.Ds_endwall),
-        ('Mixing', lambda n: n.loss.Ds_mixing),
-    ],
-}
-COMPONENT_NODES = {
-    'Nozzle': (0, 1),
-    'Interspace': (2, 3),
-    'Rotor': (4, 5),
-}
-
 loss_rows = []
-ds_total_all = 0.0
-for component, (inlet_idx, outlet_idx) in COMPONENT_NODES.items():
-    n_out = NodeVariables(outlet_idx)
-    ds_component = _val(n_out.stc.Entropy) - _val(NodeVariables(inlet_idx).stc.Entropy)
-    ds_total_all += ds_component
+for component, (outlet_idx, loss_coeff, eff_deficit) in component_losses.items():
+    if not loss_coeff.ds_specs:
+        loss_rows.append(
+            [component, '(isentropic, no loss model)', '0.000', '0.0000', '0.000']
+        )
+        loss_rows.append(
+            [component, 'Subtotal (s_out - s_in)', '0.000', '0.0000', '0.000']
+        )
+        continue
 
-    mechanisms = LOSS_MECHANISMS.get(component, [])
-    if not mechanisms:
-        loss_rows.append([component, '(isentropic, no loss model)', f'{0.0:.3f}'])
-    for mechanism, spec_fn in mechanisms:
-        loss_rows.append([component, mechanism, f'{_val(spec_fn(n_out)):.3f}'])
+    for ds_spec, zeta_spec, effdef_spec in zip(
+        loss_coeff.ds_specs, loss_coeff.zeta_specs, eff_deficit.effdef_specs
+    ):
+        label = ds_spec.symbol.removeprefix('ds_').capitalize()
+        loss_rows.append(
+            [
+                component,
+                label,
+                f'{_val(ds_spec.at_node(outlet_idx)):.3f}',
+                f'{_val(zeta_spec.at_node(outlet_idx)):.4f}',
+                f'{_val(effdef_spec.at_node(outlet_idx)):.3f}',
+            ]
+        )
 
-    loss_rows.append([component, 'Subtotal (s_out - s_in)', f'{ds_component:.3f}'])
-
-loss_rows.append(['All components', 'TOTAL (s5 - s0)', f'{ds_total_all:.3f}'])
+    loss_rows.append(
+        [
+            component,
+            'Subtotal (s_out - s_in)',
+            f'{sum(_val(s.at_node(outlet_idx)) for s in loss_coeff.ds_specs):.3f}',
+            f'{_val(loss_coeff.zeta_total_spec.at_node(outlet_idx)):.4f}',
+            f'{_val(eff_deficit.effdef_total_spec.at_node(outlet_idx)):.3f}',
+        ]
+    )
 
 print(
     tabulate(
         loss_rows,
-        headers=['Component', 'Loss mechanism', 'Ds\n[J/kg/K]'],
+        headers=[
+            'Component',
+            'Loss mechanism',
+            'Ds\n[J/kg/K]',
+            'zeta = T_is*Ds/(W_is^2/2)\n[-]',
+            'Efficiency deficit\n[%]',
+        ],
         tablefmt='github',
     )
 )
 
 # --- Overall performance vs. Sauret Table 3 (engine conditions, "Present"
 # 1D analysis) and Jones (1996) Table 2 (design goal)
-h0 = _val(n0.tot.Enthalpy)
-h5 = _val(n5.tot.Enthalpy)
-specific_work = h0 - h5
+specific_work = _val(n5.oth.EulerWork)
 
 print(f'\nSpecific work: {specific_work / 1e3:.1f} kJ/kg')
 print('Sauret (Table 3): 366 kJ/kg')
+_bc_p0_tot = float(ntw.system.data.boun_cond[n0.tot.Pressure][0])
+_bc_p5_static = float(ntw.system.data.boun_cond[n5.stc.Pressure][0])
 print(
     f'Rotor-exit pressure ratio (p0_0 / p5_static): '
     f'{_val(n0.tot.Pressure) / _val(n5.stc.Pressure):.3f} '
-    f'(Sauret (Table 4): {P0_TOT.magnitude / P5_STATIC:.3f})'
+    f'(Sauret (Table 4): {_bc_p0_tot / _bc_p5_static:.3f})'
 )
+
+# ============================================================
+# Stage performance
+# ============================================================
+eta_ts = _val(n5.ndim.EtaTS)
+eta_tt = _val(n5.ndim.EtaTT)
+print(f'\nTotal-to-static expansion efficiency (eta_ts, station 0 -> 5): {eta_ts:.4f}')
+print(f'Total-to-total expansion efficiency (eta_tt, station 0 -> 5): {eta_tt:.4f}')
+
 
 # ============================================================
 # Velocity triangle plots at each station

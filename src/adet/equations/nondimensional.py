@@ -3,13 +3,16 @@ Module that gathers equations that represent definitions of nondimensional
 coefficients used in TurboMachinery
 """
 
+import types
+from typing import Sequence
+
 import CoolProp as cp
 import numpy as np
 
 from adet.equations import EquationBase
 from adet.equations.base_equation import EquationConfig
 from adet.equations.utils import get_midspan_idx, safe_abs, thermo_deriv
-from adet.variables import NodeVariables, ThermoVariables
+from adet.variables import NodeVariables, ThermoVariables, VarSpec
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)
@@ -113,6 +116,207 @@ class TotalStaticExpansionEfficiency(EquationBase):
     ):
         h_is1 = self.eos(p1, s0)
         return eta_ts1 - (h0_tot - h1_tot) / (h0_tot - h_is1)
+
+
+def _zeta_spec(ds_spec: VarSpec) -> VarSpec:
+    return VarSpec(
+        f'zeta_{ds_spec.symbol.removeprefix("ds_")}',
+        '',
+        guess=0.05,
+        bounds=(0.0, 1.0),
+        node=0,
+    )
+
+
+class LossCoefficient(EquationBase):
+    """Denton-style loss coefficient, one per loss mechanism plus their
+    sum:
+
+    .. math::
+        \\zeta_i = \\frac{T_{is} \\cdot \\Delta s_i}{W_{is}^2 / 2}
+        \\qquad
+        \\zeta_{total} = \\sum_i \\zeta_i
+
+    All at the same node, where :math:`T_{is}`/:math:`W_{is}` are the
+    isentropic static temperature/relative velocity computed by
+    `IsentropicProperties` (`equations/definitions.py`).
+
+    `ds_specs` is normally obtained from
+    `losses.base_loss.collect_loss_mechanisms` rather than listed by hand,
+    so the number of residuals this equation adds follows directly from
+    which `LossModel` equations were actually added at that node -- one
+    ``zeta_<mechanism>`` unknown/residual per mechanism Ds, plus
+    ``zeta_total``. Add this equation at a single node (the component's
+    outlet).
+    """
+
+    def __init__(
+        self, ds_specs: Sequence[VarSpec], scaling_factor: list[float] | None = None
+    ):
+        self.ds_specs = [spec.Glob.at_node(0) for spec in ds_specs]
+        self.zeta_specs = [_zeta_spec(spec) for spec in self.ds_specs]
+        self.zeta_total_spec = VarSpec(
+            'zeta_total', '', guess=0.1, bounds=(-1.0, 1.0), node=0
+        )
+
+        super().__init__(scaling_factor)
+        self._bind_residual()
+
+    def residual(self, *args):
+        """Replaced in `__init__` by `_bind_residual`, based on the
+        mechanisms passed in."""
+        raise NotImplementedError
+
+    def _bind_residual(self):
+        ds_names = [f'ds_{i}' for i in range(len(self.ds_specs))]
+        zeta_names = [f'zeta_{i}' for i in range(len(self.zeta_specs))]
+
+        if ds_names:
+            # `t_is`/`w_is` are only pulled in (and so only need to be
+            # solved elsewhere, by `IsentropicProperties`) when there is
+            # at least one mechanism to weigh by them -- a no-mechanism
+            # component (e.g. an isentropic interspace) never needs them.
+            params = ['self', 't_is', 'w_is', *ds_names, *zeta_names, 'zeta_total']
+            lines = [f'def _residual({", ".join(params)}):']
+            for ds_name, zeta_name in zip(ds_names, zeta_names):
+                lines.append(
+                    f'    r_{zeta_name} = {zeta_name} - '
+                    f't_is * {ds_name} / (0.5 * w_is**2)'
+                )
+            sum_expr = ' + '.join(zeta_names)
+            lines.append(f'    r_total = zeta_total - ({sum_expr})')
+            return_names = [f'r_{name}' for name in zeta_names] + ['r_total']
+        else:
+            params = ['self', 'zeta_total']
+            lines = [
+                f'def _residual({", ".join(params)}):',
+                '    r_total = zeta_total - 0.0 * zeta_total',
+            ]
+            return_names = ['r_total']
+        lines.append(f'    return {", ".join(return_names)}')
+
+        namespace: dict = {}
+        exec('\n'.join(lines), namespace)
+        fn = namespace['_residual']
+        annotations = {
+            **{name: spec.Hint for name, spec in zip(ds_names, self.ds_specs)},
+            **{name: spec.Hint for name, spec in zip(zeta_names, self.zeta_specs)},
+            'zeta_total': self.zeta_total_spec.Hint,
+        }
+        if ds_names:
+            annotations['t_is'] = n0.oth.Tis_stc.Hint
+            annotations['w_is'] = n0.oth.W_Is.Hint
+        fn.__annotations__ = annotations
+        self.residual = types.MethodType(fn, self)
+
+
+class EfficiencyDeficit(EquationBase):
+    """Efficiency deficit attributable to each loss mechanism, plus their
+    sum:
+
+    .. math::
+        \\Delta\\eta_i = \\zeta_i \\cdot \\frac{W_{is}^2 / 2}{work_{is}}
+        \\cdot 100
+        \\qquad
+        \\Delta\\eta_{total} = \\sum_i \\Delta\\eta_i
+
+    **Depends on `LossCoefficient` already being added at the same node
+    with the same `ds_specs`**: this equation reads its ``zeta_i``/
+    ``zeta_total`` as already-solved inputs rather than recomputing them,
+    so add `LossCoefficient` first.
+
+    :math:`work_{is}` is the isentropic work of the whole expansion/
+    compression (e.g. `IsentropicEulerWork`, `equations/definitions.py`),
+    which generally lives at a different (machine-reference) node than
+    this component's own outlet -- hence this equation spans two nodes:
+    the component's outlet (node 0) and the machine-reference node
+    (node 1).
+    """
+
+    def __init__(
+        self, ds_specs: Sequence[VarSpec], scaling_factor: list[float] | None = None
+    ):
+        ds_specs = [spec.Glob.at_node(0) for spec in ds_specs]
+        self.zeta_specs = [_zeta_spec(spec) for spec in ds_specs]
+        self.zeta_total_spec = VarSpec(
+            'zeta_total', '', guess=0.1, bounds=(-1.0, 1.0), node=0
+        )
+        self.effdef_specs = [
+            VarSpec(
+                f'effdef_{spec.symbol.removeprefix("ds_")}',
+                '',
+                guess=1.0,
+                bounds=(-100.0, 100.0),
+                node=0,
+            )
+            for spec in ds_specs
+        ]
+        self.effdef_total_spec = VarSpec(
+            'effdef_total', '', guess=5.0, bounds=(0.0, 100.0), node=0
+        )
+
+        super().__init__(scaling_factor)
+        self._bind_residual()
+
+    def residual(self, *args):
+        """Replaced in `__init__` by `_bind_residual`, based on the
+        mechanisms passed in."""
+        raise NotImplementedError
+
+    def _bind_residual(self):
+        zeta_names = [f'zeta_{i}' for i in range(len(self.zeta_specs))]
+        effdef_names = [f'effdef_{i}' for i in range(len(self.effdef_specs))]
+
+        if zeta_names:
+            # `w_is`/`work_is` are only pulled in when there is at least
+            # one mechanism to weigh by them -- with none, `zeta_total` is
+            # already pinned to 0 by `LossCoefficient`, so `effdef_total`
+            # can just as trivially follow without needing either.
+            params = [
+                'self',
+                'w_is',
+                'work_is',
+                *zeta_names,
+                *effdef_names,
+                'zeta_total',
+                'effdef_total',
+            ]
+            lines = [
+                f'def _residual({", ".join(params)}):',
+                '    ideal_ke = 0.5 * w_is**2',
+            ]
+            for zeta_name, effdef_name in zip(zeta_names, effdef_names):
+                lines.append(
+                    f'    r_{effdef_name} = {effdef_name} - '
+                    f'{zeta_name} * ideal_ke / work_is * 100'
+                )
+            lines.append(
+                '    r_total = effdef_total - zeta_total * ideal_ke / work_is * 100'
+            )
+            return_names = [f'r_{name}' for name in effdef_names] + ['r_total']
+        else:
+            params = ['self', 'zeta_total', 'effdef_total']
+            lines = [
+                f'def _residual({", ".join(params)}):',
+                '    r_total = effdef_total - 0.0 * zeta_total',
+            ]
+            return_names = ['r_total']
+        lines.append(f'    return {", ".join(return_names)}')
+
+        namespace: dict = {}
+        exec('\n'.join(lines), namespace)
+        fn = namespace['_residual']
+        annotations = {
+            **{name: spec.Hint for name, spec in zip(zeta_names, self.zeta_specs)},
+            **{name: spec.Hint for name, spec in zip(effdef_names, self.effdef_specs)},
+            'zeta_total': self.zeta_total_spec.Hint,
+            'effdef_total': self.effdef_total_spec.Hint,
+        }
+        if zeta_names:
+            annotations['w_is'] = n0.oth.W_Is.Hint
+            annotations['work_is'] = n1.oth.EulerWorkIs.Hint
+        fn.__annotations__ = annotations
+        self.residual = types.MethodType(fn, self)
 
 
 class TotalTotalCompressionEfficiency(EquationBase):

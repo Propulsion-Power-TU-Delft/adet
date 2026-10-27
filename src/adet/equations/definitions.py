@@ -7,7 +7,7 @@ import CoolProp as cp
 import numpy as np
 
 from adet.equations.base_equation import EquationBase, EquationConfig
-from adet.equations.utils import get_midspan_idx
+from adet.equations.utils import get_midspan_idx, safe_max
 from adet.variables import NodeVariables, ThermoVariables
 
 n0 = NodeVariables(0)
@@ -105,6 +105,15 @@ class EffectiveBladeNumber(EquationBase):
 
 
 class IsentropicProperties(EquationBase):
+    """Isentropic (loss-free) static/total properties at node 1, reached by
+    expanding from node 0's entropy to node 1's actual static/total
+    pressure, plus the ideal relative velocity ``W_is1`` this implies at
+    node 1 given node 0's rothalpy (conserved along an adiabatic rotating
+    passage; collapses to ordinary total enthalpy when ``U == 0``, as for
+    a stationary row) -- same construction as e.g. ``StatorProfileLoss``'s
+    ``W1_is`` in ``losses/rit.py``.
+    """
+
     config = EquationConfig(
         input_pair=cp.PSmass_INPUTS,
         out_properties=(thrm.Enthalpy, thrm.Temperature),
@@ -113,22 +122,67 @@ class IsentropicProperties(EquationBase):
     def residual(
         self,
         s0: n0.stc.Entropy.Hint,
+        h0: n0.stc.Enthalpy.Hint,
+        W0: n0.kin.W_mag.Hint,
+        U0: n0.kin.BladeSpeed.Hint,
+        U1: n1.kin.BladeSpeed.Hint,
         p1_tot: n1.tot.Pressure.Hint,
         p1_stc: n1.stc.Pressure.Hint,
         h_is_tot1: n1.oth.Enthalpy_totIs.Hint,
         T_is_tot1: n1.oth.Tis_tot.Hint,
         h_is1: n1.oth.Enthalpy_Is.Hint,
         T_is1: n1.oth.Tis_stc.Hint,
+        W_is1: n1.oth.W_Is.Hint,
     ):
         h_stc_is, T_stc_is = self.eos(p1_stc, s0)
         h_tot_is, T_tot_is = self.eos(p1_tot, s0)
+
+        rothalpy0 = h0 + W0**2 / 2 - U0**2 / 2
+        roth_minus_his = safe_max(rothalpy0 - h_stc_is, 0.0 * h_stc_is)
+        W_is = (2 * roth_minus_his + U1**2) ** 0.5
 
         r1 = h_is_tot1 - h_tot_is
         r2 = T_is_tot1 - T_tot_is
         r3 = h_is1 - h_stc_is
         r4 = T_is1 - T_stc_is
+        r5 = W_is1 - W_is
 
-        return r1, r2, r3, r4
+        return r1, r2, r3, r4, r5
+
+
+class EulerWork(EquationBase):
+    """Actual total-to-total specific work extracted between node 0 and
+    node 1 (adiabatic, no external heat/shaft losses other than the
+    expansion itself)."""
+
+    def residual(
+        self,
+        h0_tot: n0.tot.Enthalpy.Hint,
+        h1_tot: n1.tot.Enthalpy.Hint,
+        work1: n1.oth.EulerWork.Hint,
+    ):
+        return work1 - (h0_tot - h1_tot)
+
+
+class IsentropicEulerWork(EquationBase):
+    """Ideal total-to-total specific work between node 0 and node 1, had
+    the expansion/compression to node 1's actual total pressure been
+    isentropic from node 0's entropy."""
+
+    config = EquationConfig(
+        input_pair=cp.PSmass_INPUTS,
+        out_properties=(thrm.Enthalpy,),
+    )
+
+    def residual(
+        self,
+        s0: n0.stc.Entropy.Hint,
+        p1_tot: n1.tot.Pressure.Hint,
+        h0_tot: n0.tot.Enthalpy.Hint,
+        work_is1: n1.oth.EulerWorkIs.Hint,
+    ):
+        h_is1_tot = self.eos(p1_tot, s0)
+        return work_is1 - (h0_tot - h_is1_tot)
 
 
 class ClearanceByHeight(EquationBase):

@@ -10,6 +10,7 @@ State:
 import logging
 import math
 
+import CoolProp
 import CoolProp as cp
 import matplotlib.pyplot as plt
 import numpy as np
@@ -21,9 +22,22 @@ from adet.components.blade_row import BladeRow, Interspace
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.base_equation import LossApplier
-from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
-from adet.equations.nondimensional import GammaPV
+from adet.equations.definitions import (
+    BoundaryLayerRatios,
+    EulerWork,
+    IsentropicEulerWork,
+    IsentropicProperties,
+)
+from adet.equations.geometrical import MeridionalChord
+from adet.equations.nondimensional import (
+    EfficiencyDeficit,
+    GammaPV,
+    LossCoefficient,
+    TotalStaticExpansionEfficiency,
+    TotalTotalExpansionEfficiency,
+)
 from adet.fluid.settings import FluidSettings
+from adet.losses.base_loss import collect_loss_mechanisms
 from adet.losses.basic import IsentropicLink, ZeroDeviation
 from adet.losses.mixing import (
     DentonBaumgartnerMixingLoss,
@@ -90,6 +104,7 @@ class AddStatorLosses(LossApplier):
         return s1 - (s0 + ds_profile1 + ds_endwall1 + ds_mixing1)
 
 
+# |> Machine stations (for terminal output / plotting)
 STATION_LABELS = {
     0: 'Stator inlet',
     1: 'Stator outlet',
@@ -129,172 +144,263 @@ shaft = Shaft(
     is_constrained=True,
 )
 
-stator = BladeRow(
-    'nozzle',
-    bound_cond={
-        n1.geo.HeightRatio: 1.0,
-        n1.geo.RadiusRatio: 0.75,
-        n1.geo.Rmid: Quantity(26.1, 'mm'),
-        n1.geo.MeridionalAngle: Quantity(-90, 'deg'),
-        n1.geo.MetalAngle: Quantity(78, 'deg'),
-        n0.geo.ThickByPitch: 0.05,
-        n1.geo.ThickByPitch: 0.05,
-        n1.geo.NumBlades: 12,
-        n1.geo.MerChord: Quantity(0.01, 'mm'),
-        n1.oth.MomByBld: 0.075,
-        n1.oth.DispByMom: 2.0,
-        n1.oth.DispByHgt: 0.09,
-    },
-    shaft=casing,
-    extra_equations={
-        AddStatorLosses(): (0, 1),
-        ZeroDeviation(): 0,  # No incidence
-        # *** Losses
-        StatorProfileLoss(): (0, 1),
-        EndwallLoss(): (0, 1),
-        IsentropicProperties(): (0, 1),
-        BoundaryLayerRatios(): 1,
-        GammaPV(): 0,
-        GammaPV(): 1,
-        SieverdingBasePressure(): (0, 1),
-        DentonBaumgartnerMixingLoss(): 1,
-    },
+
+def build_network(include_losses: bool) -> ComponentNetwork:
+    """Build the stator/interspace/rotor network.
+
+    With ``include_losses=False`` every entropy-generating loss mechanism is
+    replaced by an ``IsentropicLink`` (s_out = s_in), giving a much
+    easier-to-solve system whose solution is used as the initial guess for
+    the full, lossy system (see below).
+    """
+    stator_extra_equations: dict = {
+        ZeroDeviation(): 0,
+        MeridionalChord(): (0, 1),
+    }  # No incidence
+    rotor_extra_equations: dict = {MeridionalChord(): (0, 1)}
+    if USE_SLIP_MODEL:
+        rotor_extra_equations[ChenSlip()] = 0
+
+    if include_losses:
+        stator_extra_equations.update(
+            {
+                AddStatorLosses(): (0, 1),
+                StatorProfileLoss(): (0, 1),
+                EndwallLoss(): (0, 1),
+                IsentropicProperties(): (0, 1),
+                BoundaryLayerRatios(): 1,
+                GammaPV(): 0,
+                GammaPV(): 1,
+                SieverdingBasePressure(): (0, 1),
+                DentonBaumgartnerMixingLoss(): 1,
+            }
+        )
+        rotor_extra_equations.update(
+            {
+                AddImpellerLosses(): (0, 1),
+                IsentropicProperties(): (0, 1),
+                ImpellerPassageLoss(): (0, 1),
+                ImpellerLeakageLoss(): (0, 1),
+                ImpellerIncidenceLoss(): (0, 1),
+                EndwallLoss(): (0, 1),
+                BoundaryLayerRatios(): 1,
+                GammaPV(): 0,
+                GammaPV(): 1,
+                SieverdingBasePressure(): (0, 1),
+                DentonBaumgartnerMixingLoss(): 1,
+            }
+        )
+    else:
+        stator_extra_equations[IsentropicLink()] = (0, 1)
+        rotor_extra_equations[IsentropicLink()] = (0, 1)
+
+    stator = BladeRow(
+        'nozzle',
+        bound_cond={
+            n1.geo.HeightRatio: 1.0,
+            n1.geo.RadiusRatio: 0.75,
+            n1.geo.Rmid: Quantity(26.1, 'mm'),
+            n1.geo.MeridionalAngle: Quantity(-90, 'deg'),
+            n1.geo.MetalAngle: Quantity(78, 'deg'),
+            n0.geo.ThickByPitch: 0.05,
+            n1.geo.ThickByPitch: 0.05,
+            n1.geo.NumBlades: 12,
+            # Planar stator: zero axial length, meridional chord reduces
+            # to the inlet/outlet radius change
+            n1.geo.AxialLength: Quantity(0.0, 'mm'),
+            n1.oth.MomByBld: 0.075,
+            n1.oth.DispByMom: 2.0,
+            n1.oth.DispByHgt: 0.09,
+        },
+        shaft=casing,
+        extra_equations=stator_extra_equations,
+    )
+
+    interspace = Interspace(
+        'intrspc',
+        {
+            # Rotor inlet (Rmid = 25.75 mm) / stator outlet (Rmid = 26.1 mm)
+            n1.geo.RadiusRatio: 25.75 / 26.1,
+            n1.geo.HeightRatio: 1.0,
+        },
+        extra_equations={
+            IsentropicLink(): (0, 1),
+        },
+    )
+
+    rotor = BladeRow(
+        'impeller',
+        bound_cond={
+            n1.geo.Rhub: Quantity(8.2, 'mm'),
+            n1.geo.Height: Quantity(12.3, 'mm'),
+            n1.geo.MeridionalAngle: Quantity(0, 'deg'),
+            n0.geo.BldThick: 0.0003,
+            n0.geo.MetalAngle: Quantity(45, 'deg'),
+            n1.geo.BldThick: 0.0003,
+            # Rotor axial length (meridional chord then follows from the
+            # vector composition with the midspan radius change)
+            n1.geo.AxialLength: Quantity(10.2, 'mm'),
+            n1.geo.NumBlades: 13,
+            n1.stc.Pressure: Quantity(0.443, 'bar'),
+            n0.geo.TipClearance: Quantity(0.2, 'mm'),
+            n1.geo.TipClearance: Quantity(0.2, 'mm'),
+            n1.oth.MomByBld: 0.075,
+            n1.oth.DispByMom: 2.0,
+            n1.oth.DispByHgt: 0.09,
+        },
+        shaft=shaft,
+        extra_equations=rotor_extra_equations,
+    )
+
+    if USE_SLIP_MODEL:
+        # ``ChenSlip`` sets the rotor's own inlet tangential velocity (hence
+        # its relative flow angle) directly, so it must stop being a hard
+        # copy of the interspace's exit value -- the usual ``BladeRow``
+        # behavior via ``ABSOLUTE_LINK``.
+        rotor._from_prev_node.discard(KinematicVariables(DEF_NODE).V_tan)
+
+    abs_state = DebugAbstractState('HEOS', 'MM')
+
+    fluid_settings = FluidSettings(
+        fluid_state=abs_state,
+        update_variables=(
+            n0.stc.Pressure.Glob,
+            n0.stc.Temperature.Glob,
+        ),
+    )
+
+    return ComponentNetwork(
+        fluid_settings,
+        inl,
+        CasadiSystem(1),
+        [
+            stator,
+            interspace,
+            rotor,
+        ],
+    )
+
+
+# ============================================================
+# Part 1: isentropic initialization (no loss models)
+# ============================================================
+ntw_isen = build_network(include_losses=False)
+ntw_isen.build()
+
+# ============================================================
+# Inlet entropy and isentropic rotor-exit static temperature, from the
+# inlet boundary conditions and the rotor exit static pressure
+# ============================================================
+_isen_bc = ntw_isen.system.data.boun_cond
+p0_tot = float(_isen_bc[n0.tot.Pressure][0])
+t0_tot = float(_isen_bc[n0.tot.Temperature][0])
+p5_static = float(_isen_bc[n5.stc.Pressure][0])
+
+_bounds_state = cp.AbstractState('HEOS', 'MM')
+_bounds_state.update(cp.PT_INPUTS, p0_tot, t0_tot)
+ENTROPY_IN = _bounds_state.smass()
+
+_bounds_state.update(cp.PSmass_INPUTS, p5_static, ENTROPY_IN)
+T5_ISENTROPIC = _bounds_state.T()
+
+# ============================================================
+# Bounds
+# ============================================================
+BOUNDS = {
+    n0.stc.Temperature.Glob: (T5_ISENTROPIC, 600),
+    n0.stc.Pressure.Glob: (0.1e5, 30e5),
+    n1.kin.Mach: (1.5, 2.5),
+    # n4.kin.FlowAngleRel: (
+    #     Quantity(0, 'deg').to('rad').magnitude,
+    #     Quantity(60, 'deg').to('rad').magnitude,
+    # ),
+    # n5.kin.FlowAngleAbs: (
+    #     Quantity(-20, 'deg').to('rad').magnitude,
+    #     Quantity(40, 'deg').to('rad').magnitude,
+    # ),
+}
+
+rtfn_isen = ntw_isen.system.make_rootfinder('ipopt', opts={'error_on_fail': False})
+x0_isen = ntw_isen.system.get_guess(fallback=0.5)
+kn_isen = ntw_isen.system.get_boundary_conds()
+bnd_isen = ntw_isen.system.get_bounds(BOUNDS)
+
+sol_isen = solve_root_problem(
+    rtfn_isen, x0_isen, kn_isen, bnd_isen, suppress_output=True
 )
+rtfn_isen = ntw_isen.system.make_rootfinder('kinsol')
+sol_isen = solve_root_problem(rtfn_isen, sol_isen, kn_isen, bnd_isen)
 
-interspace = Interspace(
-    'intrspc',
-    {
-        # Rotor inlet (Rmid = 25.75 mm) / stator outlet (Rmid = 26.1 mm)
-        n1.geo.RadiusRatio: 25.75 / 26.1,
-        n1.geo.HeightRatio: 1.0,
-    },
-    extra_equations={
-        IsentropicLink(): (0, 1),
-    },
-)
+isen_data = ntw_isen.system.sol_to_dict(sol_isen)
+logger.info('Isentropic initialization solved; seeding the real system with it.')
 
-rotor = BladeRow(
-    'impeller',
-    bound_cond={
-        n1.geo.Rhub: Quantity(8.2, 'mm'),
-        n1.geo.Height: Quantity(12.3, 'mm'),
-        n1.geo.MeridionalAngle: Quantity(0, 'deg'),
-        n0.geo.BldThick: 0.0003,
-        n0.geo.MetalAngle: Quantity(45, 'deg'),
-        n1.geo.BldThick: 0.0003,
-        n1.geo.MerChord: Quantity(10.2, 'mm'),
-        n1.geo.NumBlades: 13,
-        n1.stc.Pressure: Quantity(0.443, 'bar'),
-        n0.geo.TipClearance: Quantity(0.2, 'mm'),
-        n1.geo.TipClearance: Quantity(0.2, 'mm'),
-        n1.oth.MomByBld: 0.075,
-        n1.oth.DispByMom: 2.0,
-        n1.oth.DispByHgt: 0.09,
-    },
-    shaft=shaft,
-    extra_equations={
-        AddImpellerLosses(): (0, 1),
-        **({ChenSlip(): 0} if USE_SLIP_MODEL else {}),
-        # *** Losses
-        IsentropicProperties(): (0, 1),
-        ImpellerPassageLoss(): (0, 1),
-        ImpellerLeakageLoss(): (0, 1),
-        ImpellerIncidenceLoss(): (0, 1),
-        EndwallLoss(): (0, 1),
-        BoundaryLayerRatios(): 1,
-        GammaPV(): 0,
-        GammaPV(): 1,
-        SieverdingBasePressure(): (0, 1),
-        DentonBaumgartnerMixingLoss(): 1,
-    },
-)
+isen_property_guess = {}
+for _n in (n1, n5):
+    isen_property_guess.update(
+        {
+            _n.oth.Tis_tot: isen_data[_n.tot.Temperature],
+            _n.oth.Enthalpy_totIs: isen_data[_n.tot.Enthalpy],
+            _n.oth.Tis_stc: isen_data[_n.stc.Temperature],
+            _n.oth.Enthalpy_Is: isen_data[_n.stc.Enthalpy],
+        }
+    )
 
-if USE_SLIP_MODEL:
-    # ``ChenSlip`` sets the rotor's own inlet tangential velocity (hence its
-    # relative flow angle) directly, so it must stop being a hard copy of the
-    # interspace's exit value -- the usual ``BladeRow`` behavior via
-    # ``ABSOLUTE_LINK``. Meridional velocity (mass continuity) is still
-    # inherited unchanged.
-    rotor._from_prev_node.discard(KinematicVariables(DEF_NODE).V_tan)
 
-abs_state = DebugAbstractState('HEOS', 'MM')
+_work_is_guess = isen_data[n0.tot.Enthalpy] - isen_data[n5.tot.Enthalpy]
+isen_property_guess[n5.oth.EulerWorkIs] = _work_is_guess
+isen_property_guess[n5.oth.EulerWork] = _work_is_guess
 
-fluid_settings = FluidSettings(
-    fluid_state=abs_state,
-    update_variables=(
-        n0.stc.Pressure.Glob,
-        n0.stc.Temperature.Glob,
-    ),
-)
+# ============================================================
+# Part 2: real solution (with loss models)
+# ============================================================
 
-ntw = ComponentNetwork(
-    fluid_settings,
-    inl,
-    CasadiSystem(1),
-    [
-        stator,
-        interspace,
-        rotor,
-    ],
-)
+ntw = build_network(include_losses=True)
+ntw.system.add_equation(TotalStaticExpansionEfficiency(), (0, 5))
+ntw.system.add_equation(TotalTotalExpansionEfficiency(), (0, 5))
+ntw.system.add_equation(EulerWork(), (0, 5))
+ntw.system.add_equation(IsentropicEulerWork(), (0, 5))
+
+# ============================================================
+# Add one LossCoefficient/EfficiencyDeficit equation per component
+# ============================================================
+COMPONENT_NODES = {
+    'Stator': (0, 1),
+    'Interspace': (2, 3),
+    'Rotor': (4, 5),
+}
+MACHINE_EXIT_NODE = 5
+
+component_losses: dict[str, tuple[int, LossCoefficient, EfficiencyDeficit]] = {}
+for component, (_, outlet_idx) in COMPONENT_NODES.items():
+    mechanisms = collect_loss_mechanisms(ntw.system, outlet_idx)
+    loss_coeff = LossCoefficient(mechanisms)
+    eff_deficit = EfficiencyDeficit(mechanisms)
+    ntw.system.add_equation(loss_coeff, outlet_idx)
+    # EfficiencyDeficit drops the machine-reference node entirely when
+    # there are no mechanisms (nothing to weigh work_is by), so size the
+    # position tuple from its actual arg_nodes rather than assuming 2.
+    eff_deficit_position = tuple(
+        outlet_idx if local_node == 0 else MACHINE_EXIT_NODE
+        for local_node in eff_deficit.arg_nodes
+    )
+    ntw.system.add_equation(eff_deficit, eff_deficit_position)
+    component_losses[component] = (outlet_idx, loss_coeff, eff_deficit)
 
 ntw.build()
+
+BOUNDS = {
+    **BOUNDS,
+    # n5.stc.Entropy: (ENTROPY_IN - 200, ENTROPY_IN),
+    n5.stc.Temperature: (T5_ISENTROPIC, t0_tot),
+}
 
 rtfn = ntw.system.make_rootfinder(
     'ipopt',
     opts={'error_on_fail': False},
 )
-x0 = ntw.system.get_guess(
-    {
-        n4.kin.FlowAngleRel: Quantity(48, 'deg').to('rad').magnitude,
-        n4.oth.SlipFactor: 0.9,
-        # Seed close to a known-good solution: MM's EOS validity
-        # domain is narrow, and the loss equations add several EOS calls.
-        n0.stc.Pressure: 18.07e5,
-        n0.stc.Temperature: 573.1,
-        n0.stc.Entropy: 1159.5,
-        n1.stc.Pressure: 1.61e5,
-        n1.stc.Temperature: 535.6,
-        n1.stc.Entropy: 1177.4,
-        n2.stc.Pressure: 1.61e5,
-        n2.stc.Temperature: 535.6,
-        n2.stc.Entropy: 1177.4,
-        n3.stc.Pressure: 1.51e5,
-        n3.stc.Temperature: 534.8,
-        n3.stc.Entropy: 1177.4,
-        n4.stc.Pressure: 1.51e5,
-        n4.stc.Temperature: 534.8,
-        n4.stc.Entropy: 1177.4,
-        n5.stc.Pressure: 0.443e5,
-        n5.stc.Temperature: 519.7,
-        n5.stc.Entropy: 1183.1,
-        n0.oth.GammaPV: 1.05,
-        n1.oth.GammaPV: 1.05,
-        n4.oth.GammaPV: 1.025,
-        n5.oth.GammaPV: 1.025,
-        n1.oth.PBase: 1.7e5,
-        n5.oth.PBase: 0.7e5,
-    },
-    fallback=0.5,
-)
+x0 = ntw.system.get_guess({**isen_data, **isen_property_guess}, fallback=0.5)
 kn = ntw.system.get_boundary_conds()
-bnd = ntw.system.get_bounds(
-    {
-        n1.kin.Mach: (1.01, 4.0),
-        n0.stc.Temperature.Glob: (300, 580),
-        n0.stc.Pressure.Glob: (1e3, 1e9),
-        n1.stc.Pressure: (0.3e5, 20e5),
-        n0.stc.Entropy.Glob: (200.0, 3000.0),
-        n5.kin.FlowAngleAbs: (
-            Quantity(-20, 'deg').to('rad').magnitude,
-            Quantity(60, 'deg').to('rad').magnitude,
-        ),
-        n4.kin.FlowAngleRel: (
-            Quantity(0, 'deg').to('rad').magnitude,
-            Quantity(90, 'deg').to('rad').magnitude,
-        ),
-    }
-)
+bnd = ntw.system.get_bounds(BOUNDS)
 
 sol = solve_root_problem(rtfn, x0, kn, bnd, suppress_output=True)
 
@@ -369,63 +475,65 @@ print(
 )
 
 # ============================================================
-# Loss breakdown: entropy rise per mechanism, grouped by component.
-# Subtotal rows should match the solved s_out - s_in per component.
+# Loss breakdown: Denton-style loss coefficient (zeta) and the resulting
+# efficiency deficit, per mechanism
 # ============================================================
-LOSS_MECHANISMS = {
-    'Stator': [
-        ('Profile', lambda n: n.loss.Ds_profile),
-        ('Endwall', lambda n: n.loss.Ds_endwall),
-        ('Mixing', lambda n: n.loss.Ds_mixing),
-    ],
-    'Rotor': [
-        ('Profile', lambda n: n.loss.Ds_profile),
-        ('Leakage', lambda n: n.loss.Ds_leakage),
-        ('Incidence', lambda n: n.loss.Ds_incidence),
-        ('Endwall', lambda n: n.loss.Ds_endwall),
-        ('Mixing', lambda n: n.loss.Ds_mixing),
-    ],
-}
-COMPONENT_NODES = {
-    'Stator': (0, 1),
-    'Interspace': (2, 3),
-    'Rotor': (4, 5),
-}
-
 loss_rows = []
-ds_total_all = 0.0
-for component, (inlet_idx, outlet_idx) in COMPONENT_NODES.items():
-    n_out = NodeVariables(outlet_idx)
-    ds_component = _val(n_out.stc.Entropy) - _val(NodeVariables(inlet_idx).stc.Entropy)
-    ds_total_all += ds_component
+for component, (outlet_idx, loss_coeff, eff_deficit) in component_losses.items():
+    if not loss_coeff.ds_specs:
+        loss_rows.append(
+            [component, '(isentropic, no loss model)', '0.000', '0.0000', '0.000']
+        )
+        loss_rows.append(
+            [component, 'Subtotal (s_out - s_in)', '0.000', '0.0000', '0.000']
+        )
+        continue
 
-    mechanisms = LOSS_MECHANISMS.get(component, [])
-    if not mechanisms:
-        loss_rows.append([component, '(isentropic, no loss model)', f'{0.0:.3f}'])
-    for mechanism, spec_fn in mechanisms:
-        loss_rows.append([component, mechanism, f'{_val(spec_fn(n_out)):.3f}'])
+    for ds_spec, zeta_spec, effdef_spec in zip(
+        loss_coeff.ds_specs, loss_coeff.zeta_specs, eff_deficit.effdef_specs
+    ):
+        label = ds_spec.symbol.removeprefix('ds_').capitalize()
+        loss_rows.append(
+            [
+                component,
+                label,
+                f'{_val(ds_spec.at_node(outlet_idx)):.3f}',
+                f'{_val(zeta_spec.at_node(outlet_idx)):.4f}',
+                f'{_val(effdef_spec.at_node(outlet_idx)):.3f}',
+            ]
+        )
 
-    loss_rows.append([component, 'Subtotal (s_out - s_in)', f'{ds_component:.3f}'])
-
-loss_rows.append(['All components', 'TOTAL (s5 - s0)', f'{ds_total_all:.3f}'])
+    loss_rows.append(
+        [
+            component,
+            'Subtotal (s_out - s_in)',
+            f'{sum(_val(s.at_node(outlet_idx)) for s in loss_coeff.ds_specs):.3f}',
+            f'{_val(loss_coeff.zeta_total_spec.at_node(outlet_idx)):.4f}',
+            f'{_val(eff_deficit.effdef_total_spec.at_node(outlet_idx)):.3f}',
+        ]
+    )
 
 print(
     tabulate(
         loss_rows,
-        headers=['Component', 'Loss mechanism', 'Ds\n[J/kg/K]'],
+        headers=[
+            'Component',
+            'Loss mechanism',
+            'Ds\n[J/kg/K]',
+            'zeta = T_is*Ds/(W_is^2/2)\n[-]',
+            'Efficiency deficit\n[%]',
+        ],
         tablefmt='github',
     )
 )
 
 # ============================================================
-# Total-to-static expansion efficiency (stator inlet -> rotor outlet)
+# Stage performance
 # ============================================================
-abs_state.update(cp.PSmass_INPUTS, _val(n5.stc.Pressure), _val(n0.stc.Entropy))
-h5_is = abs_state.hmass()
-eta_ts = (_val(n0.tot.Enthalpy) - _val(n5.tot.Enthalpy)) / (
-    _val(n0.tot.Enthalpy) - h5_is
-)
+eta_ts = _val(n5.ndim.EtaTS)
+eta_tt = _val(n5.ndim.EtaTT)
 print(f'\nTotal-to-static expansion efficiency (eta_ts, station 0 -> 5): {eta_ts:.4f}')
+print(f'Total-to-total expansion efficiency (eta_tt, station 0 -> 5): {eta_tt:.4f}')
 
 # ============================================================
 # Velocity triangle plots at each station

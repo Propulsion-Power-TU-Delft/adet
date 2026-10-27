@@ -25,8 +25,8 @@ from adet.components import BladeRow
 from adet.components.blade_row import RowGeometry
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
+from adet.equations.base_equation import EquationBase
 from adet.equations.definitions import EffectiveBladeNumber
-from adet.equations.geometrical import LaxByOutRadius
 from adet.equations.nondimensional import (
     SwallowingCapacity,
     TotalTotalCompressionEfficiency,
@@ -56,6 +56,27 @@ n0 = NodeVariables(0)
 n1 = NodeVariables(1)
 
 NUM_SPAN = 1
+
+
+class LaxByOutRadius(EquationBase):
+    """Single-node design constraint, local to this example: the rotor's
+    axial length is a fixed fraction of its own radius, and -- since this
+    rotor has no separate two-node meridional-chord model wired in here --
+    directly equated to MerChord too (the ``adet.equations.geometrical``
+    module's shared ``MeridionalChord`` instead derives MerChord from the
+    row's inlet/outlet radius change and is used by ``BladeRow`` elsewhere).
+    """
+
+    def residual(
+        self,
+        rr_mid0: n0.geo.Rmid.Hint,
+        ax_len0: n0.geo.AxialLength.Hint,
+        lax_by_outrad0: n0.ndim.LaxByOutRadius.Hint,
+        mer_chord0: n0.geo.MerChord.Hint,
+    ):
+        r1 = rr_mid0 * lax_by_outrad0 - ax_len0
+        r2 = ax_len0 - mer_chord0
+        return r1, r2
 
 # +++ Shafts
 shaft = Shaft(
