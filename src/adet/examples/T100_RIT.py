@@ -44,10 +44,13 @@ from adet.equations.nondimensional import (
     TotalStaticExpansionEfficiency,
     TotalTotalExpansionEfficiency,
 )
-from adet.fluid.ideal_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation
-from adet.losses.mixing import DentonBaumgartnerMixingLoss, SieverdingBasePressure
+from adet.losses.mixing import (
+    AungierDeviationModel,
+    DentonBaumgartnerMixingLoss,
+    SieverdingBasePressure,
+)
 from adet.losses.rit import (
     ChenSlip,
     EndwallLoss,
@@ -59,12 +62,20 @@ from adet.losses.rit import (
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger
-from adet.tools.plotting import plot_velocity_triangles
+from adet.tools.plotting import plot_velocity_triangles, setup_mpl
 from adet.variables import KinematicVariables, NodeVariables
 from adet.varspec import DEF_NODE
 
 logger = logging.getLogger(__name__)
 setup_logger(logger)
+setup_mpl(
+    {
+        'font.family': ['sans-serif'],
+        'font.size': 20,
+        'axes.labelsize': 18,
+        'legend.fontsize': 18,
+    }
+)
 PLOTS = True
 USE_SLIP_MODEL = True
 
@@ -168,8 +179,12 @@ def build_network(include_losses: bool) -> ComponentNetwork:
                 GammaPV(): 1,
                 SieverdingBasePressure(): (0, 1),
                 DentonBaumgartnerMixingLoss(): 1,
+                AungierDeviationModel(): 1,
             }
         )
+        # stator_extra_bc = {n1.tot.Pressure: Quantity(530, 'kPa')}
+        stator_extra_bc = {}
+
         rotor_extra_equations.update(
             {
                 AddImpellerLosses(): (0, 1),
@@ -183,9 +198,11 @@ def build_network(include_losses: bool) -> ComponentNetwork:
                 GammaPV(): 1,
                 SieverdingBasePressure(): (0, 1),
                 DentonBaumgartnerMixingLoss(): 1,
+                # TODO: Try denton only?
             }
         )
     else:
+        stator_extra_bc = {}
         stator_extra_equations[IsentropicLink()] = (0, 1)
         rotor_extra_equations[IsentropicLink()] = (0, 1)
 
@@ -196,7 +213,7 @@ def build_network(include_losses: bool) -> ComponentNetwork:
             n1.geo.Height: Quantity(0.006, 'm'),  # nozzle exit height (Sauret Table 2)
             n1.geo.Rmid: Quantity(0.0635, 'm'),  # nozzle exit radius (Sauret Table 2)
             n1.geo.MeridionalAngle: Quantity(-90, 'deg'),
-            n1.kin.FlowAngleAbs: Quantity(78.1, 'deg'),  # Sauret Fig. 8(a)
+            n1.geo.MetalAngle: Quantity(78.1, 'deg'),  # Sauret Fig. 8(a)
             n0.geo.BldThick: Quantity(0.000661, 'm'),  # Sauret Table 6 (m=0%)
             n1.geo.BldThick: Quantity(0.00051, 'm'),  # Sauret Table 2
             n1.geo.NumBlades: 19,  # Sauret Table 1
@@ -204,15 +221,16 @@ def build_network(include_losses: bool) -> ComponentNetwork:
             n1.oth.MomByBld: 0.1,
             n1.oth.DispByMom: 2.0,
             n1.oth.DispByHgt: 0.15,
+            **stator_extra_bc,
         },
         shaft=casing,
         extra_equations=stator_extra_equations,
     )
 
+    # Vaneless space (Sauret Table 2)
     interspace = Interspace(
         'intrspc',
         {
-            # vaneless space outlet (Sauret Table 2)
             n1.geo.Rmid: Quantity(0.0582, 'm'),  # rotor inlet tip radius
             n1.geo.Height: Quantity(0.00635, 'm'),  # vaneless space height
         },
@@ -224,15 +242,17 @@ def build_network(include_losses: bool) -> ComponentNetwork:
     rotor = BladeRow(
         'impeller',
         bound_cond={
-            n1.geo.Rhub: Quantity(0.01524, 'm'),  # exducer hub radius (Sauret Table 8)
-            n1.geo.Height: Quantity(0.03683 - 0.01524, 'm'),  # exducer tip - hub radius
+            # n1.geo.Height: Quantity(0.03683 - 0.01524, 'm'),  # exducer tip - hub radius
+            # n1.kin.BladeSpeed: 314.6,
+            n1.geo.Rtip: Quantity(0.03683, 'm'),  # exducer tip - hub radius
+            n1.geo.Rhub: Quantity(0.01524, 'm'),  # exducer tip - hub radius
             n1.geo.MeridionalAngle: Quantity(0, 'deg'),  # axial exducer exit
             n0.geo.BldThick: Quantity(0.00086, 'm'),  # Sauret Table 2 / Appendix
             n0.geo.MetalAngle: Quantity(0, 'deg'),  # purely radial LE blades
             n1.geo.BldThick: Quantity(0.00076, 'm'),  # Sauret Table 2 / Appendix
             n1.geo.MerChord: Quantity(0.0389, 'm'),  # axial length, Sauret Table 2
             n1.geo.NumBlades: 16,  # Sauret Table 1 / Jones text
-            n1.stc.Pressure: Quantity(94700.0, 'Pa'),  # Sauret Table 4
+            n1.stc.Pressure: Quantity(94.7, 'kPa'),  # Sauret Table 4
             n0.geo.TipClearance: Quantity(0.0004, 'm'),  # Sauret Table 2
             n1.geo.TipClearance: Quantity(0.00023, 'm'),  # Sauret Table 2
             n1.oth.MomByBld: 0.075,
@@ -282,9 +302,9 @@ def build_network(include_losses: bool) -> ComponentNetwork:
 # ============================================================
 BOUNDS = {
     n1.kin.Mach: (0.3, 1.05),
-    n0.stc.Temperature.Glob: (300, 1300),
-    n0.stc.Pressure.Glob: (1e3, 2e6),
-    n0.stc.Entropy.Glob: (3000.0, 7000.0),
+    n0.stc.Temperature.Glob: (1, 1300),
+    n0.stc.Pressure.Glob: (1, 2e6),
+    # n0.stc.Entropy.Glob: (3000.0, 7000.0),
 }
 
 # ============================================================
@@ -299,7 +319,9 @@ x0_isen = ntw_isen.system.get_guess(fallback=0.5)
 kn_isen = ntw_isen.system.get_boundary_conds()
 bnd_isen = ntw_isen.system.get_bounds(BOUNDS)
 
-sol_isen = solve_root_problem(rtfn_isen, x0_isen, kn_isen, suppress_output=False)
+sol_isen = solve_root_problem(
+    rtfn_isen, x0_isen, kn_isen, bnd_isen, suppress_output=False
+)
 rtfn_isen = ntw_isen.system.make_rootfinder('kinsol')
 sol_isen = solve_root_problem(rtfn_isen, sol_isen, kn_isen, bnd_isen)
 
@@ -339,15 +361,193 @@ bnd = ntw.system.get_bounds(BOUNDS)
 sol = solve_root_problem(rtfn, x0, kn, suppress_output=False)
 
 # Kinsol pass
-rtfn = ntw.system.make_rootfinder('kinsol')
-sol = solve_root_problem(rtfn, sol, kn, bnd)
+rtfn_k = ntw.system.make_rootfinder('kinsol')
+rtfn_n = ntw.system.make_rootfinder('newton')
+sol = solve_root_problem(rtfn_n, sol, kn, bnd)
+
+rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': False})
 
 sol_data = ntw.system.sol_to_dict(sol)
 
 # ============================================================
-# Active machine stations: only the components actually chained
-# into the network above have solved nodes (see STATION_LABELS)
+# U/a0 sweep: the rotor shaft speed is a fixed boundary condition, so the
+# solved network is reused. Only the omega entry of the boundary-condition
+# vector is rescaled per point, warm-started from the previous solution.
 # ============================================================
+R_ROTOR_INLET = 0.0582  # m, rotor inlet tip radius (used for U)
+
+LOSS_MECHANISMS = {
+    'Nozzle': [
+        ('Profile', lambda n: n.loss.Ds_profile),
+        ('Endwall', lambda n: n.loss.Ds_endwall),
+        ('Mixing', lambda n: n.loss.Ds_mixing),
+    ],
+    'Rotor': [
+        ('Profile', lambda n: n.loss.Ds_profile),
+        ('Leakage', lambda n: n.loss.Ds_leakage),
+        ('Incidence', lambda n: n.loss.Ds_incidence),
+        ('Endwall', lambda n: n.loss.Ds_endwall),
+        ('Mixing', lambda n: n.loss.Ds_mixing),
+    ],
+}
+COMPONENT_NODES = {
+    'Nozzle': (0, 1),
+    'Interspace': (2, 3),
+    'Rotor': (4, 5),
+}
+
+UA0_SWEEP = np.linspace(0.55, 0.8, 50)  # descending: continue away from design
+
+RUN_SPEEDLINE = False
+RUN_PR_SWEEP = False
+
+bc_keys = list(ntw.system.data.boun_cond.keys())
+omega_idx = bc_keys.index(n5.kin.Omega)
+
+# a0 is the spouting velocity sqrt(2 * dH_is), with dH_is the total-to-static
+# isentropic enthalpy drop (inlet total enthalpy -> isentropic static enthalpy
+# at the rotor exit pressure). Set by the boundary conditions, so it is fixed
+# along the sweep.
+dh_is = float(sol_data[n0.tot.Enthalpy][0]) - float(sol_data[n5.oth.Enthalpy_Is][0])
+a0_spout = math.sqrt(2 * dh_is)
+omega_design = float(sol_data[n5.kin.Omega][0])
+print(
+    f'\nDesign point: U/a0 = {omega_design * R_ROTOR_INLET / a0_spout:.3f} '
+    f'(a0 = {a0_spout:.1f} m/s, dH_is = {dh_is / 1e3:.1f} kJ/kg, '
+    f'omega = {omega_design:.1f} rad/s)'
+)
+
+sweep_ua0 = []
+sweep_eta_tt = []
+# Stator (nozzle) outlet absolute flow angle [deg] and Mach number
+sweep_alpha_stator = []
+sweep_mach_stator = []
+# Entropy rise per loss mechanism at each converged sweep point, per component
+sweep_loss = {
+    component: {name: [] for name, _ in mechanisms}
+    for component, mechanisms in LOSS_MECHANISMS.items()
+}
+sol_sweep = sol
+if RUN_SPEEDLINE:
+    for ua0 in UA0_SWEEP:
+        omega_target = ua0 * a0_spout / R_ROTOR_INLET
+        kn_sweep = list(kn)
+        kn_sweep[omega_idx] = kn[omega_idx] * (omega_target / omega_design)
+
+        try:
+            sol_try = solve_root_problem(rtfn_k, sol_sweep, kn_sweep)
+        except RuntimeError:
+            logger.info(f'U/a0 = {ua0:.3f}: did not converge, skipped')
+            continue
+
+        sol_sweep = sol_try
+        sweep_data = ntw.system.sol_to_dict(sol_sweep)
+
+        eta_tt = float(sweep_data[n5.ndim.EtaTT][0])
+        sweep_ua0.append(ua0)
+        sweep_eta_tt.append(eta_tt)
+        sweep_alpha_stator.append(
+            math.degrees(float(sweep_data[n1.kin.FlowAngleAbs][0]))
+        )
+        sweep_mach_stator.append(float(sweep_data[n1.kin.Mach][0]))
+        for component, mechanisms in LOSS_MECHANISMS.items():
+            n_out = NodeVariables(COMPONENT_NODES[component][1])
+            for mechanism, spec_fn in mechanisms:
+                sweep_loss[component][mechanism].append(
+                    float(sweep_data[spec_fn(n_out)][0])
+                )
+        logger.info(f'U/a0 = {ua0:.3f}: eta_tt = {eta_tt:.4f}')
+
+    sweep_ua0 = np.array(sweep_ua0)
+    sweep_eta_tt = np.array(sweep_eta_tt)
+    sweep_alpha_stator = np.array(sweep_alpha_stator)
+    sweep_mach_stator = np.array(sweep_mach_stator)
+
+    print('\nU/a0 sweep (converged points only):')
+    print(
+        tabulate(
+            [[f'{ua0:.3f}', f'{eta:.4f}'] for ua0, eta in zip(sweep_ua0, sweep_eta_tt)],
+            headers=['U/a0', 'eta_tt'],
+            tablefmt='github',
+        )
+    )
+
+
+# ============================================================
+# Pressure-ratio sweep at design shaft speed: PR = p0_in / p5_static. The
+# rotor exit static pressure is a fixed boundary condition, so the solved
+# network is reused and only that entry of the boundary-condition vector is
+# rescaled per point. Each branch is warm-started outwards from the design
+# point, so the solver never has to jump across the whole range at once.
+# ============================================================
+PR_SWEEP = np.linspace(3.0, 9.0, 25)
+
+if RUN_PR_SWEEP:
+    p0_in = float(sol_data[n0.tot.Pressure][0])
+    p5_design = float(sol_data[n5.stc.Pressure][0])
+    pr_design = p0_in / p5_design
+    p5_idx = bc_keys.index(n5.stc.Pressure)
+    rtfn_ip_pr = ntw.system.make_rootfinder(
+        'ipopt',
+        opts={'error_on_fail': True, 'ipopt.max_wall_time': 1.0},
+    )
+
+    # (PR, U/a0, eta_tt, specific work [kJ/kg]) at each converged sweep point
+    pr_rows = []
+    pr_branches = (
+        [pr for pr in PR_SWEEP if pr >= pr_design],  # ascending from design
+        [pr for pr in PR_SWEEP[::-1] if pr < pr_design],  # descending from design
+    )
+    for branch in pr_branches:
+        sol_pr = sol
+        for pr in branch:
+            kn_pr = list(kn)
+            kn_pr[p5_idx] = kn[p5_idx] * (p0_in / (pr * p5_design))
+
+            try:
+                sol_try = solve_root_problem(rtfn_k, sol_pr, kn_pr)
+            except RuntimeError:
+                # Short IPOPT run, then a KINSOL pass to polish its result
+                try:
+                    sol_ip = solve_root_problem(rtfn_ip_pr, sol_pr, kn_pr, bnd)
+                    sol_try = solve_root_problem(rtfn_k, sol_ip, kn_pr)
+                except RuntimeError:
+                    logger.info(f'PR = {pr:.3f}: did not converge, skipped')
+                    continue
+
+            sol_pr = sol_try
+            pr_data = ntw.system.sol_to_dict(sol_pr)
+
+            h0_pt = float(pr_data[n0.tot.Enthalpy][0])
+            dh_is_pt = h0_pt - float(pr_data[n5.oth.Enthalpy_Is][0])
+            ua0_pt = (
+                float(pr_data[n5.kin.Omega][0])
+                * R_ROTOR_INLET
+                / math.sqrt(2 * dh_is_pt)
+            )
+            eta_tt = float(pr_data[n5.ndim.EtaTT][0])
+            work_pt = (h0_pt - float(pr_data[n5.tot.Enthalpy][0])) / 1e3
+            pr_rows.append((pr, ua0_pt, eta_tt, work_pt))
+            logger.info(f'PR = {pr:.3f}: eta_tt = {eta_tt:.4f}')
+
+    pr_rows.sort()
+
+    print(f'\nPressure-ratio sweep at design speed (design PR = {pr_design:.2f}):')
+    print(
+        tabulate(
+            [
+                [f'{pr:.2f}', f'{ua0:.3f}', f'{eta:.4f}', f'{work:.1f}']
+                for pr, ua0, eta, work in pr_rows
+            ],
+            headers=['PR', 'U/a0', 'eta_tt', 'Specific work\n[kJ/kg]'],
+            tablefmt='github',
+        )
+    )
+
+
+# *************** ************ ***************
+# *************** POST-PROCESS ***************
+# *************** ************ ***************
 active_stations = [
     (NodeVariables(node_idx), node_idx, STATION_LABELS[node_idx])
     for node_idx in range(2 * ntw.num_components)
@@ -357,10 +557,6 @@ active_stations = [
 def _val(spec) -> float:
     return float(sol_data[spec][0])
 
-
-# *************** ************ ***************
-# *************** POST-PROCESS ***************
-# *************** ************ ***************
 
 rows = [
     [
@@ -410,26 +606,6 @@ print(
 # ============================================================
 # Loss breakdown and comparison against Jones (1996) Table 2/3
 # ============================================================
-LOSS_MECHANISMS = {
-    'Nozzle': [
-        ('Profile', lambda n: n.loss.Ds_profile),
-        ('Endwall', lambda n: n.loss.Ds_endwall),
-        ('Mixing', lambda n: n.loss.Ds_mixing),
-    ],
-    'Rotor': [
-        ('Profile', lambda n: n.loss.Ds_profile),
-        ('Leakage', lambda n: n.loss.Ds_leakage),
-        ('Incidence', lambda n: n.loss.Ds_incidence),
-        ('Endwall', lambda n: n.loss.Ds_endwall),
-        ('Mixing', lambda n: n.loss.Ds_mixing),
-    ],
-}
-COMPONENT_NODES = {
-    'Nozzle': (0, 1),
-    'Interspace': (2, 3),
-    'Rotor': (4, 5),
-}
-
 loss_rows = []
 ds_total_all = 0.0
 for component, (inlet_idx, outlet_idx) in COMPONENT_NODES.items():
@@ -547,6 +723,127 @@ if PLOTS:
         ha='left',
     )
     fig_loss.tight_layout()
+
+# ============================================================
+# Total-to-total efficiency against U/a0 (speed sweep)
+# ============================================================
+if PLOTS and RUN_SPEEDLINE:
+    fig_sweep, ax_sweep = plt.subplots(figsize=(7, 5), dpi=70)
+    ax_sweep.plot(sweep_ua0, sweep_eta_tt, marker='o', color='#2a78d6')
+    ax_sweep.set_xlabel(r'$U / a_0$ [-]')
+    ax_sweep.set_ylabel(r'$\eta_{tt}$ [-]')
+    ax_sweep.set_title('Total-to-total efficiency vs. blade speed ratio (T-100)')
+    ax_sweep.grid(True, alpha=0.3)
+    fig_sweep.tight_layout()
+
+# ============================================================
+# Total-to-total efficiency against pressure ratio (design speed)
+# ============================================================
+if PLOTS and RUN_PR_SWEEP and pr_rows:
+    fig_pr, ax_pr = plt.subplots(figsize=(7, 5), dpi=70)
+    pr_axis = [row[0] for row in pr_rows]
+    pr_eta = [row[2] for row in pr_rows]
+    ax_pr.plot(pr_axis, pr_eta, marker='o', color='#2a78d6')
+    ax_pr.axvline(
+        pr_design, color='gray', linestyle='--', label=f'Design PR = {pr_design:.2f}'
+    )
+    ax_pr.set_xlabel(r'$p_{0,in} / p_{5,s}$ [-]')
+    ax_pr.set_ylabel(r'$\eta_{tt}$ [-]')
+    ax_pr.set_title('Total-to-total efficiency vs. pressure ratio (T-100)')
+    ax_pr.grid(True, alpha=0.3)
+    ax_pr.legend(frameon=False)
+    fig_pr.tight_layout()
+
+# ============================================================
+# Loss breakdown along the speedline: stacked entropy rise per mechanism vs.
+# U/a0, stator (nozzle) and rotor in separate panels on a shared scale
+# ============================================================
+if PLOTS and RUN_SPEEDLINE:
+    # Colour follows the mechanism, not its position in the stack, so a given
+    # loss keeps its hue in both panels (categorical slots 1-5, in order)
+    MECHANISM_COLORS = {
+        'Profile': '#2a78d6',
+        'Leakage': '#eb6834',
+        'Incidence': '#1baf7a',
+        'Endwall': '#eda100',
+        'Mixing': '#e87ba4',
+    }
+
+    fig_stack, axs_stack = plt.subplots(
+        1, 2, figsize=(11, 4.5), dpi=70, sharex=True, sharey=True, facecolor=SURFACE
+    )
+    for ax, component in zip(axs_stack, ('Nozzle', 'Rotor')):
+        names = [name for name, _ in LOSS_MECHANISMS[component]]
+        series = [np.asarray(sweep_loss[component][name]) for name in names]
+        ax.stackplot(
+            sweep_ua0,
+            *series,
+            labels=names,
+            colors=[MECHANISM_COLORS[name] for name in names],
+            edgecolor=SURFACE,
+            linewidth=0.8,
+        )
+        ax.set_title(component, loc='left', color=TEXT_PRIMARY, fontsize=11)
+        ax.set_facecolor(SURFACE)
+        ax.set_axisbelow(True)
+        ax.grid(axis='y', color=GRIDLINE, linewidth=1)
+        ax.tick_params(colors=TEXT_SECONDARY)
+        ax.set_xlabel(r'$U / a_0$ [-]', color=MUTED)
+        for side in ('top', 'right'):
+            ax.spines[side].set_visible(False)
+        ax.spines['left'].set_color(MUTED)
+        ax.spines['bottom'].set_color(MUTED)
+        ax.legend(loc='best', frameon=False)
+
+    axs_stack[0].set_ylabel('Entropy rise Ds [J/kg/K]', color=MUTED)
+    fig_stack.suptitle(
+        'Loss breakdown',
+        color=TEXT_PRIMARY,
+        x=0.02,
+        ha='left',
+    )
+    fig_stack.tight_layout()
+
+# ============================================================
+# Stator outlet absolute flow angle and Mach number along the speedline, one
+# panel per quantity (separate y-scales) sharing the U/a0 axis
+# ============================================================
+if PLOTS and RUN_SPEEDLINE:
+    fig_stator, axs_stator = plt.subplots(
+        2, 1, figsize=(7, 7), dpi=70, sharex=True, facecolor=SURFACE
+    )
+    ax_alpha, ax_mach = axs_stator
+
+    ax_alpha.plot(sweep_ua0, sweep_alpha_stator, marker='o', color='#2a78d6')
+    ax_alpha.set_title(
+        'Stator outlet absolute flow angle', loc='left', color=TEXT_PRIMARY, fontsize=11
+    )
+    ax_alpha.set_ylabel(r'$\alpha_1$ [deg]', color=MUTED)
+
+    ax_mach.plot(sweep_ua0, sweep_mach_stator, marker='o', color='#eb6834')
+    ax_mach.set_title(
+        'Stator outlet Mach number', loc='left', color=TEXT_PRIMARY, fontsize=11
+    )
+    ax_mach.set_ylabel(r'$M_1$ [-]', color=MUTED)
+    ax_mach.set_xlabel(r'$U / a_0$ [-]', color=MUTED)
+
+    for ax in axs_stator:
+        ax.set_facecolor(SURFACE)
+        ax.set_axisbelow(True)
+        ax.grid(True, color=GRIDLINE, linewidth=1)
+        ax.tick_params(colors=TEXT_SECONDARY)
+        for side in ('top', 'right'):
+            ax.spines[side].set_visible(False)
+        ax.spines['left'].set_color(MUTED)
+        ax.spines['bottom'].set_color(MUTED)
+
+    fig_stator.suptitle(
+        'Stator outlet conditions along the speedline (T-100)',
+        color=TEXT_PRIMARY,
+        x=0.02,
+        ha='left',
+    )
+    fig_stator.tight_layout()
 
 # ============================================================
 # Meridional profile of each component (hub/tip contours + LE/TE), laid

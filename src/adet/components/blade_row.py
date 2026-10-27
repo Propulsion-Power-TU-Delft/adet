@@ -12,9 +12,9 @@ from adet.equations.fundamental import (
     ConstantAngMomentum,
     ConstRelEnthalpy,
     EulerEquation,
+    InterspaceLoss,
     MassConservation,
     ZeroBlockage,
-    InterspaceLoss,
 )
 from adet.equations.geometrical import (
     BladePitch,
@@ -356,6 +356,8 @@ class Interspace(BaseComponent):
         # Meridional Geometry
         (MeridionalGeometry, 1),
         (RadialGeometry, (0, 1)),
+        (EndwallProperties, 0),
+        (EndwallProperties, 1),
         # No blades
         (ZeroBlockage, 0),
         (ZeroBlockage, 1),

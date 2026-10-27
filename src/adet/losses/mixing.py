@@ -266,8 +266,8 @@ class AungierDeviationModel(DeviationModel):
     def residual(
         self,
         met_angle: n0.geo.MetalAngle.Hint,
-        mach_out: n1.kin.RelMach.Hint,
-        beta: n1.kin.FlowAngleRel.Hint,
+        mach_out: n0.kin.RelMach.Hint,
+        beta: n0.kin.FlowAngleRel.Hint,
     ):
         cos_beta = np.cos(met_angle)  # > 0
         beta_abs = safe_abs(met_angle)  # > 0
