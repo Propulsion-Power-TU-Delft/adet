@@ -498,7 +498,9 @@ class RecirculationCoppage(LossModel):
             * w_ratio
             / (n_bl_eff1 / np.pi * (1 - r_ratio) + 2 * r_ratio)
         )
-        return dht_recirc1 - 0.02 * np.tan(alpha) * (diff_fact * u1) ** 2
+        dht = 0.02 * np.tan(alpha) * (diff_fact * u1) ** 2
+
+        return dht_recirc1 - safe_mean(dht)
 
 
 class RecirculationOh(LossModel):
