@@ -19,7 +19,7 @@ from numpy.typing import NDArray
 from pint import Quantity, Unit
 from pint.facets.plain import PlainQuantity
 
-from adet.constants import AdetArray
+from adet.constants import IPOPT_DEFAULTS, AdetArray
 from adet.equations.base_equation import EquationBase
 from adet.errors import ExistingEquationError
 from adet.fluid.casadi_eos import CasadiEos
@@ -38,23 +38,11 @@ THERMO_CONST_SUFFIX = '__thrmCNS'
 _scale_reg = ScalingRegistry()
 
 
-IPOPT_DEFAULTS = {
-    'error_on_fail': True,
-    # Reasonable defaults for IPOPT, overwritten by user
-    'ipopt.print_level': 3,
-    'ipopt.max_iter': 6000,
-    'ipopt.max_wall_time': 60,
-    'ipopt.tol': 1e-8,
-    'ipopt.acceptable_constr_viol_tol': 1e-10,
-    'ipopt.bound_frac': 0.1,  # Relative initial push < 0.5
-    'ipopt.mu_init': 0.3,  # Initial barrier param
-    'ipopt.mu_strategy': 'adaptive',
-    'ipopt.linear_solver': 'mumps',
-    # Lower = stricter restoration (def = 100 * tol)
-    'ipopt.resto_failure_feasibility_threshold': 1e-7,
-    'ipopt.expect_infeasible_problem': 'yes',
-    'ipopt.hessian_approximation': 'limited-memory',  # Less updates
-}
+def ordered_specs(specs: Iterable[VarSpec]) -> list[VarSpec]:
+    """Sort VarSpecs by a stable key. Iterating a set of VarSpecs follows str
+    hashing, which changes between Python processes and so reorders the equations
+    and variables built from it; sorting makes the order reproducible."""
+    return sorted(specs, key=lambda s: (s.symbol, s.node, str(s.state)))
 
 
 class SystemSharedData:
@@ -75,7 +63,7 @@ class SystemSharedData:
         self.boun_cond: dict[VarSpec, AdetArray | PlainQuantity] = {}
 
         # Boundary conditions and constraints
-        self.equalities: list[set[VarSpec]] = []
+        self.equalities: list[tuple[VarSpec, ...]] = []
         self.spanwise_constants: set[VarSpec] = set()
 
         # Units and scaling
@@ -252,8 +240,10 @@ class ConstraintManager:
         for args in equalities:
             if len(args) < 2:
                 logger.warning(f'Single variable equality detected for {args}')
-            if set(args) not in self.data.equalities:
-                self.data.equalities.append(set(args))
+            # Keep the user's order (the first arg anchors the equalities),
+            # de-duplicating on the unordered set of args
+            if set(args) not in [set(eq) for eq in self.data.equalities]:
+                self.data.equalities.append(tuple(args))
 
     def add_spanwise_constants(self, *arguments: VarSpec):
         for arg in arguments:
@@ -342,9 +332,7 @@ class ArgumentResolver:
         Get the real thermodynamic and kinematic arguments needed to complete
         the different states of the node.
         """
-        return tuple(
-            self._get_effective_arguments(),
-        )
+        return tuple(ordered_specs(self._get_effective_arguments()))
 
     def _get_effective_arguments(self) -> set[VarSpec]:
         """
@@ -392,7 +380,7 @@ class ArgumentResolver:
             if self.data.thermo_updt_args:
                 discarded_args.add(v_spec)
 
-        return [arg for arg in discarded_args if arg.state]
+        return ordered_specs(arg for arg in discarded_args if arg.state)
 
     # *** System introspection
     def make_arg_structure(self, arguments: Sequence[VarSpec]):
@@ -779,7 +767,6 @@ class SystemAssembler(ABC):
     def _compute_secondary_thermo(
         self, sol_data: dict[VarSpec, NDArray]
     ) -> dict[VarSpec, NDArray]:
-
         if self.data.fluid_settings is None:
             return {}
 
@@ -1007,7 +994,6 @@ class CasadiSystem(SystemAssembler):
     def _build_equations_of_state(
         self, all_args_products: dict[VarSpec, cs.MX]
     ) -> dict[VarSpec, cs.MX]:
-
         # TODO: Refactor this whole method, it is quite messy
         if self.data.fluid_settings is None:
             return {}

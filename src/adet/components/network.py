@@ -4,7 +4,7 @@ from typing import Any, Generic, Literal, Sequence, TypeVar
 from numpy.typing import NDArray
 from tabulate import tabulate
 
-from adet.assemblers import SystemAssembler, SystemSharedData
+from adet.assemblers import SystemAssembler, SystemSharedData, ordered_specs
 from adet.components import BaseComponent
 from adet.components.blade_row import BladeRow
 from adet.components.connections import Inlet, Shaft
@@ -118,7 +118,7 @@ class ComponentNetwork(Generic[T]):
             self.system.add_boundary_conditions(mapped_bcond)
 
             # 3. Write equalities (constant variables)
-            for spec in comp._const_variables:
+            for spec in ordered_specs(comp._const_variables):
                 equality = (
                     spec.at_node(inl_idx),
                     spec.at_node(out_idx),
@@ -126,7 +126,7 @@ class ComponentNetwork(Generic[T]):
                 self.system.add_equalities(equality)
 
             # 4. Write spanwise constants
-            for spec in comp._spanwise_constants:
+            for spec in ordered_specs(comp._spanwise_constants):
                 abs_idx = inl_idx if spec.node == 0 else out_idx
                 abs_spec = spec.at_node(abs_idx)
                 self.system.add_spanwise_constants(abs_spec)
@@ -172,7 +172,7 @@ class ComponentNetwork(Generic[T]):
                     out_idx,
                     out_idx + 1,
                 )
-            for spec in variables:
+            for spec in ordered_specs(variables):
                 self.system.add_equalities(
                     (spec.at_node(left_idx), spec.at_node(right_idx))
                 )
