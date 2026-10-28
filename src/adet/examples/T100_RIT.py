@@ -41,6 +41,7 @@ from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.base_equation import LossApplier
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
+from adet.equations.fundamental import IdealInterspace, InterspaceLoss
 from adet.equations.nondimensional import (
     GammaPV,
     TotalStaticExpansionEfficiency,
@@ -234,7 +235,9 @@ def build_network(include_losses: bool) -> ComponentNetwork:
         extra_equations=stator_extra_equations,
     )
 
-    # Vaneless space (Sauret Table 2)
+    # Vaneless space (Sauret Table 2): ideal (isentropic) interspace for the
+    # initialization, loss-generating interspace for the full system
+    interspace_eq = InterspaceLoss() if include_losses else IdealInterspace()
     interspace = Interspace(
         'intrspc',
         {
@@ -242,7 +245,7 @@ def build_network(include_losses: bool) -> ComponentNetwork:
             n1.geo.Height: Quantity(0.00635, 'm'),  # vaneless space height
         },
         extra_equations={
-            IsentropicLink(): (0, 1),
+            interspace_eq: (0, 1),
         },
     )
 
@@ -705,14 +708,19 @@ if PLOTS:
     ds_max = 0.0
     for ax, component in zip(axs_loss, ('Nozzle', 'Rotor')):
         n_out = NodeVariables(COMPONENT_NODES[component][1])
+        mechanisms = [
+            (name, _val(spec_fn(n_out))) for name, spec_fn in LOSS_MECHANISMS[component]
+        ]
+        if component == 'Nozzle':
+            # The interspace sits between nozzle and rotor and is grouped with the
+            # stator side. InterspaceLoss sets the outlet entropy directly, so its
+            # rise is the station-to-station entropy difference
+            ds_interspace = _val(
+                NodeVariables(COMPONENT_NODES['Interspace'][1]).stc.Entropy
+            ) - _val(NodeVariables(COMPONENT_NODES['Interspace'][0]).stc.Entropy)
+            mechanisms.append(('Interspace', ds_interspace))
         # Sorted ascending so the largest loss sits at the top of the panel
-        mechanisms = sorted(
-            [
-                (name, _val(spec_fn(n_out)))
-                for name, spec_fn in LOSS_MECHANISMS[component]
-            ],
-            key=lambda item: item[1],
-        )
+        mechanisms.sort(key=lambda item: item[1])
         names = [name for name, _ in mechanisms]
         values = [value for _, value in mechanisms]
         total = sum(values)

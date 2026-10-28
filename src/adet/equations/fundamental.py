@@ -1,5 +1,6 @@
 """Module that gathers fundamental equations for internal flows"""
 
+import CoolProp as cp
 import numpy as np
 
 from adet.equations import EquationBase
@@ -40,9 +41,28 @@ class ConstantAngMomentum(EquationBase):
         return rr0 * vt0 - rr1 * vt1
 
 
+class IdealInterspace(EquationBase):
+    def residual(
+        self,
+        rr0: n0.geo.RDistr.Hint,
+        rr1: n1.geo.RDistr.Hint,
+        vt0: n0.kin.V_tan.Hint,
+        vt1: n1.kin.V_tan.Hint,
+        s0: n0.stc.Entropy.Hint,
+        s1: n1.stc.Entropy.Hint,
+    ):
+        r_mom = rr0 * vt0 - rr1 * vt1
+        r_loss = s0 - s1
+        return r_mom, r_loss
+
+
 class InterspaceLoss(EquationBase):
     # Needed due to rounding errors
-    config = EquationConfig(manual_units=('dimensionless',))
+    config = EquationConfig(
+        manual_units=('m^2/s', 'J/kg/K'),
+        input_pair=cp.PSmass_INPUTS,
+        out_properties=(n0.stc.Enthalpy,),
+    )
 
     def residual(
         self,
@@ -50,17 +70,51 @@ class InterspaceLoss(EquationBase):
         rr1: n1.geo.RDistr.Hint,
         vt0: n0.kin.V_tan.Hint,
         vt1: n1.kin.V_tan.Hint,
+        v0: n0.kin.V_mag.Hint,
+        v1: n1.kin.V_mag.Hint,
+        rho0: n0.stc.Density.Hint,
         rho1: n1.stc.Density.Hint,
+        t0: n0.stc.Temperature.Hint,
+        t1: n1.stc.Temperature.Hint,
         massflow: n1.oth.TotMassFlow.Hint,
         mu: n1.stc.Viscosity.Hint,
+        s0: n0.stc.Entropy.Hint,
+        s1: n1.stc.Entropy.Hint,
     ):
 
-        # Radial gap Reynolds
-        Re = massflow / mu / rr0
-        Cf = 0.035 * (1.8e5 / Re) ** 0.2
+        # TODO: Full formulation with pinch
+        # s_m = meridional length between the two stations
+        # A_w = 2 * np.pi * rbar * s_m * n_walls / n_walls  # per wall: 2*pi*rbar*s_m
+        # A_w = n_walls * 2*np.pi * rbar * s_m
 
-        loss_term = (2 * np.pi * Cf * rho1 * vt1 * (rr0**2 - rr0 * rr1)) / massflow
-        return vt0 / vt1 - (rr1 / rr0 + loss_term)
+        n_walls = 2
+        area_w = n_walls * np.pi * (rr0**2 - rr1**2)  # NOTE: parallel walls
+
+        # --- Average quantities
+        rho_avg = 0.5 * (rho0 + rho1)
+        t_avg = 0.5 * (t0 + t1)
+        v_avg = 0.5 * (v0 + v1)
+        vt_avg = 0.5 * (vt0 + vt1)
+        r_avg = 0.5 * (rr0 + rr1)
+        # ---
+
+        # Radial gap Reynolds
+        Re = massflow / mu / r_avg
+        # Cf = 0.035 * (1.8e5 / Re) ** 0.2
+        Cf = 0.004
+
+        tau = 0.5 * Cf * rho_avg * v_avg**2
+        dLambda = tau * (vt_avg / v_avg) * area_w * r_avg / massflow  # Ang mom deficit
+        w_fric = tau * v_avg * area_w / massflow  # Friction work
+        ds = w_fric / t_avg
+
+        # loss_term = (2 * np.pi * Cf * rho1 * vt1 * (rr0**2 - rr0 * rr1)) / massflow
+        # r_mom = vt0 / vt1 - (rr1 / rr0 + loss_term)
+
+        r_mom = rr0 * vt0 - (rr1 * vt1 + dLambda)
+        r_loss = s1 - (s0 + ds)
+
+        return r_mom, r_loss
 
 
 class ConstRelEnthalpy(EquationBase):
