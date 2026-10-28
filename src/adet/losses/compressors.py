@@ -473,6 +473,31 @@ class DiskFricDailyNece(LossModel):
 
 
 class RecirculationCoppage(LossModel):
+    """
+    Coppage et al. (1956) - Study of Supersonic Radial Compressors for
+    Refrigeration and Pressurization Systems, WADC TR 55-257, Eq. (2.36).
+
+            dh_rc = 0.02 sqrt(tan(alpha_2)) D_f U_2^2
+
+    tan(alpha_2): no loss for a radial discharge, infinite loss at zero
+    through-flow (Coppage, Section 2.4.5); tentative expression, "can only be
+    regarded as hypotheses" (Coppage, Section 2.4).
+
+    D_f: diffusion factor of the blade loading loss, Coppage Eq. (2.33), as in
+    Oh et al. (1997) Table 5. Galvas (1972) - Fortran program for predicting
+    off-design performance of centrifugal compressors- Eq. (B76)
+
+    Notation as in RecirculationOh:
+    - alpha_2    -> FlowAngleAbs at the impeller outlet, from the meridional
+                    direction
+    - k          -> RecircDiffCoeff, 0.75 in the report; separate from the
+                    BlLoadingCoeff of BladeLoadingCoppage, so that the blade
+                    loading loss can be calibrated without changing this one
+                    0.60 when accounting for splitter blades
+
+    Two-node equation across the impeller, e.g. `RecirculationCoppage(): (0, 1)`.
+    """
+
     def residual(
         self,
         dht_recirc1: n1.loss.Dht_recirculation.Hint,
@@ -485,7 +510,7 @@ class RecirculationCoppage(LossModel):
         w1: n1.kin.W_mag.Hint,
         w_tip0: n0.kin.W_tip.Hint,
         n_bl_eff1: n1.geo.NumBladesEff.Hint,
-        bl_coeff1: n1.oth.BlLoadingCoeff.Hint,
+        rc_coeff1: n1.oth.RecircDiffCoeff.Hint,
     ):
         w_ratio = w1 / w_tip0
         work = ht1 - ht0
@@ -493,17 +518,42 @@ class RecirculationCoppage(LossModel):
         diff_fact = (
             1
             - w_ratio
-            + bl_coeff1
+            + rc_coeff1
             * (work / u1**2)
-            * w_ratio
-            / (n_bl_eff1 / np.pi * (1 - r_ratio) + 2 * r_ratio)
+            * (1 / w_ratio)
+            * (((n_bl_eff1 / np.pi) * (1 - r_ratio)) + (2 * r_ratio)) ** (-1)
         )
-        dht = 0.02 * np.tan(alpha) * (diff_fact * u1) ** 2
+        dht = 0.02 * np.sqrt(np.tan(alpha)) * diff_fact * u1**2
 
         return dht_recirc1 - safe_mean(dht)
 
 
 class RecirculationOh(LossModel):
+    """
+    Oh, Yoon and Chung (1997) - An Optimum Set of Loss Models for Performance
+    Prediction of Centrifugal Compressors, Table 5 (set E-3) and Table 6.
+
+    Diffusion factor of the Coppage et al. (1956) blade loading loss, with a
+    hyperbolic function of the exit flow angle instead of Coppage's tan(alpha_2),
+    so that the loss lies between those of Coppage and Aungier at low flow (Fig. 6):
+
+        dh_rc = 8e-5 sinh(3.5 alpha_2^3) D_f^2 U_2^2
+
+    Notation, Oh et al. -> adet:
+    - alpha_2    -> FlowAngleAbs at the impeller outlet, from the meridional
+                    direction
+    - W_1t       -> W_tip, inlet relative velocity at the tip
+    - W_2, U_2   -> W_mag and BladeSpeed at the impeller outlet
+    - dh_Euler   -> ht1 - ht0, the Euler work (no parasitic loss in ht1)
+    - D_1t / D_2 -> Rtip at the inlet / Rmid at the outlet
+    - Z          -> NumBladesEff
+    - k          -> RecircDiffCoeff, 0.75 in the paper; separate from the
+                    BlLoadingCoeff of BladeLoadingCoppage, so that the blade
+                    loading loss can be calibrated without changing this one
+
+    Two-node equation across the impeller, e.g. `RecirculationOh(): (0, 1)`.
+    """
+
     def residual(
         self,
         w_tip0: n0.kin.W_tip.Hint,
@@ -515,7 +565,7 @@ class RecirculationOh(LossModel):
         rtip0: n0.geo.Rtip.Hint,
         rmid1: n1.geo.Rmid.Hint,
         alpha1: n1.kin.FlowAngleAbs.Hint,
-        bl_coeff1: n1.oth.BlLoadingCoeff.Hint,
+        rc_coeff1: n1.oth.RecircDiffCoeff.Hint,
         dht_recirc1: n1.loss.Dht_recirculation.Hint,
     ):
         w_ratio = w1 / w_tip0
@@ -524,10 +574,10 @@ class RecirculationOh(LossModel):
         diff_fact = (
             1
             - w_ratio
-            + bl_coeff1
+            + rc_coeff1
             * (work / u1**2)
-            * w_ratio
-            / (((n_bl_eff1 / np.pi) * (1 - r_ratio)) + (2 * r_ratio))
+            * (1 / w_ratio)
+            * (((n_bl_eff1 / np.pi) * (1 - r_ratio)) + (2 * r_ratio)) ** (-1)
         )
         dht = 8e-5 * np.sinh(3.5 * alpha1**3) * (diff_fact * u1) ** 2
 
