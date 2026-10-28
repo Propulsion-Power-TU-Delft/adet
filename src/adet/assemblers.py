@@ -38,6 +38,13 @@ THERMO_CONST_SUFFIX = '__thrmCNS'
 _scale_reg = ScalingRegistry()
 
 
+def ordered_specs(specs: Iterable[VarSpec]) -> list[VarSpec]:
+    """Sort VarSpecs by a stable key. Iterating a set of VarSpecs follows str
+    hashing, which changes between Python processes and so reorders the equations
+    and variables built from it; sorting makes the order reproducible."""
+    return sorted(specs, key=lambda s: (s.symbol, s.node, str(s.state)))
+
+
 class SystemSharedData:
     """
     Shared data container accessible to all managers.
@@ -56,7 +63,7 @@ class SystemSharedData:
         self.boun_cond: dict[VarSpec, AdetArray | PlainQuantity] = {}
 
         # Boundary conditions and constraints
-        self.equalities: list[set[VarSpec]] = []
+        self.equalities: list[tuple[VarSpec, ...]] = []
         self.spanwise_constants: set[VarSpec] = set()
 
         # Units and scaling
@@ -233,8 +240,10 @@ class ConstraintManager:
         for args in equalities:
             if len(args) < 2:
                 logger.warning(f'Single variable equality detected for {args}')
-            if set(args) not in self.data.equalities:
-                self.data.equalities.append(set(args))
+            # Keep the user's order (the first arg anchors the equalities),
+            # de-duplicating on the unordered set of args
+            if set(args) not in [set(eq) for eq in self.data.equalities]:
+                self.data.equalities.append(tuple(args))
 
     def add_spanwise_constants(self, *arguments: VarSpec):
         for arg in arguments:
@@ -323,9 +332,7 @@ class ArgumentResolver:
         Get the real thermodynamic and kinematic arguments needed to complete
         the different states of the node.
         """
-        return tuple(
-            self._get_effective_arguments(),
-        )
+        return tuple(ordered_specs(self._get_effective_arguments()))
 
     def _get_effective_arguments(self) -> set[VarSpec]:
         """
@@ -373,7 +380,7 @@ class ArgumentResolver:
             if self.data.thermo_updt_args:
                 discarded_args.add(v_spec)
 
-        return [arg for arg in discarded_args if arg.state]
+        return ordered_specs(arg for arg in discarded_args if arg.state)
 
     # *** System introspection
     def make_arg_structure(self, arguments: Sequence[VarSpec]):
