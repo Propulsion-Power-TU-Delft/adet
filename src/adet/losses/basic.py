@@ -84,6 +84,11 @@ class PercentageEntropyLoss(LossApplier):
         return s1 - s0 * (1 + self.entropy_gen)
 
 
+class FreeDeviation(DeviationModel):
+    def residual(self, beta: n0.kin.FlowAngleRel.Hint):
+        return ()
+
+
 class ZeroDeviation(DeviationModel):
     """Impose equality between kinematic and geometric angles at a node"""
 

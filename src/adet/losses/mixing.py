@@ -260,6 +260,21 @@ def baumgartner_mixing_zeta(
     )
 
 
+def aungier_delta0(met_angle):
+    """Aungier incompressible deviation angle delta0 [rad] at the blade metal angle"""
+    cos_beta = np.cos(met_angle)  # > 0
+    beta_abs = safe_abs(met_angle)  # > 0
+    return beta_abs - np.arccos(
+        cos_beta * (1 + (1 - cos_beta) * (2 * beta_abs / np.pi) ** 2)
+    )
+
+
+def aungier_delta_sub(delta0, mach_out):
+    """Aungier subsonic deviation delta_sub [rad], delta0 corrected for outlet Mach"""
+    X = 2 * mach_out - 1
+    return delta0 * (1 - 10 * X**3 + 15 * X**4 - 6 * X**5)
+
+
 class AungierDeviationModel(DeviationModel):
     """Only valid for subsonic deviation"""
 
@@ -269,14 +284,8 @@ class AungierDeviationModel(DeviationModel):
         mach_out: n0.kin.RelMach.Hint,
         beta: n0.kin.FlowAngleRel.Hint,
     ):
-        cos_beta = np.cos(met_angle)  # > 0
-        beta_abs = safe_abs(met_angle)  # > 0
-        delta0 = beta_abs - np.arccos(
-            cos_beta * (1 + (1 - cos_beta) * (2 * beta_abs / np.pi) ** 2)
-        )
-
-        X = 2 * mach_out - 1
-        delta_sub = delta0 * (1 - 10 * X**3 + 15 * X**4 - 6 * X**5)
+        delta0 = aungier_delta0(met_angle)
+        delta_sub = aungier_delta_sub(delta0, mach_out)
 
         deviation_sub = safe_if_else(
             mach_out <= 0.5,

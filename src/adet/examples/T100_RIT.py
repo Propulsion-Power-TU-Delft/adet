@@ -27,9 +27,11 @@ State:
 
 import logging
 import math
+from typing import cast
 
 import matplotlib.pyplot as plt
 import numpy as np
+from numpy.typing import NDArray
 from pint import Quantity
 from tabulate import tabulate
 
@@ -44,12 +46,15 @@ from adet.equations.nondimensional import (
     TotalStaticExpansionEfficiency,
     TotalTotalExpansionEfficiency,
 )
+from adet.equations.utils import residual_debugger
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import IsentropicLink, ZeroDeviation
+from adet.losses.basic import FreeDeviation, IsentropicLink, ZeroDeviation
 from adet.losses.mixing import (
     AungierDeviationModel,
-    DentonBaumgartnerMixingLoss,
+    DentonMixingLoss,
     SieverdingBasePressure,
+    aungier_delta0,
+    aungier_delta_sub,
 )
 from adet.losses.rit import (
     ChenSlip,
@@ -76,9 +81,13 @@ setup_mpl(
         'legend.fontsize': 18,
     }
 )
+
+# *** Global settings
 PLOTS = True
 USE_SLIP_MODEL = True
-
+USE_AUNGIER_DEVIATION = True
+RUN_SPEEDLINE = False
+RUN_PR_SWEEP = False
 
 _n0 = NodeVariables(0)
 _n1 = NodeVariables(1)
@@ -178,12 +187,13 @@ def build_network(include_losses: bool) -> ComponentNetwork:
                 GammaPV(): 0,
                 GammaPV(): 1,
                 SieverdingBasePressure(): (0, 1),
-                DentonBaumgartnerMixingLoss(): 1,
-                AungierDeviationModel(): 1,
+                DentonMixingLoss(): 1,
             }
         )
-        # stator_extra_bc = {n1.tot.Pressure: Quantity(530, 'kPa')}
-        stator_extra_bc = {}
+        if USE_AUNGIER_DEVIATION:
+            # Without it, the stator exit deviation is set to zero (ZeroDeviation)
+            stator_extra_equations[AungierDeviationModel()] = 1
+            rotor_extra_equations[AungierDeviationModel()] = 1
 
         rotor_extra_equations.update(
             {
@@ -197,12 +207,10 @@ def build_network(include_losses: bool) -> ComponentNetwork:
                 GammaPV(): 0,
                 GammaPV(): 1,
                 SieverdingBasePressure(): (0, 1),
-                DentonBaumgartnerMixingLoss(): 1,
-                # TODO: Try denton only?
+                DentonMixingLoss(): 1,
             }
         )
     else:
-        stator_extra_bc = {}
         stator_extra_equations[IsentropicLink()] = (0, 1)
         rotor_extra_equations[IsentropicLink()] = (0, 1)
 
@@ -217,11 +225,10 @@ def build_network(include_losses: bool) -> ComponentNetwork:
             n0.geo.BldThick: Quantity(0.000661, 'm'),  # Sauret Table 6 (m=0%)
             n1.geo.BldThick: Quantity(0.00051, 'm'),  # Sauret Table 2
             n1.geo.NumBlades: 19,  # Sauret Table 1
-            n1.geo.MerChord: Quantity(0.01, 'mm'),
+            n1.geo.MerChord: Quantity(0.1, 'mm'),  # No influence
             n1.oth.MomByBld: 0.1,
             n1.oth.DispByMom: 2.0,
             n1.oth.DispByHgt: 0.15,
-            **stator_extra_bc,
         },
         shaft=casing,
         extra_equations=stator_extra_equations,
@@ -242,17 +249,17 @@ def build_network(include_losses: bool) -> ComponentNetwork:
     rotor = BladeRow(
         'impeller',
         bound_cond={
-            # n1.geo.Height: Quantity(0.03683 - 0.01524, 'm'),  # exducer tip - hub radius
-            # n1.kin.BladeSpeed: 314.6,
-            n1.geo.Rtip: Quantity(0.03683, 'm'),  # exducer tip - hub radius
-            n1.geo.Rhub: Quantity(0.01524, 'm'),  # exducer tip - hub radius
+            # n1.geo.Height: Quantity(0.03683 - 0.01524, 'm'),  # exducer tip - hub
+            n1.geo.Rtip: Quantity(0.03683, 'm'),
+            n1.geo.Rhub: Quantity(0.01524, 'm'),
             n1.geo.MeridionalAngle: Quantity(0, 'deg'),  # axial exducer exit
-            n0.geo.BldThick: Quantity(0.00086, 'm'),  # Sauret Table 2 / Appendix
             n0.geo.MetalAngle: Quantity(0, 'deg'),  # purely radial LE blades
+            n1.geo.MetalAngle: Quantity(-51.628, 'deg'),  # RMS (hub/tip)
+            n0.geo.BldThick: Quantity(0.00086, 'm'),  # Sauret Table 2 / Appendix
             n1.geo.BldThick: Quantity(0.00076, 'm'),  # Sauret Table 2 / Appendix
             n1.geo.MerChord: Quantity(0.0389, 'm'),  # axial length, Sauret Table 2
             n1.geo.NumBlades: 16,  # Sauret Table 1 / Jones text
-            n1.stc.Pressure: Quantity(94.7, 'kPa'),  # Sauret Table 4
+            # n1.stc.Pressure: Quantity(94.7, 'kPa'),  # Sauret Table 4
             n0.geo.TipClearance: Quantity(0.0004, 'm'),  # Sauret Table 2
             n1.geo.TipClearance: Quantity(0.00023, 'm'),  # Sauret Table 2
             n1.oth.MomByBld: 0.075,
@@ -260,7 +267,10 @@ def build_network(include_losses: bool) -> ComponentNetwork:
             n1.oth.DispByHgt: 0.09,
         },
         shaft=shaft,
-        extra_equations=rotor_extra_equations,
+        extra_equations={
+            # FreeDeviation(): 1,
+            **rotor_extra_equations,
+        },
     )
 
     if USE_SLIP_MODEL:
@@ -302,9 +312,9 @@ def build_network(include_losses: bool) -> ComponentNetwork:
 # ============================================================
 BOUNDS = {
     n1.kin.Mach: (0.3, 1.05),
-    n0.stc.Temperature.Glob: (1, 1300),
+    n0.stc.Temperature.Glob: (200, 1500),
     n0.stc.Pressure.Glob: (1, 2e6),
-    # n0.stc.Entropy.Glob: (3000.0, 7000.0),
+    n0.stc.Entropy.Glob: (3000.0, 7000.0),
 }
 
 # ============================================================
@@ -363,7 +373,7 @@ sol = solve_root_problem(rtfn, x0, kn, suppress_output=False)
 # Kinsol pass
 rtfn_k = ntw.system.make_rootfinder('kinsol')
 rtfn_n = ntw.system.make_rootfinder('newton')
-sol = solve_root_problem(rtfn_n, sol, kn, bnd)
+# sol = solve_root_problem(rtfn_k, sol, kn)
 
 rtfn = ntw.system.make_rootfinder('ipopt', {'error_on_fail': False})
 
@@ -395,11 +405,11 @@ COMPONENT_NODES = {
     'Interspace': (2, 3),
     'Rotor': (4, 5),
 }
+# Blade-row outlet nodes carrying the Aungier deviation model
+DEVIATION_NODES = {'Nozzle': 1, 'Rotor': 5}
 
 UA0_SWEEP = np.linspace(0.55, 0.8, 50)  # descending: continue away from design
 
-RUN_SPEEDLINE = False
-RUN_PR_SWEEP = False
 
 bc_keys = list(ntw.system.data.boun_cond.keys())
 omega_idx = bc_keys.index(n5.kin.Omega)
@@ -427,6 +437,11 @@ sweep_loss = {
     component: {name: [] for name, _ in mechanisms}
     for component, mechanisms in LOSS_MECHANISMS.items()
 }
+# Solved deviation angle at each blade-row outlet [deg], and the Aungier
+# delta0 / delta_sub terms [deg] (only filled when USE_AUNGIER_DEVIATION)
+sweep_dev_angle = {component: [] for component in DEVIATION_NODES}
+sweep_delta0 = {component: [] for component in DEVIATION_NODES}
+sweep_delta_sub = {component: [] for component in DEVIATION_NODES}
 sol_sweep = sol
 if RUN_SPEEDLINE:
     for ua0 in UA0_SWEEP:
@@ -456,12 +471,33 @@ if RUN_SPEEDLINE:
                 sweep_loss[component][mechanism].append(
                     float(sweep_data[spec_fn(n_out)][0])
                 )
+        if USE_AUNGIER_DEVIATION:
+            for component, node_idx in DEVIATION_NODES.items():
+                # Aungier model inputs at this outlet, read from the solution
+                aungier_inputs = residual_debugger(
+                    AungierDeviationModel(), [node_idx], sweep_data
+                )
+                met_angle = cast(NDArray, aungier_inputs['met_angle'])
+                beta = cast(NDArray, aungier_inputs['beta'])
+                mach_out = cast(NDArray, aungier_inputs['mach_out'])
+                # The model enforces beta = met_angle - deviation, so the solved
+                # deviation is recovered from the metal and flow angles
+                sweep_dev_angle[component].append(
+                    math.degrees(float(met_angle[0] - beta[0]))
+                )
+                delta0 = aungier_delta0(float(met_angle[0]))
+                delta_sub = aungier_delta_sub(delta0, float(mach_out[0]))
+                sweep_delta0[component].append(math.degrees(float(delta0)))
+                sweep_delta_sub[component].append(math.degrees(float(delta_sub)))
         logger.info(f'U/a0 = {ua0:.3f}: eta_tt = {eta_tt:.4f}')
 
     sweep_ua0 = np.array(sweep_ua0)
     sweep_eta_tt = np.array(sweep_eta_tt)
     sweep_alpha_stator = np.array(sweep_alpha_stator)
     sweep_mach_stator = np.array(sweep_mach_stator)
+    sweep_dev_angle = {k: np.array(v) for k, v in sweep_dev_angle.items()}
+    sweep_delta0 = {k: np.array(v) for k, v in sweep_delta0.items()}
+    sweep_delta_sub = {k: np.array(v) for k, v in sweep_delta_sub.items()}
 
     print('\nU/a0 sweep (converged points only):')
     print(
@@ -846,6 +882,57 @@ if PLOTS and RUN_SPEEDLINE:
     fig_stator.tight_layout()
 
 # ============================================================
+# Deviation angle along the speedline at the nozzle and rotor outlets: solved
+# deviation against the Aungier delta0 / delta_sub terms
+# ============================================================
+if PLOTS and RUN_SPEEDLINE and USE_AUNGIER_DEVIATION:
+    fig_dev, axs_dev = plt.subplots(
+        1, 2, figsize=(11, 4.5), dpi=70, sharex=True, sharey=True, facecolor=SURFACE
+    )
+    for ax, component in zip(axs_dev, ('Nozzle', 'Rotor')):
+        ax.plot(
+            sweep_ua0,
+            sweep_dev_angle[component],
+            marker='o',
+            color='#2a78d6',
+            label=r'$\delta$ (solved)',
+        )
+        ax.plot(
+            sweep_ua0,
+            sweep_delta0[component],
+            linestyle='--',
+            color='#eb6834',
+            label=r'$\delta_0$ (Aungier)',
+        )
+        ax.plot(
+            sweep_ua0,
+            sweep_delta_sub[component],
+            linestyle=':',
+            color='#1baf7a',
+            label=r'$\delta_{sub}$ (Aungier)',
+        )
+        ax.set_title(component, loc='left', color=TEXT_PRIMARY, fontsize=11)
+        ax.set_facecolor(SURFACE)
+        ax.set_axisbelow(True)
+        ax.grid(True, color=GRIDLINE, linewidth=1)
+        ax.tick_params(colors=TEXT_SECONDARY)
+        ax.set_xlabel(r'$U / a_0$ [-]', color=MUTED)
+        for side in ('top', 'right'):
+            ax.spines[side].set_visible(False)
+        ax.spines['left'].set_color(MUTED)
+        ax.spines['bottom'].set_color(MUTED)
+        ax.legend(loc='best', frameon=False)
+
+    axs_dev[0].set_ylabel(r'Deviation angle $\delta$ [deg]', color=MUTED)
+    fig_dev.suptitle(
+        'Deviation angle along the speedline (T-100)',
+        color=TEXT_PRIMARY,
+        x=0.02,
+        ha='left',
+    )
+    fig_dev.tight_layout()
+
+# ============================================================
 # Meridional profile of each component (hub/tip contours + LE/TE), laid
 # end to end along the axis: each component starts where the previous one's
 # axial chord ends (the interspace has zero chord, so it adds no length)
@@ -909,4 +996,4 @@ if PLOTS:
         ax.set_visible(False)
 
     fig.tight_layout()
-    plt.show()
+    plt.show(block=True)
