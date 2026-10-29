@@ -385,7 +385,7 @@ class ChenSlip(DeviationModel):
         u0: n0.kin.BladeSpeed.Hint,
         slip0: n0.oth.SlipFactor.Hint,
     ):
-        sin_cone = safe_abs(np.sin(mer_angle0))  # sin(gamma), Fig. 2
+        sin_cone = safe_abs(np.sin(mer_angle0))  # ty: ignore
         cos_metal = np.cos(metal_ang0)
         sin_pitch = np.sin(np.pi / n_bl0)
 
@@ -425,7 +425,7 @@ class StanitzSlip(DeviationModel):
         u0: n0.kin.BladeSpeed.Hint,
         slip0: n0.oth.SlipFactor.Hint,
     ):
-        sin_cone = safe_abs(np.sin(mer_angle0))  # sin(gamma), Fig. 2
+        sin_cone = safe_abs(np.sin(mer_angle0))  # ty: ignore
         cos_metal = np.cos(metal_ang0)
 
         # Eq. (4)
@@ -484,14 +484,16 @@ class ImpellerPassageLoss(LossModel):
     """
     Radial-inflow turbine impeller passage loss (friction, blade loading
     and secondary flow) from `A MEANLINE PREDICTION METHOD FOR RADIAL
-    TURBINE EFFICIENCY`, Baines 1998 [Ref 8] (see ``rotorPassageLoss_Baines``
-    in ``docs/rit_losses_turbosim.py``).
-    """
+    TURBINE EFFICIENCY`, Baines 1998 [Ref 8]"""
 
     config = EquationConfig(
         input_pair=cp.HmassP_INPUTS,
         out_properties=(thrm.Entropy,),
     )
+
+    def __init__(self, passage_coeff: float = 0.1, scaling_factor=None):
+        self.passage_coeff = passage_coeff
+        super().__init__(scaling_factor)
 
     def residual(
         self,
@@ -503,7 +505,7 @@ class ImpellerPassageLoss(LossModel):
         r3s: n1.geo.Rtip.Hint,
         beta3g: n1.geo.MetalAngle.Hint,
         h3: n1.geo.Height.Hint,
-        mer_chord1: n1.geo.MerChord.Hint,
+        ax_len1: n1.geo.AxialLength.Hint,
         n_bl1: n1.geo.NumBlades.Hint,
         w0: n0.kin.W_mag.Hint,
         w1: n1.kin.W_mag.Hint,
@@ -514,9 +516,9 @@ class ImpellerPassageLoss(LossModel):
     ):
         # Blade chord along the mean camber line, from the axial chord
         mean_tan_beta = (np.tan(beta2g) + np.tan(beta3g)) / 2
-        chord = mer_chord1 / np.cos(np.arctan(mean_tan_beta))
+        chord = ax_len1 / np.cos(np.arctan(mean_tan_beta))
 
-        hyd_len = np.pi / 4 * ((mer_chord1 - h2 / 2) + (r2m - r3s - h3 / 2))
+        hyd_len = np.pi / 4 * ((ax_len1 - h2 / 2) + (r2m - r3s - h3 / 2))
 
         hyd_diam = 0.5 * (
             (4 * np.pi * r2m * h2) / (n_bl1 * h2 + 2 * np.pi * r2m)
@@ -525,7 +527,12 @@ class ImpellerPassageLoss(LossModel):
 
         loading_term = 0.68 * (1 - (r3m / r2m) ** 2) * np.cos(beta3g) / h3 * chord
 
-        deltah_base = 0.1 * (hyd_len / hyd_diam + loading_term) * 0.5 * (w0**2 + w1**2)
+        deltah_base = (
+            self.passage_coeff
+            * (hyd_len / hyd_diam + loading_term)
+            * (w0**2 + w1**2)
+            / 2
+        )
 
         # Higher loss coefficient for a shallow (mostly axial) exducer
         deltah = safe_if_else((r2m - r3s) / h3 >= 0.2, deltah_base, 2 * deltah_base)

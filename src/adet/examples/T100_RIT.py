@@ -29,6 +29,7 @@ import logging
 import math
 from typing import cast
 
+import CoolProp as cp
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy.typing import NDArray
@@ -52,6 +53,7 @@ from adet.fluid.settings import FluidSettings
 from adet.losses.basic import FreeDeviation, IsentropicLink, ZeroDeviation
 from adet.losses.mixing import (
     AungierDeviationModel,
+    DentonBaumgartnerMixingLoss,
     DentonMixingLoss,
     SieverdingBasePressure,
     aungier_delta0,
@@ -109,7 +111,7 @@ class AddImpellerLosses(LossApplier):
         ds_mixing1: _n1.loss.Ds_mixing.Hint,
     ):
         return s1 - (
-            s0 + ds_profile1 + ds_leakage1 + ds_incidence1 + ds_endwall1 + ds_mixing1
+            s0 + ds_profile1 + ds_incidence1 + ds_mixing1 + ds_endwall1 + ds_leakage1
         )
 
 
@@ -149,7 +151,7 @@ n5 = NodeVariables(5)
 
 inl = Inlet(
     {
-        n0.tot.Pressure: Quantity(580400, 'Pa'),  # Sauret Table 1
+        n0.tot.Pressure: Quantity(580.4, 'kPa'),  # Sauret Table 1
         n0.tot.Temperature: Quantity(1056.5, 'K'),  # Sauret Table 1
         n0.oth.TotMassFlow: 0.33,  # kg/s, Sauret Table 1
         # NOTE (assumed / Jones-only): Sauret doesn't tabulate nozzle inlet
@@ -188,20 +190,20 @@ def build_network(include_losses: bool) -> ComponentNetwork:
                 GammaPV(): 0,
                 GammaPV(): 1,
                 SieverdingBasePressure(): (0, 1),
-                DentonMixingLoss(): 1,
+                DentonBaumgartnerMixingLoss(): 1,
             }
         )
         if USE_AUNGIER_DEVIATION:
             # Without it, the stator exit deviation is set to zero (ZeroDeviation)
-            stator_extra_equations[AungierDeviationModel()] = 1
-            rotor_extra_equations[AungierDeviationModel()] = 1
+            stator_extra_equations[ZeroDeviation()] = 1
+            # rotor_extra_equations[AungierDeviationModel()] = 1
 
         rotor_extra_equations.update(
             {
                 AddImpellerLosses(): (0, 1),
                 IsentropicProperties(): (0, 1),
-                ImpellerPassageLoss(): (0, 1),
-                ImpellerLeakageLoss(): (0, 1),
+                ImpellerPassageLoss(0.08): (0, 1),
+                ImpellerLeakageLoss(0.4, 0.7, -0.3): (0, 1),
                 ImpellerIncidenceLoss(): (0, 1),
                 EndwallLoss(): (0, 1),
                 BoundaryLayerRatios(): 1,
@@ -223,8 +225,8 @@ def build_network(include_losses: bool) -> ComponentNetwork:
             n1.geo.Rmid: Quantity(0.0635, 'm'),  # nozzle exit radius (Sauret Table 2)
             n1.geo.MeridionalAngle: Quantity(-90, 'deg'),
             n1.geo.MetalAngle: Quantity(78.1, 'deg'),  # Sauret Fig. 8(a)
-            n0.geo.BldThick: Quantity(0.000661, 'm'),  # Sauret Table 6 (m=0%)
-            n1.geo.BldThick: Quantity(0.00051, 'm'),  # Sauret Table 2
+            n0.geo.BldThick: Quantity(0.661, 'mm'),  # Sauret Table 6 (m=0%)
+            n1.geo.BldThick: Quantity(0.51, 'mm'),  # Sauret Table 2
             n1.geo.NumBlades: 19,  # Sauret Table 1
             n1.geo.MerChord: Quantity(0.1, 'mm'),  # No influence
             n1.oth.MomByBld: 0.1,
@@ -235,9 +237,8 @@ def build_network(include_losses: bool) -> ComponentNetwork:
         extra_equations=stator_extra_equations,
     )
 
-    # Vaneless space (Sauret Table 2): ideal (isentropic) interspace for the
-    # initialization, loss-generating interspace for the full system
-    interspace_eq = InterspaceLoss() if include_losses else IdealInterspace()
+    interspace_eq = InterspaceLoss(0.005) if include_losses else IdealInterspace()
+
     interspace = Interspace(
         'intrspc',
         {
@@ -258,27 +259,29 @@ def build_network(include_losses: bool) -> ComponentNetwork:
             n1.geo.MeridionalAngle: Quantity(0, 'deg'),  # axial exducer exit
             n0.geo.MetalAngle: Quantity(0, 'deg'),  # purely radial LE blades
             n1.geo.MetalAngle: Quantity(-51.628, 'deg'),  # RMS (hub/tip)
-            n0.geo.BldThick: Quantity(0.00086, 'm'),  # Sauret Table 2 / Appendix
-            n1.geo.BldThick: Quantity(0.00076, 'm'),  # Sauret Table 2 / Appendix
+            n0.geo.BldThick: Quantity(0.86, 'mm'),  # Sauret Table 2 / Appendix
+            n1.geo.BldThick: Quantity(0.76, 'mm'),  # Sauret Table 2 / Appendix
+            n1.geo.AxialLength: Quantity(0.0389, 'm'),  # axial length, Sauret Table 2
             n1.geo.MerChord: Quantity(0.0389, 'm'),  # axial length, Sauret Table 2
             n1.geo.NumBlades: 16,  # Sauret Table 1 / Jones text
-            # n1.stc.Pressure: Quantity(94.7, 'kPa'),  # Sauret Table 4
-            n0.geo.TipClearance: Quantity(0.0004, 'm'),  # Sauret Table 2
-            n1.geo.TipClearance: Quantity(0.00023, 'm'),  # Sauret Table 2
+            n0.geo.TipClearance: Quantity(0.4, 'mm'),  # Sauret Table 2
+            n1.geo.TipClearance: Quantity(0.23, 'mm'),  # Sauret Table 2
             n1.oth.MomByBld: 0.075,
             n1.oth.DispByMom: 2.0,
             n1.oth.DispByHgt: 0.09,
+            # *** OUTLET
+            n1.stc.Pressure: Quantity(94.7, 'kPa'),  # Sauret Table 4
+            # n1.kin.FlowAngleAbs: 0.0,  # Sauret Table 4
         },
         shaft=shaft,
         extra_equations={
-            # FreeDeviation(): 1,
             **rotor_extra_equations,
+            FreeDeviation(): 1,
         },
     )
 
     if USE_SLIP_MODEL:
-        # ``ChenSlip`` sets the rotor inlet tangential velocity (hence its
-        # relative flow angle) directly
+        # ``ChenSlip`` sets the rotor inlet tangential velocity
         rotor._from_prev_node.discard(KinematicVariables(DEF_NODE).V_tan)
 
     abs_state = DebugAbstractState('HEOS', 'Air')
@@ -411,6 +414,82 @@ COMPONENT_NODES = {
 # Blade-row outlet nodes carrying the Aungier deviation model
 DEVIATION_NODES = {'Nozzle': 1, 'Rotor': 5}
 
+
+def delta_eta_breakdown(data) -> dict[tuple[str, str], float]:
+    """
+    Total-total efficiency loss shares,
+    delta_eta = T_is,out * delta_s / delta_h_tt,is.
+
+    T_is,out is the isentropic exit total temperature and delta_h_tt,is the
+    total-to-total isentropic enthalpy drop. Keys are (group, mechanism) with
+    group 'Stator', 'Impeller' or 'Exit KE'. Exit KE is the equivalent entropy
+    rise from the loss table and is not part of the loss total.
+    """
+    t_is_out = float(data[n5.oth.Tis_tot][0])
+    dh_tt_is = float(data[n0.tot.Enthalpy][0]) - float(data[n5.oth.Enthalpy_totIs][0])
+    scale = t_is_out / dh_tt_is
+
+    shares = {}
+    for component, mechanisms in LOSS_MECHANISMS.items():
+        group = {'Nozzle': 'Stator', 'Rotor': 'Impeller'}[component]
+        n_out = NodeVariables(COMPONENT_NODES[component][1])
+        for mechanism, spec_fn in mechanisms:
+            shares[(group, mechanism)] = scale * float(data[spec_fn(n_out)][0])
+    # Interspace entropy rise is grouped with the stator, as in the loss plots
+    ds_interspace = float(data[n3.stc.Entropy][0]) - float(data[n2.stc.Entropy][0])
+    shares[('Stator', 'Interspace')] = scale * ds_interspace
+    ds_exit_ke = float(data[n5.kin.V_mag][0]) ** 2 / (
+        2 * float(data[n5.stc.Temperature][0])
+    )
+    shares[('Exit KE', 'Kinetic energy')] = scale * ds_exit_ke
+    return shares
+
+
+GROUPS = ('Stator', 'Impeller', 'Exit KE')
+
+# Reference station states from the "Present" columns of the comparison table
+# (Air, CoolProp). Rotor inlet total equals the nozzle outlet total there.
+TABLE_INLET_TOTAL = (580.4e3, 1056.5)  # Pa, K, same as the inlet boundary
+TABLE_NOZZLE_OUT_TOTAL = (538.6e3, 1056.5)  # Pa, K
+TABLE_ROTOR_OUT_TOTAL = (104.5e3, 731.8)  # Pa, K
+TABLE_ROTOR_OUT_STATIC = (94.7e3, 713.9)  # Pa, K
+TABLE_ROTOR_OUT_MACH = 0.384
+
+
+def table_delta_eta_breakdown() -> dict[str, float]:
+    """Total-total efficiency loss shares from the reference table, built the same
+    way as delta_eta_breakdown: entropy rises from total states, exit KE from
+    the outlet Mach number. Returns fractions keyed by group."""
+
+    abs_state = DebugAbstractState('HEOS', 'Air')
+
+    def s_tot(state: tuple[float, float]) -> float:
+        abs_state.update(cp.PT_INPUTS, *state)
+        return abs_state.smass()
+
+    s_in = s_tot(TABLE_INLET_TOTAL)
+    ds_stator = s_tot(TABLE_NOZZLE_OUT_TOTAL) - s_in
+    ds_rotor = s_tot(TABLE_ROTOR_OUT_TOTAL) - s_tot(TABLE_NOZZLE_OUT_TOTAL)
+
+    # Isentropic total-to-total outlet state and enthalpy drop
+    abs_state.update(cp.PT_INPUTS, *TABLE_INLET_TOTAL)
+    h_in = abs_state.hmass()
+    abs_state.update(cp.PSmass_INPUTS, TABLE_ROTOR_OUT_TOTAL[0], s_in)
+    h_is = abs_state.hmass()
+    t_is_out = abs_state.T()
+    scale = t_is_out / (h_in - h_is)
+
+    # Exit KE as an equivalent entropy rise, V^2 / (2 T), with V = M * a
+    abs_state.update(cp.PT_INPUTS, *TABLE_ROTOR_OUT_STATIC)
+    a_out = abs_state.speed_sound()
+    ds_exit_ke = (TABLE_ROTOR_OUT_MACH * a_out) ** 2 / (2 * TABLE_ROTOR_OUT_STATIC[1])
+    return {
+        'Stator': scale * ds_stator,
+        'Impeller': scale * ds_rotor,
+        'Exit KE': scale * ds_exit_ke,
+    }
+
+
 UA0_SWEEP = np.linspace(0.55, 0.8, 50)  # descending: continue away from design
 
 
@@ -445,6 +524,8 @@ sweep_loss = {
 sweep_dev_angle = {component: [] for component in DEVIATION_NODES}
 sweep_delta0 = {component: [] for component in DEVIATION_NODES}
 sweep_delta_sub = {component: [] for component in DEVIATION_NODES}
+# Total-total efficiency loss shares per sweep point (see delta_eta_breakdown)
+sweep_deta = []
 sol_sweep = sol
 if RUN_SPEEDLINE:
     for ua0 in UA0_SWEEP:
@@ -492,6 +573,7 @@ if RUN_SPEEDLINE:
                 delta_sub = aungier_delta_sub(delta0, float(mach_out[0]))
                 sweep_delta0[component].append(math.degrees(float(delta0)))
                 sweep_delta_sub[component].append(math.degrees(float(delta_sub)))
+        sweep_deta.append(delta_eta_breakdown(sweep_data))
         logger.info(f'U/a0 = {ua0:.3f}: eta_tt = {eta_tt:.4f}')
 
     sweep_ua0 = np.array(sweep_ua0)
@@ -501,6 +583,12 @@ if RUN_SPEEDLINE:
     sweep_dev_angle = {k: np.array(v) for k, v in sweep_dev_angle.items()}
     sweep_delta0 = {k: np.array(v) for k, v in sweep_delta0.items()}
     sweep_delta_sub = {k: np.array(v) for k, v in sweep_delta_sub.items()}
+    sweep_deta_group = {
+        g: np.array(
+            [sum(v for (grp, _), v in s.items() if grp == g) for s in sweep_deta]
+        )
+        for g in GROUPS
+    }
 
     print('\nU/a0 sweep (converged points only):')
     print(
@@ -599,44 +687,18 @@ def _val(spec) -> float:
 
 rows = [
     [
-        f'{node_idx}: {label}',
-        f'{_val(n.stc.Pressure) / 1e5:.3f}',
         f'{_val(n.tot.Pressure) / 1e5:.3f}',
-        f'{_val(n.rlt.Pressure) / 1e5:.3f}',
-        f'{_val(n.stc.Temperature):.1f}',
         f'{_val(n.tot.Temperature):.1f}',
-        f'{_val(n.stc.Density):.3f}',
-        f'{_val(n.stc.Entropy):.1f}',
-        f'{_val(n.kin.V_mag):.1f}',
-        f'{_val(n.kin.W_mag):.1f}',
-        f'{_val(n.kin.BladeSpeed):.1f}',
-        f'{math.degrees(_val(n.kin.FlowAngleAbs)):.1f}',
-        f'{math.degrees(_val(n.kin.FlowAngleRel)):.1f}',
-        f'{_val(n.kin.Mach):.3f}',
-        f'{_val(n.kin.RelMach):.3f}',
     ]
-    for n, node_idx, label in active_stations
+    for n, _, _ in active_stations
 ]
 
 print(
     tabulate(
         rows,
         headers=[
-            'Station',
-            'p\n[bar]',
             'p0\n[bar]',
-            'p0_rel\n[bar]',
-            'T\n[K]',
             'T0\n[K]',
-            'rho\n[kg/m3]',
-            's\n[J/kg/K]',
-            'V\n[m/s]',
-            'W\n[m/s]',
-            'U\n[m/s]',
-            'alpha\n[deg]',
-            'beta\n[deg]',
-            'M',
-            'M_rel',
         ],
         tablefmt='github',
     )
@@ -672,6 +734,21 @@ print(
     tabulate(
         loss_rows,
         headers=['Component', 'Loss mechanism', 'Ds\n[J/kg/K]'],
+        tablefmt='github',
+    )
+)
+
+# --- Total-total efficiency loss shares at the design point
+deta_design = delta_eta_breakdown(sol_data)
+deta_rows = [[grp, mech, f'{v * 100:.2f}'] for (grp, mech), v in deta_design.items()]
+deta_loss_total = sum(v for (grp, _), v in deta_design.items() if grp != 'Exit KE')
+deta_rows.append(['Stator + Impeller', 'Subtotal', f'{deta_loss_total * 100:.2f}'])
+deta_rows.append(['', '1 - eta_tt (check)', f'{(1 - _val(n5.ndim.EtaTT)) * 100:.2f}'])
+print('\nTotal-total efficiency loss breakdown (design point):')
+print(
+    tabulate(
+        deta_rows,
+        headers=['Group', 'Mechanism', 'Delta eta_tt\n[%]'],
         tablefmt='github',
     )
 )
@@ -847,6 +924,67 @@ if PLOTS and RUN_SPEEDLINE:
         ha='left',
     )
     fig_stack.tight_layout()
+
+# ============================================================
+# Total-to-total efficiency loss at the design point: solver against the
+# reference table, stator, impeller and exit KE as grouped bars, delta_eta_tt [%]
+# (exit KE sits outside the loss total)
+# ============================================================
+if PLOTS:
+    SERIES_COLORS = {'Solver': '#2a78d6', 'Table (Present)': '#eb6834'}
+    GROUP_LABELS = {
+        'Stator': 'Stator',
+        'Impeller': 'Impeller',
+        'Exit KE': 'Exit KE\n(not in loss total)',
+    }
+    deta_table = table_delta_eta_breakdown()
+    deta_series = {
+        'Solver': [
+            100 * sum(v for (grp, _), v in deta_design.items() if grp == g)
+            for g in GROUPS
+        ],
+        'Table (Present)': [100 * deta_table[g] for g in GROUPS],
+    }
+
+    fig_eta, ax_eta = plt.subplots(figsize=(8, 5), dpi=70, facecolor=SURFACE)
+    x_groups = np.arange(len(GROUPS))
+    bar_width = 0.38
+    for i, (label, values) in enumerate(deta_series.items()):
+        bars_eta = ax_eta.bar(
+            x_groups + (i - 0.5) * bar_width,
+            values,
+            width=bar_width,
+            color=SERIES_COLORS[label],
+            label=label,
+        )
+        ax_eta.bar_label(
+            bars_eta,
+            labels=[f'{v:.2f}%' for v in values],
+            padding=4,
+            color=TEXT_PRIMARY,
+            fontsize=10,
+        )
+    ax_eta.set_xticks(x_groups, [GROUP_LABELS[g] for g in GROUPS])
+
+    ax_eta.set_title(
+        'Total-to-total efficiency loss at design point (T-100)',
+        loc='left',
+        color=TEXT_PRIMARY,
+        fontsize=11,
+    )
+    ax_eta.set_facecolor(SURFACE)
+    ax_eta.set_axisbelow(True)
+    peak_eta = max(max(values) for values in deta_series.values())
+    ax_eta.set_ylim(0, peak_eta * 1.2)
+    ax_eta.grid(axis='y', color=GRIDLINE, linewidth=1)
+    ax_eta.tick_params(colors=TEXT_SECONDARY)
+    ax_eta.set_ylabel(r'Efficiency loss $\Delta\eta_{tt}$ [%]', color=MUTED)
+    ax_eta.legend(frameon=False)
+    for side in ('top', 'right'):
+        ax_eta.spines[side].set_visible(False)
+    ax_eta.spines['left'].set_color(MUTED)
+    ax_eta.spines['bottom'].set_color(MUTED)
+    fig_eta.tight_layout()
 
 # ============================================================
 # Stator outlet absolute flow angle and Mach number along the speedline, one
