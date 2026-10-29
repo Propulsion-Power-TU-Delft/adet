@@ -285,8 +285,11 @@ impeller = BladeRow(
         n1.oth.SlipFactCoeff: 5,
         # n1.oth.WorkLossCoeff: 0.3,
         n1.oth.BlLoadingCoeff: 0.9,
+        n1.oth.RecircDiffCoeff: 0.6,
         n1.oth.MinWakeFrac: 0.4,
         n1.oth.MaxWakeFrac: 0.4,
+        n1.oth.WakeFracThres: 0.75,  # Start of the wake fraction ramp / choke
+        n1.oth.MixDepthRatio: 1.0,  # Diffuser inlet depth / impeller tip depth
         n1.oth.WakeFrac: 0.3,
         n1.oth.ChokeMassflow: MASS_CHOKES[0],
     },
