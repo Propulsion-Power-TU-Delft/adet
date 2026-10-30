@@ -4,7 +4,11 @@ import CoolProp as cp
 import numpy as np
 
 from adet.equations import EquationBase
-from adet.equations.base_equation import EquationConfig, MeridAreaBlockage
+from adet.equations.base_equation import (
+    EquationConfig,
+    MeridAreaBlockage,
+    VelocityTriangles,
+)
 from adet.equations.utils import (
     get_midspan_idx,
     safe_min,
@@ -198,7 +202,15 @@ class BladeBlockage(MeridAreaBlockage):
         )
 
 
-class Kinematics(EquationBase):
+class Kinematics(VelocityTriangles):
+    def __init__(
+        self,
+        use_rms_radius: bool = False,
+        scal_factor: list[float] | None = None,
+    ):
+        self.use_rms = use_rms_radius
+        super().__init__(scaling_factor=scal_factor)
+
     def residual(
         self,
         v0: n0.kin.V_mag.Hint,
@@ -211,7 +223,7 @@ class Kinematics(EquationBase):
         alpha0: n0.kin.FlowAngleAbs.Hint,
         beta0: n0.kin.FlowAngleRel.Hint,
         omega0: n0.kin.Omega.Hint,
-        # rr0: n0.geo.RDistr.Hint,
+        rr0: n0.geo.RDistr.Hint,
         rr_h: n0.geo.Rhub.Hint,
         rr_s: n0.geo.Rtip.Hint,
     ):
@@ -224,9 +236,11 @@ class Kinematics(EquationBase):
         r5 = alpha0 - np.atan2(vt0, vm0)
         r6 = beta0 - np.atan2(wt0, wm0)
 
-        # r7 = omega0 * rr0 - u0
-        rr_rms = ((rr_h**2 + rr_s**2) / 2) ** 0.5
-        r7 = omega0 * rr_rms - u0
+        if self.use_rms:
+            rr_rms = ((rr_h**2 + rr_s**2) / 2) ** 0.5
+            r7 = omega0 * rr_rms - u0
+        else:
+            r7 = omega0 * rr0 - u0
 
         return r1, r2, r3, r4, r5, r6, r7
 
