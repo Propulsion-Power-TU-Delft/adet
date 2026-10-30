@@ -42,7 +42,7 @@ from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.base_equation import LossApplier
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
-from adet.equations.fundamental import IdealInterspace, InterspaceLoss
+from adet.equations.fundamental import IdealInterspace, InterspaceLoss, Kinematics
 from adet.equations.nondimensional import (
     GammaPV,
     TotalStaticExpansionEfficiency,
@@ -191,11 +191,13 @@ def build_network(include_losses: bool) -> ComponentNetwork:
                 GammaPV(): 1,
                 SieverdingBasePressure(): (0, 1),
                 DentonBaumgartnerMixingLoss(): 1,
+                FreeDeviation(): 1,
             }
         )
         if USE_AUNGIER_DEVIATION:
             # Without it, the stator exit deviation is set to zero (ZeroDeviation)
-            stator_extra_equations[ZeroDeviation()] = 1
+            pass
+            # stator_extra_equations[ZeroDeviation()] = 1
             # rotor_extra_equations[AungierDeviationModel()] = 1
 
         rotor_extra_equations.update(
@@ -213,9 +215,13 @@ def build_network(include_losses: bool) -> ComponentNetwork:
                 DentonMixingLoss(): 1,
             }
         )
+        rotor_extra_bc = {}
+        stator_extra_bc = {n1.stc.Pressure: Quantity(328.4, 'kPa')}
     else:
         stator_extra_equations[IsentropicLink()] = (0, 1)
         rotor_extra_equations[IsentropicLink()] = (0, 1)
+        rotor_extra_bc = {}
+        stator_extra_bc = {}
 
     stator = BladeRow(
         'nozzle',
@@ -232,9 +238,10 @@ def build_network(include_losses: bool) -> ComponentNetwork:
             n1.oth.MomByBld: 0.1,
             n1.oth.DispByMom: 2.0,
             n1.oth.DispByHgt: 0.15,
+            **stator_extra_bc,
         },
         shaft=casing,
-        extra_equations=stator_extra_equations,
+        extra_equations={**stator_extra_equations},
     )
 
     interspace_eq = InterspaceLoss(0.005) if include_losses else IdealInterspace()
@@ -270,13 +277,15 @@ def build_network(include_losses: bool) -> ComponentNetwork:
             n1.oth.DispByMom: 2.0,
             n1.oth.DispByHgt: 0.09,
             # *** OUTLET
-            n1.stc.Pressure: Quantity(94.7, 'kPa'),  # Sauret Table 4
-            # n1.kin.FlowAngleAbs: 0.0,  # Sauret Table 4
+            n1.stc.Pressure: Quantity(96, 'kPa'),  # Sauret Table 4
+            # n1.kin.FlowAngleAbs: Quantity(0.0, 'deg'),  # Sauret Table 4
+            **rotor_extra_bc,
         },
         shaft=shaft,
         extra_equations={
             **rotor_extra_equations,
             FreeDeviation(): 1,
+            Kinematics(use_rms_radius=True): 1,
         },
     )
 
@@ -455,6 +464,18 @@ TABLE_ROTOR_OUT_TOTAL = (104.5e3, 731.8)  # Pa, K
 TABLE_ROTOR_OUT_STATIC = (94.7e3, 713.9)  # Pa, K
 TABLE_ROTOR_OUT_MACH = 0.384
 
+# Mach numbers from the "Present" columns of the same table: absolute M at the
+# nozzle outlet, rotor inlet and rotor outlet, relative Mw at the rotor inlet
+# and outlet. The diffuser is not modelled, so its column is left out.
+# (label, solver variable, table value [-])
+MACH_COMPARISON = [
+    ('Nozzle outlet, M', n1.kin.Mach, 0.887),
+    ('Rotor inlet, M', n4.kin.Mach, 0.986),
+    ('Rotor inlet, Mw', n4.kin.RelMach, 0.265),
+    ('Rotor outlet, M', n5.kin.Mach, TABLE_ROTOR_OUT_MACH),
+    ('Rotor outlet, Mw', n5.kin.RelMach, 0.713),
+]
+
 
 def table_delta_eta_breakdown() -> dict[str, float]:
     """Total-total efficiency loss shares from the reference table, built the same
@@ -491,6 +512,22 @@ def table_delta_eta_breakdown() -> dict[str, float]:
 
 
 UA0_SWEEP = np.linspace(0.55, 0.8, 50)  # descending: continue away from design
+
+# Experimental total-to-total efficiency against U/c0 (Jones rig), digitized from
+# the "Experiments" (+) symbols of Sauret (2012), Fig. 12 (300 dpi render, read to
+# about +/-0.05 %). Sauret's U/c0 is taken as ADeT's U/a0 (same spouting velocity).
+EXP_UA0 = np.array(
+    [
+        0.6022, 0.6281, 0.6419, 0.6441, 0.6467, 0.6522, 0.6531, 0.6769,
+        0.7031, 0.7246, 0.7464, 0.7575, 0.7645, 0.7716, 0.7770, 0.7883,
+    ]
+)  # fmt: skip
+EXP_ETA_TT_PCT = np.array(
+    [
+        86.11, 85.59, 86.20, 86.42, 88.03, 87.60, 86.70, 87.32,
+        87.72, 87.81, 88.22, 88.70, 88.30, 88.21, 88.32, 88.20,
+    ]
+)  # fmt: skip
 
 
 bc_keys = list(ntw.system.data.boun_cond.keys())
@@ -597,6 +634,39 @@ if RUN_SPEEDLINE:
             headers=['U/a0', 'eta_tt'],
             tablefmt='github',
         )
+    )
+
+    # Speedline against the digitized experiments: the solver is interpolated at
+    # each experimental U/c0 that lies inside the converged range
+    exp_in_range = (EXP_UA0 >= sweep_ua0[0]) & (EXP_UA0 <= sweep_ua0[-1])
+    eta_model_at_exp = np.interp(EXP_UA0[exp_in_range], sweep_ua0, sweep_eta_tt)
+    eta_exp_at_pt = EXP_ETA_TT_PCT[exp_in_range] / 100
+    eta_err_pts = (eta_model_at_exp - eta_exp_at_pt) * 100
+    print('\nSpeedline vs. Sauret (2012) Fig. 12 experiments:')
+    print(
+        tabulate(
+            [
+                [
+                    f'{ua0:.3f}',
+                    f'{eta_m * 100:.2f}',
+                    f'{eta_e * 100:.2f}',
+                    f'{err:+.2f}',
+                ]
+                for ua0, eta_m, eta_e, err in zip(
+                    EXP_UA0[exp_in_range],
+                    eta_model_at_exp,
+                    eta_exp_at_pt,
+                    eta_err_pts,
+                )
+            ],
+            headers=['U/a0', 'ADeT [%]', 'Exp. [%]', 'Diff [pts]'],
+            tablefmt='github',
+        )
+    )
+    print(
+        f'Mean diff {eta_err_pts.mean():+.2f} pts, '
+        f'RMS diff {np.sqrt((eta_err_pts**2).mean()):.2f} pts '
+        f'({exp_in_range.sum()} of {len(EXP_UA0)} experimental points in range)'
     )
 
 
@@ -767,6 +837,20 @@ print(
     f'(Sauret (Table 4): {580400 / 94700.0:.3f})'
 )
 
+# --- Mach numbers against the reference table ("Present" columns)
+mach_rows = [
+    [label, f'{_val(spec):.3f}', f'{ref:.3f}', f'{_val(spec) - ref:+.3f}']
+    for label, spec, ref in MACH_COMPARISON
+]
+print('\nMach numbers vs. reference table (Present):')
+print(
+    tabulate(
+        mach_rows,
+        headers=['Station', 'Solver', 'Table', 'Diff'],
+        tablefmt='github',
+    )
+)
+
 # ============================================================
 # Loss breakdown bar charts: stator and rotor side by side on one shared
 # entropy axis (same scale, so the two panels are directly comparable)
@@ -850,7 +934,17 @@ if PLOTS:
 # ============================================================
 if PLOTS and RUN_SPEEDLINE:
     fig_sweep, ax_sweep = plt.subplots(figsize=(7, 5), dpi=70)
-    ax_sweep.plot(sweep_ua0, sweep_eta_tt, marker='o', color='#2a78d6')
+    ax_sweep.plot(sweep_ua0, sweep_eta_tt, marker='o', color='#2a78d6', label='ADeT')
+    ax_sweep.plot(
+        EXP_UA0,
+        EXP_ETA_TT_PCT / 100,
+        linestyle='none',
+        marker='+',
+        markersize=10,
+        color='#eb6834',
+        label='Experiments (Sauret 2012, Fig. 12)',
+    )
+    ax_sweep.legend(frameon=False)
     ax_sweep.set_xlabel(r'$U / a_0$ [-]')
     ax_sweep.set_ylabel(r'$\eta_{tt}$ [-]')
     ax_sweep.set_title('Total-to-total efficiency vs. blade speed ratio (T-100)')
@@ -985,6 +1079,58 @@ if PLOTS:
     ax_eta.spines['left'].set_color(MUTED)
     ax_eta.spines['bottom'].set_color(MUTED)
     fig_eta.tight_layout()
+
+# ============================================================
+# Mach numbers at the design point: solver against the reference table,
+# absolute M and relative Mw at the stations listed in MACH_COMPARISON
+# ============================================================
+if PLOTS:
+    mach_series = {
+        'Solver': [_val(spec) for _, spec, _ in MACH_COMPARISON],
+        'Table (Present)': [ref for _, _, ref in MACH_COMPARISON],
+    }
+
+    fig_mach, ax_mach = plt.subplots(figsize=(9, 5), dpi=70, facecolor=SURFACE)
+    x_mach = np.arange(len(MACH_COMPARISON))
+    bar_width_mach = 0.38
+    for i, (label, values) in enumerate(mach_series.items()):
+        bars_mach = ax_mach.bar(
+            x_mach + (i - 0.5) * bar_width_mach,
+            values,
+            width=bar_width_mach,
+            color=SERIES_COLORS[label],
+            label=label,
+        )
+        ax_mach.bar_label(
+            bars_mach,
+            labels=[f'{v:.3f}' for v in values],
+            padding=4,
+            color=TEXT_PRIMARY,
+            fontsize=10,
+        )
+    ax_mach.set_xticks(
+        x_mach, [label.replace(', ', '\n') for label, _, _ in MACH_COMPARISON]
+    )
+
+    ax_mach.set_title(
+        'Mach numbers at design point vs. reference table (T-100)',
+        loc='left',
+        color=TEXT_PRIMARY,
+        fontsize=11,
+    )
+    ax_mach.set_facecolor(SURFACE)
+    ax_mach.set_axisbelow(True)
+    peak_mach = max(max(values) for values in mach_series.values())
+    ax_mach.set_ylim(0, peak_mach * 1.15)
+    ax_mach.grid(axis='y', color=GRIDLINE, linewidth=1)
+    ax_mach.tick_params(colors=TEXT_SECONDARY)
+    ax_mach.set_ylabel('Mach number [-]', color=MUTED)
+    ax_mach.legend(frameon=False)
+    for side in ('top', 'right'):
+        ax_mach.spines[side].set_visible(False)
+    ax_mach.spines['left'].set_color(MUTED)
+    ax_mach.spines['bottom'].set_color(MUTED)
+    fig_mach.tight_layout()
 
 # ============================================================
 # Stator outlet absolute flow angle and Mach number along the speedline, one
@@ -1142,4 +1288,4 @@ if PLOTS:
         ax.set_visible(False)
 
     fig.tight_layout()
-    plt.show(block=True)
+    plt.show(block=False)
