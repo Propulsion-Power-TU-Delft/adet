@@ -455,6 +455,20 @@ class ImpellerIncidenceLoss(LossModel):
         out_properties=(thrm.Entropy,),
     )
 
+    def __init__(self, min_loss_incidence: float = 0.0, scaling_factor=None):
+        """
+        Parameters
+        ----------
+        min_loss_incidence : float
+            Incidence angle [rad] at which the loss is zero (the minimum-loss
+            angle). The loss is centred on this angle: positive/negative
+            incidence is measured relative to it, so the under-/over-turning
+            split also moves with it. Default 0.0 centres the loss on
+            ``beta0 - metal_ang0 = 0``.
+        """
+        self.min_loss_incidence = min_loss_incidence
+        super().__init__(scaling_factor)
+
     def residual(
         self,
         beta0: n0.kin.FlowAngleRel.Hint,
@@ -465,7 +479,8 @@ class ImpellerIncidenceLoss(LossModel):
         h1_is: n1.oth.Enthalpy_Is.Hint,
         Ds_inc1: n1.loss.Ds_incidence.Hint,
     ):
-        incidence = beta0 - metal_ang0
+        # Incidence measured from the minimum-loss angle
+        incidence = beta0 - metal_ang0 - self.min_loss_incidence
         cos_incidence = np.cos(incidence)
 
         # Negative (under-turning) incidence is less dissipative than positive
@@ -609,6 +624,73 @@ class ImpellerLeakageLoss(LossModel):
                 + self.Kxr * cross_term_sq**0.5
             )
         )
+
+        h1_lss = h1_is + Deltah
+        s1_leakage = self.eos(h1_lss, p1)
+
+        return Ds_leak1 - (s1_leakage - s0)
+
+
+class ImpellerPressureLeakageLoss(LossModel):
+    """
+    Alternative rotor tip-leakage model driven by the static pressure drop
+    across the rotor (not by blade speed).
+
+    Physical picture: the tip gap passes a pressure-driven jet of speed
+    V_jet = sqrt(2 * dP / rho0). The leakage mass fraction is the jet mass
+    flow through the inlet tip-gap area divided by the through-flow:
+
+        f_leak = Cd * (cl0 / h2) * V_jet / vm0
+
+    The jet's kinetic energy is dissipated on remixing with the main flow:
+
+        dh_leak = k_mix * f_leak * V_jet**2 / 2 = k_mix * f_leak * dP / rho0
+
+    Parameters
+    ----------
+    cd : float
+        Discharge coefficient of the tip gap (about 0.6-0.8 for a sharp gap).
+    k_mix : float
+        Fraction of the jet kinetic energy dissipated on remixing (0-1).
+    dp_frac : float
+        Fraction of the rotor static pressure drop acting across the tip gap
+        (the blade-to-blade pressure difference at the shroud is smaller than
+        the mean static drop).
+    """
+
+    config = EquationConfig(
+        input_pair=cp.HmassP_INPUTS,
+        out_properties=(thrm.Entropy,),
+    )
+
+    def __init__(
+        self, cd: float = 0.7, k_mix: float = 1.0, dp_frac: float = 1.0, **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.cd = cd
+        self.k_mix = k_mix
+        self.dp_frac = dp_frac
+
+    def residual(
+        self,
+        vm0: n0.kin.V_mer.Hint,
+        h2: n0.geo.Height.Hint,
+        cl0: n0.geo.TipClearance.Hint,
+        rho0: n0.stc.Density.Hint,
+        p0: n0.stc.Pressure.Hint,
+        s0: n0.stc.Entropy.Hint,
+        p1: n1.stc.Pressure.Hint,
+        h1_is: n1.oth.Enthalpy_Is.Hint,
+        Ds_leak1: n1.loss.Ds_leakage.Hint,
+    ):
+        # Pressure-driven tip-gap jet energy, dP / rho (floored for the solver)
+        # Floor carries the pressure units (safe_max adds its arguments for pint quantities)
+        dp = safe_max(self.dp_frac * (p0 - p1), 1.0e-6 * p0)
+        jet_energy = dp / rho0  # = V_jet**2 / 2
+        v_jet = np.sqrt(2.0) * jet_energy**0.5
+
+        f_leak = self.cd * (cl0 / h2) * v_jet / vm0
+        Deltah = self.k_mix * f_leak * jet_energy
 
         h1_lss = h1_is + Deltah
         s1_leakage = self.eos(h1_lss, p1)
