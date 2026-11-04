@@ -541,12 +541,10 @@ class ImpellerPassageLoss(LossModel):
         )
 
         loading_term = 0.68 * (1 - (r3m / r2m) ** 2) * np.cos(beta3g) / h3 * chord
+        viscous_term = hyd_len / hyd_diam
 
         deltah_base = (
-            self.passage_coeff
-            * (hyd_len / hyd_diam + loading_term)
-            * (w0**2 + w1**2)
-            / 2
+            self.passage_coeff * (viscous_term + loading_term) * (w0**2 + w1**2) / 2
         )
 
         # Higher loss coefficient for a shallow (mostly axial) exducer
@@ -601,8 +599,6 @@ class ImpellerLeakageLoss(LossModel):
         h1_is: n1.oth.Enthalpy_Is.Hint,
         Ds_leak1: n1.loss.Ds_leakage.Hint,
     ):
-        gx_H = cl0 / h2
-        gr_H = cl1 / h3
 
         Cx = (1 - (r3s / r2m)) / (vm0 * h2)
         Cr = (r3s / r2m) * (mer_chord1 - h2) / (vm1 * r3m * h3)
@@ -611,18 +607,14 @@ class ImpellerLeakageLoss(LossModel):
         # from the converged solution, e.g. during the solver's initial
         # iterations): floor it away from 0 to keep its derivative bounded,
         # since d(sqrt(x))/dx diverges as x -> 0
-        cross_term_sq = safe_max(gx_H * h2 * Cx * gr_H * h3 * Cr, 1e-9 / vm0**2)
+        cross_term_sq = safe_max(cl0 * Cx * cl1 * Cr, 1e-9 / vm0**2)
 
         # Clearance loss coefficient (corrected from [Ref 8]: u0 ** 5 -->
         # u0 ** 3 to obtain a dimensionally correct coefficient)
         Deltah = (
             (u0**3 * n_bl1)
             / (8 * np.pi)
-            * (
-                self.Kx * gx_H * h2 * Cx
-                + self.Kr * gr_H * h3 * Cr
-                + self.Kxr * cross_term_sq**0.5
-            )
+            * (self.Kx * cl0 * Cx + self.Kr * cl1 * Cr + self.Kxr * cross_term_sq**0.5)
         )
 
         h1_lss = h1_is + Deltah
@@ -684,7 +676,6 @@ class ImpellerPressureLeakageLoss(LossModel):
         Ds_leak1: n1.loss.Ds_leakage.Hint,
     ):
         # Pressure-driven tip-gap jet energy, dP / rho (floored for the solver)
-        # Floor carries the pressure units (safe_max adds its arguments for pint quantities)
         dp = safe_max(self.dp_frac * (p0 - p1), 1.0e-6 * p0)
         jet_energy = dp / rho0  # = V_jet**2 / 2
         v_jet = np.sqrt(2.0) * jet_energy**0.5

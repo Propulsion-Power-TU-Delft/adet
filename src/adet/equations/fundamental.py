@@ -64,7 +64,7 @@ class InterspaceLoss(EquationBase):
         out_properties=(n0.stc.Enthalpy,),
     )
 
-    def __init__(self, fric_factor: float = 0.001, custom_scaling_factor=None):
+    def __init__(self, fric_factor: float = 0.0035, custom_scaling_factor=None):
         self.fric_factor = fric_factor
         super().__init__(custom_scaling_factor)
 
@@ -103,9 +103,8 @@ class InterspaceLoss(EquationBase):
         # ---
 
         # Radial gap Reynolds
-        # Re = massflow / mu / r_avg
-        # Cf = 0.035 * (1.8e5 / Re) ** 0.2
-        Cf = self.fric_factor
+        Re = massflow / mu / r_avg
+        Cf = self.fric_factor * (1.8e5 / Re) ** 0.2
 
         tau = 0.5 * Cf * rho_avg * v_avg**2
         dLambda = tau * (vt_avg / v_avg) * area_w * r_avg / massflow  # Ang mom deficit
