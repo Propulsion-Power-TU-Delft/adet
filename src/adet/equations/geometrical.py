@@ -5,6 +5,7 @@ from adet.equations.base_equation import (
     CamberLineGeom,
     EquationBase,
     EquationConfig,
+    MeridAreaBlockage,
     MeridionalGeom,
 )
 from adet.equations.utils import (
@@ -193,6 +194,63 @@ class MeridionalChord(EquationBase):
         mer_chord1: n1.geo.MerChord.Hint,
     ):
         return mer_chord1 - np.sqrt(ax_len1**2 + (rr_mid1 - rr_mid0) ** 2)
+
+
+class RectangularThroatArea(EquationBase):
+    """
+    Total throat area of a row with rectangular blade passages: throat
+    width times blade height, times the number of blades.
+    """
+
+    def residual(
+        self,
+        A_th: n0.geo.ThroatArea.Hint,
+        w_th: n0.geo.ThroatWidth.Hint,
+        hgt: n0.geo.Height.Hint,
+        n_bld: n0.geo.NumBlades.Hint,
+    ):
+        return A_th - w_th * hgt * n_bld
+
+
+class ThroatMetalAngle(EquationBase):
+    """
+    Metal angle at a throat station, from the throat-to-pitch ratio:
+    cos(beta) = o / s = Z * w / (2 * pi * r), i.e. the flow crosses the
+    throat normal to it.
+    """
+
+    def residual(
+        self,
+        met_angle0: n0.geo.MetalAngle.Hint,
+        w_th0: n0.geo.ThroatWidth.Hint,
+        n_bld0: n0.geo.NumBlades.Hint,
+        rr0: n0.geo.RDistr.Hint,
+    ):
+        return np.cos(met_angle0) - n_bld0 * w_th0 / (2 * np.pi * rr0)
+
+
+class BoundaryLayerBlockage(MeridAreaBlockage):
+    """
+    Effective flow area of a blade passage with a rectangular cross-section
+    of width ``w`` (one pitch normal to the flow, blade thickness ``t``
+    included) and height ``b``, blocked by the blade thickness and by the
+    displacement thickness on both blade surfaces and both endwalls:
+    A_eff = A * (1 - 2 delta* / b) * (1 - (t + 2 delta*) / w).
+    At a throat ``w`` is the open width and ``t`` = 0.
+    """
+
+    def residual(
+        self,
+        area0: n0.geo.Area.Hint,
+        a_eff0: n0.geo.EffArea.Hint,
+        hgt0: n0.geo.Height.Hint,
+        w_th0: n0.geo.ThroatWidth.Hint,
+        bld_thick0: n0.geo.BldThick.Hint,
+        disp_thick0: n0.oth.DispThick.Hint,
+    ):
+        open_height = safe_max(hgt0 - 2 * disp_thick0, 0 * hgt0)
+        open_width = safe_max(w_th0 - bld_thick0 - 2 * disp_thick0, 0 * w_th0)
+        return a_eff0 - area0 * open_height / hgt0 * open_width / w_th0
 
 
 class AxialLengthToRadiusChange(EquationBase):

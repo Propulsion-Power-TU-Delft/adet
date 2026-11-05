@@ -102,6 +102,7 @@ class GeometricVariables(VariableEnum):
     ChokeArea = VarSpec('A_choke', 'm**2', 0.1)  # TODO: scalar?
     ThroatArea = VarSpec('A_throat', 'm**2', 0.1)
     ThroatRadius = VarSpec('rr_throat', 'm', 0.01)
+    ThroatWidth = VarSpec('w_throat', 'm', 0.001, scalar=True)
     EffSolidity = VarSpec('eff_solidity', '', 1.0)
     FlareAngle = VarSpec('fl_angle', 'rad', 0.1, bounds=(-1.5, 1.5), scalar=True)
     MetalAngle = VarSpec('beta_geom', 'rad', -0.3, (-1.5, 1.5))
@@ -177,6 +178,9 @@ class Losses(VariableEnum):
     Ds_endwall = VarSpec('ds_endwall', 'J / kg / K', guess=1.0, bounds=(0.0, 500.0))
     Ds_incidence = VarSpec('ds_incidence', 'J / kg / K')
     Ds_secondary = VarSpec('ds_secondary', 'J / kg / K')
+    Ds_boundary_layer = VarSpec(
+        'ds_boundary_layer', 'J / kg / K', guess=1.0, bounds=(0.0, 500.0)
+    )
     Ds_total = VarSpec('ds_total', 'J / kg / K')
     Ds_main = VarSpec('ds_main', 'J / kg / K')
 
@@ -232,6 +236,8 @@ class OtherVariables(VariableEnum):
     DischCoeff = VarSpec('disch_coeff', '')
     DiffFricCoeff = VarSpec('cf_diff', '', 0.005)
     DiffFricConst = VarSpec('k_diff', '')
+    BLDissipCoeff = VarSpec('cd_bl', '', 0.003, bounds=(1e-5, 0.1))
+    BLViscosity = VarSpec('mu_bl', 'Pa * s', 1.2e-5)
     VoluteF1 = VarSpec('f1_vol', '', 0.8)
     VoluteF2 = VarSpec('f2_vol', '', 0.8)
 

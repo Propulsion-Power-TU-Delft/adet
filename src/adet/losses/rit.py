@@ -257,9 +257,17 @@ class EndwallLoss(LossModel):
         out_properties=(thrm.Temperature, thrm.Density, thrm.Enthalpy),
     )
 
-    def __init__(self, dissipation_coeff: float = 0.002, **kwargs):
+    def __init__(
+        self, dissipation_coeff: float = 0.002, row_fraction: float = 1.0, **kwargs
+    ):
+        """``row_fraction``: the march covers the walls from the row inlet
+        up to this fraction of the wall curves (e.g. a stator mixing row
+        whose outlet is a mixed-out plane past the trailing edge, with the
+        walls beyond the trailing edge left to a gap model); the pressure is
+        interpolated to it."""
         super().__init__(**kwargs)
         self.cd = dissipation_coeff
+        self.row_fraction = row_fraction
 
     def residual(
         self,
@@ -291,7 +299,7 @@ class EndwallLoss(LossModel):
         # to change
 
         n_stations = self.N_STATIONS
-        t_values = [i / n_stations for i in range(n_stations + 1)]
+        t_values = [self.row_fraction * i / n_stations for i in range(n_stations + 1)]
 
         # mer_chord1 is the row's meridional-plane chord magnitude (axial
         # for an axial row, radial for a radial row, per MeridionalAngle);
@@ -324,7 +332,7 @@ class EndwallLoss(LossModel):
         # ds_stations[0] is the (non-free, identically zero) entropy rise at
         # the row inlet; ds_stations[i] for i>=1 are the new free unknowns
         ds_stations = [0.0 * s0, ds_ew1, ds_ew2, ds_ew3, ds_ew4, Ds_endwall1]
-        pressures = [p0 + (p1 - p0) * i / n_stations for i in range(n_stations + 1)]
+        pressures = [p0 + (p1 - p0) * t for t in t_values]
 
         # Rothalpy (conserved along an adiabatic rotating passage, playing
         # the role total enthalpy plays in the stationary stator)
@@ -466,7 +474,11 @@ class ImpellerIncidenceLoss(LossModel):
         Ds_inc1: n1.loss.Ds_incidence.Hint,
     ):
         incidence = beta0 - metal_ang0
-        cos_incidence = np.cos(incidence)
+        # Beyond 90 deg incidence (e.g. a strongly over-speeding rotor, flow
+        # onto the blade suction side) the whole relative kinetic energy is
+        # lost: cos clipped at 0 (continuous, and smooth since cos^n has zero
+        # slope there), instead of a fractional power of a negative number
+        cos_incidence = safe_max(np.cos(incidence), 0.0 * np.cos(incidence))
 
         # Negative (under-turning) incidence is less dissipative than positive
         # (over-turning) incidence, hence the different exponent
@@ -613,5 +625,142 @@ class GlassmanMeitnerBlayer(LossModel):
     def residual(self): ...
 
 
+# |> Radial-gap march stations (internal to RadialGapLoss below): static
+# pressure, tangential velocity and entropy rise at each radial station
+# past the gap inlet. Bookkeeping unknowns of a single loss model,
+# co-located at the gap outlet node (as for EndwallLoss).
+def _gap_station_specs(name: str, unit: str, guess: float, bounds) -> list[VarSpec]:
+    return [
+        VarSpec(f'{name}_stn{i}', unit, guess=guess, bounds=bounds, node=1)
+        for i in range(1, 6)
+    ]
+
+
+# (pressures relative to the gap inlet one: the bounds keep the march off the
+# meridionally supersonic root of the isentropic step, about 0.2 at low
+# meridional Mach numbers)
+_p_gap = _gap_station_specs('p_ratio_gap', '', 0.98, (0.5, 2.0))
+_vt_gap = _gap_station_specs('vt_gap', 'm / s', 200.0, (1.0, 2e3))
+_ds_gap = _gap_station_specs('ds_gap', 'J / kg / K', 0.1, (0.0, 500.0))[:4]
+_p_gap_start = VarSpec('p_ratio_gap_stn0', '', 1.0, bounds=(0.5, 2.0), node=1)
+GAP_START_RADIUS_RATIO = VarSpec('r_ratio_gap_start', '', 1.0, node=0)
+"""Radius where the ``RadialGapLoss`` friction march starts, over the gap
+inlet radius (boundary condition at the gap inlet)"""
+
+
 class RadialGapLoss(LossModel):
-    def residual(self): ...
+    """
+    Wall-friction entropy rise across the vaneless gap between the stator
+    and the rotor of a radial-inflow turbine (node 0: gap inlet, node 1: gap
+    outlet):
+    the one-zone vaneless-space model of Stanitz with Japikse's
+    friction coefficient, marched inwards over ``N_STATIONS`` equal radial
+    steps. At each step from radius R_in to R:
+
+    - isentropic step: free-vortex V_t and continuity (constant width b)
+      at the inlet entropy give the static pressure p;
+    - friction: Re = m / (2 mu R), C_f = k (1.8e5 / Re)^0.2 and the
+      tangential momentum with the wall shear on both walls,
+
+          V_t,in / V_t = R / R_in + 2 pi C_f rho V_t R_in (R_in - R) / m;
+
+    - V_m = m / (2 pi R b rho) and the total enthalpy is conserved, so the
+      reduced V_t raises the static enthalpy at p, hence the entropy.
+
+    ``GAP_START_RADIUS_RATIO`` (R_start / R_0, boundary condition at the gap
+    inlet, 1: from the gap inlet radius) starts the friction
+    march at R_start instead of the gap inlet radius, the gap inlet state
+    being carried there by one frictionless isentropic step (free vortex,
+    continuity): e.g. at the stator trailing edge when the gap inlet node is
+    a mixed-out plane inside the gap. The march then covers the walls from
+    the trailing edge to the gap outlet.
+    """
+
+    N_STATIONS = 5
+    # Station unknowns (at the gap outlet node), e.g. for seeding guesses;
+    # the last station's entropy rise is ``Ds_endwall``
+    STATION_PRESSURES = tuple(_p_gap)
+    STATION_V_TANS = tuple(_vt_gap)
+    STATION_ENTROPIES = tuple(_ds_gap)
+    START_PRESSURE = _p_gap_start
+
+    config = EquationConfig(
+        input_pair=cp.PSmass_INPUTS,
+        out_properties=(thrm.Enthalpy, thrm.Density),
+    )
+
+    def residual(
+        self,
+        rr0: n0.geo.Rmid.Hint,
+        rr1: n1.geo.Rmid.Hint,
+        hgt1: n1.geo.Height.Hint,
+        p0: n0.stc.Pressure.Hint,
+        s0: n0.stc.Entropy.Hint,
+        h0: n0.stc.Enthalpy.Hint,
+        rho0: n0.stc.Density.Hint,
+        vt0: n0.kin.V_tan.Hint,
+        vm0: n0.kin.V_mer.Hint,
+        mf0: n0.oth.TotMassFlow.Hint,
+        k_fric0: n0.oth.DiffFricConst.Hint,
+        mu0: n0.oth.BLViscosity.Hint,
+        start_ratio0: GAP_START_RADIUS_RATIO.Hint,
+        p_start: _p_gap_start.Hint,
+        p_1: _p_gap[0].Hint,
+        p_2: _p_gap[1].Hint,
+        p_3: _p_gap[2].Hint,
+        p_4: _p_gap[3].Hint,
+        p_5: _p_gap[4].Hint,
+        vt_1: _vt_gap[0].Hint,
+        vt_2: _vt_gap[1].Hint,
+        vt_3: _vt_gap[2].Hint,
+        vt_4: _vt_gap[3].Hint,
+        vt_5: _vt_gap[4].Hint,
+        ds_1: _ds_gap[0].Hint,
+        ds_2: _ds_gap[1].Hint,
+        ds_3: _ds_gap[2].Hint,
+        ds_4: _ds_gap[3].Hint,
+        Ds_endwall1: n1.loss.Ds_endwall.Hint,
+    ):
+        n_st = self.N_STATIONS
+        ht0 = h0 + (vt0**2 + vm0**2) / 2
+
+        # Gap inlet state carried to the march start radius (isentropic)
+        r_start = rr0 * start_ratio0
+        p_st = p0 * p_start
+        h_st, rho_st = self.eos(p_st, s0)
+        vt_st = vt0 * rr0 / r_start
+        vm_st = vm0 * rho0 / rho_st * rr0 / r_start
+        residuals = [h_st + (vt_st**2 + vm_st**2) / 2 - ht0]
+
+        radii = [r_start + (rr1 - r_start) * i / n_st for i in range(n_st + 1)]
+        pressures = [p0 * ratio for ratio in (p_start, p_1, p_2, p_3, p_4, p_5)]
+        v_tans = [vt_st, vt_1, vt_2, vt_3, vt_4, vt_5]
+        ds_st = [0.0 * s0, ds_1, ds_2, ds_3, ds_4, Ds_endwall1]
+        rho_prev, vm_prev = rho_st, vm_st
+
+        for i in range(1, n_st + 1):
+            r_in, r_i = radii[i - 1], radii[i]
+            p_i, vt_i = pressures[i], v_tans[i]
+
+            # Isentropic step from the previous station: static pressure
+            h_is, rho_is = self.eos(p_i, s0 + ds_st[i - 1])
+            vt_is = v_tans[i - 1] * r_in / r_i
+            vm_is = vm_prev * rho_prev / rho_is * r_in / r_i
+            residuals.append(h_is + (vt_is**2 + vm_is**2) / 2 - ht0)
+
+            # Friction: tangential momentum and energy at that pressure
+            h_i, rho_i = self.eos(p_i, s0 + ds_st[i])
+            reynolds = mf0 / (2 * mu0 * r_i)
+            if hasattr(reynolds, 'to'):
+                # (unit check) reduce before the fractional power
+                reynolds = reynolds.to('')
+            c_fric = k_fric0 * (1.8e5 / reynolds) ** 0.2
+            shear = 2 * np.pi * c_fric * rho_i * vt_i * r_in * (r_in - r_i) / mf0
+            residuals.append(v_tans[i - 1] - vt_i * (r_i / r_in + shear))
+
+            vm_i = mf0 / (2 * np.pi * r_i * hgt1 * rho_i)
+            residuals.append(h_i + (vt_i**2 + vm_i**2) / 2 - ht0)
+
+            rho_prev, vm_prev = rho_i, vm_i
+
+        return tuple(residuals)

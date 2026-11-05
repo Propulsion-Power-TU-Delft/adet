@@ -1,5 +1,6 @@
 """Mixing losses downstream of turbomachinery blades"""
 
+import math
 from pathlib import Path
 from typing import Literal
 
@@ -267,33 +268,67 @@ def baumgartner_mixing_zeta(
     )
 
 
+def aungier_subsonic_deviation(met_angle: float, mach_out: float) -> float:
+    """Plain-float version of ``AungierDeviationModel``: deviation [rad]
+    (> 0, reducing the turning) for the outlet metal angle ``met_angle``
+    [rad, from the meridional direction] and relative Mach ``mach_out``."""
+    o_by_s = math.cos(met_angle)
+    beta_g = math.pi / 2 - abs(met_angle)
+    delta0 = math.asin(o_by_s * (1 + (1 - o_by_s) * (2 * beta_g / math.pi) ** 2))
+    delta0 -= beta_g
+    if mach_out <= 0.5:
+        return delta0
+    if mach_out >= 1:
+        return 0.0
+    x = 2 * mach_out - 1
+    return delta0 * (1 - 10 * x**3 + 15 * x**4 - 6 * x**5)
+
+
 class AungierDeviationModel(DeviationModel):
-    """Only valid for subsonic deviation"""
+    """Aungier's subsonic deviation at a blade row outlet (Aungier, Turbine
+    Aerodynamics, 2006), as a single-node equation at the outlet node.
+
+    Aungier measures angles from the tangential direction: with the gauging
+    angle beta_g = asin(o/s) (here o/s = cos(metal angle), angles from the
+    meridional direction, i.e. beta_g = 90 deg - |metal angle|), the
+    zero-Mach deviation is
+
+        delta0 = asin[(o/s) (1 + (1 - o/s) (beta_g / 90 deg)^2)] - beta_g,
+
+    kept for M_rel <= 0.5 and faded to zero at M_rel = 1 with
+    delta = delta0 (1 - 10 X^3 + 15 X^4 - 6 X^5), X = 2 M_rel - 1. A positive
+    deviation reduces the flow turning, i.e. |beta| < |metal angle|.
+
+    Only valid for subsonic outlet relative Mach numbers: no supersonic
+    deviation is modelled, the deviation is zero for M_rel >= 1. See
+    ``aungier_subsonic_deviation`` for the plain-float version.
+    """
 
     def residual(
         self,
         met_angle: n0.geo.MetalAngle.Hint,
-        mach_out: n1.kin.RelMach.Hint,
-        beta: n1.kin.FlowAngleRel.Hint,
+        mach_out: n0.kin.RelMach.Hint,
+        beta: n0.kin.FlowAngleRel.Hint,
     ):
-        cos_beta = np.cos(met_angle)  # > 0
-        beta_abs = safe_abs(met_angle)  # > 0
-        delta0 = beta_abs - np.arccos(
-            cos_beta * (1 + (1 - cos_beta) * (2 * beta_abs / np.pi) ** 2)
+        o_by_s = np.cos(met_angle)  # > 0
+        beta_g = np.pi / 2 - safe_abs(met_angle)  # gauging angle, from tangential
+        delta0 = (
+            np.arcsin(o_by_s * (1 + (1 - o_by_s) * (2 * beta_g / np.pi) ** 2)) - beta_g
         )
 
         X = 2 * mach_out - 1
         delta_sub = delta0 * (1 - 10 * X**3 + 15 * X**4 - 6 * X**5)
 
-        deviation_sub = safe_if_else(
+        # Zero at and above M_rel = 1, where the fade polynomial reaches 0
+        # (it would turn negative beyond)
+        deviation = safe_if_else(
             mach_out <= 0.5,
             delta0,
-            delta_sub,
+            safe_if_else(mach_out >= 1, 0 * delta0, delta_sub),
         )
 
-        residual_sub = beta - (met_angle - deviation_sub)  # Deviation angle
-
-        return residual_sub
+        # Deviation reduces the flow angle magnitude
+        return beta - (met_angle - np.sign(met_angle) * deviation)
 
 
 class AungierSimpleMixLoss(LossModel):

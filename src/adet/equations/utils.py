@@ -84,6 +84,13 @@ def safe_cumsum(x):
         return cs.cumsum(x)
 
 
+def mass_flow_average(values, mass_flows):
+    """Mass-flow-weighted average of ``values`` over sub-streams carrying
+    ``mass_flows`` (sequences of the same length)."""
+    total = sum(mass_flows)
+    return sum(v * m for v, m in zip(values, mass_flows)) / total
+
+
 def safe_mean(x):
     size = max(x.shape)
     return safe_sum(x) / size
