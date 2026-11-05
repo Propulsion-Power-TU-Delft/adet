@@ -1009,6 +1009,10 @@ class CasadiSystem(SystemAssembler):
         }
 
         self._eos_factory = EosFactory(fl_state)
+        # The equation-level eos is shared by all instances of a class (see
+        # ``EquationBase.eos``): keep this system's callbacks alive, else
+        # building another system deletes the ones its residuals call
+        self._eq_eos_callbacks: list = []
 
         # Add inter-node eos
         for eq, eq_pos in self.data.equations.items():
@@ -1021,6 +1025,7 @@ class CasadiSystem(SystemAssembler):
                     self.num_span,
                     f'multi_{eq.__class__.__name__}_{pos_str}',
                 )
+                self._eq_eos_callbacks.append(eq.eos.callable)
 
         discarded_vars = self._argument_resolver.get_discarded_thermo_args()
         out_syms: dict[VarSpec, cs.MX] = {}
