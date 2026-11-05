@@ -247,17 +247,15 @@ def baumgartner_mixing_zeta(
     :func:`incomp_mixing_zeta` with ``q = 0.5 * gamma_pv * p * Mach**2``.
     """
 
-    # TODO:
-    # 1. Remove duplicate clipping -> See equation class below
-    # 2. Check the theory/reason behind this clipping
-
-    # mach_capped = safe_min_clip(safe_min(rel_mach0, 1.0), 0.05)
-    mach_capped = minmax_bound(rel_mach0, 0.05, 1.0)
     thick_by_pitch0 = geo_bld_thick0 / geo_pitch0
+    # TODO: check against Baumgartner et al. (2020). The docstring implies
+    # Cpb = (p_base / p - 1) * 2 / (gamma * M**2), but the code adds an extra
+    # factor 2 and t/s, so t enters the base-pressure term twice (with the
+    # -Cpb * t / w below). Fix either the code or the docstring.
     cpb = (
         2
         * (oth_p_base0 / stc_p0 - 1)
-        * (2 / (gamma_pv0 * mach_capped**2) * thick_by_pitch0)
+        * (2 / (gamma_pv0 * rel_mach0**2) * thick_by_pitch0)
     )
 
     w = geo_pitch0 * np.cos(geo_metal_angle0)  # outlet throat
@@ -442,7 +440,7 @@ class DentonBaumgartnerMixingLoss(LossModel):
         zeta = baumgartner_mixing_zeta(
             p0,
             gamma0,
-            rel_mach0,
+            mach_floored,
             beta0,
             pitch0,
             t0,
