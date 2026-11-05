@@ -54,7 +54,7 @@ line-length = 88
 [tool.ruff.lint]
 # Enable pycodestyle errors and warnings (E, W), pyflakes (F), and isort (I)
 select = ["E", "W", "F", "ARG", "C4", "B", "I"]
-ignore = ["B006", "B905"]
+ignore = ["B006", "B905", "F401"]
 
 [tool.ruff.lint.per-file-ignores]
 # Ignore in selected files and directories

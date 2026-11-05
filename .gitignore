@@ -16,5 +16,12 @@ CLAUDE.md
 # macOS
 .DS_Store
 
+# private test cases
+tests/
+
+# private notes and reference material
+/notes/
+/refs/
+
 # Generated example outputs (design maps, plots)
 outputs/
