@@ -27,12 +27,12 @@ State:
 
 import logging
 import math
-from typing import cast
+import shutil
+from pathlib import Path
 
 import CoolProp as cp
 import matplotlib.pyplot as plt
 import numpy as np
-from numpy.typing import NDArray
 from pint import Quantity
 from tabulate import tabulate
 
@@ -48,24 +48,22 @@ from adet.equations.nondimensional import (
     TotalStaticExpansionEfficiency,
     TotalTotalExpansionEfficiency,
 )
-from adet.equations.utils import residual_debugger
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import FreeDeviation, IsentropicLink, ZeroDeviation
+from adet.losses.basic import IsentropicLink, ZeroDeviation
 from adet.losses.mixing import (
-    AungierDeviationModel,
     DentonBaumgartnerMixingLoss,
-    DentonMixingLoss,
     SieverdingBasePressure,
-    aungier_delta0,
-    aungier_delta_sub,
 )
 from adet.losses.rit import (
     ChenSlip,
     EndwallLoss,
-    ImpellerIncidenceLoss,
-    ImpellerLeakageLoss,
     ImpellerPassageLoss,
     StatorProfileLoss,
+)
+from adet.losses.rit_sauret import (
+    SauretClearanceLoss,
+    SauretIncidenceLoss,
+    SauretWindageLoss,
 )
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
@@ -85,33 +83,71 @@ setup_mpl(
     }
 )
 
+# Paper figures: saved as PDF at the printed width. Text is typeset by LaTeX
+# through the pgf backend (pdflatex), so the labels match the manuscript body.
+# (matplotlib's usetex route needs type1cm/type1ec, which this TeX install lacks.)
+FIG_DIR = Path('/home/francesco/Documents/aerx_springer/figures/rotating_components')
+DATA_DIR = Path(
+    '/home/francesco/Documents/aerx_springer/local/scripts/adet_rit_validation/results'
+)
+SAVE_FIGURES = False
+if SAVE_FIGURES and not shutil.which('pdflatex'):
+    raise RuntimeError('SAVE_FIGURES needs pdflatex (pgf backend)')
+if SAVE_FIGURES:
+    plt.rcParams.update(
+        {
+            'pgf.texsystem': 'pdflatex',
+            'pgf.rcfonts': False,
+            'pgf.preamble': r'\usepackage{amsmath}',
+            'font.size': 9,
+            'axes.labelsize': 9,
+            'axes.titlesize': 9,
+            'xtick.labelsize': 8,
+            'ytick.labelsize': 8,
+            'legend.fontsize': 8,
+        }
+    )
+
+
+def save_pdf(fig, path: Path) -> None:
+    """Save a figure as a LaTeX-typeset PDF via the pgf backend."""
+    from matplotlib.backends.backend_pgf import FigureCanvasPgf
+
+    fig.canvas = FigureCanvasPgf(fig)
+    fig.savefig(path)
+
+
 # *** Global settings
 PLOTS = True
-USE_SLIP_MODEL = True
-USE_AUNGIER_DEVIATION = True
-RUN_SPEEDLINE = False
+USE_SLIP_MODEL = False
+RUN_SPEEDLINE = True
 RUN_PR_SWEEP = False
 
-_n0 = NodeVariables(0)
-_n1 = NodeVariables(1)
+n0 = NodeVariables(0)
+n1 = NodeVariables(1)
+n2 = NodeVariables(2)
+n3 = NodeVariables(3)
+n4 = NodeVariables(4)
+n5 = NodeVariables(5)
 
 
 class AddImpellerLosses(LossApplier):
-    """Apply the rotor's passage + leakage + incidence + endwall + mixing
-    losses to the static entropy rise."""
+    """Apply the rotor's passage + leakage + incidence + windage + endwall +
+    mixing losses to the static entropy rise."""
 
     def residual(
         self,
-        s0: _n0.stc.Entropy.Hint,
-        s1: _n1.stc.Entropy.Hint,
-        ds_profile1: _n1.loss.Ds_profile.Hint,
-        ds_leakage1: _n1.loss.Ds_leakage.Hint,
-        ds_incidence1: _n1.loss.Ds_incidence.Hint,
-        ds_endwall1: _n1.loss.Ds_endwall.Hint,
-        ds_mixing1: _n1.loss.Ds_mixing.Hint,
+        s0: n0.stc.Entropy.Hint,
+        s1: n1.stc.Entropy.Hint,
+        ds_profile1: n1.loss.Ds_profile.Hint,
+        ds_leakage1: n1.loss.Ds_leakage.Hint,
+        ds_incidence1: n1.loss.Ds_incidence.Hint,
+        # ds_endwall1: n1.loss.Ds_endwall.Hint,
+        ds_windage1: n1.loss.Ds_secondary.Hint,
+        ds_mixing1: n1.loss.Ds_mixing.Hint,
     ):
         return s1 - (
-            s0 + ds_profile1 + ds_incidence1 + ds_mixing1 + ds_endwall1 + ds_leakage1
+            s0 + ds_profile1 + ds_mixing1 + ds_leakage1 + ds_incidence1 + ds_windage1
         )
 
 
@@ -121,11 +157,11 @@ class AddStatorLosses(LossApplier):
 
     def residual(
         self,
-        s0: _n0.stc.Entropy.Hint,
-        s1: _n1.stc.Entropy.Hint,
-        ds_profile1: _n1.loss.Ds_profile.Hint,
-        ds_endwall1: _n1.loss.Ds_endwall.Hint,
-        ds_mixing1: _n1.loss.Ds_mixing.Hint,
+        s0: n0.stc.Entropy.Hint,
+        s1: n1.stc.Entropy.Hint,
+        ds_profile1: n1.loss.Ds_profile.Hint,
+        ds_endwall1: n1.loss.Ds_endwall.Hint,
+        ds_mixing1: n1.loss.Ds_mixing.Hint,
     ):
         return s1 - (s0 + ds_profile1 + ds_endwall1 + ds_mixing1)
 
@@ -142,18 +178,12 @@ STATION_LABELS = {
     5: 'Rotor outlet',
 }
 
-n0 = NodeVariables(0)
-n1 = NodeVariables(1)
-n2 = NodeVariables(2)
-n3 = NodeVariables(3)
-n4 = NodeVariables(4)
-n5 = NodeVariables(5)
 
 inl = Inlet(
     {
         n0.tot.Pressure: Quantity(580.4, 'kPa'),  # Sauret Table 1
         n0.tot.Temperature: Quantity(1056.5, 'K'),  # Sauret Table 1
-        n0.oth.TotMassFlow: 0.33,  # kg/s, Sauret Table 1
+        # n0.oth.TotMassFlow: 0.33,  # kg/s, Sauret Table 1
         # NOTE (assumed / Jones-only): Sauret doesn't tabulate nozzle inlet
         # swirl; Jones gives a 20-40 deg range, midpoint used here.
         n0.kin.FlowAngleRel: Quantity(30.0, 'deg'),
@@ -174,7 +204,7 @@ def build_network(include_losses: bool) -> ComponentNetwork:
     easier-to-solve system whose solution is used as the initial guess for
     the full, lossy system (see below).
     """
-    stator_extra_equations: dict = {ZeroDeviation(): 0}  # No incidence
+    stator_extra_equations: dict = {}  # No incidence
     rotor_extra_equations: dict = {}
     if USE_SLIP_MODEL:
         rotor_extra_equations[ChenSlip()] = 0
@@ -184,44 +214,36 @@ def build_network(include_losses: bool) -> ComponentNetwork:
             {
                 AddStatorLosses(): (0, 1),
                 StatorProfileLoss(): (0, 1),
-                EndwallLoss(0.0025): (0, 1),
+                EndwallLoss(): (0, 1),
                 IsentropicProperties(): (0, 1),
                 BoundaryLayerRatios(): 1,
                 GammaPV(): 0,
                 GammaPV(): 1,
                 SieverdingBasePressure(): (0, 1),
                 DentonBaumgartnerMixingLoss(): 1,
-                FreeDeviation(): 1,
             }
         )
-        if USE_AUNGIER_DEVIATION:
-            # Without it, the stator exit deviation is set to zero (ZeroDeviation)
-            pass
-            # stator_extra_equations[ZeroDeviation()] = 1
-            # rotor_extra_equations[AungierDeviationModel()] = 1
 
         rotor_extra_equations.update(
             {
                 AddImpellerLosses(): (0, 1),
                 IsentropicProperties(): (0, 1),
-                ImpellerPassageLoss(0.08): (0, 1),
-                ImpellerLeakageLoss(0.4, 0.7, -0.3): (0, 1),
-                ImpellerIncidenceLoss(): (0, 1),
-                EndwallLoss(): (0, 1),
+                ImpellerPassageLoss(0.1): (0, 1),
+                SauretClearanceLoss(): (0, 1),
+                # ImpellerIncidenceLoss(-0.94): (0, 1),
+                SauretIncidenceLoss(): (0, 1),
+                # EndwallLoss(): (0, 1),
                 BoundaryLayerRatios(): 1,
+                SauretWindageLoss(): (0, 1),
                 GammaPV(): 0,
                 GammaPV(): 1,
                 SieverdingBasePressure(): (0, 1),
-                DentonMixingLoss(): 1,
+                DentonBaumgartnerMixingLoss(): 1,
             }
         )
-        rotor_extra_bc = {}
-        stator_extra_bc = {n1.stc.Pressure: Quantity(328.4, 'kPa')}
     else:
         stator_extra_equations[IsentropicLink()] = (0, 1)
         rotor_extra_equations[IsentropicLink()] = (0, 1)
-        rotor_extra_bc = {}
-        stator_extra_bc = {}
 
     stator = BladeRow(
         'nozzle',
@@ -230,6 +252,7 @@ def build_network(include_losses: bool) -> ComponentNetwork:
             n1.geo.Height: Quantity(0.006, 'm'),  # nozzle exit height (Sauret Table 2)
             n1.geo.Rmid: Quantity(0.0635, 'm'),  # nozzle exit radius (Sauret Table 2)
             n1.geo.MeridionalAngle: Quantity(-90, 'deg'),
+            n0.geo.MetalAngle: Quantity(30, 'deg'),  # Sauret Fig. 8(a)
             n1.geo.MetalAngle: Quantity(78.1, 'deg'),  # Sauret Fig. 8(a)
             n0.geo.BldThick: Quantity(0.661, 'mm'),  # Sauret Table 6 (m=0%)
             n1.geo.BldThick: Quantity(0.51, 'mm'),  # Sauret Table 2
@@ -238,13 +261,15 @@ def build_network(include_losses: bool) -> ComponentNetwork:
             n1.oth.MomByBld: 0.1,
             n1.oth.DispByMom: 2.0,
             n1.oth.DispByHgt: 0.15,
-            **stator_extra_bc,
         },
         shaft=casing,
-        extra_equations={**stator_extra_equations},
+        extra_equations={
+            **stator_extra_equations,
+            ZeroDeviation(): 1,
+        },
     )
 
-    interspace_eq = InterspaceLoss(0.005) if include_losses else IdealInterspace()
+    interspace_eq = InterspaceLoss() if include_losses else IdealInterspace()
 
     interspace = Interspace(
         'intrspc',
@@ -277,14 +302,14 @@ def build_network(include_losses: bool) -> ComponentNetwork:
             n1.oth.DispByMom: 2.0,
             n1.oth.DispByHgt: 0.09,
             # *** OUTLET
-            n1.stc.Pressure: Quantity(96, 'kPa'),  # Sauret Table 4
-            # n1.kin.FlowAngleAbs: Quantity(0.0, 'deg'),  # Sauret Table 4
-            **rotor_extra_bc,
+            n1.stc.Pressure: Quantity(94.7, 'kPa'),  # Sauret Table 4
+            # n1.kin.RelMach: 0.713,  # Sauret Table 4
+            # n1.kin.FlowAngleAbs: 0.0,  # Sauret Table 4
         },
         shaft=shaft,
         extra_equations={
             **rotor_extra_equations,
-            FreeDeviation(): 1,
+            ZeroDeviation(): 1,
             Kinematics(use_rms_radius=True): 1,
         },
     )
@@ -411,7 +436,7 @@ LOSS_MECHANISMS = {
         ('Profile', lambda n: n.loss.Ds_profile),
         ('Leakage', lambda n: n.loss.Ds_leakage),
         ('Incidence', lambda n: n.loss.Ds_incidence),
-        ('Endwall', lambda n: n.loss.Ds_endwall),
+        ('Windage', lambda n: n.loss.Ds_secondary),
         ('Mixing', lambda n: n.loss.Ds_mixing),
     ],
 }
@@ -420,8 +445,6 @@ COMPONENT_NODES = {
     'Interspace': (2, 3),
     'Rotor': (4, 5),
 }
-# Blade-row outlet nodes carrying the Aungier deviation model
-DEVIATION_NODES = {'Nozzle': 1, 'Rotor': 5}
 
 
 def delta_eta_breakdown(data) -> dict[tuple[str, str], float]:
@@ -551,18 +574,19 @@ sweep_eta_tt = []
 # Stator (nozzle) outlet absolute flow angle [deg] and Mach number
 sweep_alpha_stator = []
 sweep_mach_stator = []
+# Total mass flow [kg/s] at each converged sweep point
+sweep_mdot = []
+# Interspace entropy rise [J/kg/K] at each converged sweep point
+sweep_ds_interspace = []
 # Entropy rise per loss mechanism at each converged sweep point, per component
 sweep_loss = {
     component: {name: [] for name, _ in mechanisms}
     for component, mechanisms in LOSS_MECHANISMS.items()
 }
-# Solved deviation angle at each blade-row outlet [deg], and the Aungier
-# delta0 / delta_sub terms [deg] (only filled when USE_AUNGIER_DEVIATION)
-sweep_dev_angle = {component: [] for component in DEVIATION_NODES}
-sweep_delta0 = {component: [] for component in DEVIATION_NODES}
-sweep_delta_sub = {component: [] for component in DEVIATION_NODES}
 # Total-total efficiency loss shares per sweep point (see delta_eta_breakdown)
 sweep_deta = []
+# Impeller inlet incidence [deg], beta_in - metal angle at the rotor leading edge
+sweep_incidence = []
 sol_sweep = sol
 if RUN_SPEEDLINE:
     for ua0 in UA0_SWEEP:
@@ -586,40 +610,32 @@ if RUN_SPEEDLINE:
             math.degrees(float(sweep_data[n1.kin.FlowAngleAbs][0]))
         )
         sweep_mach_stator.append(float(sweep_data[n1.kin.Mach][0]))
+        sweep_mdot.append(float(sweep_data[n0.oth.TotMassFlow][0]))
+        sweep_ds_interspace.append(
+            float(sweep_data[n3.stc.Entropy][0]) - float(sweep_data[n2.stc.Entropy][0])
+        )
         for component, mechanisms in LOSS_MECHANISMS.items():
             n_out = NodeVariables(COMPONENT_NODES[component][1])
             for mechanism, spec_fn in mechanisms:
                 sweep_loss[component][mechanism].append(
                     float(sweep_data[spec_fn(n_out)][0])
                 )
-        if USE_AUNGIER_DEVIATION:
-            for component, node_idx in DEVIATION_NODES.items():
-                # Aungier model inputs at this outlet, read from the solution
-                aungier_inputs = residual_debugger(
-                    AungierDeviationModel(), [node_idx], sweep_data
-                )
-                met_angle = cast(NDArray, aungier_inputs['met_angle'])
-                beta = cast(NDArray, aungier_inputs['beta'])
-                mach_out = cast(NDArray, aungier_inputs['mach_out'])
-                # The model enforces beta = met_angle - deviation, so the solved
-                # deviation is recovered from the metal and flow angles
-                sweep_dev_angle[component].append(
-                    math.degrees(float(met_angle[0] - beta[0]))
-                )
-                delta0 = aungier_delta0(float(met_angle[0]))
-                delta_sub = aungier_delta_sub(delta0, float(mach_out[0]))
-                sweep_delta0[component].append(math.degrees(float(delta0)))
-                sweep_delta_sub[component].append(math.degrees(float(delta_sub)))
         sweep_deta.append(delta_eta_breakdown(sweep_data))
+        sweep_incidence.append(
+            math.degrees(
+                float(sweep_data[n4.kin.FlowAngleRel][0])
+                - float(sweep_data[n4.geo.MetalAngle][0])
+            )
+        )
         logger.info(f'U/a0 = {ua0:.3f}: eta_tt = {eta_tt:.4f}')
 
     sweep_ua0 = np.array(sweep_ua0)
     sweep_eta_tt = np.array(sweep_eta_tt)
     sweep_alpha_stator = np.array(sweep_alpha_stator)
     sweep_mach_stator = np.array(sweep_mach_stator)
-    sweep_dev_angle = {k: np.array(v) for k, v in sweep_dev_angle.items()}
-    sweep_delta0 = {k: np.array(v) for k, v in sweep_delta0.items()}
-    sweep_delta_sub = {k: np.array(v) for k, v in sweep_delta_sub.items()}
+    sweep_mdot = np.array(sweep_mdot)
+    sweep_ds_interspace = np.array(sweep_ds_interspace)
+    sweep_incidence = np.array(sweep_incidence)
     sweep_deta_group = {
         g: np.array(
             [sum(v for (grp, _), v in s.items() if grp == g) for s in sweep_deta]
@@ -630,43 +646,51 @@ if RUN_SPEEDLINE:
     print('\nU/a0 sweep (converged points only):')
     print(
         tabulate(
-            [[f'{ua0:.3f}', f'{eta:.4f}'] for ua0, eta in zip(sweep_ua0, sweep_eta_tt)],
-            headers=['U/a0', 'eta_tt'],
+            [
+                [
+                    f'{ua0:.3f}',
+                    f'{eta:.4f}',
+                    f'{mdot:.4f}',
+                    f'{inc:.1f}',
+                ]
+                for ua0, eta, mdot, inc in zip(
+                    sweep_ua0, sweep_eta_tt, sweep_mdot, sweep_incidence
+                )
+            ],
+            headers=['U/a0', 'eta_tt', 'mdot\n[kg/s]', 'incidence\n[deg]'],
             tablefmt='github',
         )
     )
 
-    # Speedline against the digitized experiments: the solver is interpolated at
-    # each experimental U/c0 that lies inside the converged range
-    exp_in_range = (EXP_UA0 >= sweep_ua0[0]) & (EXP_UA0 <= sweep_ua0[-1])
-    eta_model_at_exp = np.interp(EXP_UA0[exp_in_range], sweep_ua0, sweep_eta_tt)
-    eta_exp_at_pt = EXP_ETA_TT_PCT[exp_in_range] / 100
-    eta_err_pts = (eta_model_at_exp - eta_exp_at_pt) * 100
-    print('\nSpeedline vs. Sauret (2012) Fig. 12 experiments:')
-    print(
-        tabulate(
-            [
-                [
-                    f'{ua0:.3f}',
-                    f'{eta_m * 100:.2f}',
-                    f'{eta_e * 100:.2f}',
-                    f'{err:+.2f}',
-                ]
-                for ua0, eta_m, eta_e, err in zip(
-                    EXP_UA0[exp_in_range],
-                    eta_model_at_exp,
-                    eta_exp_at_pt,
-                    eta_err_pts,
-                )
-            ],
-            headers=['U/a0', 'ADeT [%]', 'Exp. [%]', 'Diff [pts]'],
-            tablefmt='github',
-        )
-    )
-    print(
-        f'Mean diff {eta_err_pts.mean():+.2f} pts, '
-        f'RMS diff {np.sqrt((eta_err_pts**2).mean()):.2f} pts '
-        f'({exp_in_range.sum()} of {len(EXP_UA0)} experimental points in range)'
+    # Speedline results as CSV (plotting data and the error summary are built from it)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    sweep_columns = {
+        'ua0': sweep_ua0,
+        'eta_tt': sweep_eta_tt,
+        'mdot_kg_s': sweep_mdot,
+        'incidence_deg': sweep_incidence,
+        'alpha1_deg': sweep_alpha_stator,
+        'M1': sweep_mach_stator,
+        'ds_interspace': sweep_ds_interspace,
+    }
+    for component, mechanisms in LOSS_MECHANISMS.items():
+        for name, _ in mechanisms:
+            sweep_columns[f'ds_{component.lower()}_{name.lower()}'] = sweep_loss[
+                component
+            ][name]
+    for group in GROUPS:
+        sweep_columns[f'deta_{group.lower().replace(" ", "_")}'] = sweep_deta_group[
+            group
+        ]
+    header = ','.join(sweep_columns)
+    rows_csv = np.column_stack(list(sweep_columns.values()))
+    np.savetxt(
+        DATA_DIR / 't100_speedline.csv',
+        rows_csv,
+        delimiter=',',
+        header=header,
+        comments='',
+        fmt='%.6g',
     )
 
 
@@ -933,23 +957,188 @@ if PLOTS:
 # Total-to-total efficiency against U/a0 (speed sweep)
 # ============================================================
 if PLOTS and RUN_SPEEDLINE:
-    fig_sweep, ax_sweep = plt.subplots(figsize=(7, 5), dpi=70)
-    ax_sweep.plot(sweep_ua0, sweep_eta_tt, marker='o', color='#2a78d6', label='ADeT')
-    ax_sweep.plot(
-        EXP_UA0,
-        EXP_ETA_TT_PCT / 100,
-        linestyle='none',
-        marker='+',
-        markersize=10,
-        color='#eb6834',
-        label='Experiments (Sauret 2012, Fig. 12)',
+    # Experimental eta_T-T from Sauret (2012) Fig. 12 red '+' markers, extracted
+    # from the vector drawing data of the PDF (not eyeballed); U/c0 taken as U/a0.
+    # Two markers at U/c0 = 0.603 are both drawn (eta 86.08 and 86.11).
+    EXP_UA0 = [
+        0.603,
+        0.603,
+        0.629,
+        0.643,
+        0.646,
+        0.648,
+        0.654,
+        0.655,
+        0.679,
+        0.705,
+        0.727,
+        0.749,
+        0.760,
+        0.767,
+        0.775,
+        0.780,
+        0.791,
+    ]
+    EXP_ETA_TT = [
+        0.8608,
+        0.8611,
+        0.8558,
+        0.8621,
+        0.8640,
+        0.8801,
+        0.8758,
+        0.8669,
+        0.8730,
+        0.8771,
+        0.8780,
+        0.8821,
+        0.8868,
+        0.8828,
+        0.8818,
+        0.8831,
+        0.8818,
+    ]
+    # Sauret (2012) RANS (Axcent-PushButton) total-total efficiency,
+    # Fig. 12 blue squares ("CFD with Clearances") and green triangles ("CFD
+    # without Clearances"), extracted from the vector drawing data (marker
+    # bounding-box centres). Abscissa is U/c0, taken as U/a0 as for the experiments.
+    # The model includes the tip gaps, so the "with Clearances" set is the
+    # like-for-like comparison.
+    CFD_UA0 = [0.564, 0.599, 0.635, 0.670, 0.705, 0.740, 0.776]
+    CFD_ETA_TT_CLR = [0.8492, 0.8672, 0.8815, 0.8903, 0.8948, 0.8981, 0.8964]
+    CFD_ETA_TT_NOCLR = [0.8575, 0.8781, 0.8905, 0.8990, 0.9054, 0.9066, 0.9052]
+    # Efficiency (left) and error (right) side by side in one figure
+    fig_sweep, (ax_sweep, ax_err) = plt.subplots(
+        1, 2, figsize=(6.5, 3.1), dpi=300, gridspec_kw={'width_ratios': [1.8, 1]}
     )
-    ax_sweep.legend(frameon=False)
+    ax_sweep.plot(sweep_ua0, sweep_eta_tt, color='#2a78d6', label='ADeT')
+    ax_sweep.scatter(
+        EXP_UA0,
+        EXP_ETA_TT,
+        marker='+',
+        s=25,
+        color='#eb6834',
+        label='Experiment (Sauret 2012)',
+    )
+    ax_sweep.scatter(
+        CFD_UA0,
+        CFD_ETA_TT_CLR,
+        marker='s',
+        s=12,
+        color='#1baf7a',
+        label='CFD with clearances (Sauret 2012)',
+    )
+    ax_sweep.scatter(
+        CFD_UA0,
+        CFD_ETA_TT_NOCLR,
+        marker='^',
+        s=12,
+        facecolors='none',
+        edgecolors='#1baf7a',
+        label='CFD without clearances (Sauret 2012)',
+    )
+    ax_sweep.legend(frameon=False, loc='lower right', fontsize=7)
     ax_sweep.set_xlabel(r'$U / a_0$ [-]')
     ax_sweep.set_ylabel(r'$\eta_{tt}$ [-]')
-    ax_sweep.set_title('Total-to-total efficiency vs. blade speed ratio (T-100)')
     ax_sweep.grid(True, alpha=0.3)
+
+    # --- Error of the model along the speedline against the experiment and the
+    # CFD. The model is interpolated at the abscissa of each reference point
+    # (sweep_ua0 is sorted ascending for np.interp). Error = model - reference,
+    # in percentage points of eta_tt.
+    order = np.argsort(sweep_ua0)
+    model_at = lambda x: np.interp(np.asarray(x), sweep_ua0[order], sweep_eta_tt[order])
+    error_sets = {
+        'Experiment (Sauret 2012)': (
+            np.asarray(EXP_UA0),
+            100 * (model_at(EXP_UA0) - np.asarray(EXP_ETA_TT)),
+            '#eb6834',
+            '+',
+        ),
+        'CFD with clearances': (
+            np.asarray(CFD_UA0),
+            100 * (model_at(CFD_UA0) - np.asarray(CFD_ETA_TT_CLR)),
+            '#1baf7a',
+            's',
+        ),
+        'CFD without clearances': (
+            np.asarray(CFD_UA0),
+            100 * (model_at(CFD_UA0) - np.asarray(CFD_ETA_TT_NOCLR)),
+            '#1baf7a',
+            '^',
+        ),
+    }
+    print('\nSpeedline error, model - reference [eta points]:')
+    error_summary_rows = []
+    for name, (_, err, _, _) in error_sets.items():
+        error_summary_rows.append(
+            [
+                name,
+                f'{err.mean():+.2f}',
+                f'{np.sqrt(np.mean(err**2)):.2f}',
+                f'{np.abs(err).max():.2f}',
+            ]
+        )
+    print(
+        tabulate(
+            error_summary_rows,
+            headers=['Reference', 'Mean error', 'RMS error', 'Max |error|'],
+            tablefmt='github',
+        )
+    )
+
+    for name, (x_ref, err, color, marker) in error_sets.items():
+        ax_err.scatter(
+            x_ref,
+            err,
+            marker=marker,
+            s=20,
+            color=color,
+            facecolors='none' if marker == '^' else color,
+            label=name,
+        )
+    ax_err.axhline(0, color='gray', linewidth=0.8)
+    ax_err.set_xlabel(r'$U / a_0$ [-]')
+    ax_err.set_ylabel(r'$\eta_{tt,\mathrm{ADeT}} - \eta_{tt,\mathrm{ref}}$ [\%-pts]')
+    ax_err.grid(True, alpha=0.3)
+    # Headroom above the data so the legend sits clear of the points
+    all_err = np.concatenate([err for _, err, _, _ in error_sets.values()])
+    err_lo = min(all_err.min(), 0) - 0.5
+    err_hi = max(all_err.max(), 0) + 0.3
+    ax_err.set_ylim(err_lo, err_hi + 0.6 * (err_hi - err_lo))
+    ax_err.legend(frameon=False, loc='upper right', fontsize=6.5)
     fig_sweep.tight_layout()
+    if SAVE_FIGURES:
+        save_pdf(fig_sweep, FIG_DIR / 'adet_t100_speedline.pdf')
+
+# ============================================================
+# Impeller inlet incidence against total-to-total efficiency along the speedline
+# ============================================================
+if PLOTS and RUN_SPEEDLINE:
+    # Model only: the reference (Jones 1996) trend is overlaid separately
+    fig_inc, ax_inc = plt.subplots(figsize=(3.6, 2.5), dpi=300)
+    ax_inc.plot(
+        sweep_incidence, sweep_eta_tt, marker='o', ms=3, color='#2a78d6', label='ADeT'
+    )
+    # Label every fifth point with its U/a0 so the dense part of the curve stays legible
+    for ua0, inc, eta in list(zip(sweep_ua0, sweep_incidence, sweep_eta_tt))[::5]:
+        ax_inc.annotate(
+            f'{ua0:.2f}',
+            (inc, eta),
+            textcoords='offset points',
+            xytext=(4, 4),
+            fontsize=6,
+            color=TEXT_SECONDARY,
+        )
+    ax_inc.axvline(0.0, color='gray', linestyle='--', linewidth=0.8)
+    ax_inc.set_ylim(0.80, 0.90)
+    ax_inc.set_xlabel(r'Impeller inlet incidence $i$ [deg]')
+    ax_inc.set_ylabel(r'$\eta_{tt}$ [-]')
+    ax_inc.grid(True, alpha=0.3)
+    ax_inc.legend(frameon=False, loc='lower right')
+    fig_inc.tight_layout()
+    if SAVE_FIGURES:
+        save_pdf(fig_inc, FIG_DIR / 'adet_t100_eta_incidence.pdf')
 
 # ============================================================
 # Total-to-total efficiency against pressure ratio (design speed)
@@ -970,8 +1159,9 @@ if PLOTS and RUN_PR_SWEEP and pr_rows:
     fig_pr.tight_layout()
 
 # ============================================================
-# Loss breakdown along the speedline: stacked entropy rise per mechanism vs.
-# U/a0, stator (nozzle) and rotor in separate panels on a shared scale
+# Loss breakdown along the speedline: stacked delta_eta_tt [%] per mechanism vs.
+# U/a0, stator and impeller in separate panels on a shared scale. Same shares
+# as the design-point bars (delta_eta_breakdown), so the two plots agree.
 # ============================================================
 if PLOTS and RUN_SPEEDLINE:
     # Colour follows the mechanism, not its position in the stack, so a given
@@ -980,16 +1170,27 @@ if PLOTS and RUN_SPEEDLINE:
         'Profile': '#2a78d6',
         'Leakage': '#eb6834',
         'Incidence': '#1baf7a',
+        'Windage': '#8c564b',
         'Endwall': '#eda100',
         'Mixing': '#e87ba4',
+        'Interspace': '#7d5ba6',
     }
 
     fig_stack, axs_stack = plt.subplots(
-        1, 2, figsize=(11, 4.5), dpi=70, sharex=True, sharey=True, facecolor=SURFACE
+        1, 2, figsize=(6.5, 2.9), dpi=300, sharex=True, sharey=True, facecolor=SURFACE
     )
-    for ax, component in zip(axs_stack, ('Nozzle', 'Rotor')):
+    # Group keys of delta_eta_breakdown: ('Stator', ...) for the nozzle and the
+    # interspace, ('Impeller', ...) for the rotor
+    for ax, (component, group) in zip(
+        axs_stack, (('Nozzle', 'Stator'), ('Rotor', 'Impeller'))
+    ):
         names = [name for name, _ in LOSS_MECHANISMS[component]]
-        series = [np.asarray(sweep_loss[component][name]) for name in names]
+        if component == 'Nozzle':
+            # The interspace is grouped with the stator side, as in the design-point plots
+            names.append('Interspace')
+        series = [
+            100 * np.array([s[(group, name)] for s in sweep_deta]) for name in names
+        ]
         ax.stackplot(
             sweep_ua0,
             *series,
@@ -1008,16 +1209,12 @@ if PLOTS and RUN_SPEEDLINE:
             ax.spines[side].set_visible(False)
         ax.spines['left'].set_color(MUTED)
         ax.spines['bottom'].set_color(MUTED)
-        ax.legend(loc='best', frameon=False)
+        ax.legend(loc='best', frameon=False, fontsize=7)
 
-    axs_stack[0].set_ylabel('Entropy rise Ds [J/kg/K]', color=MUTED)
-    fig_stack.suptitle(
-        'Loss breakdown',
-        color=TEXT_PRIMARY,
-        x=0.02,
-        ha='left',
-    )
+    axs_stack[0].set_ylabel(r'$\Delta\eta_{tt}$ [\%]', color=MUTED)
     fig_stack.tight_layout()
+    if SAVE_FIGURES:
+        save_pdf(fig_stack, FIG_DIR / 'adet_t100_loss_stack.pdf')
 
 # ============================================================
 # Total-to-total efficiency loss at the design point: solver against the
@@ -1029,7 +1226,7 @@ if PLOTS:
     GROUP_LABELS = {
         'Stator': 'Stator',
         'Impeller': 'Impeller',
-        'Exit KE': 'Exit KE\n(not in loss total)',
+        'Exit KE': 'Exit KE',
     }
     deta_table = table_delta_eta_breakdown()
     deta_series = {
@@ -1040,7 +1237,7 @@ if PLOTS:
         'Table (Present)': [100 * deta_table[g] for g in GROUPS],
     }
 
-    fig_eta, ax_eta = plt.subplots(figsize=(8, 5), dpi=70, facecolor=SURFACE)
+    fig_eta, ax_eta = plt.subplots(figsize=(5.2, 3.2), dpi=300, facecolor=SURFACE)
     x_groups = np.arange(len(GROUPS))
     bar_width = 0.38
     for i, (label, values) in enumerate(deta_series.items()):
@@ -1053,32 +1250,103 @@ if PLOTS:
         )
         ax_eta.bar_label(
             bars_eta,
-            labels=[f'{v:.2f}%' for v in values],
-            padding=4,
+            labels=[rf'{v:.2f}\%' for v in values],
+            padding=3,
             color=TEXT_PRIMARY,
-            fontsize=10,
+            fontsize=8,
         )
     ax_eta.set_xticks(x_groups, [GROUP_LABELS[g] for g in GROUPS])
 
-    ax_eta.set_title(
-        'Total-to-total efficiency loss at design point (T-100)',
-        loc='left',
-        color=TEXT_PRIMARY,
-        fontsize=11,
-    )
     ax_eta.set_facecolor(SURFACE)
     ax_eta.set_axisbelow(True)
     peak_eta = max(max(values) for values in deta_series.values())
     ax_eta.set_ylim(0, peak_eta * 1.2)
-    ax_eta.grid(axis='y', color=GRIDLINE, linewidth=1)
+    ax_eta.grid(axis='y', color=GRIDLINE, linewidth=0.6)
     ax_eta.tick_params(colors=TEXT_SECONDARY)
-    ax_eta.set_ylabel(r'Efficiency loss $\Delta\eta_{tt}$ [%]', color=MUTED)
-    ax_eta.legend(frameon=False)
+    ax_eta.set_ylabel(r'$\Delta\eta_{tt}$ [\%]', color=MUTED)
+    ax_eta.legend(frameon=False, loc='upper right')
     for side in ('top', 'right'):
         ax_eta.spines[side].set_visible(False)
     ax_eta.spines['left'].set_color(MUTED)
     ax_eta.spines['bottom'].set_color(MUTED)
     fig_eta.tight_layout()
+    if SAVE_FIGURES:
+        save_pdf(fig_eta, FIG_DIR / 'adet_t100_deta_components.pdf')
+
+# ============================================================
+# Mach numbers at the reference stations against Sauret (2012) Table 4
+# ("Present" RITAL column): absolute (model - paper) and relative difference.
+# M is the absolute Mach number, Mw the relative one. Note the rotor outlet
+# relative Mach is a boundary condition (set to Sauret's value), so its
+# difference is zero by construction.
+# ============================================================
+if PLOTS:
+    MACH_STATIONS = [
+        # (label, Sauret Table 4 "Present" value, model value at the solution)
+        ('Nozzle outlet\nM', 0.887, _val(n1.kin.Mach)),
+        ('Rotor inlet\nM', 0.986, _val(n4.kin.Mach)),
+        ('Rotor inlet\nMw', 0.265, _val(n4.kin.RelMach)),
+        ('Rotor outlet\nM', 0.384, _val(n5.kin.Mach)),
+        ('Rotor outlet\nMw', 0.713, _val(n5.kin.RelMach)),
+    ]
+    mach_labels = [label for label, _, _ in MACH_STATIONS]
+    mach_paper = np.array([paper for _, paper, _ in MACH_STATIONS])
+    mach_model = np.array([model for _, _, model in MACH_STATIONS])
+    mach_abs_diff = mach_model - mach_paper
+    mach_rel_diff = 100 * mach_abs_diff / mach_paper
+
+    fig_mach, axs_mach = plt.subplots(
+        1, 2, figsize=(14, 6), dpi=70, sharex=True, facecolor=SURFACE
+    )
+    x_mach = np.arange(len(MACH_STATIONS))
+    mach_panels = [
+        (
+            axs_mach[0],
+            mach_abs_diff,
+            [f'{v:+.3f}' for v in mach_abs_diff],
+            r'$\Delta M$ [-]',
+            'Absolute: model - paper',
+        ),
+        (
+            axs_mach[1],
+            mach_rel_diff,
+            [f'{v:+.1f}%' for v in mach_rel_diff],
+            r'$\Delta M / M_{paper}$ [%]',
+            'Relative: (model - paper) / paper',
+        ),
+    ]
+    for ax, values, bar_text, ylabel, title in mach_panels:
+        bars_mach = ax.bar(x_mach, values, width=0.6, color=BAR_COLOR)
+        ax.bar_label(
+            bars_mach,
+            labels=bar_text,
+            padding=4,
+            color=TEXT_PRIMARY,
+            fontsize=12,
+        )
+        ax.axhline(0, color=MUTED, linewidth=1)
+        ax.set_xticks(x_mach, mach_labels, fontsize=12)
+        ax.set_title(title, loc='left', color=TEXT_PRIMARY, fontsize=13)
+        ax.set_facecolor(SURFACE)
+        ax.set_axisbelow(True)
+        ax.grid(axis='y', color=GRIDLINE, linewidth=1)
+        ax.tick_params(colors=TEXT_SECONDARY)
+        ax.set_ylabel(ylabel, color=MUTED)
+        for side in ('top', 'right'):
+            ax.spines[side].set_visible(False)
+        ax.spines['left'].set_color(MUTED)
+        ax.spines['bottom'].set_color(MUTED)
+        lo, hi = min(0.0, values.min()), max(0.0, values.max())
+        span = hi - lo
+        ax.set_ylim(lo - 0.15 * span, hi + 0.25 * span)
+    fig_mach.suptitle(
+        'Mach number vs. Sauret (2012) Table 4 "Present" (T-100)',
+        color=TEXT_PRIMARY,
+        x=0.02,
+        ha='left',
+        fontsize=14,
+    )
+    fig_mach.tight_layout()
 
 # ============================================================
 # Mach numbers at the design point: solver against the reference table,
@@ -1174,62 +1442,27 @@ if PLOTS and RUN_SPEEDLINE:
     fig_stator.tight_layout()
 
 # ============================================================
-# Deviation angle along the speedline at the nozzle and rotor outlets: solved
-# deviation against the Aungier delta0 / delta_sub terms
+# Total mass flow along the speedline (U/a0 sweep)
 # ============================================================
-if PLOTS and RUN_SPEEDLINE and USE_AUNGIER_DEVIATION:
-    fig_dev, axs_dev = plt.subplots(
-        1, 2, figsize=(11, 4.5), dpi=70, sharex=True, sharey=True, facecolor=SURFACE
-    )
-    for ax, component in zip(axs_dev, ('Nozzle', 'Rotor')):
-        ax.plot(
-            sweep_ua0,
-            sweep_dev_angle[component],
-            marker='o',
-            color='#2a78d6',
-            label=r'$\delta$ (solved)',
-        )
-        ax.plot(
-            sweep_ua0,
-            sweep_delta0[component],
-            linestyle='--',
-            color='#eb6834',
-            label=r'$\delta_0$ (Aungier)',
-        )
-        ax.plot(
-            sweep_ua0,
-            sweep_delta_sub[component],
-            linestyle=':',
-            color='#1baf7a',
-            label=r'$\delta_{sub}$ (Aungier)',
-        )
-        ax.set_title(component, loc='left', color=TEXT_PRIMARY, fontsize=11)
-        ax.set_facecolor(SURFACE)
-        ax.set_axisbelow(True)
-        ax.grid(True, color=GRIDLINE, linewidth=1)
-        ax.tick_params(colors=TEXT_SECONDARY)
-        ax.set_xlabel(r'$U / a_0$ [-]', color=MUTED)
-        for side in ('top', 'right'):
-            ax.spines[side].set_visible(False)
-        ax.spines['left'].set_color(MUTED)
-        ax.spines['bottom'].set_color(MUTED)
-        ax.legend(loc='best', frameon=False)
-
-    axs_dev[0].set_ylabel(r'Deviation angle $\delta$ [deg]', color=MUTED)
-    fig_dev.suptitle(
-        'Deviation angle along the speedline (T-100)',
-        color=TEXT_PRIMARY,
-        x=0.02,
-        ha='left',
-    )
-    fig_dev.tight_layout()
+if PLOTS and RUN_SPEEDLINE:
+    fig_mdot, ax_mdot = plt.subplots(figsize=(7, 5), dpi=70, facecolor=SURFACE)
+    ax_mdot.plot(sweep_ua0, sweep_mdot, marker='o', color='#2a78d6')
+    ax_mdot.set_xlabel(r'$U / a_0$ [-]')
+    ax_mdot.set_ylabel(r'$\dot{m}$ [kg/s]')
+    ax_mdot.set_title('Mass flow along the speedline (T-100)')
+    ax_mdot.grid(True, alpha=0.3)
+    fig_mdot.tight_layout()
 
 # ============================================================
 # Meridional profile of each component (hub/tip contours + LE/TE), laid
 # end to end along the axis: each component starts where the previous one's
 # axial chord ends (the interspace has zero chord, so it adds no length)
 # ============================================================
-COMPONENT_COLORS = {'Nozzle': 'darkblue', 'Interspace': 'gray', 'Rotor': 'darkred'}
+COMPONENT_COLORS = {
+    'Nozzle': 'darkblue',
+    'Interspace': 'gray',
+    'Rotor': 'darkred',
+}
 
 if PLOTS:
     fig_mer, ax_mer = plt.subplots(figsize=(8, 6), dpi=70)
@@ -1288,4 +1521,5 @@ if PLOTS:
         ax.set_visible(False)
 
     fig.tight_layout()
-    plt.show(block=False)
+    if not SAVE_FIGURES:
+        plt.show(block=True)

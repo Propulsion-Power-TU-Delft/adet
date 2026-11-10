@@ -208,7 +208,8 @@ class OtherVariables(VariableEnum):
     EntropyPresh = VarSpec('s_presh', 'J / kg / K', 1e3)
     EnthalpyPresh = VarSpec('h_presh', 'J / kg', 1e5)
     Enthalpy_totIs = VarSpec('tot_hmass_is', 'J / kg', 6e5)
-    BlLoadingCoeff = VarSpec('bl_loadingCoeff', '')
+    BlLoadingCoeff = VarSpec('bl_loadingCoeff', '', 0.75)
+    RecircDiffCoeff = VarSpec('recirc_diffCoeff', '', 0.75)  # Recirculation D_f const.
     SlipFactor = VarSpec('slip_factor', '')
     SlipFactCoeff = VarSpec('slip_factCoeff', '')
     Cf_smooth = VarSpec('Cf_smooth', '')
@@ -216,6 +217,8 @@ class OtherVariables(VariableEnum):
     WakeFrac = VarSpec('wake_frac', '')
     MinWakeFrac = VarSpec('minWake_frac', '')
     MaxWakeFrac = VarSpec('maxWake_frac', '')
+    WakeFracThres = VarSpec('wake_frac_thres', '')
+    MixDepthRatio = VarSpec('mix_depth_ratio', '')
     IncCoeff = VarSpec('incCoeff', '')
     WorkLossCoeff = VarSpec('worklossCoeff', '')
     XiCambLenA = VarSpec('xi_camb_len_A', '')

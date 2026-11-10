@@ -368,6 +368,43 @@ class IncidenceGalvas(LossModel):
 
 
 class MixingJohnstonDean(LossModel):
+    """
+    Johnston and Dean (1966) - Losses in Vaneless Diffusers of Centrifugal
+    Compressors and Pumps: Analysis, Experiment, and Design.
+
+    Sudden-expansion mixing loss of the impeller discharge wakes at the
+    diffuser inlet: a square-wave jet-wake profile leaving the blade passages
+    mixes out suddenly to a uniform, axisymmetric flow (Sudden Expansion
+    Analysis). Only the meridional velocity component is mixed out, the
+    tangential component is preserved.
+
+    Notation, Johnston and Dean -> adet:
+    - C_i         -> V_mag, impeller outlet (diffuser inlet) velocity
+    - lambda_i    -> tan(FlowAngleAbs), swirl parameter C_theta / C_m
+    - eps         -> WakeFrac, fraction of the blade-to-blade spacing
+                     occupied by the wake
+    - B = b_i/b_t -> MixDepthRatio, diffuser inlet depth / impeller tip depth
+
+    Assumptions of the paper: no relative flow in the wake (W_w = 0), constant
+    static pressure around the impeller rim, Z >= 10 blades, incompressible
+    flow, B >= 1 (footnote 12). The loss is applied as an enthalpy loss.
+
+    NB: Wake fraction computation is NOT from Johnston and Dean. The paper
+    takes eps as an input and states that its prediction is intentionally
+    ignored (footnote 23); its only indications relate significant wakes
+    (eps > 0.25) to low flow, near surge (p. 58), and mixing losses to a
+    swirl parameter above a critical value (pp. 59-60).
+
+    Single-node equation at the impeller outlet, e.g. `MixingJohnstonDean(): 1`
+    or `MixingJohnstonDean(ramp='geometric'): 1`.
+    """
+
+    def __init__(self, ramp: str = 'linear', **kwargs):
+        super().__init__(**kwargs)
+        if ramp not in ('linear', 'geometric'):
+            raise ValueError(f"ramp must be 'linear' or 'geometric', got {ramp!r}")
+        self.ramp = ramp
+
     def residual(
         self,
         v0: n0.kin.V_mag.Hint,
@@ -377,24 +414,31 @@ class MixingJohnstonDean(LossModel):
         wake_frac0: n0.oth.WakeFrac.Hint,
         min_wake0: n0.oth.MinWakeFrac.Hint,
         max_wake0: n0.oth.MaxWakeFrac.Hint,
+        mf_thres0: n0.oth.WakeFracThres.Hint,
+        depth_ratio0: n0.oth.MixDepthRatio.Hint,
         dht_mix0: n0.loss.Dht_mixing.Hint,
     ):
-        MF_THRES = 0.75
-        B = 1
-
-        slope_eps_mf = (max_wake0 - min_wake0) / ((1 - MF_THRES) * mf_choke0)
-        offset_eps_mf = max_wake0 - slope_eps_mf * mf_choke0
-        linear_wake_frac = offset_eps_mf + slope_eps_mf * cum_mf0
+        # Wake fraction ramp, MinWakeFrac at WakeFracThres ChokeMassflow (ramp
+        # position 0) and MaxWakeFrac at ChokeMassflow (ramp position 1)
+        ramp_pos = (cum_mf0 - mf_thres0 * mf_choke0) / ((1 - mf_thres0) * mf_choke0)
+        if self.ramp == 'geometric':
+            # Ramp position limited to [0, 1]: both if_else branches are evaluated,
+            # the power would otherwise overflow far from the solution
+            ramp_pos_lim = safe_max(0.0, safe_min(ramp_pos, 1.0))
+            ramp_wake_frac = min_wake0 * (max_wake0 / min_wake0) ** ramp_pos_lim
+        else:
+            ramp_wake_frac = min_wake0 + (max_wake0 - min_wake0) * ramp_pos
 
         wake_frac_lo = min_wake0
-        wake_frac_hi = safe_min(linear_wake_frac, max_wake0)
+        wake_frac_hi = safe_min(ramp_wake_frac, max_wake0)
 
         r_wake = wake_frac0 - safe_if_else(
-            cum_mf0 < MF_THRES * mf_choke0,
+            cum_mf0 < mf_thres0 * mf_choke0,
             wake_frac_lo,
             wake_frac_hi,
         )
-        k1 = (1 - wake_frac0 - B) / (1 - wake_frac0)
+
+        k1 = (1 - wake_frac0 - depth_ratio0) / (1 - wake_frac0)
         k2 = 1 + np.tan(alpha0) ** 2
         dht = (1 / k2) * k1**2 * v0**2 / 2
 
@@ -429,6 +473,31 @@ class DiskFricDailyNece(LossModel):
 
 
 class RecirculationCoppage(LossModel):
+    """
+    Coppage et al. (1956) - Study of Supersonic Radial Compressors for
+    Refrigeration and Pressurization Systems, WADC TR 55-257, Eq. (2.36).
+
+            dh_rc = 0.02 sqrt(tan(alpha_2)) D_f U_2^2
+
+    tan(alpha_2): no loss for a radial discharge, infinite loss at zero
+    through-flow (Coppage, Section 2.4.5); tentative expression, "can only be
+    regarded as hypotheses" (Coppage, Section 2.4).
+
+    D_f: diffusion factor of the blade loading loss, Coppage Eq. (2.33), as in
+    Oh et al. (1997) Table 5. Galvas (1972) - Fortran program for predicting
+    off-design performance of centrifugal compressors- Eq. (B76)
+
+    Notation as in RecirculationOh:
+    - alpha_2    -> FlowAngleAbs at the impeller outlet, from the meridional
+                    direction
+    - k          -> RecircDiffCoeff, 0.75 in the report; separate from the
+                    BlLoadingCoeff of BladeLoadingCoppage, so that the blade
+                    loading loss can be calibrated without changing this one
+                    0.60 when accounting for splitter blades
+
+    Two-node equation across the impeller, e.g. `RecirculationCoppage(): (0, 1)`.
+    """
+
     def residual(
         self,
         dht_recirc1: n1.loss.Dht_recirculation.Hint,
@@ -441,7 +510,7 @@ class RecirculationCoppage(LossModel):
         w1: n1.kin.W_mag.Hint,
         w_tip0: n0.kin.W_tip.Hint,
         n_bl_eff1: n1.geo.NumBladesEff.Hint,
-        bl_coeff1: n1.oth.BlLoadingCoeff.Hint,
+        rc_coeff1: n1.oth.RecircDiffCoeff.Hint,
     ):
         w_ratio = w1 / w_tip0
         work = ht1 - ht0
@@ -449,15 +518,42 @@ class RecirculationCoppage(LossModel):
         diff_fact = (
             1
             - w_ratio
-            + bl_coeff1
+            + rc_coeff1
             * (work / u1**2)
-            * w_ratio
-            / (n_bl_eff1 / np.pi * (1 - r_ratio) + 2 * r_ratio)
+            * (1 / w_ratio)
+            * (((n_bl_eff1 / np.pi) * (1 - r_ratio)) + (2 * r_ratio)) ** (-1)
         )
-        return dht_recirc1 - 0.02 * np.tan(alpha) * (diff_fact * u1) ** 2
+        dht = 0.02 * np.sqrt(np.tan(alpha)) * diff_fact * u1**2
+
+        return dht_recirc1 - safe_mean(dht)
 
 
 class RecirculationOh(LossModel):
+    """
+    Oh, Yoon and Chung (1997) - An Optimum Set of Loss Models for Performance
+    Prediction of Centrifugal Compressors, Table 5 (set E-3) and Table 6.
+
+    Diffusion factor of the Coppage et al. (1956) blade loading loss, with a
+    hyperbolic function of the exit flow angle instead of Coppage's tan(alpha_2),
+    so that the loss lies between those of Coppage and Aungier at low flow (Fig. 6):
+
+        dh_rc = 8e-5 sinh(3.5 alpha_2^3) D_f^2 U_2^2
+
+    Notation, Oh et al. -> adet:
+    - alpha_2    -> FlowAngleAbs at the impeller outlet, from the meridional
+                    direction
+    - W_1t       -> W_tip, inlet relative velocity at the tip
+    - W_2, U_2   -> W_mag and BladeSpeed at the impeller outlet
+    - dh_Euler   -> ht1 - ht0, the Euler work (no parasitic loss in ht1)
+    - D_1t / D_2 -> Rtip at the inlet / Rmid at the outlet
+    - Z          -> NumBladesEff
+    - k          -> RecircDiffCoeff, 0.75 in the paper; separate from the
+                    BlLoadingCoeff of BladeLoadingCoppage, so that the blade
+                    loading loss can be calibrated without changing this one
+
+    Two-node equation across the impeller, e.g. `RecirculationOh(): (0, 1)`.
+    """
+
     def residual(
         self,
         w_tip0: n0.kin.W_tip.Hint,
@@ -469,7 +565,7 @@ class RecirculationOh(LossModel):
         rtip0: n0.geo.Rtip.Hint,
         rmid1: n1.geo.Rmid.Hint,
         alpha1: n1.kin.FlowAngleAbs.Hint,
-        bl_coeff1: n1.oth.BlLoadingCoeff.Hint,
+        rc_coeff1: n1.oth.RecircDiffCoeff.Hint,
         dht_recirc1: n1.loss.Dht_recirculation.Hint,
     ):
         w_ratio = w1 / w_tip0
@@ -478,10 +574,10 @@ class RecirculationOh(LossModel):
         diff_fact = (
             1
             - w_ratio
-            + bl_coeff1
+            + rc_coeff1
             * (work / u1**2)
-            * w_ratio
-            / (((n_bl_eff1 / np.pi) * (1 - r_ratio)) + (2 * r_ratio))
+            * (1 / w_ratio)
+            * (((n_bl_eff1 / np.pi) * (1 - r_ratio)) + (2 * r_ratio)) ** (-1)
         )
         dht = 8e-5 * np.sinh(3.5 * alpha1**3) * (diff_fact * u1) ** 2
 

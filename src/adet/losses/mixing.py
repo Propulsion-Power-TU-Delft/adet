@@ -46,6 +46,9 @@ class SieverdingBasePressure(EquationBase):
         pt0: n0.rlt.Pressure.Hint,
         p_base1: n1.oth.PBase.Hint,
     ):
+        return self._correlation_residual(p1, pt0, p_base1)
+
+    def _correlation_residual(self, p1, pt0, p_base):
         # Detect array shapes
         num_span = max(pt0.shape)
 
@@ -62,7 +65,21 @@ class SieverdingBasePressure(EquationBase):
         second_param = BLADE_PARAM * (p1**0)  # it's just an array of 2s
         table_entry = cs.horzcat(first_param, second_param).T
         pb_by__ptin = base_p_interpolant(table_entry).T
-        return p_base1 - pb_by__ptin * pt0
+        return p_base - pb_by__ptin * pt0
+
+
+class SieverdingInletBasePressure(SieverdingBasePressure):
+    """Sieverding base pressure evaluated at the inlet (node 0) of a
+    component whose outlet (node 1) carries the downstream static pressure,
+    e.g. the wake base pressure at the entry of a mixing volume."""
+
+    def residual(
+        self,
+        p1: n1.stc.Pressure.Hint,
+        pt0: n0.rlt.Pressure.Hint,
+        p_base0: n0.oth.PBase.Hint,
+    ):
+        return self._correlation_residual(p1, pt0, p_base0)
 
 
 class MixingMomentumBalances(EquationBase):
@@ -293,9 +310,9 @@ class AungierDeviationModel(DeviationModel):
             delta_sub,
         )
 
-        residual_sub = beta - (met_angle - deviation_sub)  # Deviation angle
+        residual = beta - (met_angle - deviation_sub)  # Deviation angle
 
-        return residual_sub
+        return residual
 
 
 class AungierSimpleMixLoss(LossModel):
