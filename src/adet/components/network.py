@@ -9,7 +9,7 @@ from adet.components import BaseComponent
 from adet.components.blade_row import BladeRow
 from adet.components.connections import Inlet, Shaft
 from adet.constants import AdetArray
-from adet.equations.base_equation import MeridionalGeom
+from adet.equations.base_equation import MeridionalGeom, UniqueEquation
 from adet.equations.fundamental import (
     Kinematics,
     MassAreaRelation,
@@ -131,10 +131,25 @@ class ComponentNetwork(Generic[T]):
                 abs_spec = spec.at_node(abs_idx)
                 self.system.add_spanwise_constants(abs_spec)
 
+    def _component_defines(self, node_idx: int, family: type) -> bool:
+        """Whether the component owning ``node_idx`` already declares an equation
+        of ``family`` on that node (e.g. a user-supplied ``Kinematics``)"""
+        comp = self.components[node_idx // 2]
+        rel_node = node_idx % 2
+        return any(
+            isinstance(eq, family) and rel_node in ensure_tuple(pos)
+            for eq, pos in comp._equations.items()
+        )
+
     def _add_single_node_eqs(self, comp_stack_length: int):
         for node_idx in range(2 * comp_stack_length):
             # Single node relationships, make instances!
             for eq in _SINGLE_NODE_EQUATIONS:
+                # A unique equation family declared by the component on this node
+                # supersedes the default one, so the default is not added
+                family = eq.__base__ if issubclass(eq, UniqueEquation) else None
+                if family is not None and self._component_defines(node_idx, family):
+                    continue
                 self.system.add_equation(eq(), node_idx)
 
     def _link_components(self):
