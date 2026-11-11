@@ -90,11 +90,6 @@ class FreeDeviation(DeviationModel):
         return ()
 
 
-class FreeBlockage(MeridAreaBlockage):
-    def residual(self, beta: n0.kin.FlowAngleRel.Hint):
-        return ()
-
-
 class ZeroDeviation(DeviationModel):
     """Impose equality between kinematic and geometric angles at a node"""
 

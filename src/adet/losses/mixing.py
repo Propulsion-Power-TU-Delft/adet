@@ -68,20 +68,6 @@ class SieverdingBasePressure(EquationBase):
         return p_base - pb_by__ptin * pt0
 
 
-class SieverdingInletBasePressure(SieverdingBasePressure):
-    """Sieverding base pressure evaluated at the inlet (node 0) of a
-    component whose outlet (node 1) carries the downstream static pressure,
-    e.g. the wake base pressure at the entry of a mixing volume."""
-
-    def residual(
-        self,
-        p1: n1.stc.Pressure.Hint,
-        pt0: n0.rlt.Pressure.Hint,
-        p_base0: n0.oth.PBase.Hint,
-    ):
-        return self._correlation_residual(p1, pt0, p_base0)
-
-
 class MixingMomentumBalances(EquationBase):
     """
     Balances of mass, momentum and energy for a mixing

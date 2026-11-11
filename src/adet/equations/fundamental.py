@@ -104,6 +104,11 @@ class ZeroBlockage(MeridAreaBlockage):
         return a_eff0 - a0
 
 
+class FreeBlockage(MeridAreaBlockage):
+    def residual(self, a0: n0.geo.EffArea.Hint):
+        return ()
+
+
 class BladeBlockage(MeridAreaBlockage):
     """Account for blade thicknesses in passage areas"""
 

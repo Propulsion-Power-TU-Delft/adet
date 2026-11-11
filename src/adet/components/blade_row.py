@@ -32,10 +32,7 @@ from adet.losses.compressors import (
     StanitzDiffuserMomentum,
     VoluteLossJapikse,
 )
-from adet.losses.mixing import (
-    MixingMomentumBalances,
-    SieverdingInletBasePressure,
-)
+from adet.losses.mixing import MixingMomentumBalances
 from adet.variables import (
     GeometricVariables,
     KinematicVariables,
@@ -381,48 +378,6 @@ class Interspace(BaseComponent):
         # NOTE: Null axial length => exactly radial diffuser
         self._boundary_conditions[n1.kin.Omega] = 0
         self._boundary_conditions[n1.geo.AxialLength] = 0
-        self._boundary_conditions[n1.geo.MerChord] = 0
-
-
-class MixingVolume(BaseComponent):
-    # The mixing inlet is the trailing-edge of the upstream blade row: its
-    # thickness, pitch and metal angle are inherited, while the wake boundary
-    # layer and base pressure are computed here at the inlet (node 0)
-    from_previous_node = (
-        ABSOLUTE_LINK
-        + GEOM_LINK
-        + [
-            _kin.Omega,
-            _geo.RDistr,
-            _geo.HDistr,
-            _geo.BldThick,
-            _geo.Pitch,
-            _geo.MetalAngle,
-        ]
-    )
-
-    constant_variables = GEOM_LINK + [_kin.Omega]
-
-    base_equations = [
-        # Fundamental equations
-        (ConstRelEnthalpy, (0, 1)),
-        (MassConservation, (0, 1)),
-        (MixingMomentumBalances, (0, 1)),
-        # Wake boundary layer at the trailing edge (inlet)
-        (BoundaryLayerRatios, 0),
-        (SieverdingInletBasePressure, (0, 1)),
-        # Meridional Geometry
-        (MeridionalGeometry, 1),
-        (EndwallProperties, 0),
-        (EndwallProperties, 1),
-        # No blades
-        (ZeroBlockage, 0),
-        (ZeroBlockage, 1),
-    ]
-
-    def _post_init(self):
-        # Zero axial length: the mixing region is a purely radial/throat-to-
-        # mixed-out control volume, as for the interspace
         self._boundary_conditions[n1.geo.MerChord] = 0
 
 
