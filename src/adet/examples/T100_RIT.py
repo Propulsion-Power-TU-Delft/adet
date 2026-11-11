@@ -42,7 +42,11 @@ from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.base_equation import LossApplier
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
-from adet.equations.fundamental import IdealInterspace, InterspaceLoss, Kinematics
+from adet.equations.fundamental import (
+    IdealInterspace,
+    InterspaceLoss,
+    KinematicsRMS,
+)
 from adet.equations.nondimensional import (
     GammaPV,
     TotalStaticExpansionEfficiency,
@@ -310,7 +314,7 @@ def build_network(include_losses: bool) -> ComponentNetwork:
         extra_equations={
             **rotor_extra_equations,
             ZeroDeviation(): 1,
-            Kinematics(use_rms_radius=True): 1,
+            KinematicsRMS(): 1,
         },
     )
 

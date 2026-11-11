@@ -203,7 +203,7 @@ class BaseComponent(ABC):
                 for user_eq, user_pos in user_eqs.items():
                     user_pos = set(ensure_tuple(user_pos))
                     user_eq_parent = user_eq.__class__.__base__
-                    # > If there are duplicates (e.g. same parent)
+                    # > If there are duplicates (i.e. same parent)
                     # > AND they are in the same position
                     if user_eq_parent == base_eq_parent and user_pos == base_pos:
                         logger.warning(

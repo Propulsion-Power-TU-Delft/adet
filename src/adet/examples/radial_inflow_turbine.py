@@ -23,6 +23,7 @@ from adet.components.network import ComponentNetwork
 from adet.equations.base_equation import LossApplier
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
 from adet.equations.nondimensional import GammaPV
+from adet.equations.utils import residual_debugger
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation
 from adet.losses.mixing import (
@@ -31,13 +32,13 @@ from adet.losses.mixing import (
     SieverdingBasePressure,
 )
 from adet.losses.rit import (
-    StatorProfileLoss,
-    StanitzSlip,
     ChenSlip,
     EndwallLoss,
     ImpellerIncidenceLoss,
     ImpellerLeakageLoss,
     ImpellerPassageLoss,
+    StanitzSlip,
+    StatorProfileLoss,
 )
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
@@ -45,7 +46,6 @@ from adet.tools.loggers import setup_logger
 from adet.tools.plotting import plot_velocity_triangles
 from adet.variables import KinematicVariables, NodeVariables
 from adet.varspec import DEF_NODE
-from adet.equations.utils import residual_debugger
 
 logger = logging.getLogger(__name__)
 setup_logger(logger)

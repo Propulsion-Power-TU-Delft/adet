@@ -89,7 +89,6 @@ class InterspaceLoss(EquationBase):
         s0: n0.stc.Entropy.Hint,
         s1: n1.stc.Entropy.Hint,
     ):
-
         # TODO: Full formulation with pinch
         # s_m = meridional length between the two stations
         # A_w = 2 * np.pi * rbar * s_m * n_walls / n_walls  # per wall: 2*pi*rbar*s_m
@@ -201,15 +200,23 @@ class BladeBlockage(MeridAreaBlockage):
         )
 
 
-class Kinematics(VelocityTriangles):
-    def __init__(
-        self,
-        use_rms_radius: bool = False,
-        scal_factor: list[float] | None = None,
-    ):
-        self.use_rms = use_rms_radius
-        super().__init__(scaling_factor=scal_factor)
+def _velocity_triangle_residuals(
+    v0, vm0, vt0, w0, wt0, wm0, u0, alpha0, beta0
+) -> tuple:
+    """Residuals r1-r6 shared by all velocity triangle definitions"""
+    r1 = v0 - (vm0**2 + vt0**2) ** 0.5
+    r2 = w0 - (wm0**2 + wt0**2) ** 0.5
 
+    r3 = vm0 - wm0
+    r4 = vt0 - (wt0 + u0)
+
+    r5 = alpha0 - np.atan2(vt0, vm0)
+    r6 = beta0 - np.atan2(wt0, wm0)
+
+    return r1, r2, r3, r4, r5, r6
+
+
+class Kinematics(VelocityTriangles):
     def residual(
         self,
         v0: n0.kin.V_mag.Hint,
@@ -223,23 +230,41 @@ class Kinematics(VelocityTriangles):
         beta0: n0.kin.FlowAngleRel.Hint,
         omega0: n0.kin.Omega.Hint,
         rr0: n0.geo.RDistr.Hint,
+    ):
+        r1, r2, r3, r4, r5, r6 = _velocity_triangle_residuals(
+            v0, vm0, vt0, w0, wt0, wm0, u0, alpha0, beta0
+        )
+        r7 = omega0 * rr0 - u0
+
+        return r1, r2, r3, r4, r5, r6, r7
+
+
+class KinematicsRMS(VelocityTriangles):
+    """
+    Same as `Kinematics`, but the blade speed uses the RMS radius of
+    the hub and tip, instead of the `RDistr` radius
+    """
+
+    def residual(
+        self,
+        v0: n0.kin.V_mag.Hint,
+        vm0: n0.kin.V_mer.Hint,
+        vt0: n0.kin.V_tan.Hint,
+        w0: n0.kin.W_mag.Hint,
+        wt0: n0.kin.W_tan.Hint,
+        wm0: n0.kin.W_mer.Hint,
+        u0: n0.kin.BladeSpeed.Hint,
+        alpha0: n0.kin.FlowAngleAbs.Hint,
+        beta0: n0.kin.FlowAngleRel.Hint,
+        omega0: n0.kin.Omega.Hint,
         rr_h: n0.geo.Rhub.Hint,
         rr_s: n0.geo.Rtip.Hint,
     ):
-        r1 = v0 - (vm0**2 + vt0**2) ** 0.5
-        r2 = w0 - (wm0**2 + wt0**2) ** 0.5
-
-        r3 = vm0 - wm0
-        r4 = vt0 - (wt0 + u0)
-
-        r5 = alpha0 - np.atan2(vt0, vm0)
-        r6 = beta0 - np.atan2(wt0, wm0)
-
-        if self.use_rms:
-            rr_rms = ((rr_h**2 + rr_s**2) / 2) ** 0.5
-            r7 = omega0 * rr_rms - u0
-        else:
-            r7 = omega0 * rr0 - u0
+        r1, r2, r3, r4, r5, r6 = _velocity_triangle_residuals(
+            v0, vm0, vt0, w0, wt0, wm0, u0, alpha0, beta0
+        )
+        rr_rms = ((rr_h**2 + rr_s**2) / 2) ** 0.5
+        r7 = omega0 * rr_rms - u0
 
         return r1, r2, r3, r4, r5, r6, r7
 

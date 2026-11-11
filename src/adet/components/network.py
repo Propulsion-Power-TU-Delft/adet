@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Any, Generic, Literal, Sequence, TypeVar, Type
+from typing import Any, Generic, Literal, Sequence, TypeVar
 
 from numpy.typing import NDArray
 from tabulate import tabulate
@@ -9,7 +9,7 @@ from adet.components import BaseComponent
 from adet.components.blade_row import BladeRow
 from adet.components.connections import Inlet, Shaft
 from adet.constants import AdetArray
-from adet.equations.base_equation import MeridionalGeom, UniqueEquation, EquationBase
+from adet.equations.base_equation import MeridionalGeom, UniqueEquation
 from adet.equations.fundamental import (
     Kinematics,
     MassAreaRelation,
