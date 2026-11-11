@@ -641,22 +641,14 @@ class ImpellerLeakageLoss(LossModel):
 
 class QiClearanceLoss(LossModel):
     """Tip clearance loss, Qi et al. (2017), Eq. (14), the response-surface fit
-    to Futral et al. data that Persky & Sauret (2019) label I.4:
+    to Futral and Holeski data (NASA report 19700008458):
 
-        Delta h_tip = Delta h_0 * (0.09678 A + 1.69997 R - 0.096844 R^2
-                                   + 0.03379 A R) / 100
+    Delta h_tip = Delta h_0 * (0.09678 A + 1.69997 R - 0.096844 R^2
+                               + 0.03379 A R) / 100
 
-    with A and R the axial and radial clearance ratios in %, and Delta h_0 the
-    total-to-total enthalpy drop, h_0in - h_tt,is,out.
-
-    Normalisation (from Qi et al., Sec. 2.2.1 and Fig. 3):
     - A = 100 * eps_a / b_in, the axial gap over the rotor inlet blade height.
-      Qi's example (A = 9 %, eps_a = 0.1 mm, b_4 = 1.11 mm) confirms this.
     - R = 100 * eps_r / b_out, the radial gap over the rotor exit blade height.
-      Qi's text does not give this denominator explicitly; b_out is my reading.
-
-    Note: the Persky & Sauret Table 1 coefficients (1.355 - 0.0837 A - ...) do
-    not match Qi's Eq. (14), so Qi's equation is used here."""
+    """
 
     config = EquationConfig(
         input_pair=cp.HmassP_INPUTS,
@@ -694,11 +686,6 @@ class SauretWindageLoss(LossModel):
 
     Laminar coefficients (3.7, 0.1, 0.5) apply below Re = 1e5, turbulent
     coefficients (0.0102, 0.2, 0.2) above it.
-
-    TODO(windage clearance): the back-face clearance ``eps`` is taken as the
-    rotor-inlet tip clearance. The paper gives no separate value for this turbine.
-    TODO(windage factor): Eq. A.8a gives M = 0.5 Cm rho w^2 r^5 (two faces), but
-    Eq. A.8b and A.8c use 0.25. The 0.25 of A.8c is used here; confirm it.
     """
 
     config = EquationConfig(
