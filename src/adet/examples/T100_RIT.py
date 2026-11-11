@@ -42,11 +42,7 @@ from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
 from adet.equations.base_equation import LossApplier
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
-from adet.equations.fundamental import (
-    IdealInterspace,
-    InterspaceLoss,
-    KinematicsRMS,
-)
+from adet.equations.fundamental import KinematicsRMS
 from adet.equations.nondimensional import (
     GammaPV,
     TotalStaticExpansionEfficiency,
@@ -65,6 +61,8 @@ from adet.losses.rit import (
     QiClearanceLoss,
     SauretWindageLoss,
     StatorProfileLoss,
+    InterspaceLoss,
+    IdealInterspace,
 )
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
