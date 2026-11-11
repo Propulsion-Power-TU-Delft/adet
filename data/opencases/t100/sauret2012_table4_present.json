@@ -1,0 +1,17 @@
+{
+  "source": "Sauret (2012), IMECE2012-88315, Table 4 'Present' (RITAL) column, engine conditions",
+  "mach": {
+    "nozzle_outlet": 0.887,
+    "rotor_inlet": 0.986,
+    "rotor_inlet_relative": 0.265,
+    "rotor_outlet": 0.384,
+    "rotor_outlet_relative": 0.713
+  },
+  "states": {
+    "inlet_total": {"p_Pa": 580400.0, "T_K": 1056.5},
+    "nozzle_outlet_total": {"p_Pa": 538600.0, "T_K": 1056.5},
+    "rotor_outlet_total": {"p_Pa": 104500.0, "T_K": 731.8},
+    "rotor_outlet_static": {"p_Pa": 94700.0, "T_K": 713.9}
+  },
+  "table3_specific_work_kJ_kg": 366.0
+}

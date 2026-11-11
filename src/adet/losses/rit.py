@@ -441,13 +441,36 @@ class StanitzSlip(DeviationModel):
         return r_slip, r_incidence
 
 
+def stodola_opt_incidence(alpha_in, n_blades):
+    """Optimal relative inflow angle from the absolute inflow angle, Persky &
+    Sauret (2019) Eq. A.2b (Stodola-type correlation, ``beta_in,opt,2``).
+    """
+    return np.arctan(-1.98 * np.tan(alpha_in) / (n_blades * (1 - 1.98 / n_blades)))
+
+
 class ImpellerIncidenceLoss(LossModel):
     """
-    Rotor incidence loss model for radial-inflow turbines from `Small High
-    Pressure Ratio Turbines`, D. G. Wilson / NASA CR-based correlation, as
-    reproduced in `COMPUTER PROGRAM FOR DESIGN ANALYSIS OF RADIAL-INFLOW
-    TURBINES` [Ref 1] (see ``rotorIncidenceLosses_NASA`` in
-    ``docs/rit_losses_turbosim.py``, [Ref 5]).
+    Rotor incidence loss for radial-inflow turbines, Persky & Sauret (2019)
+    Table 1 II.1 with the optimal relative angle ``beta_in,opt,2`` (Eq. A.2b):
+
+    C.A. Wasserbauer, A.J. Glassman, Fortran Program for Predicting Oﬀ-design
+    Performance of Radial-inﬂow Turbines, Tech. Rep., National Aeronautics and Space
+    Administration, 1975.
+
+        Delta h_i = 1/2 W_in^2 |sin(beta_in - beta_in,opt)|^n
+
+    The exponent switches with the sign of the incidence, as in the NASA-based
+    correlation of [Ref 1]: positive (over-turning) incidence uses
+    ``exponent_pos`` and negative (under-turning) incidence uses
+    ``exponent_neg``. Positive incidence is the more dissipative case.
+
+
+    Parameters
+    ----------
+    exponent_neg : float
+        Exponent for negative incidence. Persky & Sauret: 2.
+    exponent_pos : float
+        Exponent for positive incidence. Persky & Sauret: 3.
     """
 
     config = EquationConfig(
@@ -455,38 +478,32 @@ class ImpellerIncidenceLoss(LossModel):
         out_properties=(thrm.Entropy,),
     )
 
-    def __init__(self, min_loss_incidence: float = 0.0, scaling_factor=None):
-        """
-        Parameters
-        ----------
-        min_loss_incidence : float
-            Incidence angle [rad] at which the loss is zero (the minimum-loss
-            angle). The loss is centred on this angle: positive/negative
-            incidence is measured relative to it, so the under-/over-turning
-            split also moves with it. Default 0.0 centres the loss on
-            ``beta0 - metal_ang0 = 0``.
-        """
-        self.min_loss_incidence = min_loss_incidence
+    def __init__(
+        self, exponent_neg: float = 2.0, exponent_pos: float = 3.0, scaling_factor=None
+    ):
+        self.exponent_neg = exponent_neg
+        self.exponent_pos = exponent_pos
         super().__init__(scaling_factor)
 
     def residual(
         self,
         beta0: n0.kin.FlowAngleRel.Hint,
-        metal_ang0: n0.geo.MetalAngle.Hint,
+        alpha0: n0.kin.FlowAngleAbs.Hint,
+        n_bl1: n1.geo.NumBlades.Hint,
         W0: n0.kin.W_mag.Hint,
         s0: n0.stc.Entropy.Hint,
         p1: n1.stc.Pressure.Hint,
         h1_is: n1.oth.Enthalpy_Is.Hint,
         Ds_inc1: n1.loss.Ds_incidence.Hint,
     ):
-        # Incidence measured from the minimum-loss angle
-        incidence = beta0 - metal_ang0 - self.min_loss_incidence
-        cos_incidence = np.cos(incidence)
+        beta_opt = stodola_opt_incidence(alpha0, n_bl1)
+        incidence = beta0 - beta_opt
+        sin_incidence = safe_abs(np.sin(incidence))
 
-        # Negative (under-turning) incidence is less dissipative than positive
-        # (over-turning) incidence, hence the different exponent
-        Deltah_neg = W0**2 / 2 * (1 - cos_incidence**2.5)
-        Deltah_pos = W0**2 / 2 * (1 - cos_incidence**1.75)
+        # Sign of the incidence selects the exponent (not the loss value's
+        # sign), so that unit probing works
+        Deltah_neg = W0**2 / 2 * sin_incidence**self.exponent_neg
+        Deltah_pos = W0**2 / 2 * sin_incidence**self.exponent_pos
         Deltah = safe_if_else(incidence <= 0, Deltah_neg, Deltah_pos)
 
         h1_lss = h1_is + Deltah
@@ -599,7 +616,6 @@ class ImpellerLeakageLoss(LossModel):
         h1_is: n1.oth.Enthalpy_Is.Hint,
         Ds_leak1: n1.loss.Ds_leakage.Hint,
     ):
-
         Cx = (1 - (r3s / r2m)) / (vm0 * h2)
         Cr = (r3s / r2m) * (mer_chord1 - h2) / (vm1 * r3m * h3)
 
@@ -623,31 +639,66 @@ class ImpellerLeakageLoss(LossModel):
         return Ds_leak1 - (s1_leakage - s0)
 
 
-class ImpellerPressureLeakageLoss(LossModel):
-    """
-    Alternative rotor tip-leakage model driven by the static pressure drop
-    across the rotor (not by blade speed).
+class QiClearanceLoss(LossModel):
+    """Tip clearance loss, Qi et al. (2017), Eq. (14), the response-surface fit
+    to Futral et al. data that Persky & Sauret (2019) label I.4:
 
-    Physical picture: the tip gap passes a pressure-driven jet of speed
-    V_jet = sqrt(2 * dP / rho0). The leakage mass fraction is the jet mass
-    flow through the inlet tip-gap area divided by the through-flow:
+        Delta h_tip = Delta h_0 * (0.09678 A + 1.69997 R - 0.096844 R^2
+                                   + 0.03379 A R) / 100
 
-        f_leak = Cd * (cl0 / h2) * V_jet / vm0
+    with A and R the axial and radial clearance ratios in %, and Delta h_0 the
+    total-to-total enthalpy drop, h_0in - h_tt,is,out.
 
-    The jet's kinetic energy is dissipated on remixing with the main flow:
+    Normalisation (from Qi et al., Sec. 2.2.1 and Fig. 3):
+    - A = 100 * eps_a / b_in, the axial gap over the rotor inlet blade height.
+      Qi's example (A = 9 %, eps_a = 0.1 mm, b_4 = 1.11 mm) confirms this.
+    - R = 100 * eps_r / b_out, the radial gap over the rotor exit blade height.
+      Qi's text does not give this denominator explicitly; b_out is my reading.
 
-        dh_leak = k_mix * f_leak * V_jet**2 / 2 = k_mix * f_leak * dP / rho0
+    Note: the Persky & Sauret Table 1 coefficients (1.355 - 0.0837 A - ...) do
+    not match Qi's Eq. (14), so Qi's equation is used here."""
 
-    Parameters
-    ----------
-    cd : float
-        Discharge coefficient of the tip gap (about 0.6-0.8 for a sharp gap).
-    k_mix : float
-        Fraction of the jet kinetic energy dissipated on remixing (0-1).
-    dp_frac : float
-        Fraction of the rotor static pressure drop acting across the tip gap
-        (the blade-to-blade pressure difference at the shroud is smaller than
-        the mean static drop).
+    config = EquationConfig(
+        input_pair=cp.HmassP_INPUTS,
+        out_properties=(thrm.Entropy,),
+    )
+
+    def residual(
+        self,
+        h0_tot: n0.tot.Enthalpy.Hint,
+        eps_ax0: n0.geo.TipClearance.Hint,
+        b_in0: n0.geo.Height.Hint,
+        eps_rad1: n1.geo.TipClearance.Hint,
+        b_out1: n1.geo.Height.Hint,
+        h1_tt_is: n1.oth.Enthalpy_totIs.Hint,
+        s0: n0.stc.Entropy.Hint,
+        p1: n1.stc.Pressure.Hint,
+        h1_is: n1.oth.Enthalpy_Is.Hint,
+        Ds_leak1: n1.loss.Ds_leakage.Hint,
+    ):
+        A = 100 * eps_ax0 / b_in0
+        R = 100 * eps_rad1 / b_out1
+        frac = (0.09678 * A + 1.69997 * R - 0.096844 * R**2 + 0.03379 * A * R) / 100
+        Deltah = frac * (h0_tot - h1_tt_is)
+
+        s1_clearance = self.eos(h1_is + Deltah, p1)
+        return Ds_leak1 - (s1_clearance - s0)
+
+
+class SauretWindageLoss(LossModel):
+    """Disc windage (rotor back-face friction), Persky & Sauret (2019) Table 1
+    I.1 with Daily & Nece coefficients Cm.1 (Table A.6), Eqs. A.7 and A.8c:
+
+        Cm = C (eps / r)^m / Re^n,    Re = rho U r / mu
+        Delta h_w = Cm rho U^3 r^2 / (4 mdot)
+
+    Laminar coefficients (3.7, 0.1, 0.5) apply below Re = 1e5, turbulent
+    coefficients (0.0102, 0.2, 0.2) above it.
+
+    TODO(windage clearance): the back-face clearance ``eps`` is taken as the
+    rotor-inlet tip clearance. The paper gives no separate value for this turbine.
+    TODO(windage factor): Eq. A.8a gives M = 0.5 Cm rho w^2 r^5 (two faces), but
+    Eq. A.8b and A.8c use 0.25. The 0.25 of A.8c is used here; confirm it.
     """
 
     config = EquationConfig(
@@ -655,43 +706,33 @@ class ImpellerPressureLeakageLoss(LossModel):
         out_properties=(thrm.Entropy,),
     )
 
-    def __init__(
-        self, cd: float = 0.7, k_mix: float = 1.0, dp_frac: float = 1.0, **kwargs
-    ):
-        super().__init__(**kwargs)
-        self.cd = cd
-        self.k_mix = k_mix
-        self.dp_frac = dp_frac
+    RE_CROSSOVER = 1e5
 
     def residual(
         self,
-        vm0: n0.kin.V_mer.Hint,
-        h2: n0.geo.Height.Hint,
-        cl0: n0.geo.TipClearance.Hint,
         rho0: n0.stc.Density.Hint,
-        p0: n0.stc.Pressure.Hint,
+        mu0: n0.stc.Viscosity.Hint,
+        u0: n0.kin.BladeSpeed.Hint,
+        r_in0: n0.geo.Rmid.Hint,
+        eps0: n0.geo.TipClearance.Hint,
+        mdot0: n0.oth.TotMassFlow.Hint,
         s0: n0.stc.Entropy.Hint,
         p1: n1.stc.Pressure.Hint,
         h1_is: n1.oth.Enthalpy_Is.Hint,
-        Ds_leak1: n1.loss.Ds_leakage.Hint,
+        Ds_wind1: n1.loss.Ds_secondary.Hint,
     ):
-        # Pressure-driven tip-gap jet energy, dP / rho (floored for the solver)
-        dp = safe_max(self.dp_frac * (p0 - p1), 1.0e-6 * p0)
-        jet_energy = dp / rho0  # = V_jet**2 / 2
-        v_jet = np.sqrt(2.0) * jet_energy**0.5
+        Re = rho0 * u0 * r_in0 / mu0
+        clearance_ratio = eps0 / r_in0
 
-        f_leak = self.cd * (cl0 / h2) * v_jet / vm0
-        Deltah = self.k_mix * f_leak * jet_energy
+        cm_laminar = 3.7 * clearance_ratio**0.1 / Re**0.5
+        cm_turbulent = 0.0102 * clearance_ratio**0.2 / Re**0.2
+        cm = safe_if_else(Re < self.RE_CROSSOVER, cm_laminar, cm_turbulent)
 
-        h1_lss = h1_is + Deltah
-        s1_leakage = self.eos(h1_lss, p1)
+        Deltah = cm * rho0 * u0**3 * r_in0**2 / (2 * mdot0)
 
-        return Ds_leak1 - (s1_leakage - s0)
+        s1_windage = self.eos(h1_is + Deltah, p1)
+        return Ds_wind1 - (s1_windage - s0)
 
 
 class GlassmanMeitnerBlayer(LossModel):
-    def residual(self): ...
-
-
-class RadialGapLoss(LossModel):
     def residual(self): ...
