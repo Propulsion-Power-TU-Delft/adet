@@ -1,6 +1,5 @@
 """Module that gathers fundamental equations for internal flows"""
 
-import CoolProp as cp
 import numpy as np
 
 from adet.equations import EquationBase
@@ -105,6 +104,11 @@ class ZeroBlockage(MeridAreaBlockage):
 
 
 class FreeBlockage(MeridAreaBlockage):
+    """
+    Decouple the geometric and effective area, useful
+    for debugging, manually imposing a passage area
+    """
+
     def residual(self, a0: n0.geo.EffArea.Hint):
         return ()
 

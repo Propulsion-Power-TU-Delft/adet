@@ -56,13 +56,13 @@ from adet.losses.mixing import (
 )
 from adet.losses.rit import (
     EndwallLoss,
+    IdealInterspace,
     ImpellerIncidenceLoss,
     ImpellerPassageLoss,
+    InterspaceLoss,
     QiClearanceLoss,
     SauretWindageLoss,
     StatorProfileLoss,
-    InterspaceLoss,
-    IdealInterspace,
 )
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState

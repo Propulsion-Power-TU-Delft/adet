@@ -1,5 +1,4 @@
-from adet.equations.fundamental import BladeBlockage
-from adet.equations.base_equation import DeviationModel, LossApplier, MeridAreaBlockage
+from adet.equations.base_equation import DeviationModel, LossApplier
 from adet.equations.utils import get_midspan_idx
 from adet.variables import NodeVariables
 
@@ -86,6 +85,12 @@ class PercentageEntropyLoss(LossApplier):
 
 
 class FreeDeviation(DeviationModel):
+    """
+    Decouple the flow angle and the metal angle,
+    useful when the deviation is fully determined
+    by the thermodynamic state
+    """
+
     def residual(self, beta: n0.kin.FlowAngleRel.Hint):
         return ()
 

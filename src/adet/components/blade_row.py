@@ -8,7 +8,6 @@ from matplotlib.lines import Line2D
 from adet.components.base_component import BaseComponent
 from adet.components.connections import Shaft
 from adet.equations import EquationBase
-from adet.equations.definitions import BoundaryLayerRatios
 from adet.equations.fundamental import (
     ConstRelEnthalpy,
     EulerEquation,
@@ -32,7 +31,6 @@ from adet.losses.compressors import (
     StanitzDiffuserMomentum,
     VoluteLossJapikse,
 )
-from adet.losses.mixing import MixingMomentumBalances
 from adet.variables import (
     GeometricVariables,
     KinematicVariables,
