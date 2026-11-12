@@ -223,7 +223,6 @@ class FlowCoefficient(EquationBase):
         u1: n1.kin.BladeSpeed.Hint,
         flow_coeff1: n1.ndim.FlowCoeff.Hint,
     ):
-
         return safe_abs(u1) * flow_coeff1 - vm0
 
 
@@ -261,7 +260,6 @@ class WorkCoefficient(EquationBase):
         u1: n1.kin.BladeSpeed.Hint,
         work_coeff1: n1.ndim.WorkCoeff.Hint,
     ):
-
         return u1**2 * work_coeff1 - (h1_tot - h0_tot)
 
 
