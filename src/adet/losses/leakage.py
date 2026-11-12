@@ -90,6 +90,4 @@ class DentonRectLeakage(LossModel):
         leak_integral = W_ss**2 * (1 - W_ps / W_ss) * dm_by_dxi * camb_len1
 
         # [ J / s ] * [ s / kg ] * [ 1 / K ] = [ J / kg / K ] OK
-        return ds_leak1 - leak_integral / (
-            ch_mf1 * T_is1
-        )
+        return ds_leak1 - leak_integral / (ch_mf1 * T_is1)

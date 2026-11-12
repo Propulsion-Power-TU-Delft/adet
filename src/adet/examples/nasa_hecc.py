@@ -285,8 +285,11 @@ impeller = BladeRow(
         n1.oth.SlipFactCoeff: 5,
         # n1.oth.WorkLossCoeff: 0.3,
         n1.oth.BlLoadingCoeff: 0.9,
+        n1.oth.RecircDiffCoeff: 0.6,
         n1.oth.MinWakeFrac: 0.4,
         n1.oth.MaxWakeFrac: 0.4,
+        n1.oth.WakeFracThres: 0.75,  # Start of the wake fraction ramp / choke
+        n1.oth.MixDepthRatio: 1.0,  # Diffuser inlet depth / impeller tip depth
         n1.oth.WakeFrac: 0.3,
         n1.oth.ChokeMassflow: MASS_CHOKES[0],
     },
@@ -847,7 +850,7 @@ if RUN_MULTI:
             (n0, n1),
             # (n1, n2),
         ]
-        for plot_idx, (inlet_n, outlet_n) in enumerate(node_pairs):
+        for _plot_idx, (inlet_n, outlet_n) in enumerate(node_pairs):
             for node_idx, n in enumerate([inlet_n, outlet_n]):
                 ax = axs[node_idx]
                 ax.set_aspect('equal')

@@ -3,7 +3,6 @@ Modeling of a convergent-divergent nozzle with a normal shock in
 its divergent section, swept along exit pressure
 """
 
-from adet.fluid.ideal_eos import IdealGasState
 import logging
 
 import matplotlib.pyplot as plt
@@ -22,6 +21,7 @@ from adet.equations.fundamental import (
     TotalStaticMatching,
 )
 from adet.equations.nondimensional import RelativeMachNumber
+from adet.fluid.ideal_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink
 from adet.solution import solve_optimization_problem

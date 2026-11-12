@@ -1,4 +1,3 @@
-from adet.assemblers import CasadiSystem, IPOPT_DEFAULTS
 import logging
 from typing import Any, Callable
 
@@ -6,6 +5,8 @@ import casadi as cs
 import numpy as np
 from numpy.typing import NDArray
 
+from adet.assemblers import CasadiSystem
+from adet.constants import IPOPT_DEFAULTS
 from adet.tools.context import dummy_context, output_suppression
 
 logger = logging.getLogger(__name__)

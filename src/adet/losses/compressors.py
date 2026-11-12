@@ -86,44 +86,57 @@ class QiuSlip(DeviationModel):
     Qiu et al. (2011) - Analysis and Validation of a Unified Slip Factor Model
     for Impellers at Design and Off-Design Conditions.
 
-    Simplified form for a radial impeller outlet, with the blade turning and
-    passage width variation are neglected. The pitch is evaluated at the impeller
-    exit.
+    Valid for radial and mixed-flow impeller outlets: the meridional inclination
+    angle at the exit (MeridionalAngle, 0 = axial, 90 deg = radial) enters the
+    F-factor and the radial term. The blade turning and passage width variation
+    terms, Eqs. (10b) and (10c), are neglected.
 
-    - shape: F-factor, Eq. (6)
-    - r1: simplified radial slip-factor residual, Eq. (8), retaining only
-        the radial term in Eq. (10a)
+    Conventions as in the paper:
+    - Metal angle from the meridional direction, negative if backswept
+    - Exit pitch s2 = 2 pi r2 / Z2, evaluated at each spanwise station, with the
+        same blade number Z2 used in the radial term (effective blade number)
+    - Trailing edge thickness normal to the blade
+    - shape: F-factor, Eq. (6), with the factor 2 of the derivation in the appendix
+    - r1: slip-factor residual, Eq. (8), retaining only the radial term in Eq. (10a)
     - slip_velocity: American slip-factor definition
     - r2: exit velocity-triangle closure
+
+    Single-node equation: all quantities belong to the impeller outlet, apply it
+    at the outlet node of the blade row, e.g. `QiuSlip(): 1`.
     """
 
     def residual(
         self,
-        slip1: n1.oth.SlipFactor.Hint,
-        metal_ang1: n1.geo.MetalAngle.Hint,
-        n_bl_eff1: n1.geo.NumBladesEff.Hint,
-        bld_thick1: n1.geo.BldThick.Hint,
-        pitch0: n0.geo.Pitch.Hint,
-        u1: n1.kin.BladeSpeed.Hint,
-        wm1: n1.kin.W_mer.Hint,
-        wt1: n1.kin.W_tan.Hint,
+        slip0: n0.oth.SlipFactor.Hint,
+        metal_ang0: n0.geo.MetalAngle.Hint,
+        mer_angle0: n0.geo.MeridionalAngle.Hint,
+        n_bl_eff0: n0.geo.NumBladesEff.Hint,
+        bld_thick0: n0.geo.BldThick.Hint,
+        rr0: n0.geo.RDistr.Hint,
+        u0: n0.kin.BladeSpeed.Hint,
+        wm0: n0.kin.W_mer.Hint,
+        wt0: n0.kin.W_tan.Hint,
     ):
+        sin_incl = np.sin(mer_angle0)
+        exit_pitch = 2 * np.pi * rr0 / n_bl_eff0
+
         shape = (
             1
             - 2
-            * np.sin(np.pi / n_bl_eff1)
-            * np.sin(np.pi / n_bl_eff1 + metal_ang1)
-            * np.cos(metal_ang1)
-            - bld_thick1 / (pitch0 * np.cos(metal_ang1))
+            * np.sin(np.pi / n_bl_eff0)
+            * np.sin(np.pi / n_bl_eff0 + metal_ang0)
+            * np.cos(metal_ang0)
+            * sin_incl
+            - bld_thick0 / (exit_pitch * np.cos(metal_ang0))
         )
 
-        r1 = slip1 - (1 - shape * np.pi * np.cos(metal_ang1) / n_bl_eff1)
+        r1 = slip0 - (1 - shape * np.pi * np.cos(metal_ang0) * sin_incl / n_bl_eff0)
 
-        slip_velocity = u1 * (1 - slip1)
+        slip_velocity = u0 * (1 - slip0)
 
-        wt_noslip = wm1 * np.tan(metal_ang1)
+        wt_noslip = wm0 * np.tan(metal_ang0)
 
-        r2 = wt1 - (wt_noslip - slip_velocity)
+        r2 = wt0 - (wt_noslip - slip_velocity)
 
         return r1, r2
 
@@ -219,6 +232,13 @@ class ClearanceBrasz(LossModel):
 
 
 class HydraulicQuantities(EquationBase):
+    """
+    W. Jansen, A method for calculating the flow in a centrifugal
+    impeller when entropy gradients are present, in: Royal Society
+    conference on internal aerodynamics (turbomachinery), 19-21
+    July, Cambridge, UK, 1967, pp. 133-146
+    """
+
     def residual(
         self,
         rr1: n1.geo.RDistr.Hint,
@@ -236,7 +256,7 @@ class HydraulicQuantities(EquationBase):
         hyd_L = (
             np.pi
             / 8
-            * (2 * rr1 - (rtip0 - rhub0) - hgt1 + 2 * mer_chord1)
+            * (2 * rr1 - (rtip0 + rhub0) - hgt1 + 2 * mer_chord1)
             * (4 / ((np.cos(metal_tip0) + np.cos(metal_hub0)) + 2 * np.cos(metal_ang1)))
         )
 
@@ -348,6 +368,43 @@ class IncidenceGalvas(LossModel):
 
 
 class MixingJohnstonDean(LossModel):
+    """
+    Johnston and Dean (1966) - Losses in Vaneless Diffusers of Centrifugal
+    Compressors and Pumps: Analysis, Experiment, and Design.
+
+    Sudden-expansion mixing loss of the impeller discharge wakes at the
+    diffuser inlet: a square-wave jet-wake profile leaving the blade passages
+    mixes out suddenly to a uniform, axisymmetric flow (Sudden Expansion
+    Analysis). Only the meridional velocity component is mixed out, the
+    tangential component is preserved.
+
+    Notation, Johnston and Dean -> adet:
+    - C_i         -> V_mag, impeller outlet (diffuser inlet) velocity
+    - lambda_i    -> tan(FlowAngleAbs), swirl parameter C_theta / C_m
+    - eps         -> WakeFrac, fraction of the blade-to-blade spacing
+                     occupied by the wake
+    - B = b_i/b_t -> MixDepthRatio, diffuser inlet depth / impeller tip depth
+
+    Assumptions of the paper: no relative flow in the wake (W_w = 0), constant
+    static pressure around the impeller rim, Z >= 10 blades, incompressible
+    flow, B >= 1 (footnote 12). The loss is applied as an enthalpy loss.
+
+    NB: Wake fraction computation is NOT from Johnston and Dean. The paper
+    takes eps as an input and states that its prediction is intentionally
+    ignored (footnote 23); its only indications relate significant wakes
+    (eps > 0.25) to low flow, near surge (p. 58), and mixing losses to a
+    swirl parameter above a critical value (pp. 59-60).
+
+    Single-node equation at the impeller outlet, e.g. `MixingJohnstonDean(): 1`
+    or `MixingJohnstonDean(ramp='geometric'): 1`.
+    """
+
+    def __init__(self, ramp: str = 'linear', **kwargs):
+        super().__init__(**kwargs)
+        if ramp not in ('linear', 'geometric'):
+            raise ValueError(f"ramp must be 'linear' or 'geometric', got {ramp!r}")
+        self.ramp = ramp
+
     def residual(
         self,
         v0: n0.kin.V_mag.Hint,
@@ -357,24 +414,31 @@ class MixingJohnstonDean(LossModel):
         wake_frac0: n0.oth.WakeFrac.Hint,
         min_wake0: n0.oth.MinWakeFrac.Hint,
         max_wake0: n0.oth.MaxWakeFrac.Hint,
+        mf_thres0: n0.oth.WakeFracThres.Hint,
+        depth_ratio0: n0.oth.MixDepthRatio.Hint,
         dht_mix0: n0.loss.Dht_mixing.Hint,
     ):
-        MF_THRES = 0.75
-        B = 1
-
-        slope_eps_mf = (max_wake0 - min_wake0) / ((1 - MF_THRES) * mf_choke0)
-        offset_eps_mf = max_wake0 - slope_eps_mf * mf_choke0
-        linear_wake_frac = offset_eps_mf + slope_eps_mf * cum_mf0
+        # Wake fraction ramp, MinWakeFrac at WakeFracThres ChokeMassflow (ramp
+        # position 0) and MaxWakeFrac at ChokeMassflow (ramp position 1)
+        ramp_pos = (cum_mf0 - mf_thres0 * mf_choke0) / ((1 - mf_thres0) * mf_choke0)
+        if self.ramp == 'geometric':
+            # Ramp position limited to [0, 1]: both if_else branches are evaluated,
+            # the power would otherwise overflow far from the solution
+            ramp_pos_lim = safe_max(0.0, safe_min(ramp_pos, 1.0))
+            ramp_wake_frac = min_wake0 * (max_wake0 / min_wake0) ** ramp_pos_lim
+        else:
+            ramp_wake_frac = min_wake0 + (max_wake0 - min_wake0) * ramp_pos
 
         wake_frac_lo = min_wake0
-        wake_frac_hi = safe_min(linear_wake_frac, max_wake0)
+        wake_frac_hi = safe_min(ramp_wake_frac, max_wake0)
 
         r_wake = wake_frac0 - safe_if_else(
-            cum_mf0 < MF_THRES * mf_choke0,
+            cum_mf0 < mf_thres0 * mf_choke0,
             wake_frac_lo,
             wake_frac_hi,
         )
-        k1 = (1 - wake_frac0 - B) / (1 - wake_frac0)
+
+        k1 = (1 - wake_frac0 - depth_ratio0) / (1 - wake_frac0)
         k2 = 1 + np.tan(alpha0) ** 2
         dht = (1 / k2) * k1**2 * v0**2 / 2
 
@@ -409,6 +473,31 @@ class DiskFricDailyNece(LossModel):
 
 
 class RecirculationCoppage(LossModel):
+    """
+    Coppage et al. (1956) - Study of Supersonic Radial Compressors for
+    Refrigeration and Pressurization Systems, WADC TR 55-257, Eq. (2.36).
+
+            dh_rc = 0.02 sqrt(tan(alpha_2)) D_f U_2^2
+
+    tan(alpha_2): no loss for a radial discharge, infinite loss at zero
+    through-flow (Coppage, Section 2.4.5); tentative expression, "can only be
+    regarded as hypotheses" (Coppage, Section 2.4).
+
+    D_f: diffusion factor of the blade loading loss, Coppage Eq. (2.33), as in
+    Oh et al. (1997) Table 5. Galvas (1972) - Fortran program for predicting
+    off-design performance of centrifugal compressors- Eq. (B76)
+
+    Notation as in RecirculationOh:
+    - alpha_2    -> FlowAngleAbs at the impeller outlet, from the meridional
+                    direction
+    - k          -> RecircDiffCoeff, 0.75 in the report; separate from the
+                    BlLoadingCoeff of BladeLoadingCoppage, so that the blade
+                    loading loss can be calibrated without changing this one
+                    0.60 when accounting for splitter blades
+
+    Two-node equation across the impeller, e.g. `RecirculationCoppage(): (0, 1)`.
+    """
+
     def residual(
         self,
         dht_recirc1: n1.loss.Dht_recirculation.Hint,
@@ -421,7 +510,7 @@ class RecirculationCoppage(LossModel):
         w1: n1.kin.W_mag.Hint,
         w_tip0: n0.kin.W_tip.Hint,
         n_bl_eff1: n1.geo.NumBladesEff.Hint,
-        bl_coeff1: n1.oth.BlLoadingCoeff.Hint,
+        rc_coeff1: n1.oth.RecircDiffCoeff.Hint,
     ):
         w_ratio = w1 / w_tip0
         work = ht1 - ht0
@@ -429,15 +518,42 @@ class RecirculationCoppage(LossModel):
         diff_fact = (
             1
             - w_ratio
-            + bl_coeff1
+            + rc_coeff1
             * (work / u1**2)
-            * w_ratio
-            / (n_bl_eff1 / np.pi * (1 - r_ratio) + 2 * r_ratio)
+            * (1 / w_ratio)
+            * (((n_bl_eff1 / np.pi) * (1 - r_ratio)) + (2 * r_ratio)) ** (-1)
         )
-        return dht_recirc1 - 0.02 * np.tan(alpha) * (diff_fact * u1) ** 2
+        dht = 0.02 * np.sqrt(np.tan(alpha)) * diff_fact * u1**2
+
+        return dht_recirc1 - safe_mean(dht)
 
 
 class RecirculationOh(LossModel):
+    """
+    Oh, Yoon and Chung (1997) - An Optimum Set of Loss Models for Performance
+    Prediction of Centrifugal Compressors, Table 5 (set E-3) and Table 6.
+
+    Diffusion factor of the Coppage et al. (1956) blade loading loss, with a
+    hyperbolic function of the exit flow angle instead of Coppage's tan(alpha_2),
+    so that the loss lies between those of Coppage and Aungier at low flow (Fig. 6):
+
+        dh_rc = 8e-5 sinh(3.5 alpha_2^3) D_f^2 U_2^2
+
+    Notation, Oh et al. -> adet:
+    - alpha_2    -> FlowAngleAbs at the impeller outlet, from the meridional
+                    direction
+    - W_1t       -> W_tip, inlet relative velocity at the tip
+    - W_2, U_2   -> W_mag and BladeSpeed at the impeller outlet
+    - dh_Euler   -> ht1 - ht0, the Euler work (no parasitic loss in ht1)
+    - D_1t / D_2 -> Rtip at the inlet / Rmid at the outlet
+    - Z          -> NumBladesEff
+    - k          -> RecircDiffCoeff, 0.75 in the paper; separate from the
+                    BlLoadingCoeff of BladeLoadingCoppage, so that the blade
+                    loading loss can be calibrated without changing this one
+
+    Two-node equation across the impeller, e.g. `RecirculationOh(): (0, 1)`.
+    """
+
     def residual(
         self,
         w_tip0: n0.kin.W_tip.Hint,
@@ -449,7 +565,7 @@ class RecirculationOh(LossModel):
         rtip0: n0.geo.Rtip.Hint,
         rmid1: n1.geo.Rmid.Hint,
         alpha1: n1.kin.FlowAngleAbs.Hint,
-        bl_coeff1: n1.oth.BlLoadingCoeff.Hint,
+        rc_coeff1: n1.oth.RecircDiffCoeff.Hint,
         dht_recirc1: n1.loss.Dht_recirculation.Hint,
     ):
         w_ratio = w1 / w_tip0
@@ -458,10 +574,10 @@ class RecirculationOh(LossModel):
         diff_fact = (
             1
             - w_ratio
-            + bl_coeff1
+            + rc_coeff1
             * (work / u1**2)
-            * w_ratio
-            / (((n_bl_eff1 / np.pi) * (1 - r_ratio)) + (2 * r_ratio))
+            * (1 / w_ratio)
+            * (((n_bl_eff1 / np.pi) * (1 - r_ratio)) + (2 * r_ratio)) ** (-1)
         )
         dht = 8e-5 * np.sinh(3.5 * alpha1**3) * (diff_fact * u1) ** 2
 
@@ -540,7 +656,7 @@ class AmiranteDiffuserMomentum(EquationBase):
     config = EquationConfig(
         input_pair=cp.PSmass_INPUTS,
         out_properties=(thrm.Enthalpy,),
-        manual_units=("m^2 / s", "K"),
+        manual_units=('m^2 / s', 'K'),
     )
 
     def residual(
@@ -584,9 +700,198 @@ class AmiranteDiffuserMomentum(EquationBase):
         return r1, r2
 
 
+class StanitzDiffuserMomentum(EquationBase):
+    """
+    Dubitsky and Japikse (2008) - Vaneless Diffuser Advanced Model, Eqs. (1)-(2),
+    adapted from Stanitz (1952) - NACA TN 2610, Eqs. (8)-(9).
+
+    Meridional and tangential momentum of the one-zone vaneless diffuser model
+    over one radial step between the inlet (0) and outlet (1) of the component.
+    Valid for radial and mixed-flow diffusers. The two-zone (jet/wake) model of
+    Dubitsky and Japikse, Eqs. (7)-(22), is not implemented: the authors use it
+    only together with a two-zone impeller model (not coded into adet).
+
+    Notation, Dubitsky and Japikse -> adet:
+    - C, C_m, C_theta -> V_mag, V_mer, V_tan
+    - alpha           -> FlowAngleAbs, from the meridional direction
+    - phi             -> MeridionalAngle, diffuser inclination, 90 deg = radial
+    - b               -> Height, passage depth
+    - C_f             -> DiffFricCoeff, wall shear C_f rho C^2 / 2 on both walls
+
+    Discretisation: backward difference over the step, with the
+    coefficients evaluated at the outlet of the step (first order), multiplied
+    by dr.
+
+    - r1: meridional momentum, Eq. (1), multiplied by dr
+    - r2: tangential momentum, Eq. (2), multiplied by dr
+
+    Note: C_f is an input, given at the inlet of the step, either as a boundary
+    condition or from DiffuserFrictionCoefficient, Eq. (6).
+    """
+
+    def residual(
+        self,
+        vm0: n0.kin.V_mer.Hint,
+        vm1: n1.kin.V_mer.Hint,
+        vt0: n0.kin.V_tan.Hint,
+        vt1: n1.kin.V_tan.Hint,
+        v1: n1.kin.V_mag.Hint,
+        p0: n0.stc.Pressure.Hint,
+        p1: n1.stc.Pressure.Hint,
+        rho1: n1.stc.Density.Hint,
+        rr0: n0.geo.RDistr.Hint,
+        rr1: n1.geo.RDistr.Hint,
+        hgt1: n1.geo.Height.Hint,
+        mer_angle1: n1.geo.MeridionalAngle.Hint,
+        cf0: n0.oth.DiffFricCoeff.Hint,
+    ):
+        dr = rr1 - rr0
+        wall1 = hgt1 * np.sin(mer_angle1)
+
+        r1 = (
+            vm1 * (vm1 - vm0)
+            - vt1**2 / rr1 * dr
+            + cf0 * v1 * vm1 / wall1 * dr
+            + (p1 - p0) / rho1
+        )
+
+        r2 = vm1 * (vt1 - vt0) + vm1 * vt1 / rr1 * dr + cf0 * v1 * vt1 / wall1 * dr
+
+        return r1, r2
+
+
+class DiffuserFrictionCoefficient(EquationBase):
+    """
+    Dubitsky and Japikse (2008) - Vaneless Diffuser Advanced Model, Eq. (6),
+    attributed there to Japikse (1996). Skin friction coefficient of the
+    vaneless diffuser, C_f in StanitzDiffuserMomentum.
+
+    The Reynolds number is not defined in the paper Re = m_dot / (mu D_hyd),
+    with D_hyd the hydraulic diameter of the impeller exit passage given as
+    an input.
+
+    - r1: friction coefficient, Eq. (6)
+    """
+
+    def residual(
+        self,
+        cf0: n0.oth.DiffFricCoeff.Hint,
+        k_diff0: n0.oth.DiffFricConst.Hint,
+        cum_mf0: n0.oth.TotMassFlow.Hint,
+        visc0: n0.stc.Viscosity.Hint,
+        hyd_diam0: n0.geo.HydDiam.Hint,
+    ):
+        reynolds = cum_mf0 / (visc0 * hyd_diam0)
+
+        return cf0 - k_diff0 * (1.8e5 / reynolds) ** 0.2
+
+
+class VoluteLossJapikse(EquationBase):
+    """
+    Japikse (1996) - Centrifugal compressor design and performance.
+    Model of the total pressure loss of an overhung volute downstream
+    of a vaneless diffuser.
+
+    The outlet flow is aligned with the pipe axis (V_t = 0, V = V_m).
+    The outlet section is given as an equivalent annulus with the boundary
+    conditions n1.geo.Rmid = centerline radius R_c and
+    n1.geo.Height = A_vol / (2 pi R_c), plus n1.oth.VoluteF1 and VoluteF2.
+
+    - swirl parameter lambda = V_t0 / V_m0
+    - area ratio AR = A_vol / A_0, with A_0 = 2 pi r_0 b_0
+    - K_m = F1 / (1 + lambda^2), loss of the meridional dynamic head
+    - K_theta = F2 (r_0 / R_c)^2 (lambda - 1 / AR)^2 / (1 + lambda^2) if
+      AR lambda > 1, else 0 (tangential velocity recovered)
+    - Delta p_t = (K_m + K_theta) (p_t0 - p_0)
+
+    - F1: Meridional-velocity loss correction factor [0.6, 1].
+           Values below 1 account for partial recovery of the inlet
+           meridional velocity head in the downstream exit cone.
+    - F2: Tangential-velocity loss correction factor [0.5, 1].
+           Accounts for reduced tangential-velocity losses in external
+           volutes with a mean radius much larger than the inlet radius.
+
+    Note: formulas can be also found in Giuffre' (2022) - The Effect of
+    Size and Working Fluid on the Multi-Objective Design of High-Speed
+    Centrifugal Compressors.
+    """
+
+    def residual(
+        self,
+        f1_1: n1.oth.VoluteF1.Hint,
+        f2_1: n1.oth.VoluteF2.Hint,
+        vt0: n0.kin.V_tan.Hint,
+        vm0: n0.kin.V_mer.Hint,
+        rr_mid0: n0.geo.Rmid.Hint,
+        rr_mid1: n1.geo.Rmid.Hint,
+        cum_area0: n0.geo.CumArea.Hint,
+        cum_area1: n1.geo.CumArea.Hint,
+        pt0: n0.tot.Pressure.Hint,
+        p0: n0.stc.Pressure.Hint,
+        pt1: n1.tot.Pressure.Hint,
+    ):
+        swirl = vt0 / vm0
+        area_ratio = cum_area1 / cum_area0
+
+        k_m = f1_1 / (1 + swirl**2)
+        k_theta = (
+            f2_1
+            * (rr_mid0 / rr_mid1) ** 2
+            * (swirl - 1 / area_ratio) ** 2
+            / (1 + swirl**2)
+        )
+        k_theta = safe_if_else(area_ratio * swirl > 1, k_theta, 0.0)
+
+        return pt1 - (pt0 - (k_m + k_theta) * (pt0 - p0))
+
+
+class ExitConeLoss(EquationBase):
+    """
+    Friction loss of the conical diffuser downstream of the volute.
+    Expansion losses are not accounted for.
+
+    - Re = m_dot / (mu_0 D_hyd), Re_e = (Re - 2000) k / D_hyd
+    - C_f = C_f,smooth + (C_f,rough - C_f,smooth) (1 - 60 / Re_e), friction
+    coefficient, Cf, is computed with the Colebrook-White correlation (Colebrook, 1939).
+    - r1: smooth friction coefficient, Schlichting (implicit)
+    - r2: fully rough friction coefficient
+    - r3: outlet total pressure, Delta p_t = rho_0 V_0^2 / 2 * 4 C_f L / D_hyd,
+      with the inlet state
+    """
+
+    def residual(
+        self,
+        cum_mf0: n0.oth.TotMassFlow.Hint,
+        visc0: n0.stc.Viscosity.Hint,
+        rho0: n0.stc.Density.Hint,
+        v0: n0.kin.V_mag.Hint,
+        pt0: n0.tot.Pressure.Hint,
+        pt1: n1.tot.Pressure.Hint,
+        hyd_len1: n1.geo.HydLen.Hint,
+        hyd_diam1: n1.geo.HydDiam.Hint,
+        abs_rough1: n1.geo.AbsRoughness.Hint,
+        cf_smooth1: n1.oth.Cf_smooth.Hint,
+        cf_rough1: n1.oth.Cf_rough.Hint,
+    ):
+        Re = cum_mf0 / (visc0 * hyd_diam1)
+        Re_e = (Re - 2000) * abs_rough1 / hyd_diam1
+
+        r1 = 4 * cf_smooth1 - (
+            (1 / np.log10((2.51 / (Re * np.sqrt(4 * cf_smooth1))) ** -2)) ** 2
+        )
+        r2 = (
+            4 * cf_rough1 - (1 / np.log10((abs_rough1 / (3.71 * hyd_diam1)) ** -2)) ** 2
+        )
+
+        Cf = cf_smooth1 + (cf_rough1 - cf_smooth1) * (1 - (60 / Re_e))
+        r3 = pt1 - (pt0 - rho0 * v0**2 / 2 * 4 * Cf * hyd_len1 / hyd_diam1)
+
+        return r1, r2, r3
+
+
 class JansenDiffuserLoss(LossModel):
     config = EquationConfig(
-        manual_units=("dimensionless", "J/kg"),
+        manual_units=('dimensionless', 'J/kg'),
     )
 
     def residual(

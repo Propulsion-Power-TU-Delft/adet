@@ -1,4 +1,3 @@
-from adet.equations.utils import safe_min_clip
 import logging
 from pathlib import Path
 from typing import Any, Callable, Sequence
@@ -13,6 +12,7 @@ from matplotlib.colors import Normalize
 from matplotlib.figure import Figure
 from matplotlib.ticker import FuncFormatter
 
+from adet.equations.utils import safe_min_clip
 from adet.varspec import VarSpec
 
 logger = logging.getLogger(__name__)

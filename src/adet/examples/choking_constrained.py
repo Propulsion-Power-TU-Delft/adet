@@ -7,13 +7,12 @@ The massflow across the non choked sections can collapse to
 either the subsonic or supersonic brach. This does not influence the choking massflow.
 """
 
-from adet.equations.control_volumes import SimpleThroat
-
 import logging
 
 from pint import Quantity
 
 from adet.assemblers import CasadiSystem
+from adet.equations.control_volumes import SimpleThroat
 from adet.equations.fundamental import (
     EulerEquation,
     Kinematics,
