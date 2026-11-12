@@ -1,13 +1,24 @@
 import logging
 from abc import ABC, abstractmethod
 from inspect import signature
-from typing import Annotated, Any, get_args, get_origin, get_type_hints
+from types import ModuleType
+from typing import (
+    Annotated,
+    Any,
+    Callable,
+    NamedTuple,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 import casadi as cs
 import numpy as np
+import sympy
 from pint import DimensionalityError, Quantity
 from pint.facets.plain import PlainQuantity
 
+from adet.constants import COOLPROP_PAIRS
 from adet.tools.coolprop_utils import pair_tuple_from_id
 from adet.variables import ThermoVariables
 from adet.varspec import VarSpec
@@ -16,133 +27,236 @@ logger = logging.getLogger(__name__)
 
 _thrm = ThermoVariables()
 
-# Cache key: (class, input pair, gamma, gas constant)
-# Cache value: scalar rootfinder, input variables, (ordered) unknown variables
-# and the initial guess of the unknowns
-_CacheValue = tuple[cs.Function, list[VarSpec], list[VarSpec], list[float]]
+
+class _Solver(NamedTuple):
+    # Maps a (num_inputs + num_params, n) matrix to a (num_unknowns, n) matrix
+    get_sol: Callable[[Any], Any]
+    inputs: list[VarSpec]
+    params: list[VarSpec]
+    unknowns: list[VarSpec]
 
 
-class AnalyticalFluidState(ABC):
-    solution_cache: dict[int, _CacheValue] = {}
+def _length(value) -> int:
+    return value.numel() if isinstance(value, cs.MX) else np.size(value)
+
+
+def _as_row(value, length: int):
+    """Convert a value to a 1 x length row, broadcasting scalars"""
+    if not isinstance(value, cs.MX):
+        value = cs.DM(np.asarray(value, dtype=float).ravel())
+    value = cs.vec(value).T
+    return cs.repmat(value, 1, length) if value.numel() == 1 else value
+
+
+def _random_probe(symbols) -> dict:
+    """Fixed random point in (0.5, 2) for each symbol, for numeric checks"""
+    values = np.random.default_rng(0).uniform(0.5, 2.0, len(symbols))
+    return {sym: float(v) for sym, v in zip(symbols, values)}
+
+
+def _with_units(value: float, unit: str, like):
+    """Attach units to a constant only when the eos is evaluated with quantities"""
+    return Quantity(value, unit) if isinstance(like, PlainQuantity) else value
+
+
+class AlgebraicFluidState(ABC):
+    # Constants are eos parameters, so solvers only depend on the class and input pair
+    solution_cache: dict[tuple[type, int], _Solver] = {}
 
     def __init__(self):
         self.current_state: dict[VarSpec, Any] = {}
 
     @abstractmethod
-    def eos(self, *args):
+    def eos(self, pkg: ModuleType, *args):
         """
-        Residuals of the equation of state. The arguments must be annotated
-        with `<ThermoVariable>.Hint`, which defines the variable each
-        argument stands for. Returns a sequence of residuals, equal in number
-        to the arguments, which are zero at a thermodynamically consistent state.
+        Residuals of the equation of state, one per unknown. `pkg` is the math
+        module to use (`sympy`, `numpy` or `casadi`). Arguments must be annotated
+        with `<ThermoVariable>.Hint`. Constants are arguments too, and must be
+        keys of `constraints()`.
         """
+
+    def constraints(self) -> dict[VarSpec, float]:
+        """Constant parameters of the eos, keyed by global spec"""
+        return {}
 
     @property
     def arguments(self) -> list[VarSpec]:
-        """Variables of the eos, in the order of the signature hints"""
+        """Variables of the eos (without `pkg`), in signature order"""
         hints = get_type_hints(self.eos, include_extras=True)
         specs = []
-        for name in signature(self.eos).parameters:
+        for name in list(signature(self.eos).parameters)[1:]:
             hint = hints.get(name)
             if get_origin(hint) is not Annotated:
                 raise TypeError(f'Argument {name} of eos is missing a variable hint')
 
             spec = get_args(hint)[1]
-            if spec is None or not isinstance(spec, VarSpec):
+            if not isinstance(spec, VarSpec):
                 raise TypeError(f'Hint of argument {name} contains no VarSpec')
             specs.append(spec)
 
         return specs
 
-    @staticmethod
-    def _as_row(value, length: int):
-        """Convert a value to a 1 x length row, broadcasting scalars"""
-        if not isinstance(value, cs.MX):
-            value = cs.DM(np.asarray(value, dtype=float).ravel())
-        value = cs.vec(value).T
-        return cs.repmat(value, 1, length) if value.numel() == 1 else value
-
     def check_units(self):
         """
         Evaluate the eos once with unit-carrying quantities, so that any
-        dimensionally inconsistent residual raises a pint DimensionalityError.
+        dimensionally inconsistent residual raises a TypeError.
         """
         quantities = [Quantity(1.0, spec.unit) for spec in self.arguments]
         try:
-            self.eos(*quantities)
+            self.eos(np, *quantities)
         except DimensionalityError as err:
             raise TypeError(
                 f'Unit check of {type(self).__name__}.eos failed: {err}'
             ) from err
 
-    def _build_rootfinder(
-        self, input_vars: list[VarSpec]
-    ) -> tuple[cs.Function, list[VarSpec]]:
-        self.check_units()
-        arguments = self.arguments
-        unknowns = [spec for spec in arguments if spec not in input_vars]
+    def _symbolic_solve(
+        self,
+        inputs: list[VarSpec],
+        params: list[VarSpec],
+        unknowns: list[VarSpec],
+    ) -> Callable | None:
+        """
+        Explicit solution of the eos as a differentiable casadi function.
+        Returns None when sympy does not find exactly one explicit solution,
+        e.g. when there is none (degenerate or inconsistent pair), when there
+        are several (branch ambiguity), or when the result is not closed form.
+        """
+        syms = {spec: sympy.Symbol(spec.symbol) for spec in self.arguments}
+        residuals = self.eos(sympy, *(syms[spec] for spec in self.arguments))
+        unknown_syms = [syms[spec] for spec in unknowns]
 
-        syms = {spec: cs.MX.sym(spec.symbol) for spec in arguments}
-        residuals = self.eos(*(syms[spec] for spec in arguments))
+        try:
+            solutions = sympy.solve(list(residuals), unknown_syms, dict=True)
+        except NotImplementedError:
+            return None
+
+        # Failure due to solution size
+        if len(solutions) != 1 or set(solutions[0]) != set(unknown_syms):
+            return None
+
+        known = [syms[spec] for spec in inputs + params]
+
+        # Expanding logs avoids evaluating powers such as cv**cv, which overflow
+        exprs = [
+            sympy.expand_log(
+                solutions[0][sym],
+                force=True,
+            )
+            for sym in unknown_syms
+        ]
+
+        for expr in exprs:
+            if not expr.free_symbols <= set(known):
+                return None
+            # Discard imaginary, piecewise, complex roots
+            if expr.has(sympy.I, sympy.Piecewise, sympy.CRootOf):
+                return None
+
+        # The solution must satisfy the residuals (wrong branch, nan, inf)
+        probe = _random_probe(syms.values())
+        substituted = [r.subs(dict(zip(unknown_syms, exprs))) for r in residuals]
+
+        # Failure due to residual mismatch
+        # np.isclose is False for nan, so non-finite solutions are rejected
+        if not all(
+            np.isclose(float(r.subs(probe)), 0.0, atol=1e-8) for r in substituted
+        ):
+            return None
+
+        # Make casadi function
+        x = cs.MX.sym('x', len(known))
+
+        # numpy ufuncs dispatch correctly to MX
+        body = sympy.lambdify(known, exprs, 'numpy')(*cs.vertsplit(x))
+        func = cs.Function('symbolic_eos', [x], [cs.vertcat(*body)])
+        return lambda X: func.map(X.shape[1])(X)
+
+    def _is_well_posed(self, unknowns: list[VarSpec]) -> bool:
+        """
+        A pair determines the state when the residuals are square in the unknowns
+        and their Jacobian w.r.t. the unknowns is full rank. Checked at a random
+        point: a rank deficiency does not depend on the particular state.
+        """
+        syms = {spec: sympy.Symbol(spec.symbol) for spec in self.arguments}
+        residuals = self.eos(sympy, *(syms[spec] for spec in self.arguments))
+        unknown_syms = [syms[spec] for spec in unknowns]
+        if len(residuals) != len(unknown_syms):
+            return False
+
+        jac = sympy.Matrix(residuals).jacobian(unknown_syms)
+        numeric = np.array(jac.subs(_random_probe(syms.values())), dtype=float)
+        return bool(np.linalg.matrix_rank(numeric) == len(unknown_syms))
+
+    def _rootfinder_solve(
+        self,
+        inputs: list[VarSpec],
+        params: list[VarSpec],
+        unknowns: list[VarSpec],
+    ) -> Callable:
+        """Newton rootfinder on the residuals, as a differentiable casadi function"""
+        syms = {spec: cs.MX.sym(spec.symbol) for spec in self.arguments}
+        residuals = self.eos(cs, *(syms[spec] for spec in self.arguments))
 
         problem = {
-            'p': cs.vertcat(*(syms[spec] for spec in input_vars)),
+            'p': cs.vertcat(*(syms[spec] for spec in inputs + params)),
             'x': cs.vertcat(*(syms[spec] for spec in unknowns)),
             'g': cs.vertcat(*residuals),
         }
-
         rtfn = cs.rootfinder(
             'analytical_eos',
             'newton',
             problem,
             {'error_on_fail': False},
         )
-        return rtfn, unknowns
+        guess = cs.DM.ones(len(unknowns), 1) * 2.0  # Unity guess
 
-    def _build_entry(self, input_pair: int) -> _CacheValue:
-        spec_by_symbol = {spec.symbol: spec for spec in self.arguments}
+        return lambda X: rtfn.map(X.shape[1], [True, False])(guess, X)
 
-        input_vars = [spec_by_symbol[name] for name in pair_tuple_from_id(input_pair)]
+    def _build_solver(self, input_pair: int) -> _Solver:
+        self.check_units()
 
-        rtfn, unknowns = self._build_rootfinder(input_vars)
+        by_symbol = {spec.symbol: spec for spec in self.arguments}
+        inputs = [by_symbol[name] for name in pair_tuple_from_id(input_pair)]
+        constants = self.constraints()
+        params = [spec for spec in self.arguments if spec in constants]
+        unknowns = [spec for spec in self.arguments if spec not in inputs + params]
 
-        # Variable guesses are just unity
-        # guess = [2.0 if s.guess is None else s.guess for s in unknowns]
-        guess = [2.0 for _ in unknowns]
+        if not self._is_well_posed(unknowns):
+            pair_name = COOLPROP_PAIRS[input_pair]
+            raise ValueError(
+                f'{type(self).__name__} does not determine the state from {pair_name}'
+            )
 
-        return rtfn, input_vars, unknowns, guess
+        # Try symbolic solve first
+        solve = self._symbolic_solve(inputs, params, unknowns)
+        if solve is None:
+            logger.debug(f'No explicit solution for {input_pair}, using rootfinder')
+            # Fallback to rootfinder
+            solve = self._rootfinder_solve(inputs, params, unknowns)
+
+        return _Solver(solve, inputs, params, unknowns)
 
     def update(self, input_pair: int, value0, value1):
-        entry = self.solution_cache.get(input_pair)
+        key = (type(self), input_pair)
+        if key not in self.solution_cache:
+            logger.debug(f'Cache miss for {input_pair}, building solver')
+            self.solution_cache[key] = self._build_solver(input_pair)
+        solver = self.solution_cache[key]
 
-        if entry is None:
-            logger.debug('Cache miss for %s, building rootfinder', input_pair)
-            entry = self.solution_cache[input_pair] = self._build_entry(input_pair)
+        constants = self.constraints()
+        n = max(_length(value0), _length(value1))
+        rows = [_as_row(value0, n), _as_row(value1, n)]
+        rows += [cs.repmat(cs.DM(constants[spec]), 1, n) for spec in solver.params]
 
-        rtfn, input_vars, unknowns, guess = entry
+        solution = solver.get_sol(cs.vertcat(*rows))
 
-        if isinstance(value0, cs.MX):
-            rtfn = rtfn.map(max(value0.shape), [True, False])
-            knowns = cs.horzcat(value0, value1).T
-        elif isinstance(value0, PlainQuantity):
-            # rtfn = rtfn.map(max(value0.shape), [False, False])
-            knowns = [value0, value1]
-        else:
-            knowns = [value0, value1]
-
-        solution = rtfn(guess, knowns)
-
-        for spec, value in zip(input_vars, (value0, value1)):
+        for spec, value in zip(solver.inputs, (value0, value1)):
             self.current_state[spec] = (
                 cs.vec(value) if isinstance(value, cs.MX) else value
             )
 
-        for i, spec in enumerate(unknowns):
+        for i, spec in enumerate(solver.unknowns):
             self.current_state[spec] = solution[i, :].T
-
-    def constraints(self) -> dict[VarSpec, float]:
-        """Properties which are constant for the fluid, keyed by global spec"""
-        return {}
 
     def get_property(self, spec: VarSpec):
         """Value of a property, regardless of the node and state of the spec"""
@@ -175,14 +289,14 @@ class AnalyticalFluidState(ABC):
     def smass(self):
         return self.current_state[_thrm.Entropy]
 
+    def speed_sound(self):
+        return self.current_state[_thrm.SpeedSound]
+
     def p_critical(self):
         return 1
 
     def T_critical(self):
         return 1
-
-    def speed_sound(self):
-        return self.current_state[_thrm.SpeedSound]
 
     def gas_constant(self):
         return 8.31451
@@ -191,15 +305,12 @@ class AnalyticalFluidState(ABC):
         return 0.0287
 
 
-class IdealGasState(AnalyticalFluidState):
+class IdealGasState(AlgebraicFluidState):
     def __init__(self, gamma: float, sp_gas_constant: float, viscosity: float):
         super().__init__()
-        self._gamma: float = gamma
-        self._sp_gas_constant: float = sp_gas_constant
-
         self.viscosity = viscosity
-        self.cvmass = self._sp_gas_constant / (self._gamma - 1)
-        self.cpmass = self.cvmass * self._gamma
+        self.cvmass = sp_gas_constant / (gamma - 1)
+        self.cpmass = self.cvmass * gamma
 
     def constraints(self):
         return {
@@ -210,6 +321,7 @@ class IdealGasState(AnalyticalFluidState):
 
     def eos(
         self,
+        pkg: ModuleType,
         p: _thrm.Pressure.Hint,
         T: _thrm.Temperature.Hint,
         rhomass: _thrm.Density.Hint,
@@ -217,23 +329,19 @@ class IdealGasState(AnalyticalFluidState):
         umass: _thrm.IntEnergy.Hint,
         smass: _thrm.Entropy.Hint,
         speed_sound: _thrm.SpeedSound.Hint,
+        cp: _thrm.Cp.Hint,
+        cv: _thrm.Cv.Hint,
     ):
-        # Constants carry units only when called with quantities (unit check)
-        def const(value: float, unit: str):
-            return Quantity(value, unit) if isinstance(T, PlainQuantity) else value
-
-        gas_constant = const(self._sp_gas_constant, 'J / kg / K')
-        gamma = self._gamma
-        cp = const(self.cpmass, 'J / kg / K')
-        cv = const(self.cvmass, 'J / kg / K')
-        T_ref = const(1.0, 'K')
-        p_ref = const(1.0, 'Pa')
+        gas_constant = cp - cv
+        gamma = cp / cv
+        T_ref = _with_units(1.0, 'K', T)
+        p_ref = _with_units(1.0, 'Pa', p)
 
         r0 = p - gas_constant * rhomass * T
         r1 = hmass - cp * T
         r2 = umass - cv * T
-        r3 = speed_sound**2 - (gamma * gas_constant * T)
-        r4 = smass - cp * np.log(T / T_ref) + gas_constant * np.log(p / p_ref)
+        r3 = speed_sound - pkg.sqrt(gamma * gas_constant * T)
+        r4 = smass - cp * pkg.log(T / T_ref) + gas_constant * pkg.log(p / p_ref)
 
         return r0, r1, r2, r3, r4
 

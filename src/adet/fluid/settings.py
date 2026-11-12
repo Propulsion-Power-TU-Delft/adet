@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from adet.constants import COOLPROP_NAMES_MAP
-from adet.fluid.algebraic_eos import AnalyticalFluidState
+from adet.fluid.algebraic_eos import AlgebraicFluidState
 from adet.tools.coolprop_utils import pair_id_from_tuple
 from adet.varspec import VarSpec
 
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class FluidSettings:
-    fluid_state: Any | AnalyticalFluidState
+    fluid_state: Any | AlgebraicFluidState
     update_variables: tuple[VarSpec, ...] = ()
     update_length: int = 2
 

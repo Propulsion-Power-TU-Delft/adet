@@ -3,8 +3,8 @@ from typing import Any, ClassVar, Sequence
 
 import casadi as cs
 
+from adet.fluid.algebraic_eos import AlgebraicFluidState
 from adet.fluid.casadi_eos import CasadiEos
-from adet.fluid.algebraic_eos import AnalyticalFluidState
 from adet.tools.coolprop_utils import inames_from_id
 from adet.varspec import VarSpec
 
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class EosFactory:
     instance_counter: ClassVar[int] = 0
 
-    def __init__(self, fluid_state: Any | AnalyticalFluidState) -> None:
+    def __init__(self, fluid_state: Any | AlgebraicFluidState) -> None:
         self.fluid_state = fluid_state
 
     def make_eos(
@@ -34,7 +34,7 @@ class EosFactory:
 
         if isinstance(
             self.fluid_state,
-            AnalyticalFluidState,
+            AlgebraicFluidState,
         ):
             return self._make_symbolic_eos(
                 eos_obj,
@@ -54,7 +54,7 @@ class EosFactory:
 
     def _make_symbolic_eos(
         self,
-        fl_state: AnalyticalFluidState,
+        fl_state: AlgebraicFluidState,
         input_pair: int,
         output_specs: Sequence[VarSpec],
         length: int,
