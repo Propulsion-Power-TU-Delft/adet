@@ -1,4 +1,5 @@
 import logging
+import threading
 from abc import ABC, abstractmethod
 from inspect import signature
 from types import ModuleType
@@ -36,6 +37,35 @@ class _Solver(NamedTuple):
     unknowns: list[VarSpec]
 
 
+# Seconds before a sympy solve is abandoned in favour of the rootfinder
+SYMBOLIC_SOLVE_TIMEOUT = 2.0
+
+
+def _run_with_timeout(fn: Callable[[], Any], timeout: float) -> Any | None:
+    """
+    Run fn in a daemon thread. Returns None on timeout; re-raises fn's exception.
+    The thread cannot be killed, so a timed-out call keeps running in the background
+    but no longer blocks the caller or interpreter exit.
+    """
+    result: dict[str, Any] = {}
+
+    def target():
+        try:
+            result['value'] = fn()
+        except BaseException as err:  # re-raised in the caller
+            result['error'] = err
+
+    worker = threading.Thread(target=target, daemon=True)
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        logger.debug(f'Call timed out after {timeout} s')
+        return None
+    if 'error' in result:
+        raise result['error']
+    return result['value']
+
+
 def _length(value) -> int:
     return value.numel() if isinstance(value, cs.MX) else np.size(value)
 
@@ -62,6 +92,19 @@ def _with_units(value: float, unit: str, like):
 class AlgebraicFluidState(ABC):
     # Constants are eos parameters, so solvers only depend on the class and input pair
     solution_cache: dict[tuple[type, int], _Solver] = {}
+    # Input pairs that skip the symbolic solve and always use the rootfinder
+    rootfinder_pairs: frozenset[int] = frozenset()
+
+    def __init_subclass__(cls, rootfinder_pairs: tuple[int, ...] = (), **kwargs):
+        """
+        Subclass option,
+        e.g. `class MyState(AlgebraicFluidState, rootfinder_pairs=(pair_id,))`
+
+        The rootfinder pairs will skip the symbolic attempt and directly be
+        instantiated as a N-R rootfinder
+        """
+        super().__init_subclass__(**kwargs)
+        cls.rootfinder_pairs = frozenset(rootfinder_pairs)
 
     def __init__(self):
         self.current_state: dict[VarSpec, Any] = {}
@@ -126,8 +169,15 @@ class AlgebraicFluidState(ABC):
         unknown_syms = [syms[spec] for spec in unknowns]
 
         try:
-            solutions = sympy.solve(list(residuals), unknown_syms, dict=True)
+            solutions = _run_with_timeout(
+                lambda: sympy.solve(list(residuals), unknown_syms, dict=True),
+                SYMBOLIC_SOLVE_TIMEOUT,
+            )
         except NotImplementedError:
+            return None
+
+        # Timed out: treat as no explicit solution
+        if solutions is None:
             return None
 
         # Failure due to solution size
@@ -227,8 +277,10 @@ class AlgebraicFluidState(ABC):
                 f'{type(self).__name__} does not determine the state from {pair_name}'
             )
 
-        # Try symbolic solve first
-        solve = self._symbolic_solve(inputs, params, unknowns)
+        # Try symbolic solve first, unless the subclass opted this pair out
+        solve = None
+        if input_pair not in self.rootfinder_pairs:
+            solve = self._symbolic_solve(inputs, params, unknowns)
         if solve is None:
             logger.debug(f'No explicit solution for {input_pair}, using rootfinder')
             # Fallback to rootfinder
@@ -342,6 +394,102 @@ class IdealGasState(AlgebraicFluidState):
         r2 = umass - cv * T
         r3 = speed_sound - pkg.sqrt(gamma * gas_constant * T)
         r4 = smass - cp * pkg.log(T / T_ref) + gas_constant * pkg.log(p / p_ref)
+
+        return r0, r1, r2, r3, r4
+
+
+# Virial coefficients: B(T) = B0 + B1 / T, C constant
+_B0 = VarSpec('B0', 'm**3 / kg')
+_B1 = VarSpec('B1', 'm**3 * K / kg')
+_C0 = VarSpec('C0', 'm**6 / kg**2')
+
+
+class VirialState(
+    AlgebraicFluidState,
+    rootfinder_pairs=tuple(COOLPROP_PAIRS),
+):
+    """
+    Truncated virial eos:
+    p = rho R T (1 + B(T) rho + C rho^2),
+    with R = cp - cv.
+
+    Departure functions follow from the residual Helmholtz energy
+    a_r = R T (B rho + C rho^2 / 2).
+    The ideal part is the same as ideal gas
+    """
+
+    def __init__(
+        self,
+        gamma: float,
+        sp_gas_constant: float,
+        viscosity: float,
+        b0: float,
+        b1: float,
+        c0: float,
+    ):
+        super().__init__()
+        self.viscosity = viscosity
+        self.b0 = b0
+        self.b1 = b1
+        self.c0 = c0
+        self.cvmass = sp_gas_constant / (gamma - 1)
+        self.cpmass = self.cvmass * gamma
+
+    def constraints(self):
+        return {
+            _thrm.Cp: self.cpmass,
+            _thrm.Cv: self.cvmass,
+            _thrm.Viscosity: self.viscosity,
+            _B0: self.b0,
+            _B1: self.b1,
+            _C0: self.c0,
+        }
+
+    def eos(
+        self,
+        pkg: ModuleType,
+        p: _thrm.Pressure.Hint,
+        T: _thrm.Temperature.Hint,
+        rhomass: _thrm.Density.Hint,
+        hmass: _thrm.Enthalpy.Hint,
+        umass: _thrm.IntEnergy.Hint,
+        smass: _thrm.Entropy.Hint,
+        speed_sound: _thrm.SpeedSound.Hint,
+        cp: _thrm.Cp.Hint,
+        cv: _thrm.Cv.Hint,
+        b0: _B0.Hint,
+        b1: _B1.Hint,
+        c0: _C0.Hint,
+    ):
+        gas_constant = cp - cv
+        T_ref = _with_units(1.0, 'K', T)
+        p_ref = _with_units(1.0, 'Pa', p)
+
+        B = b0 + b1 / T  # Second virial coefficient, dB/dT = -b1 / T**2 used below
+        Z = 1 + B * rhomass + c0 * rhomass**2  # Compressibility factor p / (rho R T)
+
+        # Residual departure functions, from a_r = R T (B rho + C rho^2 / 2)
+        u_dep = gas_constant * b1 * rhomass  # -R T^2 d(a_r/RT)/dT
+        h_dep = u_dep + gas_constant * T * (B * rhomass + c0 * rhomass**2)
+        s_dep = -gas_constant * (b0 * rhomass + c0 * rhomass**2 / 2)  # b1 cancels
+
+        # Entropy as s_ig(T, p) - R ln Z + s_dep, so no log of R is taken
+        r0 = p - gas_constant * rhomass * T * Z
+        r1 = hmass - cp * T - h_dep
+        r2 = umass - cv * T - u_dep
+        r3 = smass - (
+            cp * pkg.log(T / T_ref)
+            - gas_constant * pkg.log(p / p_ref)
+            - gas_constant * pkg.log(Z)
+            + s_dep
+        )
+
+        # Isentropic speed of sound: c^2 = (dp/drho)_T + T (dp/dT)_rho^2 / (rho^2 cv)
+        # cv_dep = 0 since u_dep does not depend on T, so cv is the real cv
+        dp_drho = gas_constant * T * (1 + 2 * B * rhomass + 3 * c0 * rhomass**2)
+        dp_dT = gas_constant * (rhomass + b0 * rhomass**2 + c0 * rhomass**3)
+        c2 = dp_drho + T * dp_dT**2 / (rhomass**2 * cv)
+        r4 = speed_sound - pkg.sqrt(c2)
 
         return r0, r1, r2, r3, r4
 

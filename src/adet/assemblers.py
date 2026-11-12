@@ -774,6 +774,8 @@ class SystemAssembler(ABC):
         # TODO: Choose variables to write
         _thrm = ThermoVariables()
         TO_WRITE = [
+            _thrm.Pressure,
+            _thrm.Temperature,
             _thrm.Entropy,
             _thrm.Density,
             _thrm.Enthalpy,
