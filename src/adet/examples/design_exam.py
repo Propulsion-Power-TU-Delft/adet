@@ -20,7 +20,7 @@ from adet.equations.fundamental import (  # noqa: F401
     FreeVortexDistribution,
 )
 from adet.equations.utils import get_midspan_idx, safe_abs
-from adet.fluid.ideal_eos import IdealGasState
+from adet.fluid.algebraic_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation
 from adet.solution import solve_root_problem

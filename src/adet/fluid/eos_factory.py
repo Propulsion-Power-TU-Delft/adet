@@ -4,7 +4,7 @@ from typing import Any, ClassVar, Sequence
 import casadi as cs
 
 from adet.fluid.casadi_eos import CasadiEos
-from adet.fluid.ideal_eos import AnalyticalFluidState
+from adet.fluid.algebraic_eos import AnalyticalFluidState
 from adet.tools.coolprop_utils import inames_from_id
 from adet.varspec import VarSpec
 

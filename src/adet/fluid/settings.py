@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from adet.constants import COOLPROP_NAMES_MAP
-from adet.fluid.ideal_eos import AnalyticalFluidState
+from adet.fluid.algebraic_eos import AnalyticalFluidState
 from adet.tools.coolprop_utils import pair_id_from_tuple
 from adet.varspec import VarSpec
 

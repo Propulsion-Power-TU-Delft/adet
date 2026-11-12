@@ -28,7 +28,7 @@ from adet.equations.nondimensional import (
     TotalTotalPressureRatio,
 )
 from adet.equations.utils import residual_debugger
-from adet.fluid.ideal_eos import IdealGasState
+from adet.fluid.algebraic_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import (
     IsentropicLink,

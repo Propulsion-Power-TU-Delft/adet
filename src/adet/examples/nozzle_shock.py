@@ -21,7 +21,7 @@ from adet.equations.fundamental import (
     TotalStaticMatching,
 )
 from adet.equations.nondimensional import RelativeMachNumber
-from adet.fluid.ideal_eos import IdealGasState
+from adet.fluid.algebraic_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink
 from adet.solution import solve_optimization_problem
