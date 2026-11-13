@@ -385,7 +385,7 @@ class ChenSlip(DeviationModel):
         u0: n0.kin.BladeSpeed.Hint,
         slip0: n0.oth.SlipFactor.Hint,
     ):
-        sin_cone = safe_abs(np.sin(mer_angle0))  # sin(gamma), Fig. 2
+        sin_cone = safe_abs(np.sin(mer_angle0))  # ty: ignore
         cos_metal = np.cos(metal_ang0)
         sin_pitch = np.sin(np.pi / n_bl0)
 
@@ -425,7 +425,7 @@ class StanitzSlip(DeviationModel):
         u0: n0.kin.BladeSpeed.Hint,
         slip0: n0.oth.SlipFactor.Hint,
     ):
-        sin_cone = safe_abs(np.sin(mer_angle0))  # sin(gamma), Fig. 2
+        sin_cone = safe_abs(np.sin(mer_angle0))  # ty: ignore
         cos_metal = np.cos(metal_ang0)
 
         # Eq. (4)
@@ -441,13 +441,36 @@ class StanitzSlip(DeviationModel):
         return r_slip, r_incidence
 
 
+def stodola_opt_incidence(alpha_in, n_blades):
+    """Optimal relative inflow angle from the absolute inflow angle, Persky &
+    Sauret (2019) Eq. A.2b (Stodola-type correlation, ``beta_in,opt,2``).
+    """
+    return np.arctan(-1.98 * np.tan(alpha_in) / (n_blades * (1 - 1.98 / n_blades)))
+
+
 class ImpellerIncidenceLoss(LossModel):
     """
-    Rotor incidence loss model for radial-inflow turbines from `Small High
-    Pressure Ratio Turbines`, D. G. Wilson / NASA CR-based correlation, as
-    reproduced in `COMPUTER PROGRAM FOR DESIGN ANALYSIS OF RADIAL-INFLOW
-    TURBINES` [Ref 1] (see ``rotorIncidenceLosses_NASA`` in
-    ``docs/rit_losses_turbosim.py``, [Ref 5]).
+    Rotor incidence loss for radial-inflow turbines, Persky & Sauret (2019)
+    Table 1 II.1 with the optimal relative angle ``beta_in,opt,2`` (Eq. A.2b):
+
+    C.A. Wasserbauer, A.J. Glassman, Fortran Program for Predicting Oﬀ-design
+    Performance of Radial-inﬂow Turbines, Tech. Rep., National Aeronautics and Space
+    Administration, 1975.
+
+        Delta h_i = 1/2 W_in^2 |sin(beta_in - beta_in,opt)|^n
+
+    The exponent switches with the sign of the incidence, as in the NASA-based
+    correlation of [Ref 1]: positive (over-turning) incidence uses
+    ``exponent_pos`` and negative (under-turning) incidence uses
+    ``exponent_neg``. Positive incidence is the more dissipative case.
+
+
+    Parameters
+    ----------
+    exponent_neg : float
+        Exponent for negative incidence. Persky & Sauret: 2.
+    exponent_pos : float
+        Exponent for positive incidence. Persky & Sauret: 3.
     """
 
     config = EquationConfig(
@@ -455,23 +478,32 @@ class ImpellerIncidenceLoss(LossModel):
         out_properties=(thrm.Entropy,),
     )
 
+    def __init__(
+        self, exponent_neg: float = 2.0, exponent_pos: float = 3.0, scaling_factor=None
+    ):
+        self.exponent_neg = exponent_neg
+        self.exponent_pos = exponent_pos
+        super().__init__(scaling_factor)
+
     def residual(
         self,
         beta0: n0.kin.FlowAngleRel.Hint,
-        metal_ang0: n0.geo.MetalAngle.Hint,
+        alpha0: n0.kin.FlowAngleAbs.Hint,
+        n_bl1: n1.geo.NumBlades.Hint,
         W0: n0.kin.W_mag.Hint,
         s0: n0.stc.Entropy.Hint,
         p1: n1.stc.Pressure.Hint,
         h1_is: n1.oth.Enthalpy_Is.Hint,
         Ds_inc1: n1.loss.Ds_incidence.Hint,
     ):
-        incidence = beta0 - metal_ang0
-        cos_incidence = np.cos(incidence)
+        beta_opt = stodola_opt_incidence(alpha0, n_bl1)
+        incidence = beta0 - beta_opt
+        sin_incidence = safe_abs(np.sin(incidence))
 
-        # Negative (under-turning) incidence is less dissipative than positive
-        # (over-turning) incidence, hence the different exponent
-        Deltah_neg = W0**2 / 2 * (1 - cos_incidence**2.5)
-        Deltah_pos = W0**2 / 2 * (1 - cos_incidence**1.75)
+        # Sign of the incidence selects the exponent (not the loss value's
+        # sign), so that unit probing works
+        Deltah_neg = W0**2 / 2 * sin_incidence**self.exponent_neg
+        Deltah_pos = W0**2 / 2 * sin_incidence**self.exponent_pos
         Deltah = safe_if_else(incidence <= 0, Deltah_neg, Deltah_pos)
 
         h1_lss = h1_is + Deltah
@@ -484,14 +516,16 @@ class ImpellerPassageLoss(LossModel):
     """
     Radial-inflow turbine impeller passage loss (friction, blade loading
     and secondary flow) from `A MEANLINE PREDICTION METHOD FOR RADIAL
-    TURBINE EFFICIENCY`, Baines 1998 [Ref 8] (see ``rotorPassageLoss_Baines``
-    in ``docs/rit_losses_turbosim.py``).
-    """
+    TURBINE EFFICIENCY`, Baines 1998 [Ref 8]"""
 
     config = EquationConfig(
         input_pair=cp.HmassP_INPUTS,
         out_properties=(thrm.Entropy,),
     )
+
+    def __init__(self, passage_coeff: float = 0.1, scaling_factor=None):
+        self.passage_coeff = passage_coeff
+        super().__init__(scaling_factor)
 
     def residual(
         self,
@@ -503,7 +537,7 @@ class ImpellerPassageLoss(LossModel):
         r3s: n1.geo.Rtip.Hint,
         beta3g: n1.geo.MetalAngle.Hint,
         h3: n1.geo.Height.Hint,
-        mer_chord1: n1.geo.MerChord.Hint,
+        ax_len1: n1.geo.AxialLength.Hint,
         n_bl1: n1.geo.NumBlades.Hint,
         w0: n0.kin.W_mag.Hint,
         w1: n1.kin.W_mag.Hint,
@@ -514,9 +548,9 @@ class ImpellerPassageLoss(LossModel):
     ):
         # Blade chord along the mean camber line, from the axial chord
         mean_tan_beta = (np.tan(beta2g) + np.tan(beta3g)) / 2
-        chord = mer_chord1 / np.cos(np.arctan(mean_tan_beta))
+        chord = ax_len1 / np.cos(np.arctan(mean_tan_beta))
 
-        hyd_len = np.pi / 4 * ((mer_chord1 - h2 / 2) + (r2m - r3s - h3 / 2))
+        hyd_len = np.pi / 4 * ((ax_len1 - h2 / 2) + (r2m - r3s - h3 / 2))
 
         hyd_diam = 0.5 * (
             (4 * np.pi * r2m * h2) / (n_bl1 * h2 + 2 * np.pi * r2m)
@@ -524,8 +558,11 @@ class ImpellerPassageLoss(LossModel):
         )
 
         loading_term = 0.68 * (1 - (r3m / r2m) ** 2) * np.cos(beta3g) / h3 * chord
+        viscous_term = hyd_len / hyd_diam
 
-        deltah_base = 0.1 * (hyd_len / hyd_diam + loading_term) * 0.5 * (w0**2 + w1**2)
+        deltah_base = (
+            self.passage_coeff * (viscous_term + loading_term) * (w0**2 + w1**2) / 2
+        )
 
         # Higher loss coefficient for a shallow (mostly axial) exducer
         deltah = safe_if_else((r2m - r3s) / h3 >= 0.2, deltah_base, 2 * deltah_base)
@@ -579,9 +616,6 @@ class ImpellerLeakageLoss(LossModel):
         h1_is: n1.oth.Enthalpy_Is.Hint,
         Ds_leak1: n1.loss.Ds_leakage.Hint,
     ):
-        gx_H = cl0 / h2
-        gr_H = cl1 / h3
-
         Cx = (1 - (r3s / r2m)) / (vm0 * h2)
         Cr = (r3s / r2m) * (mer_chord1 - h2) / (vm1 * r3m * h3)
 
@@ -589,18 +623,14 @@ class ImpellerLeakageLoss(LossModel):
         # from the converged solution, e.g. during the solver's initial
         # iterations): floor it away from 0 to keep its derivative bounded,
         # since d(sqrt(x))/dx diverges as x -> 0
-        cross_term_sq = safe_max(gx_H * h2 * Cx * gr_H * h3 * Cr, 1e-9 / vm0**2)
+        cross_term_sq = safe_max(cl0 * Cx * cl1 * Cr, 1e-9 / vm0**2)
 
         # Clearance loss coefficient (corrected from [Ref 8]: u0 ** 5 -->
         # u0 ** 3 to obtain a dimensionally correct coefficient)
         Deltah = (
             (u0**3 * n_bl1)
             / (8 * np.pi)
-            * (
-                self.Kx * gx_H * h2 * Cx
-                + self.Kr * gr_H * h3 * Cr
-                + self.Kxr * cross_term_sq**0.5
-            )
+            * (self.Kx * cl0 * Cx + self.Kr * cl1 * Cr + self.Kxr * cross_term_sq**0.5)
         )
 
         h1_lss = h1_is + Deltah
@@ -609,9 +639,165 @@ class ImpellerLeakageLoss(LossModel):
         return Ds_leak1 - (s1_leakage - s0)
 
 
+class QiClearanceLoss(LossModel):
+    """Tip clearance loss, Qi et al. (2017), Eq. (14), the response-surface fit
+    to Futral and Holeski data (NASA report 19700008458):
+
+    Delta h_tip = Delta h_0 * (0.09678 A + 1.69997 R - 0.096844 R^2
+                               + 0.03379 A R) / 100
+
+    - A = 100 * eps_a / b_in, the axial gap over the rotor inlet blade height.
+    - R = 100 * eps_r / b_out, the radial gap over the rotor exit blade height.
+    """
+
+    config = EquationConfig(
+        input_pair=cp.HmassP_INPUTS,
+        out_properties=(thrm.Entropy,),
+    )
+
+    def residual(
+        self,
+        h0_tot: n0.tot.Enthalpy.Hint,
+        eps_ax0: n0.geo.TipClearance.Hint,
+        b_in0: n0.geo.Height.Hint,
+        eps_rad1: n1.geo.TipClearance.Hint,
+        b_out1: n1.geo.Height.Hint,
+        h1_tt_is: n1.oth.Enthalpy_totIs.Hint,
+        s0: n0.stc.Entropy.Hint,
+        p1: n1.stc.Pressure.Hint,
+        h1_is: n1.oth.Enthalpy_Is.Hint,
+        Ds_leak1: n1.loss.Ds_leakage.Hint,
+    ):
+        A = 100 * eps_ax0 / b_in0
+        R = 100 * eps_rad1 / b_out1
+        frac = (0.09678 * A + 1.69997 * R - 0.096844 * R**2 + 0.03379 * A * R) / 100
+        Deltah = frac * (h0_tot - h1_tt_is)
+
+        s1_clearance = self.eos(h1_is + Deltah, p1)
+        return Ds_leak1 - (s1_clearance - s0)
+
+
+class SauretWindageLoss(LossModel):
+    """Disc windage (rotor back-face friction), Persky & Sauret (2019) Table 1
+    I.1 with Daily & Nece coefficients Cm.1 (Table A.6), Eqs. A.7 and A.8c:
+
+        Cm = C (eps / r)^m / Re^n,    Re = rho U r / mu
+        Delta h_w = Cm rho U^3 r^2 / (4 mdot)
+
+    Laminar coefficients (3.7, 0.1, 0.5) apply below Re = 1e5, turbulent
+    coefficients (0.0102, 0.2, 0.2) above it.
+    """
+
+    config = EquationConfig(
+        input_pair=cp.HmassP_INPUTS,
+        out_properties=(thrm.Entropy,),
+    )
+
+    RE_CROSSOVER = 1e5
+
+    def residual(
+        self,
+        rho0: n0.stc.Density.Hint,
+        mu0: n0.stc.Viscosity.Hint,
+        u0: n0.kin.BladeSpeed.Hint,
+        r_in0: n0.geo.Rmid.Hint,
+        eps0: n0.geo.TipClearance.Hint,
+        mdot0: n0.oth.TotMassFlow.Hint,
+        s0: n0.stc.Entropy.Hint,
+        p1: n1.stc.Pressure.Hint,
+        h1_is: n1.oth.Enthalpy_Is.Hint,
+        Ds_wind1: n1.loss.Ds_secondary.Hint,
+    ):
+        Re = rho0 * u0 * r_in0 / mu0
+        clearance_ratio = eps0 / r_in0
+
+        cm_laminar = 3.7 * clearance_ratio**0.1 / Re**0.5
+        cm_turbulent = 0.0102 * clearance_ratio**0.2 / Re**0.2
+        cm = safe_if_else(Re < self.RE_CROSSOVER, cm_laminar, cm_turbulent)
+
+        Deltah = cm * rho0 * u0**3 * r_in0**2 / (2 * mdot0)
+
+        s1_windage = self.eos(h1_is + Deltah, p1)
+        return Ds_wind1 - (s1_windage - s0)
+
+
+class IdealInterspace(LossModel):
+    def residual(
+        self,
+        rr0: n0.geo.RDistr.Hint,
+        rr1: n1.geo.RDistr.Hint,
+        vt0: n0.kin.V_tan.Hint,
+        vt1: n1.kin.V_tan.Hint,
+        s0: n0.stc.Entropy.Hint,
+        s1: n1.stc.Entropy.Hint,
+    ):
+        r_mom = rr0 * vt0 - rr1 * vt1
+        r_loss = s0 - s1
+        return r_mom, r_loss
+
+
+class InterspaceLoss(LossModel):
+    # Needed due to rounding errors
+    config = EquationConfig(
+        manual_units=('m^2/s', 'J/kg/K'),
+        input_pair=cp.PSmass_INPUTS,
+        out_properties=(n0.stc.Enthalpy,),
+    )
+
+    def __init__(self, fric_factor: float = 0.0035, custom_scaling_factor=None):
+        self.fric_factor = fric_factor
+        super().__init__(custom_scaling_factor)
+
+    def residual(
+        self,
+        rr0: n0.geo.RDistr.Hint,
+        rr1: n1.geo.RDistr.Hint,
+        vt0: n0.kin.V_tan.Hint,
+        vt1: n1.kin.V_tan.Hint,
+        v0: n0.kin.V_mag.Hint,
+        v1: n1.kin.V_mag.Hint,
+        rho0: n0.stc.Density.Hint,
+        rho1: n1.stc.Density.Hint,
+        t0: n0.stc.Temperature.Hint,
+        t1: n1.stc.Temperature.Hint,
+        massflow: n1.oth.TotMassFlow.Hint,
+        mu: n1.stc.Viscosity.Hint,
+        s0: n0.stc.Entropy.Hint,
+        s1: n1.stc.Entropy.Hint,
+    ):
+        # TODO: Full formulation with pinch
+        # s_m = meridional length between the two stations
+        # A_w = 2 * np.pi * rbar * s_m * n_walls / n_walls  # per wall: 2*pi*rbar*s_m
+        # A_w = n_walls * 2*np.pi * rbar * s_m
+
+        n_walls = 2
+        area_w = n_walls * np.pi * (rr0**2 - rr1**2)  # NOTE: parallel walls
+
+        # --- Average quantities
+        rho_avg = 0.5 * (rho0 + rho1)
+        t_avg = 0.5 * (t0 + t1)
+        v_avg = 0.5 * (v0 + v1)
+        vt_avg = 0.5 * (vt0 + vt1)
+        r_avg = 0.5 * (rr0 + rr1)
+        # ---
+
+        # Radial gap Reynolds
+        Re = massflow / mu / r_avg
+        Cf = self.fric_factor * (1.8e5 / Re) ** 0.2
+
+        tau = 0.5 * Cf * rho_avg * v_avg**2
+        dLambda = tau * (vt_avg / v_avg) * area_w * r_avg / massflow  # Ang mom deficit
+        w_fric = tau * v_avg * area_w / massflow  # Friction work
+        ds = w_fric / t_avg
+
+        # loss_term = (2 * np.pi * Cf * rho1 * vt1 * (rr0**2 - rr0 * rr1)) / massflow
+        # r_mom = vt0 / vt1 - (rr1 / rr0 + loss_term)
+
+        r_mom = rr0 * vt0 - (rr1 * vt1 + dLambda)
+        r_loss = s1 - (s0 + ds)
+
+        return r_mom, r_loss
+
+
 class GlassmanMeitnerBlayer(LossModel):
-    def residual(self): ...
-
-
-class RadialGapLoss(LossModel):
     def residual(self): ...

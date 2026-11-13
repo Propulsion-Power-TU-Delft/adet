@@ -9,7 +9,6 @@ from adet.components.base_component import BaseComponent
 from adet.components.connections import Shaft
 from adet.equations import EquationBase
 from adet.equations.fundamental import (
-    ConstantAngMomentum,
     ConstRelEnthalpy,
     EulerEquation,
     MassConservation,
@@ -352,10 +351,11 @@ class Interspace(BaseComponent):
         # Fundamental equations
         (ConstRelEnthalpy, (0, 1)),
         (MassConservation, (0, 1)),
-        (ConstantAngMomentum, (0, 1)),
         # Meridional Geometry
         (MeridionalGeometry, 1),
         (RadialGeometry, (0, 1)),
+        (EndwallProperties, 0),
+        (EndwallProperties, 1),
         # No blades
         (ZeroBlockage, 0),
         (ZeroBlockage, 1),
@@ -375,8 +375,9 @@ class Interspace(BaseComponent):
     )
 
     def _post_init(self):
+        # NOTE: Null axial length => exactly radial diffuser
         self._boundary_conditions[n1.kin.Omega] = 0
-        # NOTE: Null axial chord => exactly radial diffuser
+        self._boundary_conditions[n1.geo.AxialLength] = 0
         self._boundary_conditions[n1.geo.MerChord] = 0
 
 

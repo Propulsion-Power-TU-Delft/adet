@@ -23,12 +23,10 @@ from adet.components.network import ComponentNetwork
 from adet.equations.base_equation import LossApplier
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
 from adet.equations.nondimensional import GammaPV
-from adet.equations.utils import residual_debugger
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation
 from adet.losses.mixing import (
     DentonBaumgartnerMixingLoss,
-    DentonMixingLoss,
     SieverdingBasePressure,
 )
 from adet.losses.rit import (
@@ -37,7 +35,6 @@ from adet.losses.rit import (
     ImpellerIncidenceLoss,
     ImpellerLeakageLoss,
     ImpellerPassageLoss,
-    StanitzSlip,
     StatorProfileLoss,
 )
 from adet.solution import solve_root_problem
