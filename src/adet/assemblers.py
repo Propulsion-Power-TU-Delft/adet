@@ -603,7 +603,6 @@ class SystemAssembler(ABC):
             'equations',
             'boundary_conditions',
             'fluid_settings',
-            'global_constraints',
             'equalities',
         ]
 
@@ -775,6 +774,8 @@ class SystemAssembler(ABC):
         # TODO: Choose variables to write
         _thrm = ThermoVariables()
         TO_WRITE = [
+            _thrm.Pressure,
+            _thrm.Temperature,
             _thrm.Entropy,
             _thrm.Density,
             _thrm.Enthalpy,
@@ -1029,12 +1030,17 @@ class CasadiSystem(SystemAssembler):
             int,
             dict[NodeStates, list[VarSpec]],
         ] = {}
+
         # build output properties
         for spec in discarded_vars:
             if spec.node not in sorted_discarded:
                 sorted_discarded[spec.node] = {state: [] for state in NodeStates}
-            if spec.state and spec not in self.data.boun_cond:
-                sorted_discarded[spec.node][spec.state].append(spec)
+            if spec.state:
+                if spec not in self.data.boun_cond:
+                    sorted_discarded[spec.node][spec.state].append(spec)
+                else:
+                    if spec.Glob not in self.data.fluid_settings.update_variables:
+                        sorted_discarded[spec.node][spec.state].append(spec)
 
         for node_idx in range(self.first_node, self.last_node + 1):
             # If there is no need for any update variables, move to next node
