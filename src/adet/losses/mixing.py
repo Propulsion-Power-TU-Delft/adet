@@ -12,8 +12,8 @@ from adet.equations.utils import (
     minmax_bound,
     safe_abs,
     safe_if_else,
+    safe_max,
     safe_min,
-    safe_min_clip,
 )
 from adet.losses.base_loss import LossModel
 from adet.tools.interpolation import make_casadi_interpolant
@@ -46,6 +46,9 @@ class SieverdingBasePressure(EquationBase):
         pt0: n0.rlt.Pressure.Hint,
         p_base1: n1.oth.PBase.Hint,
     ):
+        return self._correlation_residual(p1, pt0, p_base1)
+
+    def _correlation_residual(self, p1, pt0, p_base):
         # Detect array shapes
         num_span = max(pt0.shape)
 
@@ -62,7 +65,7 @@ class SieverdingBasePressure(EquationBase):
         second_param = BLADE_PARAM * (p1**0)  # it's just an array of 2s
         table_entry = cs.horzcat(first_param, second_param).T
         pb_by__ptin = base_p_interpolant(table_entry).T
-        return p_base1 - pb_by__ptin * pt0
+        return p_base - pb_by__ptin * pt0
 
 
 class MixingMomentumBalances(EquationBase):
@@ -245,18 +248,11 @@ def baumgartner_mixing_zeta(
     incompressible ``Cpb = (p_base - p) / q`` used by
     :func:`incomp_mixing_zeta` with ``q = 0.5 * gamma_pv * p * Mach**2``.
     """
-
-    # TODO:
-    # 1. Remove duplicate clipping -> See equation class below
-    # 2. Check the theory/reason behind this clipping
-
-    # mach_capped = safe_min_clip(safe_min(rel_mach0, 1.0), 0.05)
-    mach_capped = minmax_bound(rel_mach0, 0.05, 1.0)
     thick_by_pitch0 = geo_bld_thick0 / geo_pitch0
     cpb = (
         2
         * (oth_p_base0 / stc_p0 - 1)
-        * (2 / (gamma_pv0 * mach_capped**2) * thick_by_pitch0)
+        * (2 / (gamma_pv0 * rel_mach0**2) * thick_by_pitch0)
     )
 
     w = geo_pitch0 * np.cos(geo_metal_angle0)  # outlet throat
@@ -267,23 +263,32 @@ def baumgartner_mixing_zeta(
     )
 
 
+def aungier_delta0(met_angle):
+    """Aungier incompressible deviation angle delta0 [rad] at the blade metal angle"""
+    cos_beta = np.cos(met_angle)  # > 0
+    beta_abs = safe_abs(met_angle)  # > 0
+    return beta_abs - np.arccos(
+        cos_beta * (1 + (1 - cos_beta) * (2 * beta_abs / np.pi) ** 2)
+    )
+
+
+def aungier_delta_sub(delta0, mach_out):
+    """Aungier subsonic deviation delta_sub [rad], delta0 corrected for outlet Mach"""
+    X = 2 * mach_out - 1
+    return delta0 * (1 - 10 * X**3 + 15 * X**4 - 6 * X**5)
+
+
 class AungierDeviationModel(DeviationModel):
     """Only valid for subsonic deviation"""
 
     def residual(
         self,
         met_angle: n0.geo.MetalAngle.Hint,
-        mach_out: n1.kin.RelMach.Hint,
-        beta: n1.kin.FlowAngleRel.Hint,
+        mach_out: n0.kin.RelMach.Hint,
+        beta: n0.kin.FlowAngleRel.Hint,
     ):
-        cos_beta = np.cos(met_angle)  # > 0
-        beta_abs = safe_abs(met_angle)  # > 0
-        delta0 = beta_abs - np.arccos(
-            cos_beta * (1 + (1 - cos_beta) * (2 * beta_abs / np.pi) ** 2)
-        )
-
-        X = 2 * mach_out - 1
-        delta_sub = delta0 * (1 - 10 * X**3 + 15 * X**4 - 6 * X**5)
+        delta0 = aungier_delta0(met_angle)
+        delta_sub = aungier_delta_sub(delta0, mach_out)
 
         deviation_sub = safe_if_else(
             mach_out <= 0.5,
@@ -291,9 +296,9 @@ class AungierDeviationModel(DeviationModel):
             delta_sub,
         )
 
-        residual_sub = beta - (met_angle - deviation_sub)  # Deviation angle
+        residual = beta - (met_angle - deviation_sub)  # Deviation angle
 
-        return residual_sub
+        return residual
 
 
 class AungierSimpleMixLoss(LossModel):
@@ -400,16 +405,14 @@ class DentonBaumgartnerMixingLoss(LossModel):
         s0: n0.stc.Entropy.Hint,
         ds_mixing0: n0.loss.Ds_mixing.Hint,
     ):
-        # TODO:
-        # 1. Remove duplicate clipping
-        # 2. Check the theory/reason behind this clipping
-        mach_capped = safe_min_clip(safe_min(rel_mach0, 1.0), 0.05)
-        dyn_press = 0.5 * gamma0 * p0 * mach_capped**2  # Compressible dynamic head
+        # Floor only, to avoid division by zero at stagnation; no upper cap
+        mach_floored = safe_max(rel_mach0, 0.05)
+        dyn_press = 0.5 * gamma0 * p0 * mach_floored**2  # Compressible dynamic head
 
         zeta = baumgartner_mixing_zeta(
             p0,
             gamma0,
-            rel_mach0,
+            mach_floored,
             beta0,
             pitch0,
             t0,
@@ -417,7 +420,6 @@ class DentonBaumgartnerMixingLoss(LossModel):
             mom_thick0,
             disp_thick0,
         )
-        zeta = minmax_bound(zeta, 0.0, 1.0)
 
         rlt_p1_loss = p_rlt0 - dyn_press * zeta
         smass1_loss = self.eos(h_rlt0, rlt_p1_loss)
