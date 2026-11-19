@@ -196,22 +196,36 @@ class EquationBase(ABC):
 
     @property
     def eos(self) -> Callable:
-        cls = self.__class__
+        # The instance EoS is assigned by the assembler at build time; before
+        # that (e.g. unit checks) the class-level one passes units through
+        instance_eos = self.__dict__.get('_instance_eos')
         return cast(
             Callable[
                 [Any, Any],
                 tuple[Any, ...],
             ],
-            cls._eos,
+            instance_eos if instance_eos is not None else self.__class__._eos,
         )
 
     @eos.setter
-    def eos(self, eos: cs.Function | CasadiEos):
+    def eos(self, eos: cs.Function | CasadiEos | Callable):
         cls = self.__class__
 
         if cls._eos is not None:
-            logger.debug(f'Overwriting EoS for {cls}')
-            cls._eos.callable = eos
+            # Per instance: with compositional fluids the EoS is bound to the
+            # composition of the nodes each instance is placed on
+            logger.debug(f'Assigning EoS for {cls} instance')
+            instance_eos = EmbeddedEos()
+            instance_eos.parent = self
+            instance_eos.out_pties = cls._eos.out_pties
+            instance_eos.callable = eos
+            self._instance_eos = instance_eos
+
+    def __getstate__(self):
+        # Runtime EoS (CasADi objects) is rebuilt by the assembler on build()
+        state = self.__dict__.copy()
+        state.pop('_instance_eos', None)
+        return state
 
 
 class UniqueEquation(EquationBase):
@@ -234,6 +248,7 @@ class IncidenceModel(UniqueEquation): ...
 class CamberLineGeom(UniqueEquation): ...
 class MeridionalGeom(UniqueEquation): ...
 class MeridAreaBlockage(UniqueEquation): ...
+class CompositionModel(UniqueEquation): ...
 # fmt: on
 
 

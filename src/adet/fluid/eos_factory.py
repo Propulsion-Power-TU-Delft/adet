@@ -4,6 +4,7 @@ from typing import Any, ClassVar, Sequence
 import casadi as cs
 
 from adet.fluid.casadi_eos import CasadiEos
+from adet.fluid.compositional import CompositionalFluid
 from adet.fluid.ideal_eos import AnalyticalFluidState
 from adet.tools.coolprop_utils import inames_from_id
 from adet.varspec import VarSpec
@@ -33,6 +34,17 @@ class EosFactory:
             name += f'generic_eos_pair{input_pair}'
 
         if isinstance(
+            self.fluid_state,
+            CompositionalFluid,
+        ):
+            # (v0, v1, *composition) -> outputs
+            return self.fluid_state.make_eos(
+                input_pair,
+                out_props_names,
+                length,
+                name,
+            )
+        elif isinstance(
             self.fluid_state,
             AnalyticalFluidState,
         ):
