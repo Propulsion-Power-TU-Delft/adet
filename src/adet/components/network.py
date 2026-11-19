@@ -9,7 +9,12 @@ from adet.components import BaseComponent
 from adet.components.blade_row import BladeRow
 from adet.components.connections import Inlet, Shaft
 from adet.constants import AdetArray
-from adet.equations.base_equation import MeridionalGeom, UniqueEquation
+from adet.equations.base_equation import (
+    CompositionModel,
+    MeridionalGeom,
+    UniqueEquation,
+)
+from adet.equations.condensation import FrozenComposition
 from adet.equations.fundamental import (
     Kinematics,
     MassAreaRelation,
@@ -89,6 +94,7 @@ class ComponentNetwork(Generic[T]):
         self._dispatch_components(components)
         self._link_components()
         self._link_shafts()
+        self._link_composition()
 
     def _dispatch_components(self, components: Sequence[BaseComponent]):
         for comp in components:
@@ -219,6 +225,29 @@ class ComponentNetwork(Generic[T]):
             linked_omegas = tuple(omega_genspec.at_node(n) for n in nodes)
             if len(linked_omegas) > 1:
                 self.system.add_equalities(linked_omegas)
+
+    def _link_composition(self):
+        """
+        Compositional fluids: close the composition of every component with
+        ``FrozenComposition`` unless the component defines its own
+        ``CompositionModel``, and carry it across the component joints.
+        """
+        comp_vars = self.system.fluid_settings.composition_variables
+        if not comp_vars:
+            return
+
+        for comp in self.components:
+            inl_idx, out_idx = self._get_abs_indices(comp)
+            if not any(isinstance(eq, CompositionModel) for eq in comp._equations):
+                self.system.add_equation(FrozenComposition(), (inl_idx, out_idx))
+
+        for prev_comp, next_comp in zip(self.components[:-1], self.components[1:]):
+            _, out_idx = self._get_abs_indices(prev_comp)
+            inl_idx, _ = self._get_abs_indices(next_comp)
+            for spec in comp_vars:
+                self.system.add_equalities(
+                    (spec.at_node(out_idx), spec.at_node(inl_idx))
+                )
 
     def build(self, scaled: bool = True):
         self.system.build(scaled)
