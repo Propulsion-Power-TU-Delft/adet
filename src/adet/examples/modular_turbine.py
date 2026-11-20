@@ -21,7 +21,7 @@ from adet.equations.nondimensional import (
     TotalTotalExpansionEfficiency,
     WorkCoefficientMid,
 )
-from adet.fluid.ideal_eos import IdealGasState
+from adet.fluid.algebraic_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import (
     TotalPressureLoss,

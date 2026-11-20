@@ -23,7 +23,7 @@ from adet.equations.geometrical import (
     EndwallProperties,
     MeridionalGeometry,
 )
-from adet.fluid.ideal_eos import IdealGasState
+from adet.fluid.algebraic_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
 from adet.solution import solve_root_problem
 from adet.tools.loggers import setup_logger

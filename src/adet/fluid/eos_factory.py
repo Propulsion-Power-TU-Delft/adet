@@ -3,9 +3,9 @@ from typing import Any, ClassVar, Sequence
 
 import casadi as cs
 
+from adet.fluid.algebraic_eos import AlgebraicFluidState
 from adet.fluid.casadi_eos import CasadiEos
 from adet.fluid.compositional import CompositionalFluid
-from adet.fluid.ideal_eos import AnalyticalFluidState
 from adet.tools.coolprop_utils import inames_from_id
 from adet.varspec import VarSpec
 
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class EosFactory:
     instance_counter: ClassVar[int] = 0
 
-    def __init__(self, fluid_state: Any | AnalyticalFluidState) -> None:
+    def __init__(self, fluid_state: Any | AlgebraicFluidState) -> None:
         self.fluid_state = fluid_state
 
     def make_eos(
@@ -33,10 +33,7 @@ class EosFactory:
         if not name:
             name += f'generic_eos_pair{input_pair}'
 
-        if isinstance(
-            self.fluid_state,
-            CompositionalFluid,
-        ):
+        if isinstance(self.fluid_state, CompositionalFluid):
             # (v0, v1, *composition) -> outputs
             return self.fluid_state.make_eos(
                 input_pair,
@@ -44,14 +41,11 @@ class EosFactory:
                 length,
                 name,
             )
-        elif isinstance(
-            self.fluid_state,
-            AnalyticalFluidState,
-        ):
+        elif isinstance(self.fluid_state, AlgebraicFluidState):
             return self._make_symbolic_eos(
                 eos_obj,
                 input_pair,
-                out_props_names,
+                out_properties,
                 length,
                 name,
             )
@@ -66,9 +60,9 @@ class EosFactory:
 
     def _make_symbolic_eos(
         self,
-        fl_state: AnalyticalFluidState,
+        fl_state: AlgebraicFluidState,
         input_pair: int,
-        output_quantities: tuple[str, ...] | list[str],
+        output_specs: Sequence[VarSpec],
         length: int,
         name: str,
     ) -> cs.Function:
@@ -76,11 +70,15 @@ class EosFactory:
 
         input_syms = [cs.MX.sym(var, length) for var in pair_vars]
         fl_state.update(input_pair, *input_syms)  # Update with symbols
-        # Extract symbols
-        output_syms = [getattr(fl_state, qty)() for qty in output_quantities]
+        # Extract symbols, constants are broadcast to the span length
+        output_syms = [
+            cs.repmat(cs.MX(prop), length, 1) if cs.MX(prop).numel() == 1 else prop
+            for prop in (fl_state.get_property(spec) for spec in output_specs)
+        ]
+        output_names = [spec.symbol for spec in output_specs]
         # Create updater func
         updater_func = cs.Function(
-            name, input_syms, output_syms, pair_vars, output_quantities
+            name, input_syms, output_syms, pair_vars, output_names
         )
 
         return updater_func
