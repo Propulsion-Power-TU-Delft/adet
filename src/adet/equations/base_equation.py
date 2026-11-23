@@ -18,10 +18,24 @@ logger = logging.getLogger(__name__)
 
 
 class EmbeddedEos:
-    def __init__(self):
-        self.out_pties: Sequence[VarSpec] | None = None
-        self.callable: CasadiEos | cs.Function | Any | None = None
-        self.parent: None | EquationBase = None
+    """
+    View of an equation's EoS, built on access by ``EquationBase.eos``.
+
+    Output properties come from the equation config; the callable is the one
+    bound by the assembler at build time (``None`` before that). Called with
+    Pint quantities (unit checks) it passes the output units through,
+    otherwise it forwards to the bound callable.
+    """
+
+    def __init__(
+        self,
+        parent: 'EquationBase',
+        out_pties: Sequence[VarSpec],
+        callable: CasadiEos | cs.Function | Any | None = None,
+    ):
+        self.parent = parent
+        self.out_pties = out_pties
+        self.callable = callable
 
     def _pass_units(self, *args) -> PlainQuantity | list[PlainQuantity]:
         lengths = {len(a) for a in args}
@@ -77,7 +91,6 @@ class EquationBase(ABC):
     """
 
     config: ClassVar[EquationConfig] = EquationConfig()
-    _eos: ClassVar[EmbeddedEos | None] = None
 
     def __init__(self, custom_scaling_factor: list[float] | None = None):
         """
@@ -88,16 +101,6 @@ class EquationBase(ABC):
         """
 
         self._arguments: tuple[str, ...] = ()
-
-        cls = self.__class__
-
-        # If the class has not an assigned eos
-        if cls._eos is None:
-            # If the config calls for it, add
-            if cls.config.input_pair and cls.config.out_properties:
-                cls._eos = EmbeddedEos()
-                cls._eos.parent = self
-                cls._eos.out_pties = [pty.Glob for pty in self.config.out_properties]
 
         if custom_scaling_factor:
             self._scaling_factor = custom_scaling_factor
@@ -195,36 +198,34 @@ class EquationBase(ABC):
         return super().__init_subclass__()
 
     @property
-    def eos(self) -> Callable:
-        # The instance EoS is assigned by the assembler at build time; before
-        # that (e.g. unit checks) the class-level one passes units through
-        instance_eos = self.__dict__.get('_instance_eos')
-        return cast(
-            Callable[
-                [Any, Any],
-                tuple[Any, ...],
-            ],
-            instance_eos if instance_eos is not None else self.__class__._eos,
+    def eos(self) -> EmbeddedEos:
+        # Built on access from the config and the callable the assembler bound to this
+        # instance at build time, if any
+        if not self.config.input_pair:
+            raise AttributeError(
+                f'{self.__class__.__name__} does not declare an EoS in its config'
+            )
+        return EmbeddedEos(
+            self,
+            [pty.Glob for pty in self.config.out_properties],
+            self.__dict__.get('_bound_eos'),
         )
 
     @eos.setter
     def eos(self, eos: cs.Function | CasadiEos | Callable):
-        cls = self.__class__
-
-        if cls._eos is not None:
-            # Per instance: with compositional fluids the EoS is bound to the
-            # composition of the nodes each instance is placed on
-            logger.debug(f'Assigning EoS for {cls} instance')
-            instance_eos = EmbeddedEos()
-            instance_eos.parent = self
-            instance_eos.out_pties = cls._eos.out_pties
-            instance_eos.callable = eos
-            self._instance_eos = instance_eos
+        # Per instance: with compositional fluids the EoS is bound to the
+        # composition of the nodes each instance is placed on
+        if not self.config.input_pair:
+            raise AttributeError(
+                f'{self.__class__.__name__} does not declare an EoS in its config'
+            )
+        logger.debug(f'Assigning EoS for {self.__class__} instance')
+        self._bound_eos = eos
 
     def __getstate__(self):
         # Runtime EoS (CasADi objects) is rebuilt by the assembler on build()
         state = self.__dict__.copy()
-        state.pop('_instance_eos', None)
+        state.pop('_bound_eos', None)
         return state
 
 
