@@ -379,6 +379,9 @@ class Interspace(BaseComponent):
         self._boundary_conditions[n1.geo.MerChord] = 0
 
 
+# TODO: Move this stuff to plotting functions
+
+
 @dataclass
 class StationGeometry:
     radius: float
