@@ -16,6 +16,7 @@ from adet.assemblers import CasadiSystem
 from adet.components.blade_row import BladeRow
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
+from adet.equations.nondimensional import TotalTotalPressureRatio
 from adet.fluid.settings import FluidSettings
 from adet.losses.basic import IsentropicLink, ZeroDeviation
 from adet.solution import solve_root_problem
@@ -50,16 +51,22 @@ fan_blade = BladeRow(
     name='fan',
     shaft=shaft,
     bound_cond={
-        n0.geo.MeridionalAngle: Quantity(0.0, 'deg'),
-        n0.geo.ThickByPitch: 0.0,
-        n1.stc.Pressure: 1.2 * std_atm.pressure,
+        # Purely axial
+        n0.geo.MeridionalAngle: 0.0,
+        n1.geo.MeridionalAngle: 0.0,
+        # Chord and number of blades
+        n1.geo.AspectRatio: 6.0,
+        n1.geo.Solidity: 1.0,
+        # Meridional channel
         n1.geo.HubTipRatio: 0.3,
-        n1.geo.HeightRatio: 1.0,
-        n1.geo.MeridionalAngle: Quantity(0.0, 'deg'),
+        n1.geo.HeightRatio: 0.95,
+        # Pressure ratio
+        n1.ndim.PRatioTT: 1.2,
     },
     extra_equations={
         ZeroDeviation(): 0,
         IsentropicLink(): (0, 1),
+        TotalTotalPressureRatio(): (0, 1),
     },
     constant_variables=[n0.geo.Rmid],
 )
@@ -79,10 +86,9 @@ ntw = ComponentNetwork(
 ntw.build()
 
 rtfn = ntw.system.make_rootfinder('ipopt')
-
 x0 = ntw.system.get_guess(fallback=0.5)
 kn = ntw.system.get_boundary_conds()
+bnd = ntw.system.get_bounds()
 
 solution = solve_root_problem(rtfn, x0, kn)
-
 sol_dict = ntw.system.sol_to_dict(solution)
