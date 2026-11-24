@@ -48,11 +48,7 @@ def ordered_specs(specs: Iterable[VarSpec]) -> list[VarSpec]:
 class _CompositionBoundEos:
     """Equation-level EoS of a compositional fluid, bound to a node composition"""
 
-    def __init__(
-        self,
-        func: cs.Function,
-        composition: Sequence[cs.MX],
-    ):
+    def __init__(self, func: cs.Function, composition: Sequence[cs.MX]):
         self.func = func
         self.composition = list(composition)
 
@@ -1079,10 +1075,10 @@ class CasadiSystem(SystemAssembler):
         }
 
         self._eos_factory = EosFactory(fl_state)
-        # Keep this system's equation-level EoS callbacks alive. Each equation
-        # instance holds its own EoS (see ``EquationBase.eos``), but CasADi
-        # does not own Python callbacks: if an equation instance is shared with
-        # another system, building that system replaces the instance's EoS and
+        # NOTE: Keep this system's equation-level EoS callbacks alive. Each equation
+        # instance holds its own EoS (see ``EquationBase.eos``),
+        # if an equation instance is shared with another system,
+        # building that system replaces the instance's EoS and
         # this list is then the only reference to the callbacks this system's
         # residuals still call
         self._eq_eos_callbacks: list = []
@@ -1104,13 +1100,13 @@ class CasadiSystem(SystemAssembler):
                     self.num_span,
                     f'multi_{eq.__class__.__name__}_{pos_str}',
                 )
+
                 if comp_vars:
-                    # Equation-level EoS calls use the composition of the
-                    # first node the equation is placed on
-                    # NOTE: is this what we want?
+                    # WARN: Equation-level EoS uses composition of the first node
                     eq.eos = _CompositionBoundEos(eos_func, node_composition(eq_pos[0]))
                 else:
                     eq.eos = eos_func
+
                 self._eq_eos_callbacks.append(eos_func)
 
         discarded_vars = self._argument_resolver.get_discarded_thermo_args()

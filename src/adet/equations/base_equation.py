@@ -18,24 +18,19 @@ logger = logging.getLogger(__name__)
 
 
 class EmbeddedEos:
-    """
-    View of an equation's EoS, built on access by ``EquationBase.eos``.
-
-    Output properties come from the equation config; the callable is the one
-    bound by the assembler at build time (``None`` before that). Called with
-    Pint quantities (unit checks) it passes the output units through,
-    otherwise it forwards to the bound callable.
-    """
-
-    def __init__(
-        self,
-        parent: 'EquationBase',
-        out_pties: Sequence[VarSpec],
-        callable: CasadiEos | cs.Function | Any | None = None,
-    ):
+    def __init__(self, parent: 'EquationBase'):
         self.parent = parent
-        self.out_pties = out_pties
-        self.callable = callable
+        self.out_pties = parent.config.out_properties
+        self._callable: CasadiEos | cs.Function | Any | None = None
+
+    @property
+    def callable(self) -> CasadiEos | cs.Function | Any | None:
+        return self._callable
+
+    @callable.setter
+    def callable(self, callable: CasadiEos | cs.Function | Any):
+        # TODO: Some optional checks?
+        self._callable = callable
 
     def _pass_units(self, *args) -> PlainQuantity | list[PlainQuantity]:
         lengths = {len(a) for a in args}
@@ -65,7 +60,8 @@ class EmbeddedEos:
             return self._pass_units(*args)
         elif self.callable is None:
             raise AttributeError(
-                f'Equation of state for {self.parent} was not assignned at runtime'
+                f'Equation of state callable for {self.parent} '
+                'was not assignned at runtime'
             )
         else:
             return self.callable(*args)
@@ -101,6 +97,11 @@ class EquationBase(ABC):
         """
 
         self._arguments: tuple[str, ...] = ()
+
+        # NOTE: The specification of both input and output
+        # properties is enforced in init subclass
+        if self.config.input_pair:
+            self._emb_eos = EmbeddedEos(self)
 
         if custom_scaling_factor:
             self._scaling_factor = custom_scaling_factor
@@ -198,34 +199,27 @@ class EquationBase(ABC):
         return super().__init_subclass__()
 
     @property
-    def eos(self) -> EmbeddedEos:
-        # Built on access from the config and the callable the assembler bound to this
-        # instance at build time, if any
-        if not self.config.input_pair:
-            raise AttributeError(
-                f'{self.__class__.__name__} does not declare an EoS in its config'
-            )
-        return EmbeddedEos(
-            self,
-            [pty.Glob for pty in self.config.out_properties],
-            self.__dict__.get('_bound_eos'),
+    def eos(self) -> Callable:
+        return cast(
+            Callable[
+                [Any, Any],
+                tuple[Any, ...],
+            ],
+            self._emb_eos,
         )
 
     @eos.setter
-    def eos(self, eos: cs.Function | CasadiEos | Callable):
-        # Per instance: with compositional fluids the EoS is bound to the
-        # composition of the nodes each instance is placed on
-        if not self.config.input_pair:
-            raise AttributeError(
-                f'{self.__class__.__name__} does not declare an EoS in its config'
-            )
+    def eos(self, eos_func: cs.Function | CasadiEos | Callable):
         logger.debug(f'Assigning EoS for {self.__class__} instance')
-        self._bound_eos = eos
+        self._emb_eos.callable = eos_func
 
     def __getstate__(self):
         # Runtime EoS (CasADi objects) is rebuilt by the assembler on build()
         state = self.__dict__.copy()
-        state.pop('_bound_eos', None)
+
+        # Remove the callback from the pickling/copy
+        state.pop('_eos_func', None)
+
         return state
 
 
