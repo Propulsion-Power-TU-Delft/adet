@@ -492,3 +492,56 @@ class ParabolicCamberline(CamberLineGeom):
         r2 = chord1 * np.cos(stagger1) - mer_chord1
         r3 = stagger1 - stagger_computed
         return r1, r2, r3
+
+
+class HydraulicQuantities(EquationBase):
+    """
+    W. Jansen, A method for calculating the flow in a centrifugal
+    impeller when entropy gradients are present, in: Royal Society
+    conference on internal aerodynamics (turbomachinery), 19-21
+    July, Cambridge, UK, 1967, pp. 133-146
+    """
+
+    def residual(
+        self,
+        rr1: n1.geo.RDistr.Hint,
+        rtip0: n0.geo.Rtip.Hint,
+        rhub0: n0.geo.Rhub.Hint,
+        hgt1: n1.geo.Height.Hint,
+        mer_chord1: n1.geo.MerChord.Hint,
+        metal_hub0: n0.geo.MetalAngleHub.Hint,
+        metal_tip0: n0.geo.MetalAngleTip.Hint,
+        metal_ang1: n1.geo.MetalAngle.Hint,
+        n_bl_eff1: n1.geo.NumBladesEff.Hint,
+        hyd_diam1: n1.geo.HydDiam.Hint,
+        hyd_len1: n1.geo.HydLen.Hint,
+    ):
+        hyd_L = (
+            np.pi
+            / 8
+            * (2 * rr1 - (rtip0 + rhub0) - hgt1 + 2 * mer_chord1)
+            * (4 / ((np.cos(metal_tip0) + np.cos(metal_hub0)) + 2 * np.cos(metal_ang1)))
+        )
+
+        metal_cos_sum = np.cos(metal_tip0) + np.cos(metal_hub0)
+        hyd_D = (
+            2
+            * rr1
+            * (
+                (
+                    np.cos(metal_ang1)
+                    / (n_bl_eff1 / np.pi + 2 * rr1 * np.cos(metal_ang1) / hgt1)
+                )
+                + (0.5 * (rtip0 / rr1 + rhub0 / rr1) * (metal_cos_sum / 2))
+                / (
+                    n_bl_eff1 / np.pi
+                    + ((2 * (rtip0 + rhub0)) / (2 * (rtip0 - rhub0)))
+                    * (metal_cos_sum / 2)
+                )
+            )
+        )
+
+        r1 = hyd_len1 - hyd_L
+        r2 = hyd_diam1 - hyd_D
+
+        return r1, r2

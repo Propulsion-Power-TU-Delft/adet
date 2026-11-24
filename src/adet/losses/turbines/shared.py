@@ -1,29 +1,19 @@
-"""Mixing losses downstream of turbomachinery blades"""
+"""Turbine loss helpers shared across turbine types: profile velocity distributions, mixing balances and base pressure."""
 
 from pathlib import Path
 from typing import Literal
 
 import casadi as cs
-import CoolProp as cp
 import numpy as np
 
-from adet.equations.base_equation import DeviationModel, EquationBase, EquationConfig
-from adet.equations.utils import (
-    minmax_bound,
-    safe_abs,
-    safe_if_else,
-    safe_max,
-    safe_min,
-)
-from adet.losses.base_loss import LossModel
+from adet.equations.base_equation import EquationBase, EquationConfig
+from adet.equations.utils import safe_abs, safe_if_else
 from adet.tools.interpolation import make_casadi_interpolant
-from adet.variables import NodeVariables, ThermoVariables
+from adet.variables import NodeVariables
 
 n0 = NodeVariables(0)
 n1 = NodeVariables(1)
-n2 = NodeVariables(2)
-n3 = NodeVariables(3)
-thrm = ThermoVariables()
+
 
 BLADE_PARAM = 2  # TODO : For Sieverding -> make this an input
 
@@ -263,172 +253,73 @@ def baumgartner_mixing_zeta(
     )
 
 
-def aungier_delta0(met_angle):
-    """Aungier incompressible deviation angle delta0 [rad] at the blade metal angle"""
-    cos_beta = np.cos(met_angle)  # > 0
-    beta_abs = safe_abs(met_angle)  # > 0
-    return beta_abs - np.arccos(
-        cos_beta * (1 + (1 - cos_beta) * (2 * beta_abs / np.pi) ** 2)
-    )
-
-
-def aungier_delta_sub(delta0, mach_out):
-    """Aungier subsonic deviation delta_sub [rad], delta0 corrected for outlet Mach"""
-    X = 2 * mach_out - 1
-    return delta0 * (1 - 10 * X**3 + 15 * X**4 - 6 * X**5)
-
-
-class AungierDeviationModel(DeviationModel):
-    """Only valid for subsonic deviation"""
-
-    def residual(
-        self,
-        met_angle: n0.geo.MetalAngle.Hint,
-        mach_out: n0.kin.RelMach.Hint,
-        beta: n0.kin.FlowAngleRel.Hint,
-    ):
-        delta0 = aungier_delta0(met_angle)
-        delta_sub = aungier_delta_sub(delta0, mach_out)
-
-        deviation_sub = safe_if_else(
-            mach_out <= 0.5,
-            delta0,
-            delta_sub,
-        )
-
-        residual = beta - (met_angle - deviation_sub)  # Deviation angle
-
-        return residual
-
-
-class AungierSimpleMixLoss(LossModel):
-    config = EquationConfig(
-        input_pair=cp.HmassP_INPUTS,
-        out_properties=(thrm.Entropy,),
-    )
-
-    def residual(
-        self,
-        stc_rhomass0,
-        kin_W0,
-        geo_pitch0,
-        geo_metal_angle0,
-        geo_bld_thick0,
-        rlt_p0,
-        rlt_hmass0,
-        oth_disp_thick0,
-        stc_smass0,
-        oth_delta_smass_mixing0,
-    ):
-        opening = geo_pitch0 * np.cos(geo_metal_angle0)
-        delta_pt = (
-            0.5
-            * stc_rhomass0
-            * kin_W0**2
-            * (opening / (opening - geo_bld_thick0 - oth_disp_thick0) - 1) ** 2
-        )
-
-        smass1 = self.eos(rlt_hmass0, rlt_p0 - delta_pt)
-
-        return oth_delta_smass_mixing0 - (stc_smass0 - smass1)
-
-
-class DentonMixingLoss(LossModel):
-    config = EquationConfig(
-        input_pair=cp.HmassP_INPUTS,
-        out_properties=(thrm.Entropy,),
-        # manual_units=('J / kg / K',),
-    )
-
-    def residual(
-        self,
-        p0: n0.stc.Pressure.Hint,
-        p_rlt0: n0.rlt.Pressure.Hint,
-        rho0: n0.stc.Density.Hint,
-        W0: n0.kin.W_mag.Hint,
-        beta0: n0.geo.MetalAngle.Hint,
-        pitch0: n0.geo.Pitch.Hint,
-        t0: n0.geo.BldThick.Hint,
-        p_base0: n0.oth.PBase.Hint,
-        mom_thick0: n0.oth.MomThick.Hint,
-        disp_thick0: n0.oth.DispThick.Hint,
-        h_rlt0: n0.rlt.Enthalpy.Hint,
-        s0: n0.stc.Entropy.Hint,
-        a0: n0.stc.SpeedSound.Hint,
-        ds_mixing0: n0.loss.Ds_mixing.Hint,
-    ):
-        # No deviation
-        velocity = safe_min(a0, W0)
-        dyn_press = 0.5 * rho0 * velocity**2  # Dynamic head
-        zeta = incomp_mixing_zeta(
-            dyn_press,
-            p0,
-            beta0,
-            pitch0,
-            t0,
-            p_base0,
-            mom_thick0,
-            disp_thick0,
-        )
-        zeta = minmax_bound(zeta, 0.0, 1.0)
-
-        rlt_p1_loss = p_rlt0 - dyn_press * zeta
-        smass1_loss = self.eos(h_rlt0, rlt_p1_loss)
-
-        return ds_mixing0 - (smass1_loss - s0)
-
-
-class DentonBaumgartnerMixingLoss(LossModel):
-    """Denton's trailing-edge mixing loss using
-    :func:`baumgartner_mixing_zeta`'s compressible base-pressure
-    coefficient in place of :class:`DentonMixingLoss`'s incompressible
-    Cpb."""
-
-    config = EquationConfig(
-        input_pair=cp.HmassP_INPUTS,
-        out_properties=(thrm.Entropy,),
-    )
-
-    def residual(
-        self,
-        p0: n0.stc.Pressure.Hint,
-        p_rlt0: n0.rlt.Pressure.Hint,
-        gamma0: n0.oth.GammaPV.Hint,
-        rel_mach0: n0.kin.RelMach.Hint,
-        beta0: n0.geo.MetalAngle.Hint,
-        pitch0: n0.geo.Pitch.Hint,
-        t0: n0.geo.BldThick.Hint,
-        p_base0: n0.oth.PBase.Hint,
-        mom_thick0: n0.oth.MomThick.Hint,
-        disp_thick0: n0.oth.DispThick.Hint,
-        h_rlt0: n0.rlt.Enthalpy.Hint,
-        s0: n0.stc.Entropy.Hint,
-        ds_mixing0: n0.loss.Ds_mixing.Hint,
-    ):
-        # Floor only, to avoid division by zero at stagnation; no upper cap
-        mach_floored = safe_max(rel_mach0, 0.05)
-        dyn_press = 0.5 * gamma0 * p0 * mach_floored**2  # Compressible dynamic head
-
-        zeta = baumgartner_mixing_zeta(
-            p0,
-            gamma0,
-            mach_floored,
-            beta0,
-            pitch0,
-            t0,
-            p_base0,
-            mom_thick0,
-            disp_thick0,
-        )
-
-        rlt_p1_loss = p_rlt0 - dyn_press * zeta
-        smass1_loss = self.eos(h_rlt0, rlt_p1_loss)
-
-        return ds_mixing0 - (smass1_loss - s0)
-
-
 class MinimalChoke(EquationBase):
     def residual(self, kin_W0, kin_W_choke0, kin_beta0, kin_beta1):
         no_dev = kin_beta1 - kin_beta0
         choke = kin_W0 - kin_W_choke0
         return safe_if_else(kin_W0 >= kin_W_choke0, choke, no_dev)
+
+
+def trapezoidal_vel_profile(
+    xi_by_camb_len_A, xi_by_camb_len_B, k_prof, kin_W0, kin_W1
+) -> tuple[cs.DM, cs.DM, cs.DM]:
+    """
+    Build the velocity proile. `xi` is the curvilinear coordinate
+    along the camberline
+
+    Parameters
+    ----------
+    xi_by_camb_len_A
+        position of the first point
+    xi_by_camb_len_B
+        position of the second point
+    k_prof
+        Velocity multiplier
+    kin_W0
+        Inlet velocity
+    kin_W1
+        Outlet velocity
+    """
+    # Positions
+    xi_by_camb_len = cs.horzcat(
+        0.0 * xi_by_camb_len_A,
+        xi_by_camb_len_A,
+        xi_by_camb_len_B,
+        xi_by_camb_len_A / xi_by_camb_len_A,
+    )
+
+    # Velocity clippers
+    MIN_CLIP = 5  # Clip pressure side to inlet W / <N>
+
+    # NOTE: With the absolute value this should work for both diffusing
+    # and accelerating channels
+    delta_W = cs.fabs(kin_W1 - kin_W0)
+
+    # NOTE: Nothing prevents k_prof from being negative, because
+    # the values used in the residual formulation to compute the pressure
+    # only use W**2.
+    # The problem arises when you try to use the clip ratio, because you
+    # are assuming the value of the sign by using the max function
+    # => Solution = Take the absolute value of k_prof
+
+    k_prof = safe_abs(k_prof)
+
+    W_mid_ss = 2 * k_prof * kin_W1 + delta_W
+    W_mid_ps = cs.fmax(k_prof * kin_W0 - delta_W, kin_W0 / MIN_CLIP)
+
+    # Full velocity distribution
+    W_distr_ss = cs.horzcat(1 * kin_W0, W_mid_ss, W_mid_ss, kin_W1)  # Suction
+    # The 99 is needed otherwise the last state is equal, can cause NaN in some formulas
+    W_distr_ps = cs.horzcat(0 * kin_W0, W_mid_ps, W_mid_ps, 0.99 * kin_W1)  # Pressure
+
+    return xi_by_camb_len, W_distr_ss, W_distr_ps
+
+
+def rectangular_vel_profile(kin_W0, kin_W1, oth_k_prof1):
+    W_mean = (kin_W1 + kin_W0) / 2
+    delta_W = safe_abs(kin_W1 - kin_W0)
+
+    W_ss = W_mean + oth_k_prof1 * delta_W
+    W_ps = W_mean - oth_k_prof1 * delta_W
+
+    return W_ss, W_ps

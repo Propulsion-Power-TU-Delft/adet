@@ -23,10 +23,8 @@ from adet.equations.nondimensional import (
 )
 from adet.fluid.algebraic_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import (
-    TotalPressureLoss,
-    ZeroDeviation,
-)
+from adet.losses.general.basic import TotalPressureLoss
+from adet.deviation import ZeroDeviation
 from adet.solution import solve_root_problem
 from adet.tools.iter import grouper
 from adet.tools.loggers import setup_logger

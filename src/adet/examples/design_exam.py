@@ -22,7 +22,8 @@ from adet.equations.fundamental import (  # noqa: F401
 from adet.equations.utils import get_midspan_idx, safe_abs
 from adet.fluid.algebraic_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import IsentropicLink, ZeroDeviation
+from adet.losses.general.basic import IsentropicLink
+from adet.deviation import ZeroDeviation
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger

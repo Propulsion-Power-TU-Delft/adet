@@ -24,13 +24,12 @@ from adet.equations.geometrical import (
     RadialGeometry,
 )
 from adet.geometry import BezierCurve, StraightLine
-from adet.losses.basic import ZeroDeviation
-from adet.losses.compressors import (
+from adet.deviation import ZeroDeviation
+from adet.losses.stationary.diffuser import (
     AmiranteDiffuserMomentum,
-    ExitConeLoss,
     StanitzDiffuserMomentum,
-    VoluteLossJapikse,
 )
+from adet.losses.stationary.volute import ExitConeLoss, VoluteLossJapikse
 from adet.variables import (
     GeometricVariables,
     KinematicVariables,

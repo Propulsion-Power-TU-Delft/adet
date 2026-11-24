@@ -42,10 +42,8 @@ from adet.equations.nondimensional import (
     WorkCoefficientMid,
 )
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import (
-    TotalPressureLoss,
-    ZeroDeviation,
-)
+from adet.deviation import ZeroDeviation
+from adet.losses.general.basic import TotalPressureLoss
 from adet.solution import solve_root_problem
 from adet.tools.loggers import setup_logger
 from adet.tools.plotting import plot_camberline, plot_velocity_triangles, setup_mpl
@@ -368,7 +366,8 @@ from adet.equations.nondimensional import (
     TotalTotalExpansionEfficiency,
 )
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import TotalPressureLoss, ZeroDeviation
+from adet.deviation import ZeroDeviation
+from adet.losses.general.basic import TotalPressureLoss
 from adet.solution import solve_root_problem
 from adet.tools.plotting import plot_velocity_triangles
 from adet.variables import NodeVariables

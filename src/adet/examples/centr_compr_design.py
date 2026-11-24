@@ -34,12 +34,10 @@ from adet.equations.nondimensional import (
 )
 from adet.fluid.algebraic_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import (
-    IsentropicLink,
-    ZeroDeviation,
-)
-from adet.losses.compressors import (
-    BackstromSlip,
+from adet.losses.general.basic import IsentropicLink
+from adet.deviation import ZeroDeviation
+from adet.deviation import BackstromSlip
+from adet.losses.compressors.centrifugal import (
     CaseyRushInletFunc,
     CompressorShapeFactor,
 )

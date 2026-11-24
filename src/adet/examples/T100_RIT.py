@@ -49,12 +49,11 @@ from adet.equations.nondimensional import (
     TotalTotalExpansionEfficiency,
 )
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import IsentropicLink, ZeroDeviation
-from adet.losses.mixing import (
-    DentonBaumgartnerMixingLoss,
-    SieverdingBasePressure,
-)
-from adet.losses.rit import (
+from adet.losses.general.basic import IsentropicLink
+from adet.deviation import ZeroDeviation
+from adet.losses.turbines.axial import DentonBaumgartnerMixingLoss
+from adet.losses.turbines.shared import SieverdingBasePressure
+from adet.losses.turbines.centrifugal import (
     EndwallLoss,
     IdealInterspace,
     ImpellerIncidenceLoss,

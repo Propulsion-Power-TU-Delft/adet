@@ -41,14 +41,13 @@ from adet.equations.nondimensional import (
     WorkCoefficient,
 )
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import IsentropicLink, ZeroDeviation  # noqa: F401
-from adet.losses.leakage import DentonTrapLeakage
-from adet.losses.mixing import (
-    DentonMixingLoss,
-    SieverdingBasePressure,
-)
-from adet.losses.profile import DentonTrapProfile
-from adet.losses.secondary import SecondaryBSM
+from adet.losses.general.basic import IsentropicLink  # noqa: F401
+from adet.deviation import ZeroDeviation
+from adet.losses.turbines.axial import DentonTrapLeakage
+from adet.losses.turbines.axial import DentonMixingLoss
+from adet.losses.turbines.shared import SieverdingBasePressure
+from adet.losses.turbines.axial import DentonTrapProfile
+from adet.losses.turbines.axial import SecondaryBSM
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.design_map import sweep_design_map

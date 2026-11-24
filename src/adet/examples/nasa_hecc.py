@@ -30,22 +30,19 @@ from adet.equations.nondimensional import (
 from adet.equations.utils import residual_debugger
 from adet.fluid.algebraic_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import (
-    IsentropicLink,
-    ZeroDeviation,
-)
-from adet.losses.compressors import (
+from adet.losses.general.basic import IsentropicLink
+from adet.deviation import ZeroDeviation
+from adet.losses.compressors.centrifugal import (
     AungierChoking,
-    BackstromSlip,
     BladeLoadingCoppage,
     ClearanceJansen,
-    DiskFricDailyNece,
-    HydraulicQuantities,
     IncidenceGalvas,
     MixingJohnstonDean,
     RecirculationCoppage,
-    SkinFrictionJansen,
 )
+from adet.deviation import BackstromSlip
+from adet.losses.compressors.shared import DiskFricDailyNece, SkinFrictionJansen
+from adet.equations.geometrical import HydraulicQuantities
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.interpolation import resample_linear

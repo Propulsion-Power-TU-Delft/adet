@@ -21,7 +21,7 @@ from adet.equations.fundamental import (
 from adet.equations.nondimensional import AbsoluteMachNumber
 from adet.equations.utils import safe_abs, safe_if_else
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import IsentropicLink
+from adet.losses.general.basic import IsentropicLink
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger

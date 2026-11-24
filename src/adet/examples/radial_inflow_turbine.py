@@ -24,13 +24,12 @@ from adet.equations.base_equation import LossApplier
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
 from adet.equations.nondimensional import GammaPV
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import IsentropicLink, ZeroDeviation
-from adet.losses.mixing import (
-    DentonBaumgartnerMixingLoss,
-    SieverdingBasePressure,
-)
-from adet.losses.rit import (
-    ChenSlip,
+from adet.losses.general.basic import IsentropicLink
+from adet.deviation import ZeroDeviation
+from adet.losses.turbines.axial import DentonBaumgartnerMixingLoss
+from adet.losses.turbines.shared import SieverdingBasePressure
+from adet.deviation import ChenSlip
+from adet.losses.turbines.centrifugal import (
     EndwallLoss,
     ImpellerIncidenceLoss,
     ImpellerLeakageLoss,

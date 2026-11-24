@@ -1,5 +1,6 @@
-from adet.equations.base_equation import DeviationModel, LossApplier
-from adet.equations.utils import get_midspan_idx
+"""General loss models applicable to any component: total pressure and entropy loss applicators and the isentropic link."""
+
+from adet.equations.base_equation import LossApplier
 from adet.variables import NodeVariables
 
 n0 = NodeVariables(0)
@@ -82,31 +83,3 @@ class PercentageEntropyLoss(LossApplier):
         s1: n1.stc.Entropy.Hint,
     ):
         return s1 - s0 * (1 + self.entropy_gen)
-
-
-class FreeDeviation(DeviationModel):
-    """
-    Decouple the flow angle and the metal angle,
-    useful when the deviation is fully determined
-    by the thermodynamic state
-    """
-
-    def residual(self, beta: n0.kin.FlowAngleRel.Hint):
-        return ()
-
-
-class ZeroDeviation(DeviationModel):
-    """Impose equality between kinematic and geometric angles at a node"""
-
-    def residual(
-        self,
-        met_angle0: n0.geo.MetalAngle.Hint,
-        beta0: n0.kin.FlowAngleRel.Hint,
-    ):
-        return beta0 - met_angle0
-
-
-class ZeroMidspanDeviation(DeviationModel):
-    def residual(self, kin_beta0, geo_metal_angle0):
-        midspan = get_midspan_idx(kin_beta0)
-        return kin_beta0[midspan] - geo_metal_angle0[midspan]
