@@ -17,6 +17,16 @@ tutorials/index
 
 More advanced usage examples can be found in `/src/adet/examples/`.
 
+## Models
+
+Catalogue of the deviation and loss models implemented in ADeT, with equations and references.
+
+```{toctree}
+:maxdepth: 1
+
+models/index
+```
+
 ## API Reference
 
 Detailed reference for classes, methods and functions that make up the codebase.

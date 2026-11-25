@@ -42,10 +42,8 @@ from adet.equations.nondimensional import (
     WorkCoefficientMid,
 )
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import (
-    TotalPressureLoss,
-    ZeroDeviation,
-)
+from adet.deviation import ZeroDeviation
+from adet.losses.basic import TotalPressureLoss
 from adet.solution import solve_root_problem
 from adet.tools.loggers import setup_logger
 from adet.tools.plotting import plot_camberline, plot_velocity_triangles, setup_mpl
@@ -151,13 +149,13 @@ stator = BladeRow(
         ModifiedZweifel(): (0, 1),  # Zweifel criterion for optimal blades
     },
     constant_variables=[n0.geo.Rmid], # Constant midspan radius
-    spanwise_constants=[n1.geo.ChordAx], # Constant axial chord (no taper)
+    spanwise_constants=[n1.geo.MerChord], # Constant meridional chord (no taper)
 )
 ```
 
 `constant_variables` specified which variables are constant bewteen inlet and outlet. In this case we can use both `n0` and `n1` to specify the condition $r_{mid,0} = r_{mid,1}$.
 
-`spanwise_constants` specifies which variables are to be kept constant along the span. In this case the node index is important, as the axial chord is stored by convention on the outlet node. 
+`spanwise_constants` specifies which variables are to be kept constant along the span. In this case the node index is important, as the meridional chord is stored by convention on the outlet node. 
 
 ```{Hint}
 If you are wondering whether a variable is assigned by convention to the inlet or outlet node, you can use your LSP *Go to References* function on the VarSpec of that variable and see its uses across the codebase.
@@ -368,7 +366,8 @@ from adet.equations.nondimensional import (
     TotalTotalExpansionEfficiency,
 )
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import TotalPressureLoss, ZeroDeviation
+from adet.deviation import ZeroDeviation
+from adet.losses.basic import TotalPressureLoss
 from adet.solution import solve_root_problem
 from adet.tools.plotting import plot_velocity_triangles
 from adet.variables import NodeVariables
@@ -414,7 +413,7 @@ stator = BladeRow(
         ModifiedZweifel(): (0, 1),
     },
     constant_variables=[n0.geo.Rmid],
-    spanwise_constants=[n1.geo.ChordAx],
+    spanwise_constants=[n1.geo.MerChord],
 )
 
 rotor = deepcopy(stator)

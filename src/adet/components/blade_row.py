@@ -7,6 +7,7 @@ from matplotlib.lines import Line2D
 
 from adet.components.base_component import BaseComponent
 from adet.components.connections import Shaft
+from adet.deviation import ZeroDeviation
 from adet.equations import EquationBase
 from adet.equations.fundamental import (
     ConstRelEnthalpy,
@@ -24,13 +25,12 @@ from adet.equations.geometrical import (
     RadialGeometry,
 )
 from adet.geometry import BezierCurve, StraightLine
-from adet.losses.basic import ZeroDeviation
-from adet.losses.compressors import (
+from adet.losses.stationary.diffuser import (
     AmiranteDiffuserMomentum,
     ExitConeLoss,
     StanitzDiffuserMomentum,
-    VoluteLossJapikse,
 )
+from adet.losses.stationary.volute import VoluteLossJapikse
 from adet.variables import (
     GeometricVariables,
     KinematicVariables,

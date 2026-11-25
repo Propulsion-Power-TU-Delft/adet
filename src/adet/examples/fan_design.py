@@ -16,9 +16,10 @@ from adet.assemblers import CasadiSystem
 from adet.components.blade_row import BladeRow
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
+from adet.deviation import ZeroDeviation
 from adet.equations.nondimensional import TotalTotalPressureRatio
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import IsentropicLink, ZeroDeviation
+from adet.losses.basic import IsentropicLink
 from adet.solution import solve_root_problem
 from adet.tools.loggers import setup_logger
 from adet.variables import NodeVariables

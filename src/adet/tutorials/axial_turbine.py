@@ -12,6 +12,7 @@ from adet.components import BladeRow, Inlet
 from adet.components.blade_row import RowGeometry
 from adet.components.connections import Shaft
 from adet.components.network import ComponentNetwork
+from adet.deviation import ZeroDeviation
 from adet.equations.definitions import RepeatedStage
 from adet.equations.fundamental import FreeVortexDistribution
 from adet.equations.geometrical import ModifiedZweifel
@@ -22,10 +23,7 @@ from adet.equations.nondimensional import (
     WorkCoefficientMid,
 )
 from adet.fluid.settings import FluidSettings
-from adet.losses.basic import (
-    TotalPressureLoss,
-    ZeroDeviation,
-)
+from adet.losses.basic import TotalPressureLoss
 from adet.solution import solve_root_problem
 from adet.tools.loggers import setup_logger
 from adet.tools.plotting import plot_camberline, plot_velocity_triangles, setup_mpl
