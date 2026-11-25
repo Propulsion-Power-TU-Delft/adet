@@ -5,6 +5,7 @@ import casadi as cs
 
 from adet.fluid.algebraic_eos import AlgebraicFluidState
 from adet.fluid.casadi_eos import CasadiEos
+from adet.fluid.compositional import CompositionalFluid
 from adet.tools.coolprop_utils import inames_from_id
 from adet.varspec import VarSpec
 
@@ -32,10 +33,15 @@ class EosFactory:
         if not name:
             name += f'generic_eos_pair{input_pair}'
 
-        if isinstance(
-            self.fluid_state,
-            AlgebraicFluidState,
-        ):
+        if isinstance(self.fluid_state, CompositionalFluid):
+            # (v0, v1, *composition) -> outputs
+            return self.fluid_state.make_eos(
+                input_pair,
+                out_props_names,
+                length,
+                name,
+            )
+        elif isinstance(self.fluid_state, AlgebraicFluidState):
             return self._make_symbolic_eos(
                 eos_obj,
                 input_pair,

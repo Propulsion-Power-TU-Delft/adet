@@ -45,6 +45,17 @@ def ordered_specs(specs: Iterable[VarSpec]) -> list[VarSpec]:
     return sorted(specs, key=lambda s: (s.symbol, s.node, str(s.state)))
 
 
+class _CompositionBoundEos:
+    """Equation-level EoS of a compositional fluid, bound to a node composition"""
+
+    def __init__(self, func: cs.Function, composition: Sequence[cs.MX]):
+        self.func = func
+        self.composition = list(composition)
+
+    def __call__(self, *args):
+        return self.func(*args, *self.composition)
+
+
 class SystemSharedData:
     """
     Shared data container accessible to all managers.
@@ -76,6 +87,8 @@ class SystemSharedData:
 
         # Thermo update arguments
         self.thermo_updt_args: list[VarSpec] = []
+        # Node composition arguments (compositional fluids only)
+        self.composition_args: list[VarSpec] = []
 
         # Build status
         self.built: bool = False
@@ -300,8 +313,8 @@ class ConstraintManager:
             self._check_arg_declaration(arg, 'spanwise constants')
 
         for arg in self.data.boun_cond:
-            # Skip update arguments
-            if arg in self.data.thermo_updt_args:
+            # Skip update and composition arguments
+            if arg in self.data.thermo_updt_args or arg in self.data.composition_args:
                 continue
             self._check_arg_declaration(arg, 'boundary conditions')
 
@@ -341,6 +354,7 @@ class ArgumentResolver:
         only two variables are effective (pure substance + phase),
         while the other two are followers
         """
+        self.data.composition_args = []
         if self.data.fluid_settings is None:
             return set(self.data.decl_args) - set(self.data.boun_cond)
 
@@ -360,9 +374,17 @@ class ArgumentResolver:
                 upd_args = [v.at_node(node)._with_state(st) for v in prescr_upd_vars]
                 self.data.thermo_updt_args.extend(upd_args)
 
-        return set(self.data.thermo_updt_args + nonthermo_args).difference(
-            self.data.boun_cond
-        )
+        # Compositional fluids: one composition per node, shared by its states
+        comp_vars = self.data.fluid_settings.composition_variables
+        self.data.composition_args = [
+            v.at_node(node)
+            for node in range(first_node, last_node + 1)
+            for v in comp_vars
+        ]
+
+        return set(
+            self.data.thermo_updt_args + nonthermo_args + self.data.composition_args
+        ).difference(self.data.boun_cond)
 
     def get_discarded_thermo_args(self) -> list[VarSpec]:
         """
@@ -785,6 +807,12 @@ class SystemAssembler(ABC):
             _thrm.MolarMass,
         ]
 
+        # Compositional fluids: properties also depend on the node composition
+        if self.data.fluid_settings.composition_variables:
+            return self._compute_secondary_thermo_compositional(
+                sol_data, [*TO_WRITE, _thrm.RelHumidity]
+            )
+
         # Extract fluid settings data
         fluid_settings = self.data.fluid_settings
         abs_state = fluid_settings.fluid_state
@@ -814,6 +842,43 @@ class SystemAssembler(ABC):
 
                     spec = spec.at_node(node)._with_state(state)
                     thrm_data[spec] = np.array(pty_arr)
+
+        return thrm_data
+
+    def _compute_secondary_thermo_compositional(
+        self, sol_data: dict[VarSpec, NDArray], to_write: list[VarSpec]
+    ) -> dict[VarSpec, NDArray]:
+        """Back-fill node thermo properties evaluated with the node composition"""
+        fluid_settings = cast(FluidSettings, self.data.fluid_settings)
+        var0_glb, var1_glb = (v.Glob for v in fluid_settings.update_variables)
+        comp_vars = fluid_settings.composition_variables
+        eos = EosFactory(fluid_settings.fluid_state).make_eos(
+            fluid_settings.input_pair, to_write, 1, 'secondary_thermo'
+        )
+
+        thrm_data = {}
+        for node in range(self.last_node + 1):
+            if any(c.at_node(node) not in sol_data for c in comp_vars):
+                continue
+            comp = [sol_data[c.at_node(node)] for c in comp_vars]
+            for state in NodeStates:
+                v0 = sol_data.get(var0_glb.at_node(node)._with_state(state))
+                v1 = sol_data.get(var1_glb.at_node(node)._with_state(state))
+                if v0 is None or v1 is None:
+                    continue
+
+                values = np.full((len(to_write), len(v0)), np.nan)
+                for k in range(len(v0)):
+                    args = [v0[k], v1[k], *(c[min(k, len(c) - 1)] for c in comp)]
+                    try:
+                        out = eos(*args)
+                        out = out if isinstance(out, (tuple, list)) else [out]
+                        values[:, k] = [float(o) for o in out]
+                    except RuntimeError:  # property extraction failure
+                        pass
+
+                for spec, vals in zip(to_write, values):
+                    thrm_data[spec.at_node(node)._with_state(state)] = vals
 
         return thrm_data
 
@@ -1010,18 +1075,39 @@ class CasadiSystem(SystemAssembler):
         }
 
         self._eos_factory = EosFactory(fl_state)
+        # NOTE: Keep this system's equation-level EoS callbacks alive. Each equation
+        # instance holds its own EoS (see ``EquationBase.eos``),
+        # if an equation instance is shared with another system,
+        # building that system replaces the instance's EoS and
+        # this list is then the only reference to the callbacks this system's
+        # residuals still call
+        self._eq_eos_callbacks: list = []
+
+        # Compositional fluids: composition symbols of a node
+        comp_vars = self.data.fluid_settings.composition_variables
+
+        def node_composition(node: int) -> list[cs.MX]:
+            return [all_args_products[c.at_node(node)] for c in comp_vars]
 
         # Add inter-node eos
         for eq, eq_pos in self.data.equations.items():
             eq_conf = eq.config
             pos_str = '_'.join(str(p) for p in eq_pos)
             if eq_conf.input_pair:
-                eq.eos = self._eos_factory.make_eos(
+                eos_func = self._eos_factory.make_eos(
                     eq_conf.input_pair,
                     eq_conf.out_properties,
                     self.num_span,
                     f'multi_{eq.__class__.__name__}_{pos_str}',
                 )
+
+                if comp_vars:
+                    # WARN: Equation-level EoS uses composition of the first node
+                    eq.eos = _CompositionBoundEos(eos_func, node_composition(eq_pos[0]))
+                else:
+                    eq.eos = eos_func
+
+                self._eq_eos_callbacks.append(eos_func)
 
         discarded_vars = self._argument_resolver.get_discarded_thermo_args()
         out_syms: dict[VarSpec, cs.MX] = {}
@@ -1048,6 +1134,8 @@ class CasadiSystem(SystemAssembler):
                 continue
 
             for state, out_specs in sorted_discarded[node_idx].items():
+                if not out_specs:  # no property needed at this state
+                    continue
                 pair_id = self.data.fluid_settings.input_pair
 
                 eos_caller = self._eos_factory.make_eos(
@@ -1067,6 +1155,8 @@ class CasadiSystem(SystemAssembler):
 
                 # Symbolic representation of the input pair properties
                 symbolic_pair = [all_args_products[spec] for spec in upd_specs]
+                # Plus the node composition, for compositional fluids
+                symbolic_pair += node_composition(node_idx)
 
                 # Symbolic representation of the output properties
                 out_props_syms = eos_caller(*symbolic_pair)
