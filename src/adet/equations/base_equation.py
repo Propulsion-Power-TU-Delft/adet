@@ -20,17 +20,34 @@ logger = logging.getLogger(__name__)
 class EmbeddedEos:
     def __init__(self, parent: 'EquationBase'):
         self.parent = parent
-        self.out_pties = parent.config.out_properties
-        self._callable: CasadiEos | cs.Function | Any | None = None
+        self.out_pties = [pty.Glob for pty in parent.config.out_properties]
+        self.callable: cs.Function | None = None
+
+    def __getstate__(self):
+        # Runtime EoS (CasADi objects) is rebuilt by the assembler on build()
+        state = self.__dict__.copy()
+        state['_callable'] = None
+        return state
 
     @property
-    def callable(self) -> CasadiEos | cs.Function | Any | None:
+    def callable(self) -> cs.Function | None:
         return self._callable
 
     @callable.setter
-    def callable(self, callable: CasadiEos | cs.Function | Any):
-        # TODO: Some optional checks?
-        self._callable = callable
+    def callable(self, eos_func: cs.Function | None):
+        if eos_func is None:
+            self._callable = None
+            return
+
+        n_out = eos_func.n_out()
+
+        if n_out != len(self.out_pties):
+            raise ValueError(
+                f'EoS for {self.parent} returns {n_out} outputs, '
+                f'but config declares {len(self.out_pties)}'
+            )
+
+        self._callable = eos_func
 
     def _pass_units(self, *args) -> PlainQuantity | list[PlainQuantity]:
         lengths = {len(a) for a in args}
@@ -212,15 +229,6 @@ class EquationBase(ABC):
     def eos(self, eos_func: cs.Function | CasadiEos | Callable):
         logger.debug(f'Assigning EoS for {self.__class__} instance')
         self._emb_eos.callable = eos_func
-
-    def __getstate__(self):
-        # Runtime EoS (CasADi objects) is rebuilt by the assembler on build()
-        state = self.__dict__.copy()
-
-        # Remove the callback from the pickling/copy
-        state.pop('_eos_func', None)
-
-        return state
 
 
 class UniqueEquation(EquationBase):
