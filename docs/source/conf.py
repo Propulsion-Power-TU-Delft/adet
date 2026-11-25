@@ -13,6 +13,7 @@ release = '0.0.1'
 extensions = [
     'myst_parser',
     'sphinx.ext.autodoc',
+    'sphinx.ext.viewcode',
     'sphinx.ext.napoleon',
     'sphinx_togglebutton',
     'sphinx_design',
@@ -26,6 +27,8 @@ myst_enable_extensions = [
     'colon_fence',
     'dollarmath',
 ]
+# Anchors for headings up to level 3, so tables can link to individual models
+myst_heading_anchors = 3
 
 # Autodoc configuration
 autodoc_default_options = {

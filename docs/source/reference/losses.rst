@@ -14,7 +14,7 @@ Base Loss Model
 General Losses
 --------------
 
-.. automodule:: adet.losses.general.basic
+.. automodule:: adet.losses.basic
    :members:
    :undoc-members:
    :show-inheritance:
@@ -28,6 +28,14 @@ Stationary Components
    :show-inheritance:
 
 .. automodule:: adet.losses.stationary.diffuser
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+Shared Losses
+-------------
+
+.. automodule:: adet.losses.shared
    :members:
    :undoc-members:
    :show-inheritance:
@@ -58,7 +66,7 @@ Turbines
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: adet.losses.turbines.centrifugal
+.. automodule:: adet.losses.turbines.centripetal
    :members:
    :undoc-members:
    :show-inheritance:

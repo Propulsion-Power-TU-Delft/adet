@@ -136,8 +136,7 @@ The solution is made up of $x_0$ and $x_1$ concatenated in a $\mathbb{R}^{2N}$ v
 
 ```python
 >>> solution
-array([[-0.99540786],
-       [ 1.66666659]])
+array([ 1.66666659, -0.99540786])
 ```
 
 For readability we recommend converting the solution to a dictionary:

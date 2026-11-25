@@ -59,7 +59,7 @@ Split into
 
 ### Turbines
 #### Shared
-#### Centrifugal
+#### Centripetal
 #### Axial
 #### Mixed
 
