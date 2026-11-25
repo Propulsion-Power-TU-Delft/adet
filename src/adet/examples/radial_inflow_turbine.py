@@ -34,7 +34,7 @@ from adet.losses.turbines.centripetal import (
     ImpellerPassageLoss,
     StatorProfileLoss,
 )
-from adet.losses.turbines.shared import SieverdingBasePressure
+from adet.losses.turbines.common import SieverdingBasePressure
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger

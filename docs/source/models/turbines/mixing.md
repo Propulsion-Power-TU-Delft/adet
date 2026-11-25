@@ -49,7 +49,7 @@ with $\zeta$ and $\Delta s_{mix}$ as in `DentonMixingLoss`.
 
 ## Sieverding base pressure
 
-*Class:* {py:class}`adet.losses.turbines.shared.SieverdingBasePressure`
+*Class:* {py:class}`adet.losses.turbines.common.SieverdingBasePressure`
 
 *Machine type:* Axial, radial
 
@@ -63,7 +63,7 @@ $$
 
 ## Mixing momentum balances
 
-*Class:* {py:class}`adet.losses.turbines.shared.MixingMomentumBalances`
+*Class:* {py:class}`adet.losses.turbines.common.MixingMomentumBalances`
 
 *Machine type:* Axial, radial
 
@@ -82,7 +82,7 @@ $$
 
 ## Simplified mixing balances
 
-*Class:* {py:class}`adet.losses.turbines.shared.SimplifiedMixingBalances`
+*Class:* {py:class}`adet.losses.turbines.common.SimplifiedMixingBalances`
 
 *Machine type:* Axial, radial
 

@@ -18,7 +18,7 @@ from adet.equations.utils import (
     trapezoid2,
 )
 from adet.losses.base_loss import LossModel
-from adet.losses.turbines.shared import (
+from adet.losses.turbines.common import (
     baumgartner_mixing_zeta,
     incomp_mixing_zeta,
     rectangular_vel_profile,

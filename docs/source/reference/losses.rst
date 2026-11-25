@@ -43,7 +43,7 @@ Shared Losses
 Compressors
 -----------
 
-.. automodule:: adet.losses.compressors.shared
+.. automodule:: adet.losses.compressors.common
    :members:
    :undoc-members:
    :show-inheritance:
@@ -56,7 +56,7 @@ Compressors
 Turbines
 --------
 
-.. automodule:: adet.losses.turbines.shared
+.. automodule:: adet.losses.turbines.common
    :members:
    :undoc-members:
    :show-inheritance:
