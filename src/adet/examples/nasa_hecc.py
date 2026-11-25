@@ -13,6 +13,7 @@ from adet.components import BladeRow
 from adet.components.blade_row import RowGeometry, VanelessDiffuser
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
+from adet.deviation import BackstromSlip, ZeroDeviation
 from adet.equations.base_equation import EquationConfig, LossApplier
 from adet.equations.control_volumes import (
     ChokingArea,
@@ -23,15 +24,14 @@ from adet.equations.definitions import (
     EffectiveBladeNumber,
     IsentropicProperties,
 )
-from adet.equations.geometrical import MinimalCamberLine
+from adet.equations.geometrical import HydraulicQuantities, MinimalCamberLine
 from adet.equations.nondimensional import (
     TotalTotalPressureRatio,
 )
 from adet.equations.utils import residual_debugger
 from adet.fluid.algebraic_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
-from adet.losses.general.basic import IsentropicLink
-from adet.deviation import ZeroDeviation
+from adet.losses.basic import IsentropicLink
 from adet.losses.compressors.centrifugal import (
     AungierChoking,
     BladeLoadingCoppage,
@@ -39,10 +39,9 @@ from adet.losses.compressors.centrifugal import (
     IncidenceGalvas,
     MixingJohnstonDean,
     RecirculationCoppage,
+    SkinFrictionJansen,
 )
-from adet.deviation import BackstromSlip
-from adet.losses.compressors.shared import DiskFricDailyNece, SkinFrictionJansen
-from adet.equations.geometrical import HydraulicQuantities
+from adet.losses.shared import DiskFricDailyNece
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.interpolation import resample_linear

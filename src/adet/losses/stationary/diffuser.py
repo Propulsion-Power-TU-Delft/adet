@@ -1,4 +1,6 @@
-"""Stationary component loss models: vaneless and vaned diffusers."""
+"""
+Stationary component loss models: vaneless and vaned diffusers.
+"""
 
 import CoolProp as cp
 import numpy as np
@@ -194,3 +196,47 @@ class JansenDiffuserLoss(LossModel):
         r2 = s1 - (s0 + np.exp(-loss / gas_const))
 
         return r1, r2
+
+
+class ExitConeLoss(EquationBase):
+    """
+    Friction loss of the conical diffuser downstream of the volute.
+    Expansion losses are not accounted for.
+
+    - Re = m_dot / (mu_0 D_hyd), Re_e = (Re - 2000) k / D_hyd
+    - C_f = C_f,smooth + (C_f,rough - C_f,smooth) (1 - 60 / Re_e), friction
+    coefficient, Cf, is computed with the Colebrook-White correlation (Colebrook, 1939).
+    - r1: smooth friction coefficient, Schlichting (implicit)
+    - r2: fully rough friction coefficient
+    - r3: outlet total pressure, Delta p_t = rho_0 V_0^2 / 2 * 4 C_f L / D_hyd,
+      with the inlet state
+    """
+
+    def residual(
+        self,
+        cum_mf0: n0.oth.TotMassFlow.Hint,
+        visc0: n0.stc.Viscosity.Hint,
+        rho0: n0.stc.Density.Hint,
+        v0: n0.kin.V_mag.Hint,
+        pt0: n0.tot.Pressure.Hint,
+        pt1: n1.tot.Pressure.Hint,
+        hyd_len1: n1.geo.HydLen.Hint,
+        hyd_diam1: n1.geo.HydDiam.Hint,
+        abs_rough1: n1.geo.AbsRoughness.Hint,
+        cf_smooth1: n1.oth.Cf_smooth.Hint,
+        cf_rough1: n1.oth.Cf_rough.Hint,
+    ):
+        Re = cum_mf0 / (visc0 * hyd_diam1)
+        Re_e = (Re - 2000) * abs_rough1 / hyd_diam1
+
+        r1 = 4 * cf_smooth1 - (
+            (1 / np.log10((2.51 / (Re * np.sqrt(4 * cf_smooth1))) ** -2)) ** 2
+        )
+        r2 = (
+            4 * cf_rough1 - (1 / np.log10((abs_rough1 / (3.71 * hyd_diam1)) ** -2)) ** 2
+        )
+
+        Cf = cf_smooth1 + (cf_rough1 - cf_smooth1) * (1 - (60 / Re_e))
+        r3 = pt1 - (pt0 - rho0 * v0**2 / 2 * 4 * Cf * hyd_len1 / hyd_diam1)
+
+        return r1, r2, r3

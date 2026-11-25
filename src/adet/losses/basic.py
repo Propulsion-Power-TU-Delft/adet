@@ -1,4 +1,6 @@
-"""General loss models applicable to any component: total pressure and entropy loss applicators and the isentropic link."""
+"""
+General loss models applicable to any component
+"""
 
 from adet.equations.base_equation import LossApplier
 from adet.variables import NodeVariables

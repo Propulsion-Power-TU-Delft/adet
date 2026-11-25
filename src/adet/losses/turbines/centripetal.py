@@ -1,4 +1,9 @@
-"""Radial-inflow (centrifugal) turbine loss models: stator profile, endwall, impeller incidence, passage, leakage, windage, clearance and interspace."""
+"""
+Radial-inflow (centripetal) turbine loss models.
+
+Covers stator profile, endwall, impeller incidence, passage, leakage,
+windage, clearance and interspace.
+"""
 
 import CoolProp as cp
 import numpy as np

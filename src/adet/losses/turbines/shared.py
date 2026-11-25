@@ -1,4 +1,8 @@
-"""Turbine loss helpers shared across turbine types: profile velocity distributions, mixing balances and base pressure."""
+"""
+Turbine loss helpers shared across turbine types.
+
+Covers profile velocity distributions, mixing balances and base pressure.
+"""
 
 from pathlib import Path
 from typing import Literal
@@ -251,13 +255,6 @@ def baumgartner_mixing_zeta(
         + 2 * oth_mom_thick0 / w
         + ((oth_disp_thick0 + geo_bld_thick0) / w) ** 2
     )
-
-
-class MinimalChoke(EquationBase):
-    def residual(self, kin_W0, kin_W_choke0, kin_beta0, kin_beta1):
-        no_dev = kin_beta1 - kin_beta0
-        choke = kin_W0 - kin_W_choke0
-        return safe_if_else(kin_W0 >= kin_W_choke0, choke, no_dev)
 
 
 def trapezoidal_vel_profile(

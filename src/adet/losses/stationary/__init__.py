@@ -1,1 +1,3 @@
-"""Loss models: stationary."""
+"""
+Loss models: stationary.
+"""

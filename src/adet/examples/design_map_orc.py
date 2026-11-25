@@ -17,6 +17,7 @@ from pint import Quantity
 
 from adet.assemblers import CasadiSystem
 from adet.components import BladeRow, ComponentNetwork, Inlet, Shaft
+from adet.deviation import ZeroDeviation
 from adet.equations.base_equation import EquationBase, LossApplier
 from adet.equations.definitions import (
     BoundaryLayerRatios,
@@ -41,13 +42,14 @@ from adet.equations.nondimensional import (
     WorkCoefficient,
 )
 from adet.fluid.settings import FluidSettings
-from adet.losses.general.basic import IsentropicLink  # noqa: F401
-from adet.deviation import ZeroDeviation
-from adet.losses.turbines.axial import DentonTrapLeakage
-from adet.losses.turbines.axial import DentonMixingLoss
+from adet.losses.basic import IsentropicLink  # noqa: F401
+from adet.losses.turbines.axial import (
+    DentonMixingLoss,
+    DentonTrapLeakage,
+    DentonTrapProfile,
+    SecondaryBSM,
+)
 from adet.losses.turbines.shared import SieverdingBasePressure
-from adet.losses.turbines.axial import DentonTrapProfile
-from adet.losses.turbines.axial import SecondaryBSM
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.design_map import sweep_design_map

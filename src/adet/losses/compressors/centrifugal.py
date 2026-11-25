@@ -1,4 +1,9 @@
-"""Compressor loss models for centrifugal impellers: incidence, blade loading, clearance, recirculation, leakage, friction and mixing."""
+"""
+Compressor loss models for centrifugal impellers.
+
+Covers incidence, blade loading, clearance, recirculation, leakage,
+friction and mixing.
+"""
 
 import numpy as np
 
@@ -425,6 +430,43 @@ class LeakageLostWork(LossModel):
         dht_leakage_lost = work_loss_coeff * work * clearance / hgt1
 
         return dht_lost1 - dht_leakage_lost
+
+
+class SkinFrictionJansen(LossModel):
+    def residual(
+        self,
+        cum_mf0: n0.oth.TotMassFlow.Hint,
+        hyd_len1: n1.geo.HydLen.Hint,
+        hyd_diam1: n1.geo.HydDiam.Hint,
+        v0: n0.kin.V_mag.Hint,
+        v1: n1.kin.V_mag.Hint,
+        w1: n1.kin.W_mag.Hint,
+        w_tip0: n0.kin.W_tip.Hint,
+        w_hub0: n0.kin.W_hub.Hint,
+        visc0: n0.stc.Viscosity.Hint,
+        visc1: n1.stc.Viscosity.Hint,
+        abs_rough1: n1.geo.AbsRoughness.Hint,
+        cf_smooth1: n1.oth.Cf_smooth.Hint,
+        cf_rough1: n1.oth.Cf_rough.Hint,
+        dht_skin1: n1.loss.Dht_skin.Hint,
+    ):
+        w_mean = (v0[-1] + v1 + w_tip0 + 2 * w_hub0 + 3 * w1) / 8
+        mu_mean = (visc0 + visc1) / 2
+
+        Re = cum_mf0 / (mu_mean * hyd_diam1)
+        Re_e = (Re - 2000) * abs_rough1 / hyd_diam1
+
+        r1 = 4 * cf_smooth1 - (
+            (1 / np.log10((2.51 / (Re * np.sqrt(4 * cf_smooth1))) ** -2)) ** 2
+        )
+        r2 = (
+            4 * cf_rough1 - (1 / np.log10((abs_rough1 / (3.71 * hyd_diam1)) ** -2)) ** 2
+        )
+
+        Cf = cf_smooth1 + (cf_rough1 - cf_smooth1) * (1 - (60 / Re_e))
+        r3 = dht_skin1 - 2 * safe_abs(Cf) * (hyd_len1 / hyd_diam1) * (w_mean**2)
+
+        return r1, r2, r3
 
 
 class AungierChoking(LossModel):

@@ -23,7 +23,7 @@ from adet.equations.fundamental import (
 from adet.equations.nondimensional import RelativeMachNumber
 from adet.fluid.algebraic_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
-from adet.losses.general.basic import IsentropicLink
+from adet.losses.basic import IsentropicLink
 from adet.solution import solve_optimization_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger

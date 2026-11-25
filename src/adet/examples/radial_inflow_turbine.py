@@ -20,22 +20,21 @@ from adet.assemblers import CasadiSystem
 from adet.components.blade_row import BladeRow, Interspace
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
+from adet.deviation import ChenSlip, ZeroDeviation
 from adet.equations.base_equation import LossApplier
 from adet.equations.definitions import BoundaryLayerRatios, IsentropicProperties
 from adet.equations.nondimensional import GammaPV
 from adet.fluid.settings import FluidSettings
-from adet.losses.general.basic import IsentropicLink
-from adet.deviation import ZeroDeviation
+from adet.losses.basic import IsentropicLink
 from adet.losses.turbines.axial import DentonBaumgartnerMixingLoss
-from adet.losses.turbines.shared import SieverdingBasePressure
-from adet.deviation import ChenSlip
-from adet.losses.turbines.centrifugal import (
+from adet.losses.turbines.centripetal import (
     EndwallLoss,
     ImpellerIncidenceLoss,
     ImpellerLeakageLoss,
     ImpellerPassageLoss,
     StatorProfileLoss,
 )
+from adet.losses.turbines.shared import SieverdingBasePressure
 from adet.solution import solve_root_problem
 from adet.tools.coolprop_utils import DebugAbstractState
 from adet.tools.loggers import setup_logger

@@ -1,4 +1,7 @@
-"""Axial turbine loss models: Denton profile, leakage and mixing, and secondary-flow (BSM) losses."""
+"""
+Axial turbine loss models: Denton profile, leakage and mixing,
+and secondary-flow (BSM) losses.
+"""
 
 import casadi as cs
 import CoolProp as cp

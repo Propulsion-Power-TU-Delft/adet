@@ -25,6 +25,7 @@ from adet.components import BladeRow
 from adet.components.blade_row import RowGeometry
 from adet.components.connections import Inlet, Shaft
 from adet.components.network import ComponentNetwork
+from adet.deviation import BackstromSlip, ZeroDeviation
 from adet.equations.definitions import EffectiveBladeNumber
 from adet.equations.geometrical import LaxByOutRadius
 from adet.equations.nondimensional import (
@@ -34,9 +35,7 @@ from adet.equations.nondimensional import (
 )
 from adet.fluid.algebraic_eos import IdealGasState
 from adet.fluid.settings import FluidSettings
-from adet.losses.general.basic import IsentropicLink
-from adet.deviation import ZeroDeviation
-from adet.deviation import BackstromSlip
+from adet.losses.basic import IsentropicLink
 from adet.losses.compressors.centrifugal import (
     CaseyRushInletFunc,
     CompressorShapeFactor,

@@ -1,4 +1,7 @@
-"""Deviation models: flow-angle deviation from the blade metal angle (slip and related models) for compressors and turbines."""
+"""
+Deviation models: flow-angle deviation from the blade metal angle
+(slip and related models) for compressors and turbines.
+"""
 
 import CoolProp as cp
 import numpy as np
