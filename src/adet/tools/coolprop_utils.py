@@ -4,8 +4,10 @@ to interact with the CoolProp library
 """
 
 import logging
+import os
 import re
 from math import ceil
+from pathlib import Path
 from typing import Sequence
 
 import CoolProp as cp
@@ -19,6 +21,55 @@ from adet.tools.interpolation import TransfiniteInterpolator
 cp_INPUTS_SUFFIX = '_INPUTS'
 
 logger = logging.getLogger(__name__)
+
+# Searched in order when no REFPROP path is given or configured
+REFPROP_DEFAULT_PATHS = (
+    Path.home() / 'Applications' / 'REFPROP',
+    Path('/Applications/REFPROP'),
+    Path('/opt/refprop'),
+)
+
+
+def _is_refprop_dir(path: Path) -> bool:
+    has_fluids = (path / 'FLUIDS').is_dir() or (path / 'fluids').is_dir()
+    has_lib = (
+        any(path.glob('*refprop*.dylib'))
+        or any(path.glob('*refprop*.so'))
+        or any(path.glob('REFPRP64.DLL'))
+    )
+    return has_fluids and has_lib
+
+
+def configure_refprop(path: str | Path | None = None) -> Path:
+    """
+    Point CoolProp to a REFPROP installation and return its directory.
+
+    Resolution order: ``path`` argument, an already configured
+    ``ALTERNATIVE_REFPROP_PATH``, the ``RPPREFIX`` environment variable, then
+    :data:`REFPROP_DEFAULT_PATHS`. Raises ``FileNotFoundError`` listing the
+    searched locations if no installation (``FLUIDS`` folder + library) is
+    found.
+    """
+    configured = cp.CoolProp.get_config_string(cp.ALTERNATIVE_REFPROP_PATH)
+    candidates = [
+        Path(c).expanduser()
+        for c in (path, configured, os.environ.get('RPPREFIX'))
+        if c
+    ] + list(REFPROP_DEFAULT_PATHS)
+
+    for cand in candidates:
+        if _is_refprop_dir(cand):
+            if str(cand) != configured:
+                cp.CoolProp.set_config_string(cp.ALTERNATIVE_REFPROP_PATH, str(cand))
+                logger.info(f'Using REFPROP installation in {cand}')
+            return cand
+
+    searched = '\n  '.join(str(c) for c in candidates)
+    raise FileNotFoundError(
+        'REFPROP installation not found (a folder with FLUIDS/ and the REFPROP '
+        f'library). Searched:\n  {searched}\n'
+        'Pass its path to `configure_refprop(path)` or set `RPPREFIX`.'
+    )
 
 
 def inames_from_id(input_pair: int) -> list[str]:

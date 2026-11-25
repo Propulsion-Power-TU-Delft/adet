@@ -46,6 +46,9 @@ class ThermoVariables(BaseEnum):
     GasConstant = VarSpec(CoolProperties.GasConstant.value, 'J / (mol * K)')
     CriticalTemp = VarSpec(CoolProperties.Tcrit.value, 'K')
     CriticalPressure = VarSpec(CoolProperties.Pcrit.value, 'Pa')
+    # Compositional (humid-air) fluids only, see adet.fluid.humid_mixture
+    RelHumidity = VarSpec('rel_humidity', '', 0.5, (0.0, 1e3))
+    EqSpeedSound = VarSpec('eq_speed_sound', 'm / s', 300.0)
 
 
 class KinematicVariables(VariableEnum):
@@ -232,6 +235,17 @@ class OtherVariables(VariableEnum):
     VoluteF2 = VarSpec('f2_vol', '', 0.8)
 
 
+class MixtureVariables(VariableEnum):
+    """
+    Node composition of a compositional fluid (e.g. humid air), shared by the
+    static, total and relative-total states of the node.
+    """
+
+    HumidityRatio = VarSpec('hum_ratio', '', 0.01, (0.0, 10.0))
+    Wetness = VarSpec('wetness', '', 0.01, (0.0, 1.0))
+    EqMach = VarSpec('mach_eq', '', 0.5, (0.0, 10.0))
+
+
 class NodeVariables:
     def __init__(self, node: int = DEF_NODE):
         self._node = node
@@ -267,3 +281,7 @@ class NodeVariables:
     @property
     def loss(self) -> Losses:
         return Losses(self._node)
+
+    @property
+    def mix(self) -> MixtureVariables:
+        return MixtureVariables(self._node)

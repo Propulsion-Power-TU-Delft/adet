@@ -5,6 +5,7 @@ from typing import Any
 
 from adet.constants import COOLPROP_NAMES_MAP
 from adet.fluid.algebraic_eos import AlgebraicFluidState
+from adet.fluid.compositional import CompositionalFluid
 from adet.tools.coolprop_utils import pair_id_from_tuple
 from adet.varspec import VarSpec
 
@@ -26,6 +27,13 @@ class FluidSettings:
             )
         )
         self.update_variables = tuple(sp.Glob for sp in sorted_upd)
+
+    @property
+    def composition_variables(self) -> tuple[VarSpec, ...]:
+        """Node composition variables (empty for pure fluids)."""
+        if isinstance(self.fluid_state, CompositionalFluid):
+            return tuple(self.fluid_state.composition_variables)
+        return ()
 
     @property
     def input_pair(self) -> int:

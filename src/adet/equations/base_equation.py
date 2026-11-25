@@ -18,10 +18,36 @@ logger = logging.getLogger(__name__)
 
 
 class EmbeddedEos:
-    def __init__(self):
-        self.out_pties: Sequence[VarSpec] | None = None
-        self.callable: CasadiEos | cs.Function | Any | None = None
-        self.parent: None | EquationBase = None
+    def __init__(self, parent: 'EquationBase'):
+        self.parent = parent
+        self.out_pties = [pty.Glob for pty in parent.config.out_properties]
+        self.callable: cs.Function | None = None
+
+    def __getstate__(self):
+        # Runtime EoS (CasADi objects) is rebuilt by the assembler on build()
+        state = self.__dict__.copy()
+        state['_callable'] = None
+        return state
+
+    @property
+    def callable(self) -> cs.Function | None:
+        return self._callable
+
+    @callable.setter
+    def callable(self, eos_func: cs.Function | None):
+        if eos_func is None:
+            self._callable = None
+            return
+
+        n_out = eos_func.n_out()
+
+        if n_out != len(self.out_pties):
+            raise ValueError(
+                f'EoS for {self.parent} returns {n_out} outputs, '
+                f'but config declares {len(self.out_pties)}'
+            )
+
+        self._callable = eos_func
 
     def _pass_units(self, *args) -> PlainQuantity | list[PlainQuantity]:
         lengths = {len(a) for a in args}
@@ -51,7 +77,8 @@ class EmbeddedEos:
             return self._pass_units(*args)
         elif self.callable is None:
             raise AttributeError(
-                f'Equation of state for {self.parent} was not assignned at runtime'
+                f'Equation of state callable for {self.parent} '
+                'was not assignned at runtime'
             )
         else:
             return self.callable(*args)
@@ -77,7 +104,6 @@ class EquationBase(ABC):
     """
 
     config: ClassVar[EquationConfig] = EquationConfig()
-    _eos: ClassVar[EmbeddedEos | None] = None
 
     def __init__(self, custom_scaling_factor: list[float] | None = None):
         """
@@ -89,15 +115,10 @@ class EquationBase(ABC):
 
         self._arguments: tuple[str, ...] = ()
 
-        cls = self.__class__
-
-        # If the class has not an assigned eos
-        if cls._eos is None:
-            # If the config calls for it, add
-            if cls.config.input_pair and cls.config.out_properties:
-                cls._eos = EmbeddedEos()
-                cls._eos.parent = self
-                cls._eos.out_pties = [pty.Glob for pty in self.config.out_properties]
+        # NOTE: The specification of both input and output
+        # properties is enforced in init subclass
+        if self.config.input_pair:
+            self._emb_eos = EmbeddedEos(self)
 
         if custom_scaling_factor:
             self._scaling_factor = custom_scaling_factor
@@ -196,22 +217,18 @@ class EquationBase(ABC):
 
     @property
     def eos(self) -> Callable:
-        cls = self.__class__
         return cast(
             Callable[
                 [Any, Any],
                 tuple[Any, ...],
             ],
-            cls._eos,
+            self._emb_eos,
         )
 
     @eos.setter
-    def eos(self, eos: cs.Function | CasadiEos):
-        cls = self.__class__
-
-        if cls._eos is not None:
-            logger.debug(f'Overwriting EoS for {cls}')
-            cls._eos.callable = eos
+    def eos(self, eos_func: cs.Function | CasadiEos | Callable):
+        logger.debug(f'Assigning EoS for {self.__class__} instance')
+        self._emb_eos.callable = eos_func
 
 
 class UniqueEquation(EquationBase):
@@ -234,6 +251,7 @@ class IncidenceModel(UniqueEquation): ...
 class CamberLineGeom(UniqueEquation): ...
 class MeridionalGeom(UniqueEquation): ...
 class MeridAreaBlockage(UniqueEquation): ...
+class CompositionModel(UniqueEquation): ...
 # fmt: on
 
 
