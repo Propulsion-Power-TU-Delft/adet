@@ -280,10 +280,9 @@ def fwd_diff(eos, input_pair: int, prop, x, y, wrt: int, eps: float = 1e-4):
             eos.update(input_pair, x, y_pert)
             prop_pert = prop_meth()
 
-    # NOTE: In theory I should restore the eos to its original state
-    # this is actually slightly modifying the jacobian,
-    # but saves a lot of updates and impact is minimal
-    # >>> eos.update(input_pair, x, y)
+    # Restore the eos to its original state, otherwise the next
+    # derivative (e.g. wrt the second input) is evaluated at the perturbed point
+    eos.update(input_pair, x, y)
 
     return (prop_pert - prop_orig) / eps
 

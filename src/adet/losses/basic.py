@@ -22,6 +22,7 @@ class PercTotalPressureLoss(LossApplier):
     """
 
     def __init__(self, loss_coefficient: float = 0.0):
+        super().__init__()
         self.loss_coeff = loss_coefficient
 
     def residual(
